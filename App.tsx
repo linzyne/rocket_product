@@ -1,7 +1,8 @@
 
-import React, { useState, useCallback, useRef, useEffect } from 'react';
+import React, { useState, useCallback, useMemo, useRef, useEffect } from 'react';
 import { Product } from './types';
 import ProductRow from './components/ProductRow';
+import ProductGroupSummary from './components/ProductGroupSummary';
 import { PlusIcon, DownloadIcon, CloseIcon, BroomIcon, SearchIcon, DocumentAddIcon, SaveIcon, CameraIcon, SettingsIcon, TagIcon } from './components/Icons';
 import ProductLabel from './components/ProductLabel';
 import MarginCalculatorModal from './components/MarginCalculatorModal';
@@ -77,6 +78,14 @@ const createNewProduct = (orderNumber?: number): Product => {
     labelDataUrl: '',
     customFields: {},
   };
+};
+
+// 옵션(색상 등)이 다른 여러 상품행을 같은 상품 그룹으로 묶기 위한 키. URL이 있으면 그 URL을
+// 공유하는 행들을 한 그룹으로 보고, URL이 없는(아직 채워지지 않은) 행은 각자 자기 자신만의
+// 그룹으로 취급한다.
+const getProductGroupKey = (product: Pick<Product, 'id' | 'url'>): string => {
+  const url = product.url.trim();
+  return url ? `url:${url}` : `id:${product.id}`;
 };
 
 const getInitialProducts = (): Product[] => {
@@ -161,6 +170,17 @@ const getInitialCategories = (): string[] => {
 
 const App: React.FC = () => {
   const [products, setProducts] = useState<Product[]>(getInitialProducts());
+  // 게시판 형태의 상품 그룹 중 펼쳐진(옵션까지 보이는) 그룹을 상품 id로 추적한다. 그룹을 구분하는
+  // key(URL 기반)로 직접 추적하면 URL을 타이핑하는 도중 매 글자마다 key가 바뀌어서 펼친 상태가
+  // 풀려버리므로, 바뀌지 않는 상품 id를 기준으로 "이 그룹에 속한 상품 중 하나라도 펼쳐짐으로
+  // 표시돼 있으면 그 그룹은 펼쳐진 것"으로 판단한다. 기본은 전부 접힌 상태이되, 완전히 빈 새
+  // 프로젝트(상품 1개, 아무 값도 없음)일 때만 바로 입력할 수 있게 펼쳐서 시작한다.
+  const [expandedProductIds, setExpandedProductIds] = useState<Set<string>>(() => {
+    if (products.length === 1 && !products[0].url.trim() && !products[0].productName.trim()) {
+      return new Set([products[0].id]);
+    }
+    return new Set();
+  });
   const [searchQuery, setSearchQuery] = useState('');
   const [isLabelModalOpen, setIsLabelModalOpen] = useState(false);
   const [isQuoteModalOpen, setIsQuoteModalOpen] = useState(false);
@@ -295,10 +315,27 @@ const App: React.FC = () => {
     }
   }, [products]);
 
-  const handleAddProduct = useCallback(() => {
-    setProducts(prev => [...prev, createNewProduct(prev.length + 1)]);
+  const expandProductGroup = useCallback((productId: string) => {
+    setExpandedProductIds(prev => (prev.has(productId) ? prev : new Set(prev).add(productId)));
   }, []);
-  
+
+  // 그룹 전체를 펼치거나 접는다. 펼쳐진 상태인지는 그룹에 속한 상품 중 하나라도 id가 추적
+  // 세트에 있는지로 판단하므로, 접을 때도 그룹에 속한 상품 id를 전부 세트에서 지워야 한다.
+  const toggleGroupExpanded = useCallback((groupProductIds: string[]) => {
+    setExpandedProductIds(prev => {
+      const isExpanded = groupProductIds.some(id => prev.has(id));
+      const next = new Set(prev);
+      groupProductIds.forEach(id => (isExpanded ? next.delete(id) : next.add(id)));
+      return next;
+    });
+  }, []);
+
+  const handleAddProduct = useCallback(() => {
+    const newProduct = createNewProduct(products.length + 1);
+    setProducts(prev => [...prev, newProduct]);
+    expandProductGroup(newProduct.id);
+  }, [products.length, expandProductGroup]);
+
   const handleBulkThumbnailUpload = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (!files || files.length === 0) {
@@ -339,10 +376,11 @@ const App: React.FC = () => {
           return [...prev, ...newlyCreatedProducts];
         }
       });
+      newlyCreatedProducts.forEach(p => expandProductGroup(p.id));
     });
 
     e.target.value = ''; // Reset file input
-  }, []);
+  }, [expandProductGroup]);
 
   const handleBulkDetailImageUpload = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
@@ -396,7 +434,9 @@ const App: React.FC = () => {
 
   const handleRemoveAllProducts = useCallback(() => {
     if (confirmResetAll) {
-      setProducts([createNewProduct(1)]);
+      const resetProduct = createNewProduct(1);
+      setProducts([resetProduct]);
+      setExpandedProductIds(new Set([resetProduct.id]));
       setConfirmResetAll(false);
       if (resetAllTimeoutRef.current) {
         clearTimeout(resetAllTimeoutRef.current);
@@ -418,12 +458,14 @@ const App: React.FC = () => {
 
         const productToCopy = prev[productIndex];
         const newProduct = { ...productToCopy, id: generateId() };
-        
+
         const newProducts = [...prev];
         newProducts.splice(productIndex + 1, 0, newProduct);
         return newProducts;
     });
-  }, []);
+    const source = products.find(p => p.id === productId);
+    if (source) expandProductGroup(source.id);
+  }, [products, expandProductGroup]);
 
   const handleProductChange = useCallback((productId: string, field: keyof Product, value: string) => {
     setProducts(prev =>
@@ -520,7 +562,11 @@ const App: React.FC = () => {
             return p;
         });
     });
-  }, []);
+    const productIndex = products.findIndex(p => p.id === productId);
+    if (productIndex > 0) {
+      expandProductGroup(products[productIndex - 1].id);
+    }
+  }, [products, expandProductGroup]);
 
   const handleGenerateProposalExcel = useCallback(async () => {
     if (isExporting) return;
@@ -1363,6 +1409,8 @@ const App: React.FC = () => {
       commonFields.weight = String(payload.weightG);
     }
 
+    expandProductGroup(productId);
+
     // 옵션이 여러 개면 현재 행 바로 뒤에 (옵션 개수 - 1)개를 복제해서 옵션 개수만큼 상품행을 만든다.
     const targetIds = [productId, ...variants.slice(1).map(() => generateId())];
     if (variants.length > 1) {
@@ -1470,7 +1518,7 @@ const App: React.FC = () => {
         return next;
       });
     }
-  }, [products, quoteTemplateRegistrations, use1688AiTranslation]);
+  }, [products, quoteTemplateRegistrations, use1688AiTranslation, expandProductGroup]);
 
   // 확장프로그램의 수익 계산기 팝업이 클립보드에 복사해둔 JSON을 읽어와 해당 상품행의
   // 원가/공급가/판매가/마진 필드에 그대로 채워 넣습니다(앱 내 계산기의 "저장하고 적용하기"와 동일).
@@ -1613,6 +1661,27 @@ const App: React.FC = () => {
     return valuesToSearch.some(value => (value || '').toLowerCase().includes(query));
   });
 
+  // 게시판처럼 상품 하나(=같은 URL을 공유하는 옵션들)를 한 줄로 묶는다. 순서는 원래 목록에서
+  // 그 그룹이 처음 등장하는 위치를 따른다.
+  const productGroups = useMemo(() => {
+    const groups: { key: string; products: Product[] }[] = [];
+    const groupIndexByKey = new Map<string, number>();
+    filteredProducts.forEach(product => {
+      const key = getProductGroupKey(product);
+      const existingIndex = groupIndexByKey.get(key);
+      if (existingIndex !== undefined) {
+        groups[existingIndex].products.push(product);
+      } else {
+        groupIndexByKey.set(key, groups.length);
+        groups.push({ key, products: [product] });
+      }
+    });
+    return groups;
+  }, [filteredProducts]);
+
+  // 검색 중일 때는 어느 그룹이 접혀있든 상관없이 검색 결과가 바로 보여야 하므로 전부 펼친다.
+  const isSearching = searchQuery.trim().length > 0;
+
   return (
     <div className="min-h-screen text-slate-200 flex flex-col items-start p-4 sm:p-6 lg:p-8">
       <div className="w-full flex flex-row items-start gap-6">
@@ -1704,47 +1773,65 @@ const App: React.FC = () => {
             </div>
           </header>
 
-          <div className="space-y-4">
-            {filteredProducts.map((product, filteredIndex) => (
-              <div
-                key={product.id}
-                className={`overflow-visible transition-all duration-200 ${activeProductId === product.id ? 'z-[100] relative' : 'z-0 relative'}`}
-              >
-                <ProductRow
-                  product={product}
-                  displayIndex={filteredIndex}
-                  onProductChange={handleProductChange}
-                  onRemoveProduct={handleRemoveProduct}
-                  onDuplicateProduct={handleDuplicateProduct}
-                  onGenerateLabel={openLabelModal}
-                  onOpenMemoModal={openMemoModal}
-                  onOpenMarginCalculator={openMarginCalculator}
-                  onCopyFromAbove={handleCopyFromAbove}
-                  onOpenTranslation={(dataUrl, field) => handleOpenTranslation(product.id, dataUrl, field)}
-                  onOpenImageEditor={openImageEditor}
-                  onOpenDetailPageBuilder={openDetailPageBuilder}
-                  onMenuToggle={(isOpen) => setActiveProductId(isOpen ? product.id : null)}
-                  onSetCustomField={handleSetProductCustomField}
-                  onRemoveCustomField={handleRemoveProductCustomField}
-                  onTogglePackageSizeSameAsProduct={handleTogglePackageSizeSameAsProduct}
-                  quoteTemplateRegistrations={quoteTemplateRegistrations}
-                  onGenerateProductQuote={handleGenerateProductQuote}
-                  isGeneratingQuote={generatingProductQuoteId === product.id}
-                  onImportProductQuote={handleImportProductQuote}
-                  isImportingQuote={importingProductQuoteId === product.id}
-                  onImportFrom1688={handleImportFrom1688}
-                  isImportingFrom1688={importing1688ProductIds.has(product.id)}
-                  use1688AiTranslation={use1688AiTranslation}
-                  onToggle1688AiTranslation={handleToggle1688AiTranslation}
-                  onImportMarginFromClipboard={handleImportMarginFromClipboard}
-                  registeredCategories={categories}
-                  onIntegratedDownload={handleIntegratedDownload}
-                  isIntegratedDownloading={integratedDownloadingId === product.id}
-                />
-              </div>
-            ))}
+          <div className="space-y-3">
+            {productGroups.map((group, groupIdx) => {
+              const groupProductIds = group.products.map(p => p.id);
+              const isExpanded = isSearching || groupProductIds.some(id => expandedProductIds.has(id));
+              return (
+                <div key={group.key}>
+                  <ProductGroupSummary
+                    groupIndex={groupIdx + 1}
+                    products={group.products}
+                    isExpanded={isExpanded}
+                    onToggle={() => toggleGroupExpanded(groupProductIds)}
+                  />
+                  {isExpanded && (
+                    <div className="mt-3 ml-3 pl-4 border-l-2 border-slate-700/60 space-y-4">
+                      {group.products.map((product, optionIndex) => (
+                        <div
+                          key={product.id}
+                          className={`overflow-visible transition-all duration-200 ${activeProductId === product.id ? 'z-[100] relative' : 'z-0 relative'}`}
+                        >
+                          <ProductRow
+                            product={product}
+                            displayIndex={optionIndex}
+                            onProductChange={handleProductChange}
+                            onRemoveProduct={handleRemoveProduct}
+                            onDuplicateProduct={handleDuplicateProduct}
+                            onGenerateLabel={openLabelModal}
+                            onOpenMemoModal={openMemoModal}
+                            onOpenMarginCalculator={openMarginCalculator}
+                            onCopyFromAbove={handleCopyFromAbove}
+                            onOpenTranslation={(dataUrl, field) => handleOpenTranslation(product.id, dataUrl, field)}
+                            onOpenImageEditor={openImageEditor}
+                            onOpenDetailPageBuilder={openDetailPageBuilder}
+                            onMenuToggle={(isOpen) => setActiveProductId(isOpen ? product.id : null)}
+                            onSetCustomField={handleSetProductCustomField}
+                            onRemoveCustomField={handleRemoveProductCustomField}
+                            onTogglePackageSizeSameAsProduct={handleTogglePackageSizeSameAsProduct}
+                            quoteTemplateRegistrations={quoteTemplateRegistrations}
+                            onGenerateProductQuote={handleGenerateProductQuote}
+                            isGeneratingQuote={generatingProductQuoteId === product.id}
+                            onImportProductQuote={handleImportProductQuote}
+                            isImportingQuote={importingProductQuoteId === product.id}
+                            onImportFrom1688={handleImportFrom1688}
+                            isImportingFrom1688={importing1688ProductIds.has(product.id)}
+                            use1688AiTranslation={use1688AiTranslation}
+                            onToggle1688AiTranslation={handleToggle1688AiTranslation}
+                            onImportMarginFromClipboard={handleImportMarginFromClipboard}
+                            registeredCategories={categories}
+                            onIntegratedDownload={handleIntegratedDownload}
+                            isIntegratedDownloading={integratedDownloadingId === product.id}
+                          />
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
           </div>
-          
+
           <div className="mt-8 flex flex-wrap justify-center items-center gap-4">
               <button
                 onClick={handleGenerateSampleExcel}

@@ -1612,24 +1612,35 @@ const App: React.FC = () => {
     setDetailPageBuilderState({ isOpen: false, product: null });
   }, []);
 
+  // 같은 URL을 공유하는 옵션들(=하나의 상품 그룹)을 하나의 상세페이지로 함께 관리하기 위해, 빌더를
+  // 연 상품이 속한 그룹의 모든 상품을 반환한다. 상세페이지 이미지는 이 그룹 전체에 동일하게
+  // 저장하고, 대표이미지만 옵션별로 다르게 지정할 수 있게 한다.
+  const getGroupProducts = useCallback((product: Product) => {
+    const key = getProductGroupKey(product);
+    return products.filter(p => getProductGroupKey(p) === key);
+  }, [products]);
+
   const handleSaveFromDetailPageBuilder = useCallback((field: 'thumbnailDataUrl' | 'detailDataUrl' | 'detailFile', value: string) => {
     if (detailPageBuilderState.product) {
-      handleProductChange(detailPageBuilderState.product.id, field, value);
+      if (field === 'detailDataUrl' || field === 'detailFile') {
+        // 상세페이지(이미지/파일명)는 이 상품 하나가 아니라 같은 그룹의 옵션 전체에 동일하게 적용한다.
+        const groupIds = new Set(getGroupProducts(detailPageBuilderState.product).map(p => p.id));
+        setProducts(prev => prev.map(p => (groupIds.has(p.id) ? { ...p, [field]: value } : p)));
+      } else {
+        handleProductChange(detailPageBuilderState.product.id, field, value);
+      }
       // detailFile은 용량 때문에 JPEG로 대체될 때 detailDataUrl 저장 직전에 확장자만 맞추려고
       // 함께 오는 부수 업데이트라 여기서 완료 알림/모달 닫기를 트리거하지 않는다.
       if (field === 'detailDataUrl') alert('상세페이지 이미지로 저장되었습니다.');
     }
     if (field !== 'detailFile') closeDetailPageBuilder();
-  }, [detailPageBuilderState.product, handleProductChange, closeDetailPageBuilder]);
+  }, [detailPageBuilderState.product, handleProductChange, closeDetailPageBuilder, getGroupProducts]);
 
-  // Picking a representative image from among the builder's uploaded photos is a side action, not a
-  // finishing one — unlike handleSaveFromDetailPageBuilder above it must not close the builder, since
-  // the user is typically still assembling the rest of the detail page.
-  const handleSaveThumbnailFromDetailPageBuilder = useCallback((dataUrl: string) => {
-    if (detailPageBuilderState.product) {
-      handleProductChange(detailPageBuilderState.product.id, 'thumbnailDataUrl', dataUrl);
-    }
-  }, [detailPageBuilderState.product, handleProductChange]);
+  // 사진 갤러리에서 특정 사진을 특정 옵션의 대표이미지로 지정한다(옵션마다 다른 사진을 쓸 수 있게).
+  // 대표이미지 지정은 상세페이지를 계속 작업 중인 상태에서의 부수 동작이라 모달을 닫지 않는다.
+  const handleSaveThumbnailFromDetailPageBuilder = useCallback((productId: string, dataUrl: string) => {
+    handleProductChange(productId, 'thumbnailDataUrl', dataUrl);
+  }, [handleProductChange]);
 
   const filteredProducts = products.filter(product => {
     if (!searchQuery.trim()) return true;
@@ -2024,6 +2035,7 @@ const App: React.FC = () => {
         isOpen={detailPageBuilderState.isOpen}
         onClose={closeDetailPageBuilder}
         product={detailPageBuilderState.product}
+        groupProducts={detailPageBuilderState.product ? getGroupProducts(detailPageBuilderState.product) : []}
         onSave={handleSaveFromDetailPageBuilder}
         onSaveThumbnail={handleSaveThumbnailFromDetailPageBuilder}
       />

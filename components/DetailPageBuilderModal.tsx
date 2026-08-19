@@ -23,12 +23,16 @@ interface DetailPageBuilderModalProps {
   isOpen: boolean;
   onClose: () => void;
   product: Product | null;
+  // 같은 URL을 공유하는 옵션(색상 등) 전체. product 하나만 있으면(옵션이 없는 상품) 이 배열도
+  // product 하나만 담는다. 상세페이지는 이 그룹 전체에 동일하게 저장되고, 대표이미지만
+  // 옵션(=배열의 각 항목)별로 다르게 지정할 수 있다.
+  groupProducts: Product[];
   onSave: (field: 'thumbnailDataUrl' | 'detailDataUrl' | 'detailFile', value: string) => void;
-  // Sets one of the uploaded photos as the product's 대표이미지 (thumbnailFile, auto-named
-  // "{순번}s.png") without closing the builder — picking a representative image is a side action
-  // while the detail page itself is still being assembled, unlike onSave('detailDataUrl', ...)
-  // which finishes and closes the whole builder (see handleSave/App.tsx).
-  onSaveThumbnail: (dataUrl: string) => void;
+  // 업로드한 사진 중 하나를 특정 옵션(productId)의 대표이미지(thumbnailFile, 자동 이름
+  // "{순번}s.png")로 지정한다. 모달을 닫지 않는다 — 대표이미지 지정은 상세페이지를 계속
+  // 조립하는 중에 곁들여 하는 부수 동작이라, 전체를 마무리짓는 onSave('detailDataUrl', ...)
+  // (모달을 닫는다, App.tsx의 handleSave 참고)과는 다르다.
+  onSaveThumbnail: (productId: string, dataUrl: string) => void;
 }
 
 interface PhotoItem {
@@ -147,7 +151,7 @@ const EditableText: React.FC<EditableTextProps> = ({ value, onChange, placeholde
   );
 };
 
-const DetailPageBuilderModal: React.FC<DetailPageBuilderModalProps> = ({ isOpen, onClose, product, onSave, onSaveThumbnail }) => {
+const DetailPageBuilderModal: React.FC<DetailPageBuilderModalProps> = ({ isOpen, onClose, product, groupProducts, onSave, onSaveThumbnail }) => {
   const [photos, setPhotos] = useState<PhotoItem[]>([]);
   const [sellingPoints, setSellingPoints] = useState('');
   const [copy, setCopy] = useState<DetailPageCopy>(EMPTY_COPY);
@@ -174,6 +178,22 @@ const DetailPageBuilderModal: React.FC<DetailPageBuilderModalProps> = ({ isOpen,
   // Photo currently open in the crop modal; applying replaces just that photo's dataUrl in place
   // (order/role in the layout stays the same, see handleApplyCrop).
   const [cropTarget, setCropTarget] = useState<PhotoItem | null>(null);
+
+  // 옵션이 여러 개일 때(groupProducts.length > 1) 별 아이콘을 누르면 "이 사진을 어느 옵션의
+  // 대표이미지로 쓸지" 고르는 작은 드롭다운을 연다. 옵션이 1개뿐이면 드롭다운 없이 바로 지정한다.
+  const [thumbnailAssignPhotoId, setThumbnailAssignPhotoId] = useState<string | null>(null);
+  const thumbnailAssignMenuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!thumbnailAssignPhotoId) return;
+    const handleClickOutside = (event: MouseEvent) => {
+      if (thumbnailAssignMenuRef.current && !thumbnailAssignMenuRef.current.contains(event.target as Node)) {
+        setThumbnailAssignPhotoId(null);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [thumbnailAssignPhotoId]);
 
   const previewRef = useRef<HTMLDivElement>(null);
   const draggedPhotoIdRef = useRef<string | null>(null);
@@ -335,8 +355,20 @@ const DetailPageBuilderModal: React.FC<DetailPageBuilderModalProps> = ({ isOpen,
     setPhotos(prev => prev.filter(p => p.id !== id));
   };
 
-  const handleSetAsThumbnail = (photo: PhotoItem) => {
-    onSaveThumbnail(photo.dataUrl);
+  // 옵션이 1개뿐이면 바로 그 옵션에 지정하고, 여러 개면 별 아이콘 클릭 시 어느 옵션에 지정할지
+  // 고르는 드롭다운을 연다(옵션 목록은 groupProducts, 실제 지정은 handleAssignThumbnailToOption).
+  const handleStarClick = (photo: PhotoItem) => {
+    if (groupProducts.length <= 1) {
+      const targetId = groupProducts[0]?.id ?? product?.id;
+      if (targetId) onSaveThumbnail(targetId, photo.dataUrl);
+      return;
+    }
+    setThumbnailAssignPhotoId(prev => (prev === photo.id ? null : photo.id));
+  };
+
+  const handleAssignThumbnailToOption = (photo: PhotoItem, productId: string) => {
+    onSaveThumbnail(productId, photo.dataUrl);
+    setThumbnailAssignPhotoId(null);
   };
 
   const handleApplyCrop = (croppedDataUrl: string) => {
@@ -1024,7 +1056,14 @@ const DetailPageBuilderModal: React.FC<DetailPageBuilderModalProps> = ({ isOpen,
                 </div>
                 {photos.map((photo, idx) => {
                     const role = idx === 0 ? '히어로' : idx === photos.length - 1 && photos.length >= 2 ? '마무리' : '특징';
-                    const isThumbnail = !!product?.thumbnailDataUrl && product.thumbnailDataUrl === photo.dataUrl;
+                    const assignedOptions = groupProducts.filter(p => !!p.thumbnailDataUrl && p.thumbnailDataUrl === photo.dataUrl);
+                    const isThumbnail = assignedOptions.length > 0;
+                    const hasMultipleOptions = groupProducts.length > 1;
+                    const starTitle = !isThumbnail
+                      ? '대표이미지로 저장'
+                      : hasMultipleOptions
+                        ? `대표이미지로 지정됨: ${assignedOptions.map((p, i) => `옵션${groupProducts.indexOf(p) + 1}${p.color ? ` · ${p.color}` : ''}`).join(', ')}`
+                        : '대표이미지로 지정됨';
                     return (
                       <div
                         key={photo.id}
@@ -1041,15 +1080,42 @@ const DetailPageBuilderModal: React.FC<DetailPageBuilderModalProps> = ({ isOpen,
                         <span className="absolute bottom-0.5 left-0.5 text-[9px] leading-none px-1 py-0.5 rounded bg-slate-900/80 text-slate-200">
                           {role}
                         </span>
-                        <button
-                          onClick={() => handleSetAsThumbnail(photo)}
-                          className={`absolute top-0.5 left-0.5 w-4 h-4 flex items-center justify-center rounded-full bg-slate-900/80 transition-opacity [&_svg]:h-2.5 [&_svg]:w-2.5 ${
-                            isThumbnail ? 'text-yellow-400 opacity-100' : 'text-white opacity-0 group-hover:opacity-100'
-                          }`}
-                          title={isThumbnail ? '대표이미지로 지정됨' : '대표이미지로 저장'}
-                        >
-                          <StarIcon />
-                        </button>
+                        <div className="absolute top-0.5 left-0.5" ref={thumbnailAssignPhotoId === photo.id ? thumbnailAssignMenuRef : undefined}>
+                          <button
+                            onClick={() => handleStarClick(photo)}
+                            className={`w-4 h-4 flex items-center justify-center rounded-full bg-slate-900/80 transition-opacity [&_svg]:h-2.5 [&_svg]:w-2.5 ${
+                              isThumbnail ? 'text-yellow-400 opacity-100' : 'text-white opacity-0 group-hover:opacity-100'
+                            }`}
+                            title={starTitle}
+                          >
+                            <StarIcon />
+                          </button>
+                          {hasMultipleOptions && thumbnailAssignPhotoId === photo.id && (
+                            <div
+                              draggable={false}
+                              onDragStart={e => e.preventDefault()}
+                              className="absolute left-0 top-full mt-1 w-40 bg-slate-800 border border-slate-600 rounded-lg shadow-[0_25px_50px_-12px_rgba(0,0,0,0.7)] z-[80] py-1 cursor-default"
+                            >
+                              <div className="px-2.5 py-1 text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                                대표이미지로 지정할 옵션
+                              </div>
+                              {groupProducts.map((p, optionIdx) => {
+                                const isAssignedToThis = p.thumbnailDataUrl === photo.dataUrl;
+                                return (
+                                  <button
+                                    key={p.id}
+                                    onClick={() => handleAssignThumbnailToOption(photo, p.id)}
+                                    className={`w-full text-left px-2.5 py-1.5 text-xs transition-colors ${
+                                      isAssignedToThis ? 'text-yellow-400 font-semibold' : 'text-slate-300 hover:bg-blue-600 hover:text-white'
+                                    }`}
+                                  >
+                                    {isAssignedToThis ? '★ ' : ''}옵션{optionIdx + 1}{p.color ? ` · ${p.color}` : ''}
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          )}
+                        </div>
                         <button
                           onClick={() => removePhoto(photo.id)}
                           className="absolute top-0.5 right-0.5 w-4 h-4 flex items-center justify-center rounded-full bg-slate-900/80 text-white opacity-0 group-hover:opacity-100 transition-opacity [&_svg]:h-2.5 [&_svg]:w-2.5"
@@ -1062,7 +1128,10 @@ const DetailPageBuilderModal: React.FC<DetailPageBuilderModalProps> = ({ isOpen,
                   })}
               </div>
               <p className="text-xs text-slate-500 leading-relaxed">
-                썸네일이나 미리보기 안에서 사진을 드래그하면 순서를 바꿀 수 있어요. 첫 번째 사진은 히어로, 마지막 사진은 마무리 문구 위에 고정되고, 그 사이 사진들은 특징 01~03 자리에 최대한 고르게 나뉘어 들어가요. + 타일을 클릭한 뒤 Ctrl+V(⌘V)로 복사한 이미지를 바로 붙여넣을 수도 있어요. 별 아이콘을 누르면 그 사진이 대표이미지({product?.thumbnailFile || '순번s.png'})로 저장돼요.
+                썸네일이나 미리보기 안에서 사진을 드래그하면 순서를 바꿀 수 있어요. 첫 번째 사진은 히어로, 마지막 사진은 마무리 문구 위에 고정되고, 그 사이 사진들은 특징 01~03 자리에 최대한 고르게 나뉘어 들어가요. + 타일을 클릭한 뒤 Ctrl+V(⌘V)로 복사한 이미지를 바로 붙여넣을 수도 있어요. {groupProducts.length > 1
+                  ? '별 아이콘을 누르면 그 사진을 어느 옵션의 대표이미지로 쓸지 고를 수 있어요(옵션마다 다른 사진을 지정할 수 있어요).'
+                  : `별 아이콘을 누르면 그 사진이 대표이미지(${product?.thumbnailFile || '순번s.png'})로 저장돼요.`}
+                {' '}상세페이지는 저장하면 이 상품의 옵션 {groupProducts.length}개 모두에 똑같이 적용돼요.
               </p>
             </div>
 

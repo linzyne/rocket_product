@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8" />
+<title>수익 계산기</title>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    width: 340px;
+    max-height: 560px;
+    overflow-y: auto;
+    background: #1e293b;
+    color: #e2e8f0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Malgun Gothic", Arial, sans-serif;
+    font-size: 13px;
+  }
+  .wrap { padding: 16px; }
+  h1 { font-size: 15px; font-weight: 700; margin: 0 0 4px; color: #f1f5f9; }
+  .hint { font-size: 11px; color: #94a3b8; margin: 0 0 14px; }
+  label.field { display: block; margin-bottom: 12px; }
+  .field-label { display: block; font-size: 11px; font-weight: 600; color: #cbd5e1; margin-bottom: 4px; }
+  .input-row { position: relative; }
+  input[type="number"] {
+    width: 100%;
+    padding: 7px 30px 7px 8px;
+    border-radius: 6px;
+    border: 1px solid #475569;
+    background: #0f172a;
+    color: #e2e8f0;
+    font-size: 13px;
+  }
+  input[type="number"]:focus { outline: none; border-color: #3b82f6; }
+  .unit { position: absolute; right: 8px; top: 50%; transform: translateY(-50%); color: #94a3b8; font-size: 12px; }
+  .sub-hint { font-size: 10px; color: #64748b; margin: 3px 0 0; }
+  .result-box { background: #334155; border-radius: 8px; padding: 10px 12px; margin-bottom: 12px; }
+  .result-title { font-size: 11px; font-weight: 600; color: #94a3b8; }
+  .result-value { font-size: 19px; font-weight: 700; color: #60a5fa; margin: 2px 0 0; }
+  .result-value.green { color: #34d399; }
+  .result-formula { font-size: 10px; color: #64748b; margin: 3px 0 0; }
+  .amount-line { display: flex; justify-content: space-between; font-size: 12px; margin-top: 6px; color: #cbd5e1; }
+  .amount-line .amber { color: #fbbf24; }
+  .final-box { background: #334155; border-radius: 8px; padding: 12px; margin: 14px 0; }
+  .final-row { display: flex; justify-content: space-between; align-items: center; }
+  .final-label { font-size: 13px; font-weight: 700; color: #f1f5f9; }
+  .final-value { font-size: 20px; font-weight: 700; color: #4ade80; }
+  .toggle-btn {
+    width: 100%; text-align: left; background: #334155; border: none; color: #cbd5e1;
+    padding: 8px 10px; border-radius: 6px; font-size: 11px; font-weight: 600; cursor: pointer;
+    display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;
+  }
+  .tax-details { display: none; border: 1px solid #475569; border-radius: 6px; padding: 10px; margin: -2px 0 12px; background: rgba(51,65,85,0.5); }
+  .tax-details.open { display: block; }
+  .tax-row { display: flex; justify-content: space-between; font-size: 11px; padding: 2px 0; color: #cbd5e1; }
+  .tax-row.total { border-top: 1px solid #475569; margin-top: 4px; padding-top: 6px; font-weight: 700; color: #f87171; }
+  .copy-btn {
+    width: 100%; padding: 10px; border-radius: 8px; border: none; background: #f97316;
+    color: #fff; font-weight: 700; font-size: 13px; cursor: pointer;
+  }
+  .copy-btn:disabled { background: #475569; color: #94a3b8; cursor: not-allowed; }
+  .copy-btn:not(:disabled):hover { background: #ea580c; }
+  .toast {
+    margin-top: 10px; padding: 8px 10px; border-radius: 6px; font-size: 11px; text-align: center;
+    display: none;
+  }
+  .toast.show { display: block; }
+  .toast.ok { background: rgba(22,163,74,0.2); color: #4ade80; border: 1px solid rgba(74,222,128,0.3); }
+  .toast.err { background: rgba(220,38,38,0.2); color: #f87171; border: 1px solid rgba(248,113,113,0.3); }
+</style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>📋 수익 계산기 → 로켓제안서</h1>
+    <p class="hint">공급가/판매가를 계산한 뒤 복사하기를 누르고, 로켓제안서 앱의 상품행에서 "마진 붙여넣기" 버튼을 누르세요.</p>
+
+    <label class="field">
+      <span class="field-label">적용 환율 (1위안 = ?원)</span>
+      <div class="input-row">
+        <input id="exchangeRate" type="number" placeholder="예: 210" />
+        <span class="unit">원</span>
+      </div>
+    </label>
+
+    <label class="field">
+      <span class="field-label">위안 (CNY)</span>
+      <div class="input-row">
+        <input id="cny" type="number" placeholder="예: 10" autofocus />
+        <span class="unit">¥</span>
+      </div>
+    </label>
+
+    <div class="result-box">
+      <span class="result-title">환산 원가 (KRW, VAT 포함)</span>
+      <p class="result-value" id="krwOut">₩ 0</p>
+      <p class="result-formula">계산식: ((위안 × 환율) + 수수료 10%) + VAT 10%</p>
+    </div>
+
+    <label class="field">
+      <span class="field-label">공급 마진율 (%)</span>
+      <div class="input-row">
+        <input id="supplyMargin" type="number" placeholder="예: 30 (100 미만)" />
+        <span class="unit">%</span>
+      </div>
+      <p class="sub-hint">계산된 공급가: <strong id="supplyPriceOut" style="color:#34d399;">₩ 0</strong></p>
+    </label>
+
+    <label class="field">
+      <span class="field-label">판매 마진율 (공급가 대비 %)</span>
+      <div class="input-row">
+        <input id="sellingMargin" type="number" placeholder="예: 50 (100 미만)" />
+        <span class="unit">%</span>
+      </div>
+      <p class="sub-hint">계산된 판매가: <strong id="sellingPriceOut" style="color:#34d399;">₩ 0</strong></p>
+      <div class="amount-line"><span>판매가 - 공급가</span><span class="amber" id="sellingMarginAmountOut">₩ 0</span></div>
+    </label>
+
+    <button type="button" class="toggle-btn" id="taxToggle">
+      <span>세금 정보 상세 보기</span><span id="taxToggleArrow">▾</span>
+    </button>
+    <div class="tax-details" id="taxDetails">
+      <div class="tax-row"><span>매출세액 (공급가 부가세)</span><span id="outputVatOut">₩ 0</span></div>
+      <div class="tax-row"><span>매입세액 (원가 부가세)</span><span id="inputVatOut">₩ 0</span></div>
+      <div class="tax-row total"><span>납부 예상 부가세</span><span id="vatPayableOut">₩ 0</span></div>
+      <div class="tax-row" style="margin-top:8px;"><span>과세 대상 소득</span><span id="marginAfterVatOut">₩ 0</span></div>
+      <div class="tax-row total" style="color:#fb923c;"><span>예상 종합소득세</span><span id="incomeTaxOut">₩ 0</span></div>
+    </div>
+
+    <div class="final-box">
+      <div class="tax-row"><span>마진 (공급가 - 원가)</span><span id="grossMarginOut">₩ 0</span></div>
+      <div class="tax-row"><span>납부 예상 부가세</span><span id="vatPayableOut2" style="color:#f87171;">- ₩ 0</span></div>
+      <div class="tax-row" style="margin-bottom:6px;"><span>예상 종합소득세</span><span id="incomeTaxOut2" style="color:#fb923c;">- ₩ 0</span></div>
+      <div class="final-row" style="border-top:1px solid #475569; padding-top:8px;">
+        <span class="final-label">최종 순수익 (예상)</span>
+        <span class="final-value" id="netProfitOut">₩ 0</span>
+      </div>
+    </div>
+
+    <button type="button" class="copy-btn" id="copyBtn" disabled>복사하기 (앱에 붙여넣기용)</button>
+    <div class="toast" id="toast"></div>
+  </div>
+  <script src="popup.js"></script>
+</body>
+</html>

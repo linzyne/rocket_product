@@ -1,0 +1,5 @@
+{
+  "name": "로켓제안서_원본",
+  "description": "An application to create a list of product information and export it as an Excel spreadsheet. Users can add, edit, and remove products before downloading the final file.",
+  "requestFramePermissions": []
+}

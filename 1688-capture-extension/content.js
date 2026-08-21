@@ -24,37 +24,49 @@
     * { box-sizing: border-box; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Malgun Gothic", Arial, sans-serif; }
     .rc-fab { position:fixed; bottom:24px; right:24px; z-index:2147483000; background:#f97316; color:#fff; border:none; padding:12px 16px; border-radius:9999px; font-size:14px; font-weight:600; cursor:pointer; box-shadow:0 10px 25px -5px rgba(0,0,0,0.5); }
     .rc-overlay { position:fixed; inset:0; z-index:2147483647; display:flex; align-items:center; justify-content:center; pointer-events:none; }
-    .rc-box { pointer-events:auto; background:#1e293b; color:#e2e8f0; width:330px; max-width:94vw; max-height:88vh; overflow-y:auto; overflow-x:hidden; border-radius:12px; padding:16px; box-shadow:0 25px 50px -12px rgba(0,0,0,0.7); }
+    .rc-box { pointer-events:auto; background:#1e293b; color:#e2e8f0; width:330px; max-width:94vw; max-height:88vh; overflow-y:auto; overflow-x:hidden; border-radius:12px; padding:14px; box-shadow:0 25px 50px -12px rgba(0,0,0,0.7); }
     .rc-box h2 { margin:0; font-size:15px; font-weight:700; cursor:move; user-select:none; }
-    .rc-box h2::after { content:'✥ 드래그해서 옮기기'; display:block; font-size:10px; font-weight:400; color:#64748b; margin-top:2px; }
-    .rc-hint { margin:8px 0 0; font-size:11px; color:#94a3b8; line-height:1.5; }
+    .rc-box h2::after { content:'✥ 드래그해서 옮기기'; display:block; font-size:10px; font-weight:400; color:#64748b; margin-top:1px; }
+    .rc-hint { margin:6px 0 0; font-size:11px; color:#94a3b8; line-height:1.4; }
     .rc-fields { display:flex; flex-direction:column; }
-    .rc-section { margin-top:16px; padding-top:14px; border-top:1px solid #334155; }
-    .rc-section:first-child { margin-top:14px; padding-top:0; border-top:none; }
-    .rc-section-heading { font-weight:700; font-size:12px; color:#e2e8f0; margin:0 0 10px; display:flex; align-items:center; gap:5px; }
-    .rc-field-group { display:flex; flex-direction:column; gap:10px; }
+    .rc-section { margin-top:10px; padding-top:9px; border-top:1px solid #334155; }
+    .rc-section:first-child { margin-top:9px; padding-top:0; border-top:none; }
+    .rc-section-heading { font-weight:700; font-size:12px; color:#e2e8f0; margin:0 0 6px; display:flex; align-items:center; gap:5px; }
+    .rc-field-group { display:flex; flex-direction:column; gap:6px; }
     .rc-label { font-size:11px; color:#94a3b8; }
+    .rc-label-red { color:#f87171; }
     .rc-row { display:flex; gap:6px; }
     .rc-row > label { flex:1; min-width:0; }
-    .rc-input { width:100%; margin-top:4px; padding:8px; border-radius:6px; border:1px solid #475569; background:#0f172a; color:#e2e8f0; }
-    .rc-actions { display:flex; flex-wrap:wrap; justify-content:flex-end; gap:8px; margin-top:18px; }
+    .rc-input { width:100%; margin-top:3px; padding:6px 8px; border-radius:6px; border:1px solid #475569; background:#0f172a; color:#e2e8f0; }
+    .rc-actions { display:flex; flex-wrap:wrap; justify-content:flex-end; gap:8px; margin-top:12px; }
+    .rc-header-row {
+      display:flex; align-items:flex-start; justify-content:space-between; gap:10px;
+      position:sticky; top:0; z-index:5;
+      margin:-14px -14px 0; padding:14px 14px 10px;
+      background:#1e293b; border-bottom:1px solid #334155;
+    }
+    .rc-header-actions { display:flex; gap:6px; flex:0 0 auto; padding-top:1px; }
+    .rc-header-actions .rc-btn-secondary { padding:5px 10px; font-size:11.5px; }
     .rc-btn-secondary { padding:8px 12px; border-radius:6px; border:1px solid #475569; background:transparent; color:#e2e8f0; cursor:pointer; font-size:12.5px; }
     .rc-btn-primary { flex:1 1 auto; padding:8px 12px; border-radius:6px; border:none; background:#f97316; color:#fff; font-weight:600; cursor:pointer; font-size:12.5px; }
     .rc-toast { position:fixed; bottom:24px; right:24px; z-index:2147483647; color:#fff; padding:12px 16px; border-radius:8px; font-size:13px; box-shadow:0 10px 25px -5px rgba(0,0,0,0.5); max-width:320px; }
-    .rc-option-rows { display:flex; flex-direction:column; gap:8px; }
-    .rc-option-card { border:1px solid #334155; border-radius:10px; padding:10px; background:rgba(15,23,42,0.4); }
+    .rc-option-rows { display:flex; flex-direction:column; gap:6px; }
+    .rc-option-card { border:1px solid #334155; border-radius:10px; padding:7px 10px; background:rgba(15,23,42,0.4); }
     .rc-option-top { display:flex; align-items:center; gap:8px; margin-bottom:8px; }
+    .rc-option-card:has(.rc-option-body[hidden]) .rc-option-top { margin-bottom:0; }
     .rc-option-top input[type="checkbox"] { flex:0 0 auto; width:16px; height:16px; accent-color:#f97316; }
-    .rc-option-label { flex:1 1 auto; min-width:0; margin:0; }
+    .rc-option-label { flex:1 1 auto; min-width:0; margin:0; color:#f87171; }
+    .rc-option-toggle { flex:0 0 auto; background:transparent; border:none; color:#94a3b8; cursor:pointer; font-size:13px; line-height:1; padding:2px 6px; }
+    .rc-option-toggle:hover { color:#e2e8f0; }
     .rc-option-remove { flex:0 0 auto; background:transparent; border:none; color:#94a3b8; cursor:pointer; font-size:18px; line-height:1; padding:2px 4px; }
     .rc-option-remove:hover { color:#f87171; }
-    .rc-option-size-row { display:flex; align-items:center; gap:5px; margin-bottom:8px; }
+    .rc-option-size-row { display:flex; align-items:center; gap:5px; margin-bottom:6px; }
     .rc-option-dim { flex:1 1 0; min-width:0; padding-left:4px; padding-right:4px; text-align:center; margin:0; }
     .rc-option-dim-sep { flex:0 0 auto; color:#64748b; font-size:11px; }
     .rc-option-price-row { display:flex; align-items:center; gap:6px; }
     .rc-option-price-row .rc-label { flex:0 0 auto; white-space:nowrap; }
     .rc-option-price { flex:1 1 auto; min-width:0; margin:0; }
-    .rc-option-buttons { display:flex; gap:6px; flex-wrap:wrap; margin-top:10px; }
+    .rc-option-buttons { display:flex; gap:6px; flex-wrap:wrap; margin-top:8px; }
     .rc-add-option { flex:1 1 auto; padding:7px 10px; border-radius:6px; border:1px dashed #475569; background:transparent; color:#94a3b8; cursor:pointer; font-size:12px; }
     .rc-add-option:hover { color:#e2e8f0; border-color:#64748b; }
     .rc-pick-option { flex:1 1 auto; padding:7px 10px; border-radius:6px; border:1px solid #f97316; background:rgba(249,115,22,0.12); color:#fdba74; cursor:pointer; font-size:12px; font-weight:600; }
@@ -63,7 +75,7 @@
     .rc-pick-bar { position:fixed; top:16px; left:50%; transform:translateX(-50%); z-index:2147483647; background:#1e293b; color:#e2e8f0; padding:10px 16px; border-radius:9999px; box-shadow:0 10px 25px -5px rgba(0,0,0,0.5); font-size:13px; display:flex; align-items:center; gap:10px; max-width:90vw; }
     .rc-pick-bar span { min-width:0; }
     .rc-pick-bar button { flex:0 0 auto; padding:5px 14px; border-radius:9999px; border:none; background:#f97316; color:#fff; font-weight:600; cursor:pointer; font-size:12px; }
-    .rc-margin-result { display:grid; grid-template-columns:1fr 1fr; gap:8px; margin:10px 0 4px; }
+    .rc-margin-result { display:grid; grid-template-columns:1fr 1fr; gap:6px; margin:8px 0 4px; }
     .rc-margin-result-item { background:#0f172a; border:1px solid #334155; border-radius:8px; padding:8px 10px; }
     .rc-margin-result-item span { display:block; font-size:10px; color:#94a3b8; }
     .rc-margin-result-item strong { display:block; font-size:15px; font-weight:700; color:#e2e8f0; margin-top:2px; }
@@ -71,10 +83,9 @@
     .rc-margin-result-item.sell strong { color:#fbbf24; }
     .rc-margin-result-item.rocket strong { color:#60a5fa; }
     .rc-margin-result-item.profit strong { color:#4ade80; }
-    .rc-margin-hint { font-size:10px; color:#64748b; margin:8px 0 0; line-height:1.5; }
-    .rc-apply-price-btn { width:100%; padding:8px 10px; border-radius:6px; border:1px solid #f97316; background:rgba(249,115,22,0.12); color:#fdba74; cursor:pointer; font-size:12px; font-weight:600; margin-top:10px; }
+    .rc-apply-price-btn { width:100%; padding:7px 10px; border-radius:6px; border:1px solid #f97316; background:rgba(249,115,22,0.12); color:#fdba74; cursor:pointer; font-size:12px; font-weight:600; margin-top:8px; }
     .rc-apply-price-btn:hover { background:rgba(249,115,22,0.22); }
-    .rc-option-calc { display:grid; grid-template-columns:1fr 1fr; gap:5px; margin-top:8px; }
+    .rc-option-calc { display:grid; grid-template-columns:1fr 1fr; gap:5px; margin-top:6px; }
     .rc-calc-chip { font-size:10.5px; padding:4px 6px; border-radius:8px; background:#0f172a; border:1px solid #334155; color:#94a3b8; white-space:nowrap; text-align:center; overflow:hidden; text-overflow:ellipsis; }
     .rc-calc-chip strong { display:block; color:#e2e8f0; font-weight:700; font-size:12px; }
     .rc-calc-chip-input { display:block; width:100%; margin:1px 0 0; padding:0; border:none; border-bottom:1px dashed rgba(148,163,184,0.4); background:transparent; color:#e2e8f0; font-weight:700; font-size:12px; text-align:center; font-family:inherit; cursor:text; }
@@ -91,6 +102,39 @@
     .rc-calc-chip.rocket strong { color:#60a5fa; }
     .rc-calc-chip.profit { border-color:rgba(74,222,128,0.35); }
     .rc-calc-chip.profit strong { color:#4ade80; }
+    .rc-option-calc-btn { flex:0 0 auto; background:transparent; border:none; color:#60a5fa; cursor:pointer; font-size:16px; line-height:1; padding:2px 4px; }
+    .rc-option-calc-btn:hover { color:#93c5fd; }
+    .rc-sub-backdrop { position:fixed; inset:0; z-index:2147483647; background:rgba(0,0,0,0.6); display:flex; align-items:center; justify-content:center; padding:16px; }
+    .rc-sub-box { background:#1e293b; color:#e2e8f0; width:340px; max-width:100%; max-height:88vh; overflow-y:auto; border-radius:12px; padding:16px; box-shadow:0 25px 50px -12px rgba(0,0,0,0.7); position:relative; }
+    .rc-sub-box h3 { margin:0 0 4px; font-size:15px; font-weight:700; padding-right:22px; }
+    .rc-sub-box .rc-label { display:block; margin-top:12px; }
+    .rc-sub-box .rc-label:first-of-type { margin-top:0; }
+    .rc-sub-close { position:absolute; top:14px; right:14px; background:transparent; border:none; color:#94a3b8; font-size:18px; cursor:pointer; line-height:1; }
+    .rc-sub-close:hover { color:#e2e8f0; }
+    .rc-sub-hint { font-size:11px; color:#94a3b8; margin:0 0 14px; line-height:1.5; }
+    .rc-sub-result-box { background:#334155; border-radius:8px; padding:10px 12px; margin:12px 0; }
+    .rc-sub-result-title { font-size:11px; font-weight:600; color:#94a3b8; }
+    .rc-sub-result-value { font-size:19px; font-weight:700; color:#60a5fa; margin:2px 0 0; }
+    .rc-sub-result-formula { font-size:10px; color:#64748b; margin:3px 0 0; }
+    .rc-sub-field-note { font-size:11px; color:#cbd5e1; margin:6px 0 0; }
+    .rc-sub-field-note strong { color:#34d399; }
+    .rc-sub-amount-line { display:flex; justify-content:space-between; font-size:12px; margin-top:4px; color:#cbd5e1; }
+    .rc-sub-amount-line strong { color:#fbbf24; }
+    .rc-sub-toggle { width:100%; text-align:left; background:#334155; border:none; color:#cbd5e1; padding:8px 10px; border-radius:6px; font-size:11px; font-weight:600; cursor:pointer; display:flex; justify-content:space-between; align-items:center; margin:14px 0 10px; }
+    .rc-sub-tax { display:none; border:1px solid #475569; border-radius:6px; padding:10px; margin:-4px 0 12px; background:rgba(51,65,85,0.5); }
+    .rc-sub-tax.open { display:block; }
+    .rc-sub-tax-row { display:flex; justify-content:space-between; font-size:11px; padding:2px 0; color:#cbd5e1; }
+    .rc-sub-tax-row.total { border-top:1px solid #475569; margin-top:4px; padding-top:6px; font-weight:700; color:#f87171; }
+    .rc-sub-final { background:#334155; border-radius:8px; padding:12px; margin-top:14px; }
+    .rc-sub-final-row { display:flex; justify-content:space-between; align-items:center; font-size:12px; color:#cbd5e1; }
+    .rc-sub-final-row + .rc-sub-final-row { margin-top:6px; }
+    .rc-sub-final-row.split { border-top:1px solid #475569; margin-top:8px; padding-top:8px; }
+    .rc-sub-final-label { font-size:13px; font-weight:700; color:#f1f5f9; }
+    .rc-sub-final-value { font-size:20px; font-weight:700; color:#4ade80; }
+    .rc-sub-actions { display:flex; justify-content:flex-end; gap:8px; margin-top:16px; }
+    .rc-sub-btn-secondary { padding:8px 12px; border-radius:6px; border:1px solid #475569; background:transparent; color:#e2e8f0; cursor:pointer; font-size:12.5px; }
+    .rc-sub-btn-primary { padding:8px 14px; border-radius:6px; border:none; background:#3b82f6; color:#fff; font-weight:700; cursor:pointer; font-size:12.5px; }
+    .rc-sub-btn-primary:disabled { background:#475569; color:#94a3b8; cursor:not-allowed; }
   `;
   root.appendChild(style);
 
@@ -133,7 +177,12 @@
         ? roundupToNearest100(costPriceKrw / (1 - supplyMarginValue / 100))
         : 0;
     }
-    if (supplyPriceKrw <= 0) return { costPriceKrw, supplyPriceKrw: 0, sellingPriceKrw: 0, marginKrw: 0 };
+    if (supplyPriceKrw <= 0) {
+      return {
+        costPriceKrw, supplyPriceKrw: 0, sellingPriceKrw: 0, marginKrw: 0,
+        inputVat: 0, outputVat: 0, vatPayable: 0, grossMargin: 0, marginAfterVat: 0, comprehensiveIncomeTax: 0,
+      };
+    }
 
     let sellingPriceKrw;
     if (typeof sellOverride === 'number' && sellOverride > 0) {
@@ -154,7 +203,10 @@
     const comprehensiveIncomeTax = marginAfterVat > 0 ? Math.round(marginAfterVat * effectiveIncomeTaxRate) : 0;
     const marginKrw = marginAfterVat - comprehensiveIncomeTax;
 
-    return { costPriceKrw, supplyPriceKrw, sellingPriceKrw, marginKrw };
+    return {
+      costPriceKrw, supplyPriceKrw, sellingPriceKrw, marginKrw,
+      inputVat, outputVat, vatPayable, grossMargin, marginAfterVat, comprehensiveIncomeTax,
+    };
   }
 
   // 회사명 패턴(예: "OO유한공사"). 상품명 폴백이 이 패턴과 겹치면 그 값은 버린다.
@@ -521,52 +573,64 @@
     box.className = 'rc-box';
 
     box.innerHTML = `
-      <h2>로켓제안서로 보낼 값 확인</h2>
-      <p class="rc-hint">자동으로 읽어온 값이에요. 틀린 부분은 고친 뒤 복사하기를 누르세요.</p>
+      <div class="rc-header-row">
+        <h2>로켓제안서로 보낼 값 확인</h2>
+        <div class="rc-header-actions">
+          <button id="rc-reset" class="rc-btn-secondary" title="저장된 값을 지우고 이 페이지에서 다시 읽어옵니다">초기화</button>
+          <button id="rc-cancel" class="rc-btn-secondary">취소</button>
+        </div>
+      </div>
       <div class="rc-fields">
         <div class="rc-section">
           <p class="rc-section-heading">📝 기본 정보</p>
           <div class="rc-field-group">
-            <label class="rc-label">상품명(원문)
-              <input id="rc-title" class="rc-input" />
-            </label>
             <label class="rc-label">제조사/공급사(원문)
               <input id="rc-manufacturer" class="rc-input" />
             </label>
-            <label class="rc-label">SKU
+            <label class="rc-label rc-label-red">상품명(원문)
+              <input id="rc-title" class="rc-input" />
+            </label>
+            <label class="rc-label rc-label-red">SKU
               <input id="rc-sku" class="rc-input" />
             </label>
-            <label class="rc-label">중량 (g)
+            <label class="rc-label rc-label-red">중량 (g)
               <input id="rc-weight" class="rc-input" type="number" step="1" />
             </label>
             <div class="rc-row">
-              <label class="rc-label">가로(cm)
+              <label class="rc-label rc-label-red">가로(cm)
                 <input id="rc-margin-width" class="rc-input" type="number" step="0.1" placeholder="가로" />
               </label>
-              <label class="rc-label">세로(cm)
+              <label class="rc-label rc-label-red">세로(cm)
                 <input id="rc-margin-height" class="rc-input" type="number" step="0.1" placeholder="세로" />
               </label>
-              <label class="rc-label">높이(cm)
+              <label class="rc-label rc-label-red">높이(cm)
                 <input id="rc-margin-depth" class="rc-input" type="number" step="0.1" placeholder="높이" />
               </label>
             </div>
           </div>
         </div>
         <div class="rc-section">
+          <p class="rc-section-heading">🎨 옵션(색상 등)</p>
+          <div id="rc-option-rows" class="rc-option-rows"></div>
+          <div class="rc-option-buttons">
+            <button type="button" id="rc-pick-options" class="rc-pick-option">🎯 클릭해서 옵션 선택</button>
+            <button type="button" id="rc-add-option" class="rc-add-option">+ 직접 입력</button>
+          </div>
+        </div>
+        <div class="rc-section">
           <p class="rc-section-heading">💰 수익 계산기 (선택)</p>
-          <p class="rc-hint" style="margin:0 0 10px;">채우면 아래에 바로 계산 결과가 뜨고, 복사할 때 옵션별 원가/공급가/판매가로 같이 실립니다.</p>
-          <div class="rc-field-group">
-            <label class="rc-label">환율(1위안=?원)
-              <input id="rc-exchange-rate" class="rc-input" type="number" placeholder="예: 210" />
+          <div class="rc-row">
+            <label class="rc-label">환율
+              <input id="rc-exchange-rate" class="rc-input" type="number" placeholder="210" title="환율(1위안=?원)" />
             </label>
-            <label class="rc-label">위안 가격(¥)
-              <input id="rc-margin-cny" class="rc-input" type="number" step="0.01" placeholder="예: 6.5" />
+            <label class="rc-label">위안(¥)
+              <input id="rc-margin-cny" class="rc-input" type="number" step="0.01" placeholder="6.5" title="위안 가격(¥)" />
             </label>
-            <label class="rc-label">공급 마진율(%)
-              <input id="rc-supply-margin" class="rc-input" type="number" placeholder="예: 30" />
+            <label class="rc-label">공급%
+              <input id="rc-supply-margin" class="rc-input" type="number" placeholder="30" title="공급 마진율(%)" />
             </label>
-            <label class="rc-label">판매 마진율(%)
-              <input id="rc-selling-margin" class="rc-input" type="number" placeholder="예: 50" />
+            <label class="rc-label">판매%
+              <input id="rc-selling-margin" class="rc-input" type="number" placeholder="50" title="판매 마진율(%)" />
             </label>
           </div>
           <div class="rc-margin-result">
@@ -587,22 +651,10 @@
               <strong id="rc-margin-profit">-</strong>
             </div>
           </div>
-          <button type="button" id="rc-apply-price" class="rc-apply-price-btn">↓ 위 값을 체크된 옵션 전체에 적용</button>
-          <p class="rc-margin-hint">옵션마다 값이 다르면 위 버튼으로 체크된 옵션을 한 번에 덮어쓰거나, 아래 옵션 행에서 각각 고치세요. 채운 값은 나갔다 와도(초기화 전까지) 유지됩니다.</p>
-        </div>
-        <div class="rc-section">
-          <p class="rc-section-heading">🎨 옵션(색상 등)</p>
-          <p class="rc-hint" style="margin:0 0 10px;">체크한 만큼 상품행이 만들어져요. 사이즈/가격은 기본값이 채워지며, 다르면 클릭해서 고치세요.</p>
-          <div id="rc-option-rows" class="rc-option-rows"></div>
-          <div class="rc-option-buttons">
-            <button type="button" id="rc-pick-options" class="rc-pick-option">🎯 클릭해서 옵션 선택</button>
-            <button type="button" id="rc-add-option" class="rc-add-option">+ 직접 입력</button>
-          </div>
+          <button type="button" id="rc-apply-price" class="rc-apply-price-btn">↑ 위 값을 체크된 옵션 전체에 적용</button>
         </div>
       </div>
       <div class="rc-actions">
-        <button id="rc-reset" class="rc-btn-secondary" title="저장된 값을 지우고 이 페이지에서 다시 읽어옵니다">초기화</button>
-        <button id="rc-cancel" class="rc-btn-secondary">취소</button>
         <button id="rc-copy" class="rc-btn-primary">복사하기</button>
       </div>
     `;
@@ -633,6 +685,8 @@
       // 공급가/판매가 칩을 직접 클릭해서 고친 값. null이면 마진율 계산값을 그대로 쓴다.
       supplyPriceOverride: null,
       sellingPriceOverride: null,
+      // 사이즈/가격 설정 칸을 접어서 옵션명만 보이게 할지 여부(펼침 상태는 행마다 따로 기억).
+      collapsed: false,
       ...overrides,
     });
     // 옵션 행은 창을 닫았다 다시 열어도(또는 페이지를 오갔다 와도) "초기화" 버튼을 누르기 전까지
@@ -649,6 +703,7 @@
         supplyPriceOverride: typeof r.supplyPriceOverride === 'number' ? r.supplyPriceOverride : null,
         sellingPriceOverride: typeof r.sellingPriceOverride === 'number' ? r.sellingPriceOverride : null,
         pristine: false,
+        collapsed: true,
       }));
     } else {
       rows = initial.colorRaw ? [makeRow(initial.colorRaw, true)] : [];
@@ -756,6 +811,147 @@
       });
     }
 
+    // 옵션 카드의 🧮 아이콘을 누르면 뜨는 팝업. 로켓제안서 앱의 MarginCalculatorModal과 동일한
+    // 입력/계산 흐름(환율 → 위안 → 공급 마진율(%) → 판매 마진율(%) → 세금 상세 → 최종 순수익)을
+    // 그대로 재현한다. 환율은 앱처럼 바꾸는 즉시 저장·전체 반영되고, 위안/마진율은 앱처럼 "저장하고
+    // 적용하기"를 눌러야 이 옵션에 반영된다(그 전까지는 이 옵션의 기존 값에 영향을 주지 않는다).
+    function openOptionCalcModal(row, calcEl) {
+      const backdrop = document.createElement('div');
+      backdrop.className = 'rc-sub-backdrop';
+      const popup = document.createElement('div');
+      popup.className = 'rc-sub-box';
+      const titleSuffix = row.label ? ` — ${row.label.replace(/</g, '&lt;')}` : '';
+      popup.innerHTML = `
+        <button type="button" class="rc-sub-close" aria-label="닫기">×</button>
+        <h3>마진 계산기${titleSuffix}</h3>
+        <p class="rc-sub-hint">이 옵션에만 적용됩니다. "저장하고 적용하기"를 눌러야 반영돼요.</p>
+
+        <label class="rc-label">적용 환율 (1위안 = ?원)
+          <input type="number" class="rc-input" id="op-rate" placeholder="예: ${CNY_BASE_RATE_DEFAULT}" />
+        </label>
+
+        <label class="rc-label">위안 (CNY)
+          <input type="number" step="0.01" class="rc-input" id="op-cny" placeholder="예: 10" />
+        </label>
+
+        <div class="rc-sub-result-box">
+          <span class="rc-sub-result-title">환산 원가 (KRW, VAT 포함)</span>
+          <p class="rc-sub-result-value" id="op-krw">₩ 0</p>
+          <p class="rc-sub-result-formula">계산식: ((위안 × 환율) + 수수료 10%) + VAT 10%</p>
+        </div>
+
+        <label class="rc-label">공급 마진율(%)
+          <input type="number" class="rc-input" id="op-supply-margin" placeholder="예: 30 (100 미만)" />
+        </label>
+        <p class="rc-sub-field-note">계산된 공급가: <strong id="op-supply-out">₩ 0</strong></p>
+
+        <label class="rc-label">판매 마진율(공급가 대비 %)
+          <input type="number" class="rc-input" id="op-selling-margin" placeholder="예: 50 (100 미만)" />
+        </label>
+        <p class="rc-sub-field-note">계산된 판매가: <strong id="op-sell-out">₩ 0</strong></p>
+        <div class="rc-sub-amount-line"><span>판매가 - 공급가</span><strong id="op-sell-margin-amount">₩ 0</strong></div>
+
+        <button type="button" class="rc-sub-toggle" id="op-tax-toggle"><span>세금 정보 상세 보기</span><span id="op-tax-arrow">▾</span></button>
+        <div class="rc-sub-tax" id="op-tax-details">
+          <div class="rc-sub-tax-row"><span>매출세액 (공급가 부가세)</span><span id="op-output-vat">₩ 0</span></div>
+          <div class="rc-sub-tax-row"><span>매입세액 (원가 부가세)</span><span id="op-input-vat">₩ 0</span></div>
+          <div class="rc-sub-tax-row total"><span>납부 예상 부가세</span><span id="op-vat-payable">₩ 0</span></div>
+          <div class="rc-sub-tax-row" style="margin-top:8px;"><span>과세 대상 소득</span><span id="op-margin-after-vat">₩ 0</span></div>
+          <div class="rc-sub-tax-row total" style="color:#fb923c;"><span>예상 종합소득세</span><span id="op-income-tax">₩ 0</span></div>
+        </div>
+
+        <div class="rc-sub-final">
+          <div class="rc-sub-final-row"><span>마진 (공급가 - 원가)</span><span id="op-gross-margin">₩ 0</span></div>
+          <div class="rc-sub-final-row"><span>납부 예상 부가세</span><span id="op-vat-payable2" style="color:#f87171;">- ₩ 0</span></div>
+          <div class="rc-sub-final-row"><span>예상 종합소득세</span><span id="op-income-tax2" style="color:#fb923c;">- ₩ 0</span></div>
+          <div class="rc-sub-final-row split">
+            <span class="rc-sub-final-label">최종 순수익 (예상)</span>
+            <span class="rc-sub-final-value" id="op-net-profit">₩ 0</span>
+          </div>
+        </div>
+
+        <div class="rc-sub-actions">
+          <button type="button" class="rc-sub-btn-secondary" id="op-close">닫기</button>
+          <button type="button" class="rc-sub-btn-primary" id="op-save" disabled>저장하고 적용하기</button>
+        </div>
+      `;
+      backdrop.appendChild(popup);
+      root.appendChild(backdrop);
+
+      const rateEl = popup.querySelector('#op-rate');
+      const cnyEl = popup.querySelector('#op-cny');
+      const supplyMarginEl = popup.querySelector('#op-supply-margin');
+      const sellingMarginEl = popup.querySelector('#op-selling-margin');
+      const saveBtn = popup.querySelector('#op-save');
+
+      // 앱의 수익 계산기와 마찬가지로 환율만 이어서 쓰고(공유 설정), 위안/마진율은 매번 새로
+      // 입력한다 — 이 옵션에 이미 반영된 값이 있어도 그 값을 덮어쓸지는 저장 전까지 알 수 없으므로
+      // 빈 칸에서 시작한다.
+      rateEl.value = exchangeRateInput.value || CNY_BASE_RATE_DEFAULT;
+
+      let lastCalc = null;
+
+      function refresh() {
+        const rate = parseFloat(rateEl.value) || 0;
+        const calc = computeMargin(cnyEl.value, rate, supplyMarginEl.value, sellingMarginEl.value);
+        lastCalc = calc;
+        popup.querySelector('#op-krw').textContent = fmtWon(calc ? calc.costPriceKrw : 0);
+        popup.querySelector('#op-supply-out').textContent = fmtWon(calc ? calc.supplyPriceKrw : 0);
+        popup.querySelector('#op-sell-out').textContent = fmtWon(calc ? calc.sellingPriceKrw : 0);
+        const sellMarginAmount = calc && calc.sellingPriceKrw > 0 && calc.supplyPriceKrw > 0 ? calc.sellingPriceKrw - calc.supplyPriceKrw : 0;
+        popup.querySelector('#op-sell-margin-amount').textContent = fmtWon(sellMarginAmount);
+        popup.querySelector('#op-output-vat').textContent = fmtWon(calc ? calc.outputVat : 0);
+        popup.querySelector('#op-input-vat').textContent = fmtWon(calc ? calc.inputVat : 0);
+        popup.querySelector('#op-vat-payable').textContent = fmtWon(calc ? calc.vatPayable : 0);
+        popup.querySelector('#op-margin-after-vat').textContent = fmtWon(calc ? calc.marginAfterVat : 0);
+        popup.querySelector('#op-income-tax').textContent = fmtWon(calc ? calc.comprehensiveIncomeTax : 0);
+        popup.querySelector('#op-gross-margin').textContent = fmtWon(calc ? calc.grossMargin : 0);
+        popup.querySelector('#op-vat-payable2').textContent = `- ${fmtWon(calc ? calc.vatPayable : 0)}`;
+        popup.querySelector('#op-income-tax2').textContent = `- ${fmtWon(calc ? calc.comprehensiveIncomeTax : 0)}`;
+        popup.querySelector('#op-net-profit').textContent = fmtWon(calc ? calc.marginKrw : 0);
+        saveBtn.disabled = !(calc && calc.costPriceKrw > 0 && calc.supplyPriceKrw > 0);
+      }
+
+      rateEl.addEventListener('input', () => {
+        // 환율은 앱에서도(useEffect로 즉시 localStorage 반영) 그리고 이 확장프로그램 전체에서도
+        // 공유하는 설정이라, 여기서 바꾸는 즉시 상단 공용 환율 칸과 저장소에 반영한다.
+        exchangeRateInput.value = rateEl.value;
+        saveMarginSettings(getMarginInputs());
+        updateMainResult();
+        refreshAllCalcs();
+        refresh();
+      });
+      [cnyEl, supplyMarginEl, sellingMarginEl].forEach((input) => input.addEventListener('input', refresh));
+
+      const taxToggleBtn = popup.querySelector('#op-tax-toggle');
+      const taxDetailsEl = popup.querySelector('#op-tax-details');
+      const taxArrowEl = popup.querySelector('#op-tax-arrow');
+      taxToggleBtn.addEventListener('click', () => {
+        const open = taxDetailsEl.classList.toggle('open');
+        taxArrowEl.textContent = open ? '▴' : '▾';
+      });
+
+      const close = () => backdrop.remove();
+      popup.querySelector('.rc-sub-close').addEventListener('click', close);
+      popup.querySelector('#op-close').addEventListener('click', close);
+
+      // 앱의 "저장하고 적용하기"와 동일: 계산된 원가/공급가/판매가를 이 옵션에 고정값으로 반영한다.
+      // 이후 공용 마진율 설정이 바뀌어도 이 옵션은 저장 시점 값 그대로 유지된다(다시 열어서
+      // 저장해야 갱신됨), 인라인 칩을 직접 고친 경우와 동일한 override 방식을 쓴다.
+      saveBtn.addEventListener('click', () => {
+        if (!lastCalc || lastCalc.supplyPriceKrw <= 0) return;
+        row.price = parseFloat(cnyEl.value);
+        row.supplyPriceOverride = lastCalc.supplyPriceKrw;
+        row.sellingPriceOverride = lastCalc.sellingPriceKrw > 0 ? lastCalc.sellingPriceKrw : null;
+        row.pristine = false;
+        persistWork();
+        close();
+        renderOptionRows(); // 옵션 카드의 "위안 가격" 입력칸도 새 값으로 다시 그린다
+      });
+
+      refresh();
+    }
+
     // 옵션 행이 하나도 없어도(아직 옵션을 안 골랐어도) 이 미리보기 결과창은 바로 계산돼서 보인다 —
     // "계산기가 안 보인다"는 혼란을 없애기 위해 옵션 유무와 완전히 독립적으로 동작시킨다.
     function updateMainResult() {
@@ -791,22 +987,28 @@
           <div class="rc-option-top">
             <input type="checkbox" class="rc-opt-checked" ${row.checked ? 'checked' : ''} aria-label="옵션 선택" />
             <input type="text" class="rc-input rc-option-label" placeholder="옵션명(예: 빨강)" value="${row.label.replace(/"/g, '&quot;')}" />
+            <button type="button" class="rc-option-toggle" aria-label="가격 설정 접기/펼치기" aria-expanded="${row.collapsed ? 'false' : 'true'}" title="가격/사이즈 설정 접기·펼치기">${row.collapsed ? '▸' : '▾'}</button>
+            <button type="button" class="rc-option-calc-btn" aria-label="마진 계산기" title="마진 계산기 (앱과 동일한 계산기 팝업)">🧮</button>
             <button type="button" class="rc-option-remove" aria-label="옵션 삭제" title="옵션 삭제">×</button>
           </div>
-          <div class="rc-option-size-row">
-            <input type="number" step="0.1" class="rc-input rc-option-dim" placeholder="가로" value="${numVal(row.width)}" title="가로(cm)" />
-            <span class="rc-option-dim-sep">×</span>
-            <input type="number" step="0.1" class="rc-input rc-option-dim" placeholder="세로" value="${numVal(row.height)}" title="세로(cm)" />
-            <span class="rc-option-dim-sep">×</span>
-            <input type="number" step="0.1" class="rc-input rc-option-dim" placeholder="높이" value="${numVal(row.depth)}" title="높이(cm)" />
-          </div>
-          <div class="rc-option-price-row">
-            <span class="rc-label">위안 가격</span>
-            <input type="number" step="0.01" class="rc-input rc-option-price" placeholder="예: 6.5" value="${numVal(row.price)}" title="가격(위안/CNY)" />
+          <div class="rc-option-body"${row.collapsed ? ' hidden' : ''}>
+            <div class="rc-option-size-row">
+              <input type="number" step="0.1" class="rc-input rc-option-dim" placeholder="가로" value="${numVal(row.width)}" title="가로(cm)" />
+              <span class="rc-option-dim-sep">×</span>
+              <input type="number" step="0.1" class="rc-input rc-option-dim" placeholder="세로" value="${numVal(row.height)}" title="세로(cm)" />
+              <span class="rc-option-dim-sep">×</span>
+              <input type="number" step="0.1" class="rc-input rc-option-dim" placeholder="높이" value="${numVal(row.depth)}" title="높이(cm)" />
+            </div>
+            <div class="rc-option-price-row">
+              <span class="rc-label">위안 가격</span>
+              <input type="number" step="0.01" class="rc-input rc-option-price" placeholder="예: 6.5" value="${numVal(row.price)}" title="가격(위안/CNY)" />
+            </div>
           </div>
         `;
         const checkedInput = wrapperEl.querySelector('.rc-opt-checked');
         const labelInput = wrapperEl.querySelector('.rc-option-label');
+        const toggleBtn = wrapperEl.querySelector('.rc-option-toggle');
+        const bodyEl = wrapperEl.querySelector('.rc-option-body');
         const [widthInput, heightInput, depthInput] = wrapperEl.querySelectorAll('.rc-option-dim');
         const priceInput = wrapperEl.querySelector('.rc-option-price');
 
@@ -835,6 +1037,13 @@
         };
 
         checkedInput.addEventListener('change', () => { row.checked = checkedInput.checked; persistWork(); });
+        toggleBtn.addEventListener('click', () => {
+          row.collapsed = !row.collapsed;
+          bodyEl.hidden = row.collapsed;
+          toggleBtn.textContent = row.collapsed ? '▸' : '▾';
+          toggleBtn.setAttribute('aria-expanded', row.collapsed ? 'false' : 'true');
+        });
+        wrapperEl.querySelector('.rc-option-calc-btn').addEventListener('click', () => openOptionCalcModal(row, calcEl));
         wireField(labelInput, 'label', false);
         wireField(widthInput, 'width', true);
         wireField(heightInput, 'height', true);
@@ -846,7 +1055,7 @@
           persistWork();
           renderOptionRows();
         });
-        wrapperEl.appendChild(calcEl);
+        bodyEl.appendChild(calcEl);
         optionRowsEl.appendChild(wrapperEl);
         refreshRowCalc(row, calcEl);
       });
@@ -885,8 +1094,21 @@
         if (hasHeight) row.height = parseFloat(heightVal);
         if (hasDepth) row.depth = parseFloat(depthVal);
         row.pristine = false;
+
+        // 카드를 통째로 다시 그리면 접어둔 상태가 초기화되므로, 접힘/펼침은 그대로 두고 값만 갱신한다.
+        const wrapperEl = optionRowsEl.querySelector(`[data-row-id="${row.id}"]`);
+        if (wrapperEl) {
+          const [widthInput, heightInput, depthInput] = wrapperEl.querySelectorAll('.rc-option-dim');
+          const priceInput = wrapperEl.querySelector('.rc-option-price');
+          if (hasWidth) widthInput.value = numVal(row.width);
+          if (hasHeight) heightInput.value = numVal(row.height);
+          if (hasDepth) depthInput.value = numVal(row.depth);
+          if (hasCny) priceInput.value = numVal(row.price);
+          [widthInput, heightInput, depthInput, priceInput].forEach((input) => { input.dataset.rcPristine = '0'; });
+          const calcEl = wrapperEl.querySelector('.rc-option-calc');
+          if (calcEl) refreshRowCalc(row, calcEl);
+        }
       });
-      renderOptionRows();
       persistWork();
       showToast(`체크된 옵션 ${checkedRows.length}개에 적용했어요.`);
     });

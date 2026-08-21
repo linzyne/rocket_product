@@ -27,15 +27,15 @@ const ProductGroupSummary: React.FC<ProductGroupSummaryProps> = ({ groupIndex, p
     <button
       type="button"
       onClick={onToggle}
-      className="w-full flex items-center gap-3 px-4 py-3 bg-slate-800 rounded-xl border border-slate-700/60 shadow-lg hover:border-slate-600/80 hover:bg-slate-700/40 transition-colors duration-150 text-left"
+      className="w-full flex items-center gap-3 px-4 py-3 bg-white rounded-xl border border-gray-200 shadow-lg hover:border-gray-300 hover:bg-gray-100 transition-colors duration-150 text-left"
       aria-expanded={isExpanded}
     >
-      <span className="flex-shrink-0 w-6 text-center text-sm font-semibold text-slate-500">{groupIndex}</span>
-      <span className="flex-shrink-0 text-slate-400">
+      <span className="flex-shrink-0 w-6 text-center text-sm font-semibold text-gray-500">{groupIndex}</span>
+      <span className="flex-shrink-0 text-gray-400">
         {isExpanded ? <ChevronUpIcon /> : <ChevronDownIcon />}
       </span>
 
-      <div className="w-10 h-10 flex-shrink-0 bg-slate-700 rounded-md flex items-center justify-center overflow-hidden border border-slate-600">
+      <div className="w-10 h-10 flex-shrink-0 bg-gray-100 rounded-md flex items-center justify-center overflow-hidden border border-gray-200 text-gray-400">
         {thumbnail ? (
           <img src={thumbnail} alt={lead.productName} className="w-full h-full object-cover" />
         ) : (
@@ -45,11 +45,11 @@ const ProductGroupSummary: React.FC<ProductGroupSummaryProps> = ({ groupIndex, p
 
       <div className="flex-1 min-w-0">
         <div className="flex items-baseline gap-2 min-w-0">
-          <span className="text-sm font-semibold text-slate-100 truncate">
+          <span className="text-sm font-semibold text-gray-900 truncate">
             {lead.productName || '상품명 없음'}
           </span>
           {lead.category && (
-            <span className="text-xs text-slate-400 truncate flex-shrink-0">{lead.category}</span>
+            <span className="text-xs text-gray-400 truncate flex-shrink-0">{lead.category}</span>
           )}
         </div>
         {colors.length > 0 && (
@@ -57,7 +57,7 @@ const ProductGroupSummary: React.FC<ProductGroupSummaryProps> = ({ groupIndex, p
             {colors.map(color => (
               <span
                 key={color}
-                className="px-1.5 py-0.5 text-[10px] leading-none rounded bg-slate-700 text-slate-300 border border-slate-600/60"
+                className="px-1.5 py-0.5 text-[10px] leading-none rounded bg-gray-50 text-gray-700 border border-gray-200"
               >
                 {color}
               </span>
@@ -67,11 +67,11 @@ const ProductGroupSummary: React.FC<ProductGroupSummaryProps> = ({ groupIndex, p
       </div>
 
       <div className="flex-shrink-0 flex items-center gap-2">
-        <span className="px-2 py-1 rounded-md bg-slate-700/70 text-slate-200 text-xs font-semibold whitespace-nowrap">
+        <span className="px-2 py-1 rounded-md bg-gray-100 text-gray-900 text-xs font-semibold whitespace-nowrap">
           옵션 {optionCount}개
         </span>
         {minCost !== null && (
-          <span className="font-mono text-xs text-emerald-300 whitespace-nowrap">
+          <span className="font-mono text-xs text-emerald-700 whitespace-nowrap">
             {minCost === maxCost ? `${formatNumber(minCost)}원` : `${formatNumber(minCost)}~${formatNumber(maxCost!)}원`}
           </span>
         )}

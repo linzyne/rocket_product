@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "1688 상품 캡처 → 로켓제안서",
-  "version": "1.10.0",
+  "version": "1.11.2",
   "description": "1688 상품 페이지의 URL/제조사/사이즈/중량과, 옵션(색상 등)별 이름/가격, 그리고 수익 계산기로 계산한 원가/공급가/판매가를 클립보드로 복사해 로켓제안서 앱에 붙여넣을 수 있게 합니다.",
   "permissions": ["clipboardWrite", "storage"],
   "action": {

@@ -81,7 +81,7 @@ const HANDLES: { mode: DragMode; className: string; cursor: string }[] = [
 
 const ImageCropModal: React.FC<ImageCropModalProps> = ({ isOpen, imageDataUrl, onCancel, onApply }) => {
   const [naturalSize, setNaturalSize] = useState({ width: 0, height: 0 });
-  const [rect, setRect] = useState<Rect>({ x: 10, y: 10, w: 80, h: 80 });
+  const [rect, setRect] = useState<Rect>({ x: 0, y: 0, w: 100, h: 100 });
   const [aspect, setAspect] = useState<number | null>(null);
   const [isApplying, setIsApplying] = useState(false);
 
@@ -91,7 +91,7 @@ const ImageCropModal: React.FC<ImageCropModalProps> = ({ isOpen, imageDataUrl, o
   useEffect(() => {
     if (!isOpen) return;
     setNaturalSize({ width: 0, height: 0 });
-    setRect({ x: 10, y: 10, w: 80, h: 80 });
+    setRect({ x: 0, y: 0, w: 100, h: 100 });
     setAspect(null);
   }, [isOpen, imageDataUrl]);
 
@@ -207,7 +207,7 @@ const ImageCropModal: React.FC<ImageCropModalProps> = ({ isOpen, imageDataUrl, o
 
   const handleReset = () => {
     setAspect(null);
-    setRect({ x: 10, y: 10, w: 80, h: 80 });
+    setRect({ x: 0, y: 0, w: 100, h: 100 });
   };
 
   const handleApply = async () => {

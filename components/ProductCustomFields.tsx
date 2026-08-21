@@ -49,16 +49,16 @@ const ProductCustomFields: React.FC<ProductCustomFieldsProps> = ({ fields, onSet
     <div className="relative" ref={menuRef}>
       <button
         onClick={() => setOpen(!isOpen)}
-        className="relative w-full flex items-center justify-center gap-1 px-2 py-1.5 text-xs whitespace-nowrap bg-slate-700 border border-slate-600 rounded-md text-slate-300 hover:bg-slate-600 hover:text-white transition-colors [&_svg]:h-3.5 [&_svg]:w-3.5"
+        className="relative w-full flex items-center justify-center gap-1 px-2 py-1 text-xs whitespace-nowrap bg-white border border-gray-300 rounded-md text-gray-700 hover:bg-blue-50 hover:text-blue-600 hover:border-blue-300 transition-colors [&_svg]:h-3.5 [&_svg]:w-3.5"
         title="새 추가 항목 만들기"
       >
         <PlusIcon />
       </button>
 
       {isOpen && (
-        <div className="absolute right-0 top-full mt-2 w-64 bg-slate-800 border border-slate-600 rounded-lg shadow-[0_25px_50px_-12px_rgba(0,0,0,0.7)] z-[9999] py-2 animate-in fade-in slide-in-from-top-2 duration-200">
-          <div className="px-3 py-1.5 border-b border-slate-700 bg-slate-700/30 mb-1">
-            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">새 추가 항목 만들기</span>
+        <div className="absolute right-0 top-full mt-2 w-64 bg-white border border-gray-300 rounded-lg shadow-2xl z-[9999] py-2 animate-in fade-in slide-in-from-top-2 duration-200">
+          <div className="px-3 py-1.5 border-b border-gray-200 bg-gray-50 mb-1">
+            <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">새 추가 항목 만들기</span>
           </div>
 
           <div className="px-3 pt-2 mt-1 flex gap-1.5">
@@ -69,7 +69,7 @@ const ProductCustomFields: React.FC<ProductCustomFieldsProps> = ({ fields, onSet
               onKeyDown={e => { if (e.key === 'Enter') handleAdd(); }}
               placeholder="항목 이름 (예: 높이)"
               autoFocus
-              className="flex-1 min-w-0 px-2 py-1.5 bg-slate-700 border border-slate-600 rounded-md text-xs text-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500 transition duration-200"
+              className="flex-1 min-w-0 px-2 py-1.5 bg-white border border-gray-300 rounded-md text-xs text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500 transition duration-200"
             />
             <button
               onClick={handleAdd}

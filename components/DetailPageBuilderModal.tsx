@@ -45,7 +45,7 @@ interface PhotoItem {
 const CANVAS_WIDTH = 860;
 // 저장 파일 용량 제한(거래처 업로드 기준) — 초과 시 captureImage가 2x 오버샘플링 해상도를
 // 실제 표시 배율(1x, CANVAS_WIDTH) 선까지만 단계적으로 낮춰서 화질 저하 없이 용량을 줄인다.
-const MAX_DETAIL_IMAGE_BYTES = 20 * 1024 * 1024;
+const MAX_DETAIL_IMAGE_BYTES = 10 * 1024 * 1024;
 const PADDING_X = 65;
 const RULE_COLOR = '#d9d9d9';
 const CARD_COLOR = '#f2f2f2';
@@ -658,7 +658,12 @@ const DetailPageBuilderModal: React.FC<DetailPageBuilderModalProps> = ({ isOpen,
         onDragOver={handlePhotoDragOver}
         onDrop={handlePhotoDrop(photo.id)}
         onDragEnd={handlePhotoDragEnd}
-        style={{ width: '100%', display: 'block', cursor: brushMode ? 'default' : 'grab', opacity: draggingPhotoId === photo.id ? 0.4 : 1 }}
+        onClick={() => {
+          // Drags fire their own dragstart/drop and never reach a plain click, so this only
+          // triggers on an actual click — safe to share the same image with drag-to-reorder.
+          if (!brushMode) setCropTarget(photo);
+        }}
+        style={{ width: '100%', display: 'block', cursor: brushMode ? 'default' : 'pointer', opacity: draggingPhotoId === photo.id ? 0.4 : 1 }}
         alt=""
       />
       {!brushMode && (
@@ -723,6 +728,23 @@ const DetailPageBuilderModal: React.FC<DetailPageBuilderModalProps> = ({ isOpen,
     if (!hasAnyContent) {
       alert('붙여넣은 텍스트에서 문구를 찾지 못했어요. 형식이 맞는지 확인해주세요.');
       return;
+    }
+    // AI 답변이 요청한 라벨 형식과 조금만 달라도 그 항목만 통째로 빈칸이 된다(다른 항목은 정상
+    // 인식되니 "찾지 못했어요" 경고는 안 뜬다) — 저장 후에야 빈칸을 발견하는 일이 없도록, 어떤
+    // 항목이 비게 되는지 미리 알려주고 그래도 적용할지 확인한다.
+    const missingParts: string[] = [];
+    if (!result.productName.trim()) missingParts.push('제품명');
+    if (!result.hookCopy.trim()) missingParts.push('후킹 문구');
+    if (!result.highlights.some(h => h.trim())) missingParts.push('특별한점');
+    if (result.features.length === 0) missingParts.push('특징(01~)');
+    if (!result.closing.trim()) missingParts.push('마무리 문구');
+    if (missingParts.length > 0) {
+      const proceed = window.confirm(
+        `다음 항목을 찾지 못해 비어 있게 적용돼요: ${missingParts.join(', ')}\n` +
+        'AI 답변의 라벨이 요청한 형식과 조금 다르면 이런 일이 생길 수 있어요. 그래도 적용할까요?\n' +
+        '(적용 후 빈 칸은 직접 입력하거나, 텍스트를 손봐서 다시 적용해보세요)'
+      );
+      if (!proceed) return;
     }
     setCopy(result);
   };
@@ -800,7 +822,18 @@ const DetailPageBuilderModal: React.FC<DetailPageBuilderModalProps> = ({ isOpen,
   const fileNameForDataUrl = (dataUrl: string, fallbackName: string): string =>
     dataUrl.startsWith('data:image/jpeg') ? fallbackName.replace(/\.png$/i, '.jpg') : fallbackName;
 
+  // 붙여넣기 파싱이 실패했거나(라벨 형식이 조금 달라서) 문구를 하나도 입력하지 않은 채로 그대로
+  // 저장/다운로드해버리는 걸 막는 마지막 안전장치 — 문구가 전부 빈칸이면 저장 직전에 한 번 확인한다.
+  const confirmIfCopyEmpty = () => {
+    const isEmpty =
+      !copy.productName.trim() && !copy.hookCopy.trim() &&
+      copy.highlights.every(h => !h.trim()) && copy.features.length === 0 && !copy.closing.trim();
+    if (!isEmpty) return true;
+    return window.confirm('제품명/후킹 문구/특별한점/특징/마무리 문구가 전부 비어 있어요. 이대로 저장할까요?');
+  };
+
   const handleDownload = async () => {
+    if (!confirmIfCopyEmpty()) return;
     const dataUrl = await captureImage();
     if (!dataUrl) return;
     const baseName = product?.detailFile || `${product?.productName || 'detail_page'}.png`;
@@ -808,6 +841,7 @@ const DetailPageBuilderModal: React.FC<DetailPageBuilderModalProps> = ({ isOpen,
   };
 
   const handleSave = async () => {
+    if (!confirmIfCopyEmpty()) return;
     const dataUrl = await captureImage();
     if (!dataUrl) return;
     if (product?.detailFile) {
@@ -1073,13 +1107,17 @@ const DetailPageBuilderModal: React.FC<DetailPageBuilderModalProps> = ({ isOpen,
                         onDrop={handlePhotoDrop(photo.id)}
                         onDragEnd={handlePhotoDragEnd}
                         title={`${idx + 1}번째 · ${role} (드래그해서 순서 변경)`}
-                        className="group relative w-16 h-16 rounded-md overflow-hidden border border-slate-600 bg-slate-800 cursor-grab active:cursor-grabbing"
+                        className="group relative w-16 h-16 cursor-grab active:cursor-grabbing"
                         style={{ opacity: draggingPhotoId === photo.id ? 0.4 : 1 }}
                       >
-                        <img src={photo.dataUrl} alt="" draggable={false} className="w-full h-full object-cover pointer-events-none" />
-                        <span className="absolute bottom-0.5 left-0.5 text-[9px] leading-none px-1 py-0.5 rounded bg-slate-900/80 text-slate-200">
-                          {role}
-                        </span>
+                        {/* Clips only the thumbnail image to its rounded box — the star dropdown below
+                            lives outside this wrapper so it isn't clipped along with the photo. */}
+                        <div className="absolute inset-0 rounded-md overflow-hidden border border-slate-600 bg-slate-800">
+                          <img src={photo.dataUrl} alt="" draggable={false} className="w-full h-full object-cover pointer-events-none" />
+                          <span className="absolute bottom-0.5 left-0.5 text-[9px] leading-none px-1 py-0.5 rounded bg-slate-900/80 text-slate-200">
+                            {role}
+                          </span>
+                        </div>
                         <div className="absolute top-0.5 left-0.5" ref={thumbnailAssignPhotoId === photo.id ? thumbnailAssignMenuRef : undefined}>
                           <button
                             onClick={() => handleStarClick(photo)}

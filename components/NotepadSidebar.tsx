@@ -50,19 +50,19 @@ const NotepadSidebar: React.FC = () => {
   };
 
   return (
-    <aside className="flex flex-col w-80 shrink-0 sticky top-4 self-start bg-slate-800 rounded-xl shadow-2xl border border-slate-700 max-h-[calc(100vh-2rem)]">
-      <div className="flex items-center justify-between px-4 py-3 border-b border-slate-700">
-        <div className="flex items-center gap-2 text-slate-200 font-semibold">
+    <aside className="flex flex-col w-80 shrink-0 sticky top-4 self-start bg-white rounded-xl shadow-2xl border border-gray-200 max-h-[calc(100vh-2rem)]">
+      <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200">
+        <div className="flex items-center gap-2 text-gray-900 font-semibold">
           <MemoIcon />
           메모장
         </div>
         <div className="flex items-center gap-2">
-          <span className={`text-xs text-emerald-400 transition-opacity duration-300 ${saveStatus === 'saved' ? 'opacity-100' : 'opacity-0'}`}>
+          <span className={`text-xs text-emerald-600 transition-opacity duration-300 ${saveStatus === 'saved' ? 'opacity-100' : 'opacity-0'}`}>
             저장됨
           </span>
           <button
             onClick={handleDelete}
-            className="text-slate-400 hover:text-red-400 transition-colors"
+            className="text-gray-400 hover:text-red-500 transition-colors"
             aria-label="메모 삭제"
           >
             <TrashIcon />
@@ -73,7 +73,7 @@ const NotepadSidebar: React.FC = () => {
         value={content}
         onChange={(e) => setContent(e.target.value)}
         placeholder="메모를 입력하세요..."
-        className="flex-1 w-full p-4 bg-transparent text-slate-200 placeholder:text-slate-500 focus:outline-none resize-none min-h-[300px]"
+        className="flex-1 w-full p-4 bg-transparent text-gray-900 placeholder:text-gray-500 focus:outline-none resize-none min-h-[300px]"
       />
     </aside>
   );

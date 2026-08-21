@@ -124,9 +124,23 @@ const HIGHLIGHT_PATTERN = new RegExp('^특\\s*별\\s*한\\s*점\\s*0?(\\d+)' + L
 // is enforced later in finalize(), so a pasted "05" still parses even if only 3 blocks are active.
 const FEATURE_PATTERN = new RegExp('^0?(\\d+)' + LABEL_TAIL);
 
+// AI 챗봇 답변에는 라벨을 그대로 써달라고 요청해도 마크다운 잡음(**굵게**, # 헤딩, -/·/번호
+// 목록)이 섞여 오는 경우가 흔하다. 이 잡음 때문에 "특별한점 01" 같은 라벨을 못 알아보면 그
+// 항목이 통째로 빈칸으로 저장돼버리므로, 라벨 인식 직전에만 걷어낸다(본문 내용 줄은 원문 그대로 둔다).
+function stripMarkdownNoiseForLabelMatch(line: string): string {
+  let s = line;
+  s = s.replace(/^#{1,6}\s*/, '');
+  s = s.replace(/^[-*•]\s+/, '');
+  s = s.replace(/^\d+[.)]\s+/, '');
+  const bold = s.match(/^\*\*(.*)\*\*$/) || s.match(/^__(.*)__$/);
+  if (bold) s = bold[1];
+  return s.trim();
+}
+
 // Recognizes a label line in any of: "라벨", "라벨:", "라벨: 내용", "라벨 : 내용" (spacing inside
 // the label word itself is also ignored, so "후킹 문구" and "후킹문구" both match).
-function matchLabelLine(line: string): { target: Target; inline: string } | null {
+function matchLabelLine(rawLine: string): { target: Target; inline: string } | null {
+  const line = stripMarkdownNoiseForLabelMatch(rawLine);
   for (const { key, pattern } of FIELD_PATTERNS) {
     const m = line.match(pattern);
     if (m) return { target: { kind: 'field', key }, inline: (m[1] || '').trim() };

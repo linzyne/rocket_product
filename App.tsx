@@ -17,7 +17,7 @@ import ImageEditorModal from './components/ImageEditorModal';
 import DetailPageBuilderModal from './components/DetailPageBuilderModal';
 import MissingFieldsModal from './components/MissingFieldsModal';
 import { saveDataUrlInProductFolder, productFolderName, productNameFolderName, buildZipBlob, saveFilesInProductFolder, getRootDirectory } from './utils/fileSave';
-import { getMissingFieldLabels } from './utils/productValidation';
+import { collectMissingFields } from './utils/productValidation';
 import {
   QuoteFixedValues,
   DEFAULT_QUOTE_FIXED_VALUES,
@@ -42,8 +42,19 @@ declare var XLSX: any;
 declare var html2canvas: any;
 declare var ExcelJS: any;
 
-const createNewProduct = (orderNumber?: number): Product => {
+// 옵션(색상 등) 순번에 맞춰 "001s.png"(대표) / "001.png"(상세) / "001L.png"(라벨) 형태의 기본
+// 파일명을 만든다. 옵션 그룹 안에서 이 순번이 항상 1,2,3...으로 이어지도록 호출하는 쪽에서
+// 맞춰준다(handleImportFrom1688, handleDuplicateProduct 등 옵션을 새로 만드는 지점 참고).
+const numberedFileNames = (orderNumber?: number): Pick<Product, 'thumbnailFile' | 'detailFile' | 'labelFile'> => {
   const numStr = orderNumber && orderNumber > 0 ? String(orderNumber).padStart(3, '0') : '';
+  return {
+    thumbnailFile: numStr ? `${numStr}s.png` : '',
+    detailFile: numStr ? `${numStr}.png` : '',
+    labelFile: numStr ? `${numStr}L.png` : '',
+  };
+};
+
+const createNewProduct = (orderNumber?: number): Product => {
   return {
     id: generateId(),
     url: '',
@@ -70,11 +81,9 @@ const createNewProduct = (orderNumber?: number): Product => {
     importer: '주노엘',
     recommendedAge: '만14세이상',
     asContact: '주노엘 01048629452',
-    thumbnailFile: numStr ? `${numStr}s.png` : '',
+    ...numberedFileNames(orderNumber),
     thumbnailDataUrl: '',
-    detailFile: numStr ? `${numStr}.png` : '',
     detailDataUrl: '',
-    labelFile: numStr ? `${numStr}L.png` : '',
     labelDataUrl: '',
     customFields: {},
   };
@@ -86,6 +95,19 @@ const createNewProduct = (orderNumber?: number): Product => {
 const getProductGroupKey = (product: Pick<Product, 'id' | 'url'>): string => {
   const url = product.url.trim();
   return url ? `url:${url}` : `id:${product.id}`;
+};
+
+// 상세페이지와 라벨(제품필수표시사항) 이미지는 모두 옵션 그룹 전체가 공유하는 한 장이므로,
+// 견적서에는 옵션마다 다른 자기 자신의 detailFile/labelFile이 아니라 그룹 첫 번째 옵션의
+// 파일명을 모든 행에 동일하게 채운다.
+const withSharedGroupFiles = (groupProducts: Product[]): Product[] => {
+  const sharedDetailFile = groupProducts[0]?.detailFile ?? '';
+  const sharedLabelFile = groupProducts[0]?.labelFile ?? '';
+  return groupProducts.map(p => (
+    p.detailFile === sharedDetailFile && p.labelFile === sharedLabelFile
+      ? p
+      : { ...p, detailFile: sharedDetailFile, labelFile: sharedLabelFile }
+  ));
 };
 
 const getInitialProducts = (): Product[] => {
@@ -105,12 +127,19 @@ const getInitialProducts = (): Product[] => {
         
         return savedProducts.map((p: Partial<Product>) => {
           const hydratedProduct = { ...createNewProduct(), ...p };
-          
+
           if (!hydratedProduct.id || seenIds.has(hydratedProduct.id)) {
             hydratedProduct.id = generateId();
           }
           seenIds.add(hydratedProduct.id);
-          
+
+          // macOS 환경 등에서 예전에 자모 분리(NFD) 상태로 저장된 한글이 남아있으면(화면엔 정상으로
+          // 보이지만 엑셀 등에서는 깨져 보임) 불러오는 시점에 조합형(NFC)으로 정리한다.
+          (Object.keys(hydratedProduct) as (keyof Product)[]).forEach(key => {
+            const v = hydratedProduct[key];
+            if (typeof v === 'string') (hydratedProduct as any)[key] = v.normalize('NFC');
+          });
+
           return hydratedProduct;
         });
       }
@@ -331,10 +360,14 @@ const App: React.FC = () => {
   }, []);
 
   const handleAddProduct = useCallback(() => {
-    const newProduct = createNewProduct(products.length + 1);
+    // 새로 추가하는 행은 URL이 비어 있어 항상 자기 자신만의 새 옵션 그룹이므로(getProductGroupKey
+    // 참고) 전체 행 개수와 상관없이 그 그룹의 첫 번째 옵션(001)으로 시작한다. 다른 상품이 이미
+    // 몇 개든 이 상품의 옵션 번호는 001부터 다시 시작해야 나중에 옵션을 복사로 늘려도 어긋나지
+    // 않는다(handleDuplicateProduct의 그룹별 번호 매기기와 짝을 맞춤).
+    const newProduct = createNewProduct(1);
     setProducts(prev => [...prev, newProduct]);
     expandProductGroup(newProduct.id);
-  }, [products.length, expandProductGroup]);
+  }, [expandProductGroup]);
 
   const handleBulkThumbnailUpload = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
@@ -457,7 +490,11 @@ const App: React.FC = () => {
         if (productIndex === -1) return prev;
 
         const productToCopy = prev[productIndex];
-        const newProduct = { ...productToCopy, id: generateId() };
+        // 복사로 만든 새 옵션은 원본과 같은 파일명을 그대로 물려받으면 옵션 그룹 안에서 번호가
+        // 겹친다(예: 둘 다 001s.png) — 지금 그룹에 이미 있는 옵션 수 다음 번호로 새로 매긴다.
+        const groupKey = getProductGroupKey(productToCopy);
+        const groupSize = prev.filter(p => getProductGroupKey(p) === groupKey).length;
+        const newProduct = { ...productToCopy, id: generateId(), ...numberedFileNames(groupSize + 1) };
 
         const newProducts = [...prev];
         newProducts.splice(productIndex + 1, 0, newProduct);
@@ -467,10 +504,20 @@ const App: React.FC = () => {
     if (source) expandProductGroup(source.id);
   }, [products, expandProductGroup]);
 
-  const handleProductChange = useCallback((productId: string, field: keyof Product, value: string) => {
-    setProducts(prev =>
-      prev.map(p => {
-        if (p.id !== productId) return p;
+  const handleProductChange = useCallback((productId: string, field: keyof Product, rawValue: string) => {
+    // macOS는 한글을 자모 분리(NFD)로 다루는 경우가 많아(붙여넣기, 파일명 등) 입력값이 그대로
+    // 저장되면 화면에는 정상으로 보여도 엑셀 등 조합을 자동으로 안 해주는 곳에서 깨져 보인다.
+    // 저장 시점에 NFC로 정규화해두면(ASCII 값은 no-op) 이후 어디서 쓰이든 항상 정상 조합된다.
+    const value = rawValue.normalize('NFC');
+    setProducts(prev => {
+      const source = prev.find(p => p.id === productId);
+      if (!source) return prev;
+      // 카테고리/견적서는 상품 하나가 아니라 같은 URL을 공유하는 옵션 그룹 전체에 동일하게
+      // 적용한다(상세페이지와 같은 방식, getGroupProducts 참고). 그 외 필드는 이 상품 하나만 바뀐다.
+      const groupKey = field === 'category' || field === 'quoteTemplateId' ? getProductGroupKey(source) : null;
+
+      return prev.map(p => {
+        if (p.id !== productId && (groupKey === null || getProductGroupKey(p) !== groupKey)) return p;
 
         if (field === 'quoteTemplateId') {
           // 견적서를 선택하면 그 견적서에 등록된 "추가 항목 이름"들이 상품의 customFields에
@@ -493,8 +540,8 @@ const App: React.FC = () => {
         }
 
         return { ...p, [field]: value };
-      })
-    );
+      });
+    });
   }, [quoteTemplateRegistrations]);
 
   const handleTogglePackageSizeSameAsProduct = useCallback((productId: string, sameAsProduct: boolean) => {
@@ -1174,6 +1221,11 @@ const App: React.FC = () => {
       return;
     }
 
+    // 옵션(색상 등)이 여러 개면 같은 URL 그룹의 옵션 전체를 한 견적서 파일에 옵션당 한 행씩
+    // 함께 채운다(fillQuoteWorkbook은 products 배열 순서대로 dataStartRowNumber부터 한 행씩 씀).
+    const groupKey = getProductGroupKey(product);
+    const groupProducts = withSharedGroupFiles(products.filter(p => getProductGroupKey(p) === groupKey));
+
     setGeneratingProductQuoteId(productId);
     try {
       const template = getQuoteTemplates(quoteFixedValues)[0];
@@ -1186,38 +1238,43 @@ const App: React.FC = () => {
       // 이 견적서 파일이 필수로 요구하는 항목 중, 아직 상품에 없는 항목(예: 출시 연도, 계절)이
       // 있으면 자동으로 추가 항목 칸을 만들어줍니다. (출시 연도처럼 자동으로 정할 수 있는 값은
       // 바로 채우고, 나머지는 빈 채로 만들어 상품 행에서 바로 입력할 수 있게 합니다.)
-      const [ensuredProduct] = await ensureRequiredCustomFields(arrayBuffer, template, [product]);
-      if (ensuredProduct !== product) {
-        setProducts(prev => prev.map(p => (p.id === productId ? ensuredProduct : p)));
+      const ensuredProducts = await ensureRequiredCustomFields(arrayBuffer, template, groupProducts);
+      const changedProducts = ensuredProducts.filter((p, i) => p !== groupProducts[i]);
+      if (changedProducts.length > 0) {
+        const changedById = new Map(changedProducts.map(p => [p.id, p]));
+        setProducts(prev => prev.map(p => changedById.get(p.id) ?? p));
       }
 
-      const requiredGaps = await findMissingRequiredCells(arrayBuffer, template, [ensuredProduct]);
+      const requiredGaps = await findMissingRequiredCells(arrayBuffer, template, ensuredProducts);
       if (requiredGaps.length > 0) {
         setRequiredFieldGaps(requiredGaps);
         return;
       }
 
-      const buffer = await fillQuoteWorkbook(arrayBuffer, template, [ensuredProduct]);
+      const buffer = await fillQuoteWorkbook(arrayBuffer, template, ensuredProducts);
 
       const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
       const link = document.createElement('a');
       link.href = URL.createObjectURL(blob);
-      link.download = `${ensuredProduct.productName || '상품'}_견적서_${new Date().toISOString().slice(0, 10)}.xlsx`;
+      link.download = `${product.productName || '상품'}_견적서_${new Date().toISOString().slice(0, 10)}.xlsx`;
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
 
-      if (ensuredProduct.labelDataUrl) {
-        const labelExt = ensuredProduct.labelFile.split('.').pop()?.split(/[?#]/)[0] || ensuredProduct.labelDataUrl.match(/^data:image\/(\w+);/)?.[1] || 'png';
+      // 그룹 안에서 라벨 이미지를 가진 옵션들을 순서대로 이어서 내려받는다(견적서 파일은 하나지만
+      // 라벨은 옵션마다 바코드/SKU가 달라 옵션별로 따로 필요하다).
+      const labelTargets = ensuredProducts.filter(p => p.labelDataUrl);
+      labelTargets.forEach((p, i) => {
+        const labelExt = p.labelFile.split('.').pop()?.split(/[?#]/)[0] || p.labelDataUrl!.match(/^data:image\/(\w+);/)?.[1] || 'png';
         setTimeout(() => {
           const labelLink = document.createElement('a');
-          labelLink.href = ensuredProduct.labelDataUrl as string;
-          labelLink.download = `${ensuredProduct.productName || '상품'}_라벨.${labelExt}`;
+          labelLink.href = p.labelDataUrl as string;
+          labelLink.download = `${p.productName || '상품'}_라벨.${labelExt}`;
           document.body.appendChild(labelLink);
           labelLink.click();
           document.body.removeChild(labelLink);
-        }, 300);
-      }
+        }, 300 * (i + 1));
+      });
     } catch (error) {
       console.error("Failed to generate product quote:", error);
       const errorMessage = error instanceof Error ? error.message : String(error);
@@ -1231,7 +1288,11 @@ const App: React.FC = () => {
     const product = products.find(p => p.id === productId);
     if (!product) return;
 
-    if (getMissingFieldLabels(product).length > 0) {
+    // 견적서가 옵션 그룹 전체를 한 파일로 채우므로(runGenerateProductQuote 참고), 필수 항목도
+    // 클릭한 옵션 하나가 아니라 그룹 전체를 대상으로 확인한다.
+    const groupKey = getProductGroupKey(product);
+    const groupProducts = products.filter(p => getProductGroupKey(p) === groupKey);
+    if (collectMissingFields(groupProducts).length > 0) {
       setMissingFieldsProductId(productId);
       return;
     }
@@ -1241,10 +1302,16 @@ const App: React.FC = () => {
 
   // 통합다운: 상품명 폴더 안에 라벨이미지, 견적서를 그대로, 대표/상세 이미지는 압축(zip)해서 함께 저장.
   // 각 항목은 준비된 것만 담고, 없는 항목(견적서 템플릿 미선택, 라벨/이미지 없음 등)은 조용히 건너뛴다.
+  // 클릭한 옵션 하나가 아니라 같은 URL 그룹의 옵션 전체를 대상으로 한다: 견적서는 옵션당 한 행씩
+  // 그룹 전체가 한 파일에(runGenerateProductQuote와 동일한 방식), 대표이미지·라벨은 옵션마다 SKU/
+  // 색상이 달라 옵션별로 하나씩, 상세이미지는 그룹 전체가 공유하는 한 장이라 한 번만 담는다.
   const handleIntegratedDownload = useCallback(async (productId: string) => {
     if (integratedDownloadingId) return;
     const product = products.find(p => p.id === productId);
     if (!product) return;
+
+    const groupKey = getProductGroupKey(product);
+    const groupProducts = withSharedGroupFiles(products.filter(p => getProductGroupKey(p) === groupKey));
 
     setIntegratedDownloadingId(productId);
     try {
@@ -1255,15 +1322,22 @@ const App: React.FC = () => {
 
       const files: { name: string; blob: Blob }[] = [];
 
-      const labelImageDataUrl = await captureLabelImage(product);
-      if (labelImageDataUrl) {
-        const labelBlob = await (await fetch(labelImageDataUrl)).blob();
-        files.push({ name: product.labelFile || `${product.productName || '상품'}_라벨.png`, blob: labelBlob });
+      // 라벨: 옵션마다 하나씩 순서대로 생성한다(캡처가 숨은 DOM 노드 하나를 재사용하므로 동시에
+      // 여러 개를 캡처할 수 없어 순차적으로 처리).
+      for (const p of groupProducts) {
+        const labelImageDataUrl = await captureLabelImage(p);
+        if (labelImageDataUrl) {
+          const labelBlob = await (await fetch(labelImageDataUrl)).blob();
+          files.push({ name: p.labelFile || `${p.productName || '상품'}_라벨.png`, blob: labelBlob });
+        }
       }
 
+      // 이미지: 대표이미지는 옵션마다, 상세이미지는 그룹이 공유하는 한 장만 함께 압축한다.
       const imageFiles: { name: string; blob: Blob }[] = [];
-      if (product.thumbnailDataUrl) {
-        imageFiles.push({ name: product.thumbnailFile || '대표.png', blob: await (await fetch(product.thumbnailDataUrl)).blob() });
+      for (const p of groupProducts) {
+        if (p.thumbnailDataUrl) {
+          imageFiles.push({ name: p.thumbnailFile || `${p.productName || '대표'}.png`, blob: await (await fetch(p.thumbnailDataUrl)).blob() });
+        }
       }
       if (product.detailDataUrl) {
         imageFiles.push({ name: product.detailFile || '상세.png', blob: await (await fetch(product.detailDataUrl)).blob() });
@@ -1280,7 +1354,7 @@ const App: React.FC = () => {
             const template = getQuoteTemplates(quoteFixedValues)[0];
             if (template) {
               const arrayBuffer = dataUrlToArrayBuffer(registration.fileDataUrl);
-              const buffer = await fillQuoteWorkbook(arrayBuffer, template, [product]);
+              const buffer = await fillQuoteWorkbook(arrayBuffer, template, groupProducts);
               const quoteBlob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
               files.push({
                 name: `${product.productName || '상품'}_견적서_${new Date().toISOString().slice(0, 10)}.xlsx`,
@@ -1449,7 +1523,11 @@ const App: React.FC = () => {
         if (typeof variant.sizeCm.height === 'number') perVariantFields.sizeHeight = String(variant.sizeCm.height);
         if (typeof variant.sizeCm.depth === 'number') perVariantFields.sizeDepth = String(variant.sizeCm.depth);
       }
-      return { ...p, ...commonFields, ...perVariantFields };
+      // 옵션이 여러 개면(위에서 복제한 경우) 원본 행의 파일명을 그대로 물려받아 전부 같은 번호가
+      // 되어 있으므로, 옵션 순서(1번=001, 2번=002...)에 맞춰 새로 매긴다. 옵션이 1개뿐이면 원래
+      // 있던 파일명을 그대로 둔다.
+      const fileNames = variants.length > 1 ? numberedFileNames(variantIndex + 1) : {};
+      return { ...p, ...commonFields, ...perVariantFields, ...fileNames };
     }));
 
     // "노출속성"(옵션값)을 어느 항목에 채울지는 이 상품에 연결된 견적서 카테고리 설정을 따른다.
@@ -1700,7 +1778,7 @@ const App: React.FC = () => {
       {currentView === 'renamer' ? (
         <ImageRenamer onBack={() => setCurrentView('products')} />
       ) : (
-        <div className="w-full max-w-screen-2xl">
+        <div className="w-full max-w-screen-2xl text-gray-900">
           <header className="flex flex-col sm:flex-row justify-between items-center mb-6 gap-3">
             <div className="flex items-center gap-2 w-full sm:w-auto">
                 <button
@@ -1719,7 +1797,7 @@ const App: React.FC = () => {
                         placeholder="검색..."
                         value={searchQuery}
                         onChange={(e) => setSearchQuery(e.target.value)}
-                        className="w-full pl-10 pr-3 py-1.5 bg-slate-800 border border-slate-600 text-slate-200 text-sm placeholder:text-slate-500 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors"
+                        className="w-full pl-10 pr-3 py-1.5 bg-white border border-gray-300 text-gray-900 text-sm placeholder:text-gray-400 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors"
                     />
                 </div>
             </div>
@@ -1727,7 +1805,7 @@ const App: React.FC = () => {
                 <button
                     onClick={handleSaveProducts}
                     disabled={saveStatus !== 'idle'}
-                    className="inline-flex items-center justify-center gap-1.5 px-3 py-1.5 bg-slate-700 text-slate-200 text-sm font-medium rounded-md hover:bg-slate-600 focus:outline-none focus:ring-2 focus:ring-slate-400 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
+                    className="inline-flex items-center justify-center gap-1.5 px-3 py-1.5 bg-white border border-gray-300 text-gray-700 text-sm font-medium rounded-md hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-400 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
                 >
                     <SaveIcon />
                     <span>{saveStatus === 'saving' ? '저장 중...' : saveStatus === 'saved' ? '저장됨!' : '저장'}</span>
@@ -1737,7 +1815,7 @@ const App: React.FC = () => {
                     className={`inline-flex items-center justify-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-md focus:outline-none focus:ring-2 transition-colors ${
                         confirmResetAll
                         ? 'bg-red-600 text-white hover:bg-red-500 focus:ring-red-400'
-                        : 'bg-slate-700 text-red-300 hover:bg-slate-600 focus:ring-slate-400'
+                        : 'bg-white border border-gray-300 text-red-600 hover:bg-red-50 focus:ring-red-400'
                     }`}
                     aria-label="Reset all products"
                   >
@@ -1746,7 +1824,7 @@ const App: React.FC = () => {
                 </button>
                 <button
                     onClick={() => setCurrentView('renamer')}
-                    className="inline-flex items-center justify-center gap-1.5 px-3 py-1.5 bg-slate-700 text-slate-200 text-sm font-medium rounded-md hover:bg-slate-600 focus:outline-none focus:ring-2 focus:ring-slate-400 transition-colors"
+                    className="inline-flex items-center justify-center gap-1.5 px-3 py-1.5 bg-white border border-gray-300 text-gray-700 text-sm font-medium rounded-md hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-400 transition-colors"
                 >
                     <CameraIcon />
                     <span className="hidden sm:inline">옵션명 생성</span>
@@ -1761,7 +1839,7 @@ const App: React.FC = () => {
               />
               <label
                 htmlFor="bulk-thumbnail-upload"
-                className="cursor-pointer inline-flex items-center justify-center px-3 py-1.5 bg-slate-700 text-slate-200 text-sm font-medium rounded-md hover:bg-slate-600 focus:outline-none focus:ring-2 focus:ring-slate-400 transition-colors"
+                className="cursor-pointer inline-flex items-center justify-center px-3 py-1.5 bg-white border border-gray-300 text-gray-700 text-sm font-medium rounded-md hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-400 transition-colors"
               >
                 <DocumentAddIcon />
                 <span className="hidden sm:inline">대표이미지 일괄</span>
@@ -1776,7 +1854,7 @@ const App: React.FC = () => {
               />
               <label
                 htmlFor="bulk-detail-upload"
-                className="cursor-pointer inline-flex items-center justify-center px-3 py-1.5 bg-slate-700 text-slate-200 text-sm font-medium rounded-md hover:bg-slate-600 focus:outline-none focus:ring-2 focus:ring-slate-400 transition-colors"
+                className="cursor-pointer inline-flex items-center justify-center px-3 py-1.5 bg-white border border-gray-300 text-gray-700 text-sm font-medium rounded-md hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-400 transition-colors"
               >
                 <DocumentAddIcon />
                 <span className="hidden sm:inline">상세이미지 일괄</span>
@@ -1797,7 +1875,7 @@ const App: React.FC = () => {
                     onToggle={() => toggleGroupExpanded(groupProductIds)}
                   />
                   {isExpanded && (
-                    <div className="mt-3 ml-3 pl-4 border-l-2 border-slate-700/60 space-y-4">
+                    <div className="mt-3 ml-3 pl-4 border-l-2 border-gray-200 space-y-4">
                       {group.products.map((product, optionIndex) => (
                         <div
                           key={product.id}
@@ -1847,7 +1925,7 @@ const App: React.FC = () => {
               <button
                 onClick={handleGenerateSampleExcel}
                 disabled={isSampleExporting}
-                className="flex items-center justify-center px-4 py-2 bg-blue-500 text-white font-semibold rounded-lg shadow-md hover:bg-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-400 focus:ring-opacity-75 transition-all duration-200 disabled:bg-slate-400 disabled:cursor-not-allowed"
+                className="flex items-center justify-center px-4 py-2 bg-blue-500 text-white font-semibold rounded-lg shadow-md hover:bg-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-400 focus:ring-opacity-75 transition-all duration-200 disabled:bg-gray-300 disabled:cursor-not-allowed"
               >
                 <DownloadIcon />
                 <span>{isSampleExporting ? '생성 중...' : '샘플'}</span>
@@ -1855,21 +1933,21 @@ const App: React.FC = () => {
               <button
                 onClick={handleGenerateProposalExcel}
                 disabled={isExporting}
-                className="flex items-center justify-center px-4 py-2 bg-emerald-500 text-white font-semibold rounded-lg shadow-md hover:bg-emerald-600 focus:outline-none focus:ring-2 focus:ring-emerald-400 focus:ring-opacity-75 transition-all duration-200 disabled:bg-slate-400 disabled:cursor-not-allowed"
+                className="flex items-center justify-center px-4 py-2 bg-emerald-500 text-white font-semibold rounded-lg shadow-md hover:bg-emerald-600 focus:outline-none focus:ring-2 focus:ring-emerald-400 focus:ring-opacity-75 transition-all duration-200 disabled:bg-gray-300 disabled:cursor-not-allowed"
               >
                 <DownloadIcon />
                 <span className="w-28 text-center">{isExporting ? '생성 중...' : '제안상품목록'}</span>
               </button>
                <button
                 onClick={() => setIsQuoteModalOpen(true)}
-                className="flex items-center justify-center px-4 py-2 bg-purple-500 text-white font-semibold rounded-lg shadow-md hover:bg-purple-600 focus:outline-none focus:ring-2 focus:ring-purple-400 focus:ring-opacity-75 transition-all duration-200"
+                className="flex items-center justify-center px-4 py-2 bg-blue-500 text-white font-semibold rounded-lg shadow-md hover:bg-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-400 focus:ring-opacity-75 transition-all duration-200"
               >
                 <DocumentAddIcon />
                 견적서 생성
               </button>
               <button
                 onClick={() => setIsQuoteTemplateManagerOpen(true)}
-                className="flex items-center justify-center px-4 py-2 bg-purple-700 text-white font-semibold rounded-lg shadow-md hover:bg-purple-600 focus:outline-none focus:ring-2 focus:ring-purple-400 focus:ring-opacity-75 transition-all duration-200"
+                className="flex items-center justify-center px-4 py-2 bg-blue-700 text-white font-semibold rounded-lg shadow-md hover:bg-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-400 focus:ring-opacity-75 transition-all duration-200"
               >
                 <TagIcon />
                 <span className="ml-2">견적서 등록</span>
@@ -1878,7 +1956,7 @@ const App: React.FC = () => {
                 onClick={() => setIsQuoteSettingsModalOpen(true)}
                 title="견적서 고정값 설정"
                 aria-label="견적서 고정값 설정"
-                className="flex items-center justify-center p-2.5 bg-slate-600 text-white rounded-lg shadow-md hover:bg-slate-500 focus:outline-none focus:ring-2 focus:ring-slate-400 focus:ring-opacity-75 transition-all duration-200"
+                className="flex items-center justify-center p-2.5 bg-white border border-gray-300 text-gray-600 rounded-lg shadow-md hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-400 focus:ring-opacity-75 transition-all duration-200"
               >
                 <SettingsIcon />
               </button>
@@ -1962,7 +2040,10 @@ const App: React.FC = () => {
         isOpen={!!missingFieldsProductId}
         items={(() => {
           const product = products.find(p => p.id === missingFieldsProductId);
-          return product ? [{ product, missing: getMissingFieldLabels(product) }] : [];
+          if (!product) return [];
+          const groupKey = getProductGroupKey(product);
+          const groupProducts = products.filter(p => getProductGroupKey(p) === groupKey);
+          return collectMissingFields(groupProducts);
         })()}
         onCancel={() => setMissingFieldsProductId(null)}
         onProceedAnyway={() => {

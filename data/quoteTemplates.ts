@@ -589,7 +589,11 @@ export const fillQuoteWorkbook = async (
       cellEl.setAttribute('t', 'inlineStr');
       const is = doc.createElementNS(SHEET_NS, 'is');
       const t = doc.createElementNS(SHEET_NS, 't');
-      t.textContent = String(value);
+      // macOS는 한글을 자모 분리(NFD)로 다루는 경우가 많아(파일명 읽기, 일부 복사/붙여넣기 등),
+      // 상품 값이 NFD로 들어와 있으면 브라우저 화면에서는 자동으로 정상 조합되어 보이지만 Excel은
+      // 자모를 조합해서 그려주지 않아 낱개 자모로 깨져 보인다. 셀에 쓰기 직전 NFC로 정규화해서
+      // 원인이 무엇이든 파일에는 항상 정상 조합된 한글이 들어가게 한다.
+      t.textContent = String(value).normalize('NFC');
       is.appendChild(t);
       cellEl.appendChild(is);
     }

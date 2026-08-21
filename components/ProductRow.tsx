@@ -1,11 +1,11 @@
 
 import React, { useState, useRef, useEffect } from 'react';
 import { Product } from '../types';
-import { TrashIcon, ImageIcon, CopyIcon, UploadIcon, MemoIcon, CalculatorIcon, CopyFromAboveIcon, DownloadIcon, SpinnerIcon, SparklesIcon, ChevronDownIcon, DocumentAddIcon, ImageEditIcon, CloseIcon, ClipboardIcon, SaveIcon, ExternalLinkIcon } from './Icons';
+import { TrashIcon, ImageIcon, CopyIcon, UploadIcon, MemoIcon, CalculatorIcon, CopyFromAboveIcon, DownloadIcon, SpinnerIcon, SparklesIcon, ChevronDownIcon, DocumentAddIcon, ImageEditIcon, CloseIcon, ClipboardIcon, SaveIcon, ExternalLinkIcon, CheckIcon } from './Icons';
 import ProductCustomFields from './ProductCustomFields';
 import { QuoteTemplateRegistration } from '../data/quoteTemplates';
 import { CATEGORY_PRESETS } from '../data/categoryPresets';
-import { saveBlobInProductFolder, saveDataUrlsAsZipInProductFolder, productFolderName } from '../utils/fileSave';
+import { saveBlobInProductFolder, saveDataUrlsAsZipInProductFolder, productFolderName, getRootDirectory } from '../utils/fileSave';
 import { withCoLtdSuffix } from '../utils/manufacturerFormat';
 
 interface ProductRowProps {
@@ -38,6 +38,7 @@ interface ProductRowProps {
   registeredCategories: string[];
   onIntegratedDownload: (id: string) => void;
   isIntegratedDownloading: boolean;
+  isIntegratedDownloadDone: boolean;
 }
 
 const Field: React.FC<{ label: string; className?: string; children: React.ReactNode }> = ({ label, className = '', children }) => (
@@ -77,9 +78,11 @@ const ProductRow: React.FC<ProductRowProps> = ({
   registeredCategories,
   onIntegratedDownload,
   isIntegratedDownloading,
+  isIntegratedDownloadDone,
 }) => {
   const [isDownloading, setIsDownloading] = useState(false);
   const [isZippingImages, setIsZippingImages] = useState(false);
+  const [isZipDone, setIsZipDone] = useState(false);
   const [showCategoryMenu, setShowCategoryMenu] = useState(false);
   const [showDetails, setShowDetails] = useState(false);
   const categoryMenuRef = useRef<HTMLDivElement>(null);
@@ -155,7 +158,15 @@ const ProductRow: React.FC<ProductRowProps> = ({
     }
     setIsZippingImages(true);
     try {
+      // 폴더 접근 권한을 클릭 직후 가장 먼저 요청한다. showDirectoryPicker는 "user activation"이
+      // 있어야 동작하는데, zip 압축처럼 시간이 걸리는 비동기 작업을 먼저 거치면 그 활성 상태가
+      // 소멸해 조용히 실패(버튼 클릭해도 무반응)할 수 있다.
+      await getRootDirectory();
       await saveDataUrlsAsZipInProductFolder(files, productFolderName(product), `${productFolderName(product)}_이미지.zip`);
+      // 저장 자체는 대부분 조용히(다이얼로그 없이) 끝나서 사용자 눈에는 버튼이 아무 반응도
+      // 안 한 것처럼 보일 수 있다. 잠깐 체크 아이콘으로 바꿔 완료됐다는 걸 알려준다.
+      setIsZipDone(true);
+      setTimeout(() => setIsZipDone(false), 1500);
     } catch (err) {
       console.error('이미지 압축 다운로드 실패:', err);
       alert('이미지를 압축하는 중 오류가 발생했습니다.');
@@ -411,8 +422,14 @@ const ProductRow: React.FC<ProductRowProps> = ({
           aria-label="통합 다운로드"
           title="상품명 폴더에 라벨(자동생성) + 대표/상세 이미지(zip) + 견적서를 한번에 다운로드 (준비된 항목만 저장)"
         >
-          {isIntegratedDownloading ? <SpinnerIcon className="h-5 w-5 animate-spin" /> : <SaveIcon />}
-          <span className="text-[9px] leading-none font-semibold">통합다운</span>
+          {isIntegratedDownloading ? (
+            <SpinnerIcon className="h-5 w-5 animate-spin" />
+          ) : isIntegratedDownloadDone ? (
+            <CheckIcon className="h-5 w-5 text-emerald-600" />
+          ) : (
+            <SaveIcon />
+          )}
+          <span className="text-[9px] leading-none font-semibold">{isIntegratedDownloadDone ? '완료!' : '통합다운'}</span>
         </button>
 
         <div className="flex items-center gap-0.5 flex-shrink-0 ml-auto">
@@ -637,7 +654,13 @@ const ProductRow: React.FC<ProductRowProps> = ({
             className="w-full flex items-center justify-center px-2 py-1 bg-white border border-gray-200 rounded-md text-gray-500 hover:bg-gray-50 hover:text-emerald-700 transition-colors disabled:opacity-30 disabled:cursor-not-allowed [&_svg]:h-3.5 [&_svg]:w-3.5 [&_svg]:mr-0"
             title="대표 이미지 + 상세 이미지 압축(zip) 다운로드"
           >
-            {isZippingImages ? <SpinnerIcon className="animate-spin" /> : <DownloadIcon />}
+            {isZippingImages ? (
+              <SpinnerIcon className="animate-spin" />
+            ) : isZipDone ? (
+              <CheckIcon className="text-emerald-600" />
+            ) : (
+              <DownloadIcon />
+            )}
           </button>
         </Field>
 

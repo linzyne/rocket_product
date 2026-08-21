@@ -220,6 +220,8 @@ const App: React.FC = () => {
   const [categories, setCategories] = useState<string[]>(getInitialCategories());
   const [generatingProductQuoteId, setGeneratingProductQuoteId] = useState<string | null>(null);
   const [integratedDownloadingId, setIntegratedDownloadingId] = useState<string | null>(null);
+  const [integratedDownloadDoneId, setIntegratedDownloadDoneId] = useState<string | null>(null);
+  const [extensionsLinkCopied, setExtensionsLinkCopied] = useState(false);
   const [missingFieldsProductId, setMissingFieldsProductId] = useState<string | null>(null);
   const [requiredFieldGaps, setRequiredFieldGaps] = useState<RequiredFieldGap[] | null>(null);
   const [importingProductQuoteId, setImportingProductQuoteId] = useState<string | null>(null);
@@ -343,6 +345,20 @@ const App: React.FC = () => {
       setSaveStatus('idle');
     }
   }, [products]);
+
+  // 웹페이지는 브라우저 보안 정책상 chrome:// 주소로 직접 이동시킬 수 없어서(클릭해도
+  // 조용히 무시됨), 대신 주소를 클립보드에 복사해 사용자가 새 탭에 붙여넣도록 안내한다.
+  const handleOpenExtensionsPage = useCallback(async () => {
+    const url = 'chrome://extensions/';
+    try {
+      await navigator.clipboard.writeText(url);
+      setExtensionsLinkCopied(true);
+      setTimeout(() => setExtensionsLinkCopied(false), 2000);
+    } catch (error) {
+      console.error('클립보드 복사 실패:', error);
+      alert(`브라우저 보안 정책상 웹페이지에서 ${url} 로 바로 이동할 수 없습니다.\n새 탭을 열고 주소창에 아래 주소를 붙여넣어 주세요.\n\n${url}`);
+    }
+  }, []);
 
   const expandProductGroup = useCallback((productId: string) => {
     setExpandedProductIds(prev => (prev.has(productId) ? prev : new Set(prev).add(productId)));
@@ -1373,6 +1389,10 @@ const App: React.FC = () => {
       }
 
       await saveFilesInProductFolder(productNameFolderName(product), files);
+      // 폴더 접근 권한이 이미 있으면 저장이 다이얼로그 없이 조용히 끝나서 사용자 눈에는 버튼이
+      // 반응하지 않은 것처럼 보일 수 있다. 잠깐 체크 아이콘으로 바꿔 완료됐다는 걸 알려준다.
+      setIntegratedDownloadDoneId(productId);
+      setTimeout(() => setIntegratedDownloadDoneId(prev => (prev === productId ? null : prev)), 1500);
     } catch (error) {
       console.error('통합 다운로드 실패:', error);
       alert('통합 다운로드 중 오류가 발생했습니다.');
@@ -1782,6 +1802,14 @@ const App: React.FC = () => {
           <header className="flex flex-col sm:flex-row justify-between items-center mb-6 gap-3">
             <div className="flex items-center gap-2 w-full sm:w-auto">
                 <button
+                    onClick={handleOpenExtensionsPage}
+                    className="inline-flex items-center justify-center gap-1.5 px-3 py-1.5 bg-white border border-gray-300 text-gray-600 text-sm font-medium rounded-md hover:bg-gray-50 transition-colors flex-shrink-0"
+                    title="chrome://extensions/ 주소 복사 (보안 정책상 브라우저가 바로 이동을 막아서, 주소를 복사한 뒤 새 탭에 직접 붙여넣어야 합니다)"
+                >
+                    <SettingsIcon />
+                    <span className="hidden sm:inline">{extensionsLinkCopied ? '복사됨! 새 탭에 붙여넣기' : '확장프로그램'}</span>
+                </button>
+                <button
                     onClick={handleAddProduct}
                     className="inline-flex items-center justify-center gap-1.5 px-3 py-1.5 bg-blue-600 text-white text-sm font-medium rounded-md hover:bg-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-400 transition-colors"
                 >
@@ -1911,6 +1939,7 @@ const App: React.FC = () => {
                             registeredCategories={categories}
                             onIntegratedDownload={handleIntegratedDownload}
                             isIntegratedDownloading={integratedDownloadingId === product.id}
+                            isIntegratedDownloadDone={integratedDownloadDoneId === product.id}
                           />
                         </div>
                       ))}

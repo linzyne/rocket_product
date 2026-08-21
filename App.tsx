@@ -3,7 +3,7 @@ import React, { useState, useCallback, useMemo, useRef, useEffect } from 'react'
 import { Product } from './types';
 import ProductRow from './components/ProductRow';
 import ProductGroupSummary from './components/ProductGroupSummary';
-import { PlusIcon, DownloadIcon, CloseIcon, BroomIcon, SearchIcon, DocumentAddIcon, SaveIcon, CameraIcon, SettingsIcon, TagIcon } from './components/Icons';
+import { PlusIcon, DownloadIcon, CloseIcon, BroomIcon, SearchIcon, DocumentAddIcon, SaveIcon, CameraIcon, SettingsIcon, TagIcon, CheckIcon } from './components/Icons';
 import ProductLabel from './components/ProductLabel';
 import MarginCalculatorModal from './components/MarginCalculatorModal';
 import QuoteGeneratorModal from './components/QuoteGeneratorModal';
@@ -1803,11 +1803,10 @@ const App: React.FC = () => {
             <div className="flex items-center gap-2 w-full sm:w-auto">
                 <button
                     onClick={handleOpenExtensionsPage}
-                    className="inline-flex items-center justify-center gap-1.5 px-3 py-1.5 bg-white border border-gray-300 text-gray-600 text-sm font-medium rounded-md hover:bg-gray-50 transition-colors flex-shrink-0"
-                    title="chrome://extensions/ 주소 복사 (보안 정책상 브라우저가 바로 이동을 막아서, 주소를 복사한 뒤 새 탭에 직접 붙여넣어야 합니다)"
+                    className="inline-flex items-center justify-center p-1.5 bg-white border border-gray-300 text-gray-500 rounded-md hover:bg-gray-50 hover:text-gray-700 transition-colors flex-shrink-0 [&_svg]:h-4 [&_svg]:w-4"
+                    title={extensionsLinkCopied ? 'chrome://extensions/ 복사됨! 새 탭에 붙여넣으세요' : 'chrome://extensions/ 주소 복사 (보안 정책상 브라우저가 바로 이동을 막아서, 주소를 복사한 뒤 새 탭에 직접 붙여넣어야 합니다)'}
                 >
-                    <SettingsIcon />
-                    <span className="hidden sm:inline">{extensionsLinkCopied ? '복사됨! 새 탭에 붙여넣기' : '확장프로그램'}</span>
+                    {extensionsLinkCopied ? <CheckIcon className="text-emerald-600" /> : <SettingsIcon />}
                 </button>
                 <button
                     onClick={handleAddProduct}

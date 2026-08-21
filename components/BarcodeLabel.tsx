@@ -15,7 +15,7 @@ const BarcodeLabel = React.forwardRef<HTMLDivElement, BarcodeLabelProps>(({ prod
   const sizeText = sizeParts.length ? `${sizeParts.join(' x ')}cm` : '';
 
   const infoLines = [
-    { label: '수입자 / 제조사', value: [product.importer, product.manufacturer].filter(Boolean).join(' / ') },
+    { label: '수입자/제조사', value: [product.importer, product.manufacturer].filter(Boolean).join('/') },
     { label: '사이즈', value: sizeText },
     { label: '소재', value: getProductMaterialValue(product) },
     { label: '제조국', value: product.countryOfOrigin },

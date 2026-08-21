@@ -395,6 +395,14 @@ const computeProductColumnValues = (
     if (colNumber !== undefined) values.set(colNumber, value);
   });
 
+  // 재질은 견적서마다 컬럼 이름이 다를 수 있어(예: "재질", "소재/재질", "재질(소재)") 정확히
+  // 일치하는 이름으로 등록하지 않고, 헤더 텍스트에 "재질"이 포함된 첫 컬럼을 찾아 채웁니다.
+  const materialValue = (product.customFields || {})['재질'];
+  if (materialValue) {
+    const materialCol = Object.entries(colIndexMap).find(([key]) => key.includes('재질'))?.[1];
+    if (materialCol !== undefined) values.set(materialCol, materialValue);
+  }
+
   return values;
 };
 

@@ -440,12 +440,13 @@
     }
   }
 
-  // 상품명/제조사/SKU/중량은 상품이 바뀌어도 재사용하고 싶어하는 값이라 draft로 유지한다.
+  // 상품명/제조사/SKU/재질/중량은 상품이 바뀌어도 재사용하고 싶어하는 값이라 draft로 유지한다.
   function readFormValues(box) {
     return {
       title: box.querySelector('#rc-title').value,
       manufacturer: box.querySelector('#rc-manufacturer').value,
       sku: box.querySelector('#rc-sku').value,
+      material: box.querySelector('#rc-material').value,
       weight: box.querySelector('#rc-weight').value,
     };
   }
@@ -454,6 +455,7 @@
     box.querySelector('#rc-title').value = values.title ?? '';
     box.querySelector('#rc-manufacturer').value = values.manufacturer ?? '';
     box.querySelector('#rc-sku').value = values.sku ?? '';
+    box.querySelector('#rc-material').value = values.material ?? '';
     box.querySelector('#rc-weight').value = values.weight ?? '';
     // 이전에 저장된(draft) 값이 그대로 채워진 직후에는 '아직 안 건드림' 상태로 표시해서,
     // 필드를 처음 클릭했을 때 이전 값을 바로 지우고 새로 입력할 수 있게 한다.
@@ -465,6 +467,7 @@
       title: initial.titleRaw || '',
       manufacturer: initial.manufacturerRaw || '',
       sku: initial.sku || '',
+      material: initial.materialRaw || '',
       weight: initial.weightG ?? '',
     };
   }
@@ -592,6 +595,9 @@
             </label>
             <label class="rc-label rc-label-red">SKU
               <input id="rc-sku" class="rc-input" />
+            </label>
+            <label class="rc-label">재질
+              <input id="rc-material" class="rc-input" />
             </label>
             <label class="rc-label rc-label-red">중량 (g)
               <input id="rc-weight" class="rc-input" type="number" step="1" />
@@ -1202,6 +1208,7 @@
         titleRaw: box.querySelector('#rc-title').value.trim(),
         manufacturerRaw: box.querySelector('#rc-manufacturer').value.trim(),
         sku: box.querySelector('#rc-sku').value.trim(),
+        materialRaw: box.querySelector('#rc-material').value.trim(),
         weightG: num('#rc-weight'),
         variants: checkedRows.map((r) => {
           const { exchangeRate, supplyMarginPercent, sellingMarginPercent } = getMarginInputs();

@@ -1547,7 +1547,12 @@ const App: React.FC = () => {
       // 되어 있으므로, 옵션 순서(1번=001, 2번=002...)에 맞춰 새로 매긴다. 옵션이 1개뿐이면 원래
       // 있던 파일명을 그대로 둔다.
       const fileNames = variants.length > 1 ? numberedFileNames(variantIndex + 1) : {};
-      return { ...p, ...commonFields, ...perVariantFields, ...fileNames };
+      // 재질은 옵션과 무관한 공통 값이라, 견적서 매칭용으로 customFields['재질']에 채워 넣는다
+      // (견적서 컬럼 헤더에 "재질"이 포함된 컬럼을 찾아 채우는 로직이 이 키를 그대로 사용한다).
+      const materialFields: Partial<Product> = payload.materialRaw
+        ? { customFields: { ...p.customFields, '재질': String(payload.materialRaw).trim() } }
+        : {};
+      return { ...p, ...commonFields, ...perVariantFields, ...fileNames, ...materialFields };
     }));
 
     // "노출속성"(옵션값)을 어느 항목에 채울지는 이 상품에 연결된 견적서 카테고리 설정을 따른다.

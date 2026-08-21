@@ -1,10 +1,12 @@
 
 import React, { useState, useCallback, useMemo, useRef, useEffect } from 'react';
-import { Product } from './types';
+import { Product, ArchivedProduct } from './types';
 import ProductRow from './components/ProductRow';
 import ProductGroupSummary from './components/ProductGroupSummary';
-import { PlusIcon, DownloadIcon, CloseIcon, BroomIcon, SearchIcon, DocumentAddIcon, SaveIcon, CameraIcon, SettingsIcon, TagIcon, CheckIcon } from './components/Icons';
+import ProductListPage from './components/ProductListPage';
+import { PlusIcon, DownloadIcon, CloseIcon, BroomIcon, SearchIcon, DocumentAddIcon, SaveIcon, CameraIcon, SettingsIcon, TagIcon, CheckIcon, ArchiveIcon } from './components/Icons';
 import ProductLabel from './components/ProductLabel';
+import BarcodeLabel from './components/BarcodeLabel';
 import MarginCalculatorModal from './components/MarginCalculatorModal';
 import QuoteGeneratorModal from './components/QuoteGeneratorModal';
 import QuoteSettingsModal from './components/QuoteSettingsModal';
@@ -29,12 +31,16 @@ import {
   findMissingRequiredCells,
   ensureRequiredCustomFields,
   getAutoCustomFieldValue,
+  extractExposureAttributeLabels,
+  findNewExposureAttributeLabels,
+  normalizeHeader,
   RequiredFieldGap,
   OPTION_FIELD_COLOR,
 } from './data/quoteTemplates';
 import { getAllQuoteTemplates, putQuoteTemplate, deleteQuoteTemplate } from './data/quoteTemplateStore';
 import { generateProductImportFields } from './utils/geminiProductImport';
 import { generateId } from './utils/id';
+import { generateBarcodeNumber } from './utils/barcode';
 import { withCoLtdSuffix } from './utils/manufacturerFormat';
 
 // This tells TypeScript that the global variables from CDNs exist.
@@ -63,6 +69,7 @@ const createNewProduct = (orderNumber?: number): Product => {
     quoteTemplateId: '',
     productName: '',
     sku: '',
+    barcode: generateBarcodeNumber(),
     costPrice: '',
     supplyPrice: '',
     sellingPrice: '',
@@ -77,10 +84,12 @@ const createNewProduct = (orderNumber?: number): Product => {
     packageSizeSameAsProduct: true,
     weight: '',
     manufacturer: '',
+    material: '',
     countryOfOrigin: 'Made in China',
     importer: '주노엘',
     recommendedAge: '만14세이상',
     asContact: '주노엘 01048629452',
+    cautionNote: '해당사항없음',
     ...numberedFileNames(orderNumber),
     thumbnailDataUrl: '',
     detailDataUrl: '',
@@ -196,6 +205,49 @@ const getInitialCategories = (): string[] => {
   return [];
 };
 
+// 상품목록(등록 이력)은 이미지/엑셀 파일 없이 url·상품명·가격·바코드만 담는 가벼운 스냅샷이라
+// products와 별개의 localStorage 키에 저장해서, 상품 목록을 삭제/초기화해도 남아있게 한다.
+// 사용자가 직접 삭제 버튼을 누르기 전엔 절대 사라지면 안 되는 데이터라, 쓸 때마다 별도의 백업
+// 키에도 함께 저장해두고 원본 키가 어떤 이유로든 깨져 있으면 백업에서 복구한다.
+const ARCHIVE_STORAGE_KEY = 'productArchive';
+const ARCHIVE_BACKUP_STORAGE_KEY = 'productArchive_backup';
+
+const parseArchiveJSON = (json: string | null): ArchivedProduct[] | null => {
+  if (!json) return null;
+  try {
+    const parsed = JSON.parse(json);
+    return Array.isArray(parsed) ? parsed : null;
+  } catch {
+    return null;
+  }
+};
+
+const getInitialArchivedProducts = (): ArchivedProduct[] => {
+  const primary = parseArchiveJSON(localStorage.getItem(ARCHIVE_STORAGE_KEY));
+  if (primary) return primary;
+
+  const backup = parseArchiveJSON(localStorage.getItem(ARCHIVE_BACKUP_STORAGE_KEY));
+  if (backup) {
+    console.warn('상품목록(productArchive)이 손상되어 백업에서 복구했습니다.');
+    return backup;
+  }
+
+  return [];
+};
+
+const isBlankProductForArchive = (p: Product): boolean => !p.url.trim() && !p.productName.trim();
+
+const buildArchiveEntry = (p: Product): ArchivedProduct => ({
+  id: generateId(),
+  savedAt: new Date().toISOString(),
+  url: p.url.trim(),
+  productName: p.productName.trim(),
+  costPrice: p.costPrice,
+  supplyPrice: p.supplyPrice,
+  sellingPrice: p.sellingPrice,
+  barcode: p.barcode,
+});
+
 
 const App: React.FC = () => {
   const [products, setProducts] = useState<Product[]>(getInitialProducts());
@@ -212,6 +264,7 @@ const App: React.FC = () => {
   });
   const [searchQuery, setSearchQuery] = useState('');
   const [isLabelModalOpen, setIsLabelModalOpen] = useState(false);
+  const [isBarcodeLabelModalOpen, setIsBarcodeLabelModalOpen] = useState(false);
   const [isQuoteModalOpen, setIsQuoteModalOpen] = useState(false);
   const [isQuoteSettingsModalOpen, setIsQuoteSettingsModalOpen] = useState(false);
   const [isQuoteTemplateManagerOpen, setIsQuoteTemplateManagerOpen] = useState(false);
@@ -232,16 +285,20 @@ const App: React.FC = () => {
   const [currentProductForLabel, setCurrentProductForLabel] = useState<Product | null>(null);
   const [generatedLabelImage, setGeneratedLabelImage] = useState<string | null>(null);
   const [isGenerating, setIsGenerating] = useState(false);
+  const [currentProductForBarcodeLabel, setCurrentProductForBarcodeLabel] = useState<Product | null>(null);
+  const [generatedBarcodeLabelImage, setGeneratedBarcodeLabelImage] = useState<string | null>(null);
+  const [isGeneratingBarcodeLabel, setIsGeneratingBarcodeLabel] = useState(false);
   // Off-screen 라벨 렌더링/캡처용 (통합다운): 모달을 열지 않고도 같은 ProductLabel 마크업으로 이미지를 만든다.
   const [labelCaptureProduct, setLabelCaptureProduct] = useState<Product | null>(null);
   const labelCaptureResolveRef = useRef<((dataUrl: string | null) => void) | null>(null);
   const [isExporting, setIsExporting] = useState(false);
   const [isSampleExporting, setIsSampleExporting] = useState(false);
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved'>('idle');
-  const [currentView, setCurrentView] = useState<'products' | 'renamer'>('products');
+  const [currentView, setCurrentView] = useState<'products' | 'renamer' | 'productList'>('products');
   const [confirmResetAll, setConfirmResetAll] = useState(false);
   const resetAllTimeoutRef = useRef<number | null>(null);
   const [activeProductId, setActiveProductId] = useState<string | null>(null);
+  const [archivedProducts, setArchivedProducts] = useState<ArchivedProduct[]>(getInitialArchivedProducts());
 
   const [marginCalculatorState, setMarginCalculatorState] = useState<{isOpen: boolean; productId: string | null}>({
     isOpen: false,
@@ -273,6 +330,7 @@ const App: React.FC = () => {
   }>({ isOpen: false, product: null });
 
   const labelRef = useRef<HTMLDivElement>(null);
+  const barcodeLabelRef = useRef<HTMLDivElement>(null);
   const hiddenLabelCaptureRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -345,6 +403,49 @@ const App: React.FC = () => {
       setSaveStatus('idle');
     }
   }, [products]);
+
+  // 상품목록은 용량이 작아(이미지 없음) 바뀔 때마다 바로 저장해도 부담이 없다. 다만 최초
+  // 마운트 시 이 effect가 한 번 더 도는 것까지 그대로 저장해버리면, 어떤 이유로든(다른 곳에서
+  // 손상시킨 값 등) 불러오기가 실패해 빈 배열로 시작한 경우 그 순간 원본 데이터를 덮어써서
+  // 영구히 잃어버릴 수 있다. 그래서 마운트 직후 첫 실행은 건너뛰고, 실제로 상품을 저장/삭제해서
+  // 값이 바뀔 때만 기록한다.
+  const isFirstArchivePersistRef = useRef(true);
+  useEffect(() => {
+    if (isFirstArchivePersistRef.current) {
+      isFirstArchivePersistRef.current = false;
+      return;
+    }
+    try {
+      const json = JSON.stringify(archivedProducts);
+      localStorage.setItem(ARCHIVE_STORAGE_KEY, json);
+      localStorage.setItem(ARCHIVE_BACKUP_STORAGE_KEY, json);
+    } catch (error) {
+      console.error("Failed to save product archive to localStorage", error);
+    }
+  }, [archivedProducts]);
+
+  const archiveProducts = useCallback((toArchive: Product[]): boolean => {
+    const entries = toArchive.filter(p => !isBlankProductForArchive(p)).map(buildArchiveEntry);
+    if (entries.length === 0) return false;
+    setArchivedProducts(prev => [...entries, ...prev]);
+    return true;
+  }, []);
+
+  const handleArchiveProduct = useCallback((product: Product): boolean => {
+    if (isBlankProductForArchive(product)) {
+      alert('URL 또는 상품명이 있어야 상품목록에 저장할 수 있습니다.');
+      return false;
+    }
+    return archiveProducts([product]);
+  }, [archiveProducts]);
+
+  const handleDeleteArchivedProduct = useCallback((id: string) => {
+    setArchivedProducts(prev => prev.filter(e => e.id !== id));
+  }, []);
+
+  const handleClearArchivedProducts = useCallback(() => {
+    setArchivedProducts([]);
+  }, []);
 
   // 웹페이지는 브라우저 보안 정책상 chrome:// 주소로 직접 이동시킬 수 없어서(클릭해도
   // 조용히 무시됨), 대신 주소를 클립보드에 복사해 사용자가 새 탭에 붙여넣도록 안내한다.
@@ -475,14 +576,17 @@ const App: React.FC = () => {
 
 
   const handleRemoveProduct = useCallback((productId: string) => {
+    const target = products.find(p => p.id === productId);
+    if (target) archiveProducts([target]);
     setProducts(prev => {
         if (prev.length <= 1) return prev;
         return prev.filter(p => p.id !== productId);
     });
-  }, []);
+  }, [products, archiveProducts]);
 
   const handleRemoveAllProducts = useCallback(() => {
     if (confirmResetAll) {
+      archiveProducts(products);
       const resetProduct = createNewProduct(1);
       setProducts([resetProduct]);
       setExpandedProductIds(new Set([resetProduct.id]));
@@ -498,7 +602,7 @@ const App: React.FC = () => {
         resetAllTimeoutRef.current = null;
       }, 3000);
     }
-  }, [confirmResetAll]);
+  }, [confirmResetAll, products, archiveProducts]);
 
   const handleDuplicateProduct = useCallback((productId: string) => {
     setProducts(prev => {
@@ -510,7 +614,7 @@ const App: React.FC = () => {
         // 겹친다(예: 둘 다 001s.png) — 지금 그룹에 이미 있는 옵션 수 다음 번호로 새로 매긴다.
         const groupKey = getProductGroupKey(productToCopy);
         const groupSize = prev.filter(p => getProductGroupKey(p) === groupKey).length;
-        const newProduct = { ...productToCopy, id: generateId(), ...numberedFileNames(groupSize + 1) };
+        const newProduct = { ...productToCopy, id: generateId(), barcode: generateBarcodeNumber(), ...numberedFileNames(groupSize + 1) };
 
         const newProducts = [...prev];
         newProducts.splice(productIndex + 1, 0, newProduct);
@@ -609,6 +713,7 @@ const App: React.FC = () => {
                     margin: sourceProduct.margin,
                     searchKeyword: sourceProduct.searchKeyword,
                     sku: sourceProduct.sku,
+                    barcode: sourceProduct.barcode,
                     sizeWidth: sourceProduct.sizeWidth,
                     sizeHeight: sourceProduct.sizeHeight,
                     sizeDepth: sourceProduct.sizeDepth,
@@ -616,10 +721,12 @@ const App: React.FC = () => {
                     quantity: sourceProduct.quantity,
                     detailFile: sourceProduct.detailFile,
                     detailDataUrl: sourceProduct.detailDataUrl,
+                    material: sourceProduct.material,
                     countryOfOrigin: sourceProduct.countryOfOrigin,
                     importer: sourceProduct.importer,
                     recommendedAge: sourceProduct.recommendedAge,
                     asContact: sourceProduct.asContact,
+                    cautionNote: sourceProduct.cautionNote,
                 };
             }
             return p;
@@ -976,6 +1083,48 @@ const App: React.FC = () => {
     }
   }, [currentProductForLabel, isLabelModalOpen]);
 
+  const openBarcodeLabelModal = useCallback((product: Product) => {
+    setCurrentProductForBarcodeLabel(product);
+    setIsBarcodeLabelModalOpen(true);
+    setGeneratedBarcodeLabelImage(null);
+  }, []);
+
+  const closeBarcodeLabelModal = useCallback(() => {
+    setIsBarcodeLabelModalOpen(false);
+    setCurrentProductForBarcodeLabel(null);
+    setGeneratedBarcodeLabelImage(null);
+  }, []);
+
+  const downloadBarcodeLabelImage = useCallback(() => {
+    if (!generatedBarcodeLabelImage) return;
+    saveDataUrlInProductFolder(
+      generatedBarcodeLabelImage,
+      productFolderName(currentProductForBarcodeLabel),
+      `${currentProductForBarcodeLabel?.productName || 'product'}_바코드라벨.png`
+    );
+  }, [generatedBarcodeLabelImage, currentProductForBarcodeLabel]);
+
+  useEffect(() => {
+    const generateBarcodeLabel = async () => {
+      if (currentProductForBarcodeLabel && isBarcodeLabelModalOpen && barcodeLabelRef.current) {
+        setIsGeneratingBarcodeLabel(true);
+        try {
+          const canvas = await html2canvas(barcodeLabelRef.current, { scale: 2, backgroundColor: null });
+          setGeneratedBarcodeLabelImage(canvas.toDataURL('image/png'));
+        } catch (error) {
+          console.error("Error generating barcode label image:", error);
+          alert("바코드 라벨 이미지 생성에 실패했습니다.");
+        } finally {
+          setIsGeneratingBarcodeLabel(false);
+        }
+      }
+    };
+
+    if (currentProductForBarcodeLabel && isBarcodeLabelModalOpen) {
+      setTimeout(generateBarcodeLabel, 100);
+    }
+  }, [currentProductForBarcodeLabel, isBarcodeLabelModalOpen]);
+
   // Renders the given product into the off-screen ProductLabel (mounted below) and captures it with
   // html2canvas, resolving with the resulting data URL — used by 통합다운 to grab the "라벨" image
   // without opening the visible label modal.
@@ -1080,12 +1229,35 @@ const App: React.FC = () => {
     reader.onloadend = async () => {
       if (!reader.result) return;
 
+      // 노출속성 기본 양식이 지정돼 있으면, 그 견적서와 이번에 새로 등록하는 견적서의 노출속성
+      // 항목(색상/수량/높이 등)을 비교해서 기본 양식에는 없는 항목만 추가 항목 이름에 자동으로
+      // 더해줍니다. 카테고리마다 노출속성 개수가 달라서, 사람이 매번 직접 등록하지 않아도 되게 합니다.
+      let finalCustomFieldNames = customFieldNames;
+      try {
+        const baseReg = quoteTemplateRegistrations.find(r => r.isExposureBaseTemplate);
+        const template = getQuoteTemplates(quoteFixedValues)[0];
+        if (baseReg && template) {
+          const newBuffer = dataUrlToArrayBuffer(reader.result as string);
+          const baseBuffer = dataUrlToArrayBuffer(baseReg.fileDataUrl);
+          const [baseLabels, newLabels] = await Promise.all([
+            extractExposureAttributeLabels(baseBuffer, template),
+            extractExposureAttributeLabels(newBuffer, template),
+          ]);
+          const extraLabels = findNewExposureAttributeLabels(baseLabels, newLabels).filter(
+            label => !finalCustomFieldNames.some(existing => normalizeHeader(existing) === normalizeHeader(label))
+          );
+          if (extraLabels.length > 0) finalCustomFieldNames = [...finalCustomFieldNames, ...extraLabels];
+        }
+      } catch (error) {
+        console.error("Failed to compare exposure attribute columns against base template", error);
+      }
+
       const newRegistration: QuoteTemplateRegistration = {
         id: generateId(),
         category,
         fileName: file.name,
         fileDataUrl: reader.result as string,
-        customFieldNames,
+        customFieldNames: finalCustomFieldNames,
         optionFieldName,
         createdAt: Date.now(),
       };
@@ -1107,7 +1279,29 @@ const App: React.FC = () => {
       alert('견적서 파일을 읽는 데 실패했습니다.');
     };
     reader.readAsDataURL(file);
-  }, [handleRegisterCategory]);
+  }, [handleRegisterCategory, quoteTemplateRegistrations, quoteFixedValues]);
+
+  // 견적서 목록에서 하나를 "노출속성 기본 양식"으로 지정합니다. 항상 한 개만 지정될 수 있도록
+  // 이전에 지정돼 있던 견적서는 자동으로 해제됩니다.
+  const handleSetExposureBaseTemplate = useCallback((id: string) => {
+    setQuoteTemplateRegistrations(prev => {
+      const changed: QuoteTemplateRegistration[] = [];
+      const updated = prev.map(r => {
+        const nextFlag = r.id === id;
+        if (!!r.isExposureBaseTemplate === nextFlag) return r;
+        const next = { ...r, isExposureBaseTemplate: nextFlag };
+        changed.push(next);
+        return next;
+      });
+      changed.forEach(r => {
+        putQuoteTemplate(r).catch(error => {
+          console.error("Failed to update exposure base template flag in IndexedDB", error);
+          alert(`기본 양식 지정에 실패했습니다.\n오류: ${error instanceof Error ? error.message : String(error)}`);
+        });
+      });
+      return updated;
+    });
+  }, []);
 
   const handleUpdateQuoteTemplateCustomFieldNames = useCallback((id: string, customFieldNames: string[]) => {
     setQuoteTemplateRegistrations(prev => {
@@ -1495,10 +1689,13 @@ const App: React.FC = () => {
     const savedRate = parseFloat(localStorage.getItem('cnyExchangeRate') || '');
     const exchangeRate = !isNaN(savedRate) && savedRate > 0 ? savedRate : 210;
 
-    // 사이즈/색상/가격은 옵션마다 다를 수 있어 옵션별로 채운다. URL/SKU/중량만 공통으로 채운다.
+    // 사이즈/색상/가격은 옵션마다 다를 수 있어 옵션별로 채운다. URL/SKU/재질/중량만 공통으로 채운다.
     const commonFields: Partial<Product> = {};
     if (payload.url) commonFields.url = String(payload.url);
     if (payload.sku) commonFields.sku = String(payload.sku);
+    // 재질은 색상/사이즈처럼 상품에 내장된 고정 항목(product.material)이라, 상품등록 화면에
+    // 항상 보이는 "소재" 칸에 바로 채워 넣는다(추가 항목으로 새로 생기는 게 아니라 기존 칸이 채워짐).
+    if (payload.materialRaw) commonFields.material = String(payload.materialRaw).trim();
     if (typeof payload.weightG === 'number' && payload.weightG > 0) {
       commonFields.weight = String(payload.weightG);
     }
@@ -1547,12 +1744,7 @@ const App: React.FC = () => {
       // 되어 있으므로, 옵션 순서(1번=001, 2번=002...)에 맞춰 새로 매긴다. 옵션이 1개뿐이면 원래
       // 있던 파일명을 그대로 둔다.
       const fileNames = variants.length > 1 ? numberedFileNames(variantIndex + 1) : {};
-      // 재질은 옵션과 무관한 공통 값이라, 견적서 매칭용으로 customFields['재질']에 채워 넣는다
-      // (견적서 컬럼 헤더에 "재질"이 포함된 컬럼을 찾아 채우는 로직이 이 키를 그대로 사용한다).
-      const materialFields: Partial<Product> = payload.materialRaw
-        ? { customFields: { ...p.customFields, '재질': String(payload.materialRaw).trim() } }
-        : {};
-      return { ...p, ...commonFields, ...perVariantFields, ...fileNames, ...materialFields };
+      return { ...p, ...commonFields, ...perVariantFields, ...fileNames };
     }));
 
     // "노출속성"(옵션값)을 어느 항목에 채울지는 이 상품에 연결된 견적서 카테고리 설정을 따른다.
@@ -1802,6 +1994,13 @@ const App: React.FC = () => {
       <div className="flex-1 min-w-0 relative z-10">
       {currentView === 'renamer' ? (
         <ImageRenamer onBack={() => setCurrentView('products')} />
+      ) : currentView === 'productList' ? (
+        <ProductListPage
+          entries={archivedProducts}
+          onBack={() => setCurrentView('products')}
+          onDelete={handleDeleteArchivedProduct}
+          onClearAll={handleClearArchivedProducts}
+        />
       ) : (
         <div className="w-full max-w-screen-2xl text-gray-900">
           <header className="flex flex-col sm:flex-row justify-between items-center mb-6 gap-3">
@@ -1833,18 +2032,26 @@ const App: React.FC = () => {
                     />
                 </div>
             </div>
-            <div className="flex items-center gap-1.5 flex-wrap justify-center">
+            <div className="flex items-center gap-1 flex-wrap justify-end [&_svg]:h-4 [&_svg]:w-4 [&_svg]:mr-0">
                 <button
                     onClick={handleSaveProducts}
                     disabled={saveStatus !== 'idle'}
-                    className="inline-flex items-center justify-center gap-1.5 px-3 py-1.5 bg-white border border-gray-300 text-gray-700 text-sm font-medium rounded-md hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-400 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
+                    className="inline-flex items-center justify-center gap-1 px-2.5 py-1.5 bg-white border border-gray-300 text-gray-700 text-sm font-medium rounded-md hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-400 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
                 >
                     <SaveIcon />
                     <span>{saveStatus === 'saving' ? '저장 중...' : saveStatus === 'saved' ? '저장됨!' : '저장'}</span>
                 </button>
                 <button
+                    onClick={() => setCurrentView('productList')}
+                    className="inline-flex items-center justify-center gap-1 px-2.5 py-1.5 bg-white border border-gray-300 text-gray-700 text-sm font-medium rounded-md hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-400 transition-colors"
+                    title="URL/상품명/가격/바코드만 저장된 상품목록 보기"
+                >
+                    <ArchiveIcon />
+                    <span className="hidden sm:inline">상품목록{archivedProducts.length > 0 ? ` (${archivedProducts.length})` : ''}</span>
+                </button>
+                <button
                     onClick={handleRemoveAllProducts}
-                    className={`inline-flex items-center justify-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-md focus:outline-none focus:ring-2 transition-colors ${
+                    className={`inline-flex items-center justify-center gap-1 px-2.5 py-1.5 text-sm font-medium rounded-md focus:outline-none focus:ring-2 transition-colors ${
                         confirmResetAll
                         ? 'bg-red-600 text-white hover:bg-red-500 focus:ring-red-400'
                         : 'bg-white border border-gray-300 text-red-600 hover:bg-red-50 focus:ring-red-400'
@@ -1856,10 +2063,11 @@ const App: React.FC = () => {
                 </button>
                 <button
                     onClick={() => setCurrentView('renamer')}
-                    className="inline-flex items-center justify-center gap-1.5 px-3 py-1.5 bg-white border border-gray-300 text-gray-700 text-sm font-medium rounded-md hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-400 transition-colors"
+                    className="inline-flex items-center justify-center gap-1 px-2.5 py-1.5 bg-white border border-gray-300 text-gray-700 text-sm font-medium rounded-md hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-400 transition-colors"
+                    title="옵션명 생성"
                 >
                     <CameraIcon />
-                    <span className="hidden sm:inline">옵션명 생성</span>
+                    <span className="hidden sm:inline">옵션명</span>
                 </button>
                <input
                 type="file"
@@ -1871,10 +2079,11 @@ const App: React.FC = () => {
               />
               <label
                 htmlFor="bulk-thumbnail-upload"
-                className="cursor-pointer inline-flex items-center justify-center px-3 py-1.5 bg-white border border-gray-300 text-gray-700 text-sm font-medium rounded-md hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-400 transition-colors"
+                className="cursor-pointer inline-flex items-center justify-center gap-1 px-2.5 py-1.5 bg-white border border-gray-300 text-gray-700 text-sm font-medium rounded-md hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-400 transition-colors"
+                title="대표이미지 일괄 업로드"
               >
                 <DocumentAddIcon />
-                <span className="hidden sm:inline">대표이미지 일괄</span>
+                <span className="hidden sm:inline">대표 일괄</span>
               </label>
               <input
                 type="file"
@@ -1886,10 +2095,11 @@ const App: React.FC = () => {
               />
               <label
                 htmlFor="bulk-detail-upload"
-                className="cursor-pointer inline-flex items-center justify-center px-3 py-1.5 bg-white border border-gray-300 text-gray-700 text-sm font-medium rounded-md hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-400 transition-colors"
+                className="cursor-pointer inline-flex items-center justify-center gap-1 px-2.5 py-1.5 bg-white border border-gray-300 text-gray-700 text-sm font-medium rounded-md hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-400 transition-colors"
+                title="상세이미지 일괄 업로드"
               >
                 <DocumentAddIcon />
-                <span className="hidden sm:inline">상세이미지 일괄</span>
+                <span className="hidden sm:inline">상세 일괄</span>
               </label>
             </div>
           </header>
@@ -1920,6 +2130,7 @@ const App: React.FC = () => {
                             onRemoveProduct={handleRemoveProduct}
                             onDuplicateProduct={handleDuplicateProduct}
                             onGenerateLabel={openLabelModal}
+                            onGenerateBarcodeLabel={openBarcodeLabelModal}
                             onOpenMemoModal={openMemoModal}
                             onOpenMarginCalculator={openMarginCalculator}
                             onCopyFromAbove={handleCopyFromAbove}
@@ -1944,6 +2155,7 @@ const App: React.FC = () => {
                             onIntegratedDownload={handleIntegratedDownload}
                             isIntegratedDownloading={integratedDownloadingId === product.id}
                             isIntegratedDownloadDone={integratedDownloadDoneId === product.id}
+                            onArchiveProduct={handleArchiveProduct}
                           />
                         </div>
                       ))}
@@ -2051,6 +2263,51 @@ const App: React.FC = () => {
         </div>
       )}
 
+      {isBarcodeLabelModalOpen && (
+        <div className="fixed inset-0 bg-black bg-opacity-60 flex justify-center items-center z-[1000] p-4 transition-opacity duration-300" onClick={closeBarcodeLabelModal}>
+          <div className="bg-slate-800 rounded-xl shadow-2xl max-w-3xl w-full p-6 sm:p-8 relative transform transition-all duration-300 scale-95" onClick={e => e.stopPropagation()}>
+            <button onClick={closeBarcodeLabelModal} className="absolute top-4 right-4 text-slate-400 hover:text-slate-200 transition-colors" aria-label="Close modal">
+              <CloseIcon />
+            </button>
+            <h2 className="text-2xl font-bold text-slate-100 mb-6">생성된 바코드 라벨 이미지</h2>
+
+            <div className="absolute -left-[9999px] top-0 opacity-0" aria-hidden="true">
+                <BarcodeLabel ref={barcodeLabelRef} product={currentProductForBarcodeLabel} />
+            </div>
+
+            <div className="bg-slate-700 rounded-lg p-4 min-h-[400px] flex flex-col justify-center items-center border border-slate-600">
+                {isGeneratingBarcodeLabel && (
+                    <div className="flex flex-col items-center gap-4 text-slate-400">
+                        <svg className="animate-spin h-8 w-8 text-blue-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                        </svg>
+                        <span>이미지 생성 중...</span>
+                    </div>
+                )}
+                {!isGeneratingBarcodeLabel && generatedBarcodeLabelImage && (
+                    <img src={generatedBarcodeLabelImage} alt="Generated Barcode Label" className="max-w-full h-auto object-contain rounded-md shadow-md" />
+                )}
+                {!isGeneratingBarcodeLabel && !generatedBarcodeLabelImage && (
+                    <p className="text-slate-400">이미지를 생성할 수 없습니다.</p>
+                )}
+            </div>
+
+            {!isGeneratingBarcodeLabel && generatedBarcodeLabelImage && (
+                <div className="mt-6 flex flex-col sm:flex-row justify-end gap-3">
+                    <button onClick={closeBarcodeLabelModal} className="px-4 py-2 bg-slate-600 text-slate-200 font-semibold rounded-lg hover:bg-slate-500 focus:outline-none focus:ring-2 focus:ring-slate-400 transition-all duration-200">
+                        닫기
+                    </button>
+                    <button onClick={downloadBarcodeLabelImage} className="flex items-center justify-center px-4 py-2 bg-blue-500 text-white font-semibold rounded-lg shadow-md hover:bg-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-400 transition-all duration-200">
+                        <DownloadIcon />
+                        다운로드
+                    </button>
+                </div>
+            )}
+          </div>
+        </div>
+      )}
+
       {marginCalculatorState.isOpen && (
         <MarginCalculatorModal
             isOpen={marginCalculatorState.isOpen}
@@ -2113,6 +2370,7 @@ const App: React.FC = () => {
           onCleanupDuplicates={handleCleanupDuplicateQuoteTemplates}
           onUpdateCustomFieldNames={handleUpdateQuoteTemplateCustomFieldNames}
           onUpdateOptionFieldName={handleUpdateQuoteTemplateOptionFieldName}
+          onSetExposureBaseTemplate={handleSetExposureBaseTemplate}
           categories={categories}
           onDeleteCategory={handleDeleteCategory}
         />

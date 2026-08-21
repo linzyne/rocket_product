@@ -1,12 +1,14 @@
 
 import React, { useState, useRef, useEffect } from 'react';
 import { Product } from '../types';
-import { TrashIcon, ImageIcon, CopyIcon, UploadIcon, MemoIcon, CalculatorIcon, CopyFromAboveIcon, DownloadIcon, SpinnerIcon, SparklesIcon, ChevronDownIcon, DocumentAddIcon, ImageEditIcon, CloseIcon, ClipboardIcon, SaveIcon, ExternalLinkIcon, CheckIcon } from './Icons';
+import { TrashIcon, ImageIcon, CopyIcon, UploadIcon, MemoIcon, CalculatorIcon, CopyFromAboveIcon, DownloadIcon, SpinnerIcon, SparklesIcon, ChevronDownIcon, DocumentAddIcon, ImageEditIcon, CloseIcon, ClipboardIcon, SaveIcon, ExternalLinkIcon, CheckIcon, StarIcon, RefreshIcon, BarcodeIcon } from './Icons';
 import ProductCustomFields from './ProductCustomFields';
+import BarcodeImage from './BarcodeImage';
 import { QuoteTemplateRegistration } from '../data/quoteTemplates';
 import { CATEGORY_PRESETS } from '../data/categoryPresets';
 import { saveBlobInProductFolder, saveDataUrlsAsZipInProductFolder, productFolderName, getRootDirectory } from '../utils/fileSave';
 import { withCoLtdSuffix } from '../utils/manufacturerFormat';
+import { generateBarcodeNumber } from '../utils/barcode';
 
 interface ProductRowProps {
   product: Product;
@@ -15,6 +17,7 @@ interface ProductRowProps {
   onRemoveProduct: (id: string) => void;
   onDuplicateProduct: (id: string) => void;
   onGenerateLabel: (product: Product) => void;
+  onGenerateBarcodeLabel: (product: Product) => void;
   onOpenMemoModal: (product: Product) => void;
   onOpenMarginCalculator: (id: string) => void;
   onCopyFromAbove: (id: string) => void;
@@ -39,6 +42,7 @@ interface ProductRowProps {
   onIntegratedDownload: (id: string) => void;
   isIntegratedDownloading: boolean;
   isIntegratedDownloadDone: boolean;
+  onArchiveProduct: (product: Product) => boolean;
 }
 
 const Field: React.FC<{ label: string; className?: string; children: React.ReactNode }> = ({ label, className = '', children }) => (
@@ -55,6 +59,7 @@ const ProductRow: React.FC<ProductRowProps> = ({
   onRemoveProduct,
   onDuplicateProduct,
   onGenerateLabel,
+  onGenerateBarcodeLabel,
   onOpenMemoModal,
   onOpenMarginCalculator,
   onCopyFromAbove,
@@ -79,13 +84,22 @@ const ProductRow: React.FC<ProductRowProps> = ({
   onIntegratedDownload,
   isIntegratedDownloading,
   isIntegratedDownloadDone,
+  onArchiveProduct,
 }) => {
   const [isDownloading, setIsDownloading] = useState(false);
   const [isZippingImages, setIsZippingImages] = useState(false);
   const [isZipDone, setIsZipDone] = useState(false);
   const [showCategoryMenu, setShowCategoryMenu] = useState(false);
   const [showDetails, setShowDetails] = useState(false);
+  const [isArchiveDone, setIsArchiveDone] = useState(false);
   const categoryMenuRef = useRef<HTMLDivElement>(null);
+
+  const handleArchiveClick = () => {
+    const saved = onArchiveProduct(product);
+    if (!saved) return;
+    setIsArchiveDone(true);
+    setTimeout(() => setIsArchiveDone(false), 1500);
+  };
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
@@ -434,6 +448,14 @@ const ProductRow: React.FC<ProductRowProps> = ({
 
         <div className="flex items-center gap-0.5 flex-shrink-0 ml-auto">
           <button
+            onClick={handleArchiveClick}
+            className={`transition-colors duration-200 p-1 rounded-md hover:bg-yellow-400/10 ${isArchiveDone ? 'text-yellow-500' : 'text-gray-400 hover:text-yellow-500'}`}
+            aria-label="상품목록에 저장"
+            title="URL/상품명/가격/바코드를 상품목록에 저장 (나중에 검색해서 볼 수 있어요)"
+          >
+            {isArchiveDone ? <CheckIcon className="text-emerald-600" /> : <StarIcon />}
+          </button>
+          <button
             onClick={() => onRemoveProduct(product.id)}
             className="text-gray-400 hover:text-red-500 transition-colors duration-200 p-1 rounded-md hover:bg-red-500/10"
             aria-label="Remove product"
@@ -456,15 +478,42 @@ const ProductRow: React.FC<ProductRowProps> = ({
       </div>
 
       <div className={`px-4 pt-2 ${showDetails ? '' : 'pb-3'}`}>
-        <input
-          type="text"
-          name="searchKeyword"
-          value={product.searchKeyword}
-          onChange={handleChange}
-          onFocus={handleFocus}
-          className={searchInputClass}
-          placeholder="검색어"
-        />
+        {/* 추가 항목(견적서 카테고리별 노출속성 등)은 "더보기"에 접혀 있으면 입력을 빼먹기 쉬워서,
+            항상 보이는 검색어 옆에 붙여 놓는다. 그만큼 검색어 칸 너비는 자동으로 줄어든다. */}
+        <div className="flex items-start gap-2">
+          <Field label="검색어" className="flex-1 min-w-[100px]">
+            <input
+              type="text"
+              name="searchKeyword"
+              value={product.searchKeyword}
+              onChange={handleChange}
+              onFocus={handleFocus}
+              className={searchInputClass}
+              placeholder="검색어"
+            />
+          </Field>
+          {Object.entries(product.customFields).map(([name, value]) => (
+            <Field key={name} label={name} className="basis-[100px] flex-shrink-0">
+              <div className="relative">
+                <input
+                  type="text"
+                  value={value}
+                  onChange={e => onSetCustomField(product.id, name, e.target.value)}
+                  onFocus={handleFocus}
+                  className={`${inputClass} pr-6`}
+                />
+                <button
+                  onClick={() => onRemoveCustomField(product.id, name)}
+                  className="absolute right-1 top-1/2 -translate-y-1/2 text-gray-400 hover:text-red-500 transition-colors p-0.5 rounded-full hover:bg-red-500/10 [&_svg]:h-3.5 [&_svg]:w-3.5"
+                  aria-label={`${name} 항목 삭제`}
+                  title={`${name} 항목 삭제`}
+                >
+                  <CloseIcon />
+                </button>
+              </div>
+            </Field>
+          ))}
+        </div>
       </div>
 
       {showDetails && (
@@ -554,6 +603,34 @@ const ProductRow: React.FC<ProductRowProps> = ({
           <input type="text" name="sku" value={product.sku} onChange={handleChange} onFocus={handleFocus} className={inputClass} placeholder="예: JNL-001" />
         </Field>
 
+        <Field label="바코드" className="flex-1 basis-[130px] relative group">
+          <div className="relative flex items-center">
+            <input
+              type="text"
+              name="barcode"
+              value={product.barcode}
+              onChange={handleChange}
+              onFocus={handleFocus}
+              className={`${inputClass} pr-6 font-mono`}
+              placeholder="바코드 번호"
+            />
+            <button
+              type="button"
+              onClick={() => onProductChange(product.id, 'barcode', generateBarcodeNumber())}
+              className="absolute right-1 text-gray-400 hover:text-blue-600 p-1 rounded-full hover:bg-blue-500/10 transition-colors duration-200"
+              aria-label="바코드 번호 재생성"
+              title="바코드 번호 새로 생성 (내부 관리용)"
+            >
+              <RefreshIcon className="w-3.5 h-3.5" />
+            </button>
+          </div>
+          {product.barcode && (
+            <div className="absolute top-1/2 -translate-y-1/2 left-full ml-2 p-2 bg-white border border-gray-300 rounded-lg shadow-xl opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none z-10">
+              <BarcodeImage value={product.barcode} height={40} />
+            </div>
+          )}
+        </Field>
+
         <Field label="중량(g)" className="basis-[75px]">
           <div className="relative">
             <input type="text" inputMode="decimal" name="weight" value={product.weight} onChange={handleNumericChange} onFocus={handleFocus} className={`${numericInputClass} pr-5`} />
@@ -561,6 +638,34 @@ const ProductRow: React.FC<ProductRowProps> = ({
           </div>
         </Field>
 
+      </div>
+
+      {/* Row: 바코드 라벨(제품 필수 표시사항)에 들어가는 표시정보. 기본값이 채워져 있어 그대로
+          써도 되고, 클릭해서 직접 수정할 수도 있다. */}
+      <div className="flex flex-wrap gap-2 px-4 pt-2">
+        <Field label="소재" className="flex-1 basis-[90px]">
+          <input type="text" name="material" value={product.material} onChange={handleChange} onFocus={handleFocus} className={inputClass} placeholder="예: PP" />
+        </Field>
+
+        <Field label="제조국" className="flex-1 basis-[100px]">
+          <input type="text" name="countryOfOrigin" value={product.countryOfOrigin} onChange={handleChange} onFocus={handleFocus} className={inputClass} />
+        </Field>
+
+        <Field label="수입자" className="flex-1 basis-[90px]">
+          <input type="text" name="importer" value={product.importer} onChange={handleChange} onFocus={handleFocus} className={inputClass} />
+        </Field>
+
+        <Field label="사용연령" className="flex-1 basis-[100px]">
+          <input type="text" name="recommendedAge" value={product.recommendedAge} onChange={handleChange} onFocus={handleFocus} className={inputClass} />
+        </Field>
+
+        <Field label="주의사항" className="flex-1 basis-[100px]">
+          <input type="text" name="cautionNote" value={product.cautionNote} onChange={handleChange} onFocus={handleFocus} className={inputClass} />
+        </Field>
+
+        <Field label="A/S" className="flex-1 basis-[130px]">
+          <input type="text" name="asContact" value={product.asContact} onChange={handleChange} onFocus={handleFocus} className={inputClass} />
+        </Field>
       </div>
 
       {/* Row 2: specs, files & options */}
@@ -614,6 +719,16 @@ const ProductRow: React.FC<ProductRowProps> = ({
               >
                 <SparklesIcon className="w-4 h-4" />
               </button>
+            )}
+          </div>
+        </Field>
+
+        <Field label="바코드 이미지" className="basis-[104px]">
+          <div className="h-[30px] flex items-center justify-center bg-white border border-gray-200 rounded-md overflow-hidden px-1">
+            {product.barcode ? (
+              <BarcodeImage value={product.barcode} height={24} className="max-w-full object-contain" />
+            ) : (
+              <span className="text-[10px] text-gray-300">-</span>
             )}
           </div>
         </Field>
@@ -674,27 +789,15 @@ const ProductRow: React.FC<ProductRowProps> = ({
           </button>
         </Field>
 
-        {Object.entries(product.customFields).map(([name, value]) => (
-          <Field key={name} label={name} className="basis-[100px]">
-            <div className="relative">
-              <input
-                type="text"
-                value={value}
-                onChange={e => onSetCustomField(product.id, name, e.target.value)}
-                onFocus={handleFocus}
-                className={`${inputClass} pr-6`}
-              />
-              <button
-                onClick={() => onRemoveCustomField(product.id, name)}
-                className="absolute right-1 top-1/2 -translate-y-1/2 text-gray-400 hover:text-red-500 transition-colors p-0.5 rounded-full hover:bg-red-500/10 [&_svg]:h-3.5 [&_svg]:w-3.5"
-                aria-label={`${name} 항목 삭제`}
-                title={`${name} 항목 삭제`}
-              >
-                <CloseIcon />
-              </button>
-            </div>
-          </Field>
-        ))}
+        <Field label="바코드라벨" className="basis-[44px]">
+          <button
+            onClick={() => onGenerateBarcodeLabel(product)}
+            className="w-full flex items-center justify-center px-2 py-1 bg-white border border-gray-200 rounded-md text-gray-500 hover:bg-gray-50 hover:text-blue-700 transition-colors [&_svg]:h-3.5 [&_svg]:w-3.5"
+            title="바코드 라벨 생성 (상품명/사이즈/소재/제조국 등 + 바코드)"
+          >
+            <BarcodeIcon />
+          </button>
+        </Field>
 
         <Field label="이미지 편집" className="basis-[44px]">
           <button

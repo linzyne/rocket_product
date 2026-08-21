@@ -5,6 +5,10 @@ import { Product } from '../types';
 // customFieldNames에 실제로 "color"라는 이름을 등록할 일은 거의 없으므로 구분에 안전합니다.
 export const OPTION_FIELD_COLOR = 'color';
 
+// 견적서 엑셀의 그룹 헤더 행(headerRowNumber - 1행)에서 "노출 속성" 영역을 찾을 때 쓰는 이름.
+// normalizeHeader가 공백을 제거하므로 "노출 속성"/"노출속성" 표기는 모두 같은 값으로 비교됩니다.
+export const EXPOSURE_ATTRIBUTE_GROUP_LABEL = '노출속성';
+
 // 앱에 등록된 견적서 양식 파일. 카테고리와 함께 저장되며, 상품에서 선택해 사용합니다.
 export interface QuoteTemplateRegistration {
   id: string;
@@ -22,7 +26,21 @@ export interface QuoteTemplateRegistration {
   // 등록 시각(ms). 같은 카테고리로 여러 번 등록했을 때 "중복 정리"에서 가장 최근 것을
   // 가려내는 데 사용합니다. 구버전에서 등록된 항목은 이 값이 없을 수 있습니다.
   createdAt?: number;
+  // 이 견적서를 "노출속성 기본 양식"으로 지정했는지. 다른 견적서를 새로 등록할 때, 이 견적서의
+  // 노출속성 항목(색상/수량/높이 등)과 비교해서 새로 등록하는 견적서에만 있는 항목을 자동으로
+  // customFieldNames에 추가합니다. 최대 한 개 견적서만 true일 수 있습니다.
+  isExposureBaseTemplate?: boolean;
 }
+
+// 견적서 '상품명' 컬럼과 바코드 라벨(BarcodeLabel)이 항상 같은 값을 쓰도록 공유하는 계산식.
+export const getProductQuoteTitle = (product: Product): string =>
+  [product.productName, product.color].filter(Boolean).join(', ');
+
+// 소재는 앱 안에서 저장 위치가 여러 번 바뀌었습니다: 신규 등록 화면의 전용 material 필드를
+// 우선 쓰고, 예전에 "+추가 항목"으로 등록해둔 customFields['재질']/['소재']가 있으면 그 값을
+// 이어서 씁니다(견적서 매핑과 바코드 라벨이 항상 같은 값을 보도록 공유합니다).
+export const getProductMaterialValue = (product: Product): string =>
+  product.material || (product.customFields || {})['재질'] || (product.customFields || {})['소재'] || '';
 
 export const dataUrlToArrayBuffer = (dataUrl: string): ArrayBuffer => {
   const base64 = dataUrl.split(',')[1] || '';
@@ -100,8 +118,8 @@ export const DEFAULT_QUOTE_FIXED_VALUES: QuoteFixedValues = {
 
 export const getQuoteTemplates = (fixedValues: QuoteFixedValues): QuoteTemplateProfile[] => {
   const carRcMapping: QuoteTemplateProfile['mapping'] = {
-    '상품명': p => [p.productName, p.color].filter(Boolean).join(', '),
-    '상품바코드': () => fixedValues.barcodeText,
+    '상품명': p => getProductQuoteTitle(p),
+    '상품바코드': p => p.barcode || fixedValues.barcodeText,
     '모델명': p => p.productName,
     '검색태그': p => p.searchKeyword,
     '브랜드': () => fixedValues.brand,
@@ -143,6 +161,7 @@ export const getQuoteTemplates = (fixedValues: QuoteFixedValues): QuoteTemplateP
     '공급가': (v, p) => { p.supplyPrice = String(v ?? '').replace(/[^\d.]/g, ''); },
     '쿠팡판매가': (v, p) => { p.sellingPrice = String(v ?? '').replace(/[^\d.]/g, ''); },
     '박스내sku수량': (v, p) => { p.sku = String(v ?? '').trim(); },
+    '상품바코드': (v, p) => { p.barcode = String(v ?? '').trim(); },
     '한개단품포장무게': (v, p) => { p.weight = String(v ?? '').replace(/[^\d.]/g, ''); },
     '한개단품포장사이즈': (v, p) => {
       p.packageSize = String(v ?? '').trim();
@@ -369,6 +388,73 @@ const findLegalInfoCols = (
   });
 };
 
+// 견적서 엑셀의 그룹 헤더 행(headerRowNumber - 1행)에서 "노출 속성" 병합 셀이 차지하는 컬럼
+// 범위를 찾아, 그 범위 안에 실제로 적힌 항목 이름(headerRowNumber행)들을 순서대로 돌려줍니다.
+// 카테고리마다 이 영역의 컬럼 개수가 다릅니다(예: 색상만 있는 견적서도, 색상/수량/높이처럼
+// 여러 개인 견적서도 있음). 헤더로 찾을 수 없으면(그룹 이름이 다르거나 파일 구조가 다르면)
+// 빈 배열을 돌려주고, 호출하는 쪽에서 비교를 건너뜁니다.
+export const extractExposureAttributeLabels = async (
+  sourceArrayBuffer: ArrayBuffer,
+  template: QuoteTemplateProfile
+): Promise<string[]> => {
+  const zip = await JSZip.loadAsync(sourceArrayBuffer);
+  const { doc, rowMap, resolveCellText } = await loadTemplateSheet(zip);
+
+  const groupRowNumber = template.headerRowNumber - 1;
+  const groupRowEl = rowMap.get(groupRowNumber);
+  const headerRowEl = rowMap.get(template.headerRowNumber);
+  if (!groupRowEl || !headerRowEl) return [];
+
+  const groupCells = getCellMap(groupRowEl);
+  const headerCells = getCellMap(headerRowEl);
+
+  const groupCellEntry = Array.from(groupCells.entries()).find(
+    ([, cellEl]) => normalizeHeader(resolveCellText(cellEl)) === normalizeHeader(EXPOSURE_ATTRIBUTE_GROUP_LABEL)
+  );
+  if (!groupCellEntry) return [];
+
+  const groupCol = colIndexFromLetter(groupCellEntry[0]);
+  let startCol = groupCol;
+  let endCol = groupCol;
+
+  const mergesEl = doc.getElementsByTagName('mergeCells')[0];
+  const merges = mergesEl
+    ? Array.from(mergesEl.getElementsByTagName('mergeCell')).map((m: any) => m.getAttribute('ref'))
+    : [];
+  for (const mergeRef of merges as string[]) {
+    const [startRef, endRef] = mergeRef.split(':');
+    if (!endRef) continue;
+    if (groupRowNumber < rowNumOf(startRef) || groupRowNumber > rowNumOf(endRef)) continue;
+    const mStartCol = colIndexFromLetter(colLetterOf(startRef));
+    const mEndCol = colIndexFromLetter(colLetterOf(endRef));
+    if (groupCol >= mStartCol && groupCol <= mEndCol) {
+      startCol = mStartCol;
+      endCol = mEndCol;
+      break;
+    }
+  }
+
+  const labels: string[] = [];
+  for (let col = startCol; col <= endCol; col++) {
+    const cellEl = headerCells.get(colLetterFromIndex(col));
+    const label = cellEl ? resolveCellText(cellEl).trim() : '';
+    if (label) labels.push(label);
+  }
+  return labels;
+};
+
+// baseLabels(기본 양식의 노출속성 항목)에 없는, newLabels 쪽에만 있는 항목 이름을 순서대로 돌려줍니다.
+export const findNewExposureAttributeLabels = (baseLabels: string[], newLabels: string[]): string[] => {
+  const baseNormalized = new Set(baseLabels.map(normalizeHeader));
+  const seen = new Set<string>();
+  return newLabels.filter(label => {
+    const key = normalizeHeader(label);
+    if (baseNormalized.has(key) || seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+};
+
 // 한 상품에 대해, 컬럼 번호 -> 실제로 채워질 값을 계산합니다. 실제로 셀에 쓰는 fillQuoteWorkbook과
 // 필수 항목이 비어 있는지 미리 검사하는 findMissingRequiredCells가 동일한 값 계산 로직을 공유해야
 // "쓸 때"와 "검사할 때"의 결과가 어긋나지 않습니다.
@@ -395,11 +481,11 @@ const computeProductColumnValues = (
     if (colNumber !== undefined) values.set(colNumber, value);
   });
 
-  // 재질은 견적서마다 컬럼 이름이 다를 수 있어(예: "재질", "소재/재질", "재질(소재)") 정확히
-  // 일치하는 이름으로 등록하지 않고, 헤더 텍스트에 "재질"이 포함된 첫 컬럼을 찾아 채웁니다.
-  const materialValue = (product.customFields || {})['재질'];
+  // 재질(소재)은 견적서마다 컬럼 이름이 다를 수 있어(예: "재질", "소재", "소재/재질") 정확히
+  // 일치하는 이름으로 등록하지 않고, 헤더 텍스트에 "재질" 또는 "소재"가 포함된 첫 컬럼을 찾아 채웁니다.
+  const materialValue = getProductMaterialValue(product);
   if (materialValue) {
-    const materialCol = Object.entries(colIndexMap).find(([key]) => key.includes('재질'))?.[1];
+    const materialCol = Object.entries(colIndexMap).find(([key]) => key.includes('재질') || key.includes('소재'))?.[1];
     if (materialCol !== undefined) values.set(materialCol, materialValue);
   }
 

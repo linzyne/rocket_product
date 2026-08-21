@@ -109,6 +109,13 @@ export const SaveIcon = () => (
     </svg>
 );
 
+export const ArchiveIcon = (props: React.SVGProps<SVGSVGElement>) => (
+  <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} {...props}>
+    <path strokeLinecap="round" strokeLinejoin="round" d="M4 7a1 1 0 011-1h14a1 1 0 011 1v2a1 1 0 01-1 1H5a1 1 0 01-1-1V7z" />
+    <path strokeLinecap="round" strokeLinejoin="round" d="M5 10v8a2 2 0 002 2h10a2 2 0 002-2v-8M10 14h4" />
+  </svg>
+);
+
 export const StarIcon = (props: React.SVGProps<SVGSVGElement>) => (
   <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 24 24" fill="currentColor" {...props}>
     <path d="M12 2.5l2.9 6.31 6.85.72-5.16 4.7 1.47 6.77L12 17.77l-6.06 3.23 1.47-6.77-5.16-4.7 6.85-.72L12 2.5z" />
@@ -204,6 +211,20 @@ export const UndoIcon = (props: React.SVGProps<SVGSVGElement>) => (
   <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} {...props}>
     <path strokeLinecap="round" strokeLinejoin="round" d="M9 14l-4-4 4-4" />
     <path strokeLinecap="round" strokeLinejoin="round" d="M5 10h9a5 5 0 015 5v1" />
+  </svg>
+);
+
+export const BarcodeIcon = (props: React.SVGProps<SVGSVGElement>) => (
+  <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} {...props}>
+    <path strokeLinecap="round" d="M4 5v14M8 5v14M11 5v14M14 5v14M16.5 5v14M20 5v14" />
+  </svg>
+);
+
+export const RefreshIcon = (props: React.SVGProps<SVGSVGElement>) => (
+  <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} {...props}>
+    <path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h5" />
+    <path strokeLinecap="round" strokeLinejoin="round" d="M20 20v-5h-5" />
+    <path strokeLinecap="round" strokeLinejoin="round" d="M5.5 9a7 7 0 0112.4-2.5M18.5 15a7 7 0 01-12.4 2.5" />
   </svg>
 );
 

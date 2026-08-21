@@ -13,6 +13,7 @@ interface QuoteTemplateManagerModalProps {
   onCleanupDuplicates: () => void;
   onUpdateCustomFieldNames: (id: string, customFieldNames: string[]) => void;
   onUpdateOptionFieldName: (id: string, optionFieldName: string) => void;
+  onSetExposureBaseTemplate: (id: string) => void;
   categories: string[];
   onDeleteCategory: (category: string) => void;
 }
@@ -26,6 +27,7 @@ const QuoteTemplateManagerModal: React.FC<QuoteTemplateManagerModalProps> = ({
   onCleanupDuplicates,
   onUpdateCustomFieldNames,
   onUpdateOptionFieldName,
+  onSetExposureBaseTemplate,
   categories,
   onDeleteCategory,
 }) => {
@@ -255,6 +257,7 @@ const QuoteTemplateManagerModal: React.FC<QuoteTemplateManagerModalProps> = ({
                   onDelete={onDelete}
                   onUpdateCustomFieldNames={onUpdateCustomFieldNames}
                   onUpdateOptionFieldName={onUpdateOptionFieldName}
+                  onSetExposureBaseTemplate={onSetExposureBaseTemplate}
                 />
               ))}
             </ul>
@@ -277,9 +280,10 @@ interface RegistrationListItemProps {
   onDelete: (id: string) => void;
   onUpdateCustomFieldNames: (id: string, customFieldNames: string[]) => void;
   onUpdateOptionFieldName: (id: string, optionFieldName: string) => void;
+  onSetExposureBaseTemplate: (id: string) => void;
 }
 
-const RegistrationListItem: React.FC<RegistrationListItemProps> = ({ registration, onDelete, onUpdateCustomFieldNames, onUpdateOptionFieldName }) => {
+const RegistrationListItem: React.FC<RegistrationListItemProps> = ({ registration, onDelete, onUpdateCustomFieldNames, onUpdateOptionFieldName, onSetExposureBaseTemplate }) => {
   const [newName, setNewName] = useState('');
   const fieldNames = registration.customFieldNames || [];
   const optionFieldName = registration.optionFieldName || OPTION_FIELD_COLOR;
@@ -300,17 +304,35 @@ const RegistrationListItem: React.FC<RegistrationListItemProps> = ({ registratio
     <li className="bg-slate-700/50 border border-slate-600 rounded-md px-3 py-2">
       <div className="flex items-center justify-between gap-3">
         <div className="min-w-0">
-          <p className="text-sm font-medium text-slate-200 truncate">{registration.category}</p>
+          <div className="flex items-center gap-1.5">
+            <p className="text-sm font-medium text-slate-200 truncate">{registration.category}</p>
+            {registration.isExposureBaseTemplate && (
+              <span className="flex-shrink-0 text-[10px] font-semibold text-emerald-300 bg-emerald-500/10 border border-emerald-500/30 rounded-full px-2 py-0.5">
+                노출속성 기본 양식
+              </span>
+            )}
+          </div>
           <p className="text-xs text-slate-400 truncate">{registration.fileName}</p>
         </div>
-        <button
-          onClick={() => onDelete(registration.id)}
-          className="flex-shrink-0 text-slate-400 hover:text-red-500 transition-colors duration-200 p-1.5 rounded-md hover:bg-red-500/10"
-          aria-label="Delete quote template"
-          title="삭제"
-        >
-          <TrashIcon />
-        </button>
+        <div className="flex items-center gap-1 flex-shrink-0">
+          {!registration.isExposureBaseTemplate && (
+            <button
+              onClick={() => onSetExposureBaseTemplate(registration.id)}
+              className="text-xs px-2 py-1 bg-slate-700 text-slate-300 border border-slate-600 rounded-md hover:bg-slate-600 hover:text-slate-100 transition-colors whitespace-nowrap"
+              title="이 견적서의 노출속성 항목을 기본값으로 삼아, 다른 견적서를 새로 등록할 때 여기 없는 항목만 자동으로 추가합니다."
+            >
+              기본 양식으로 지정
+            </button>
+          )}
+          <button
+            onClick={() => onDelete(registration.id)}
+            className="text-slate-400 hover:text-red-500 transition-colors duration-200 p-1.5 rounded-md hover:bg-red-500/10"
+            aria-label="Delete quote template"
+            title="삭제"
+          >
+            <TrashIcon />
+          </button>
+        </div>
       </div>
 
       <div className="mt-2 pt-2 border-t border-slate-600/60">

@@ -1,5 +1,6 @@
 import React from 'react';
 import { Product } from '../types';
+import BarcodeImage from './BarcodeImage';
 
 interface ProductLabelProps {
   product: Product | null;
@@ -31,6 +32,11 @@ const ProductLabel = React.forwardRef<HTMLDivElement, ProductLabelProps>(({ prod
           </div>
         ))}
       </div>
+      {product.barcode && (
+        <div className="mt-6 flex justify-center">
+          <BarcodeImage value={product.barcode} height={55} />
+        </div>
+      )}
       <p className="mt-6 text-sm text-gray-600 text-center">
         제품 이상 시 공정거래위원회 고시 소비자분쟁해결기준에 의거 보상합니다.
       </p>

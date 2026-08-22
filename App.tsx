@@ -501,6 +501,13 @@ const App: React.FC = () => {
     return archiveProducts([product]);
   }, [archiveProducts]);
 
+  // 저장(별표)은 클릭한 옵션 하나가 아니라 같은 URL 그룹의 옵션 전체를 한번에 상품목록에 저장한다.
+  const handleArchiveProductGroup = useCallback((groupProducts: Product[]): boolean => {
+    const saved = archiveProducts(groupProducts);
+    if (!saved) alert('URL 또는 상품명이 있어야 상품목록에 저장할 수 있습니다.');
+    return saved;
+  }, [archiveProducts]);
+
   const handleDeleteArchivedProduct = useCallback((id: string) => {
     if (isFirebaseConfigured && db) {
       const firestore = db;
@@ -719,9 +726,9 @@ const App: React.FC = () => {
     setProducts(prev => {
       const source = prev.find(p => p.id === productId);
       if (!source) return prev;
-      // 카테고리/견적서는 상품 하나가 아니라 같은 URL을 공유하는 옵션 그룹 전체에 동일하게
+      // URL/카테고리/견적서는 상품 하나가 아니라 같은 URL을 공유하는 옵션 그룹 전체에 동일하게
       // 적용한다(상세페이지와 같은 방식, getGroupProducts 참고). 그 외 필드는 이 상품 하나만 바뀐다.
-      const groupKey = field === 'category' || field === 'quoteTemplateId' ? getProductGroupKey(source) : null;
+      const groupKey = field === 'category' || field === 'quoteTemplateId' || field === 'url' ? getProductGroupKey(source) : null;
 
       return prev.map(p => {
         if (p.id !== productId && (groupKey === null || getProductGroupKey(p) !== groupKey)) return p;
@@ -2207,6 +2214,17 @@ const App: React.FC = () => {
                     products={group.products}
                     isExpanded={isExpanded}
                     onToggle={() => toggleGroupExpanded(groupProductIds)}
+                    onProductChange={handleProductChange}
+                    registeredCategories={categories}
+                    quoteTemplateRegistrations={quoteTemplateRegistrations}
+                    onImportFrom1688={handleImportFrom1688}
+                    isImportingFrom1688={importing1688ProductIds.has(group.products[0].id)}
+                    onOpenDetailPageBuilder={openDetailPageBuilder}
+                    isDetailPageDone={detailPageDoneId === group.products[0].id}
+                    onIntegratedDownload={handleIntegratedDownload}
+                    isIntegratedDownloading={integratedDownloadingId === group.products[0].id}
+                    isIntegratedDownloadDone={integratedDownloadDoneId === group.products[0].id}
+                    onArchiveGroup={handleArchiveProductGroup}
                   />
                   {isExpanded && (
                     <div className="mt-3 ml-3 pl-4 border-l-2 border-gray-200 space-y-4">
@@ -2228,27 +2246,17 @@ const App: React.FC = () => {
                             onCopyFromAbove={handleCopyFromAbove}
                             onOpenTranslation={(dataUrl, field) => handleOpenTranslation(product.id, dataUrl, field)}
                             onOpenImageEditor={openImageEditor}
-                            onOpenDetailPageBuilder={openDetailPageBuilder}
-                            isDetailPageDone={detailPageDoneId === product.id}
                             onMenuToggle={(isOpen) => setActiveProductId(isOpen ? product.id : null)}
                             onSetCustomField={handleSetProductCustomField}
                             onRemoveCustomField={handleRemoveProductCustomField}
                             onTogglePackageSizeSameAsProduct={handleTogglePackageSizeSameAsProduct}
-                            quoteTemplateRegistrations={quoteTemplateRegistrations}
                             onGenerateProductQuote={handleGenerateProductQuote}
                             isGeneratingQuote={generatingProductQuoteId === product.id}
                             onImportProductQuote={handleImportProductQuote}
                             isImportingQuote={importingProductQuoteId === product.id}
-                            onImportFrom1688={handleImportFrom1688}
-                            isImportingFrom1688={importing1688ProductIds.has(product.id)}
                             use1688AiTranslation={use1688AiTranslation}
                             onToggle1688AiTranslation={handleToggle1688AiTranslation}
                             onImportMarginFromClipboard={handleImportMarginFromClipboard}
-                            registeredCategories={categories}
-                            onIntegratedDownload={handleIntegratedDownload}
-                            isIntegratedDownloading={integratedDownloadingId === product.id}
-                            isIntegratedDownloadDone={integratedDownloadDoneId === product.id}
-                            onArchiveProduct={handleArchiveProduct}
                           />
                         </div>
                       ))}

@@ -229,6 +229,7 @@ const DetailPageBuilderModal: React.FC<DetailPageBuilderModalProps> = ({ isOpen,
   const previewRef = useRef<HTMLDivElement>(null);
   const draggedPhotoIdRef = useRef<string | null>(null);
   const [draggingPhotoId, setDraggingPhotoId] = useState<string | null>(null);
+  const [dragOverPhotoId, setDragOverPhotoId] = useState<string | null>(null);
   const brushCanvasRef = useRef<HTMLCanvasElement>(null);
   const isPaintingRef = useRef(false);
   const lastPointRef = useRef<{ x: number; y: number } | null>(null);
@@ -664,28 +665,13 @@ const DetailPageBuilderModal: React.FC<DetailPageBuilderModalProps> = ({ isOpen,
     });
   };
 
-  const handlePhotoDragStart = (id: string) => (e: React.DragEvent) => {
-    draggedPhotoIdRef.current = id;
-    setDraggingPhotoId(id);
-    e.dataTransfer.effectAllowed = 'move';
-  };
-
-  const handlePhotoDragOver = (e: React.DragEvent) => {
-    e.preventDefault();
-    e.dataTransfer.dropEffect = 'move';
-  };
-
-  const handlePhotoDragEnd = () => {
-    draggedPhotoIdRef.current = null;
-    setDraggingPhotoId(null);
-  };
-
-  const handlePhotoDrop = (targetId: string) => (e: React.DragEvent) => {
-    e.preventDefault();
-    const draggedId = draggedPhotoIdRef.current;
-    draggedPhotoIdRef.current = null;
-    setDraggingPhotoId(null);
-    if (!draggedId || draggedId === targetId) return;
+  // Reordering uses Pointer Events (not native HTML5 drag-and-drop): the preview sits inside a
+  // `transform: scale(zoom)` wrapper for the zoom control, and Chrome's native drag/drop hit-testing
+  // tracks the cursor against the unscaled layout under a transformed ancestor — so at any zoom other
+  // than exactly 100% the drop target it resolves is offset from where the photo actually is, and the
+  // reorder silently never applies. Pointer Events + elementFromPoint aren't affected by that.
+  const reorderPhotos = (draggedId: string, targetId: string) => {
+    if (draggedId === targetId) return;
     setPhotos(prev => {
       const next = [...prev];
       const fromIdx = next.findIndex(p => p.id === draggedId);
@@ -697,22 +683,58 @@ const DetailPageBuilderModal: React.FC<DetailPageBuilderModalProps> = ({ isOpen,
     });
   };
 
+  const handlePhotoPointerDown = (id: string) => (e: React.PointerEvent) => {
+    if (brushMode || e.button !== 0) return;
+    // Let the crop/move/star buttons layered on top of the photo handle their own clicks.
+    if ((e.target as HTMLElement).closest('button')) return;
+    e.currentTarget.setPointerCapture(e.pointerId);
+    draggedPhotoIdRef.current = id;
+    setDraggingPhotoId(id);
+  };
+
+  const handlePhotoPointerMove = (e: React.PointerEvent) => {
+    if (!draggedPhotoIdRef.current) return;
+    const el = document.elementFromPoint(e.clientX, e.clientY) as HTMLElement | null;
+    const targetEl = el?.closest<HTMLElement>('[data-photo-id]');
+    setDragOverPhotoId(targetEl?.dataset.photoId ?? null);
+  };
+
+  const endPhotoDrag = () => {
+    const draggedId = draggedPhotoIdRef.current;
+    const targetId = dragOverPhotoId;
+    draggedPhotoIdRef.current = null;
+    setDraggingPhotoId(null);
+    setDragOverPhotoId(null);
+    if (draggedId && targetId) reorderPhotos(draggedId, targetId);
+  };
+
+  const handlePhotoPointerUp = () => endPhotoDrag();
+  const handlePhotoPointerCancel = () => endPhotoDrag();
+
   const renderPhoto = (photo: PhotoItem, marginBottom: number) => (
     <div key={photo.id} style={{ position: 'relative', marginBottom }}>
       <img
         data-photo-id={photo.id}
         src={photo.dataUrl}
-        draggable={!brushMode}
-        onDragStart={handlePhotoDragStart(photo.id)}
-        onDragOver={handlePhotoDragOver}
-        onDrop={handlePhotoDrop(photo.id)}
-        onDragEnd={handlePhotoDragEnd}
+        draggable={false}
+        onPointerDown={handlePhotoPointerDown(photo.id)}
+        onPointerMove={handlePhotoPointerMove}
+        onPointerUp={handlePhotoPointerUp}
+        onPointerCancel={handlePhotoPointerCancel}
         onClick={() => {
-          // Drags fire their own dragstart/drop and never reach a plain click, so this only
-          // triggers on an actual click — safe to share the same image with drag-to-reorder.
+          // A stationary pointerdown+up (no drag) still fires a plain click — safe to share the
+          // same image with drag-to-reorder.
           if (!brushMode) setCropTarget(photo);
         }}
-        style={{ width: '100%', display: 'block', cursor: brushMode ? 'default' : 'pointer', opacity: draggingPhotoId === photo.id ? 0.4 : 1 }}
+        style={{
+          width: '100%',
+          display: 'block',
+          cursor: brushMode ? 'default' : 'grab',
+          opacity: draggingPhotoId === photo.id ? 0.4 : 1,
+          touchAction: brushMode ? undefined : 'none',
+          outline: dragOverPhotoId === photo.id && draggingPhotoId && draggingPhotoId !== photo.id ? '2px solid #3b82f6' : 'none',
+          outlineOffset: -2,
+        }}
         alt=""
       />
       {!brushMode && (
@@ -1207,14 +1229,19 @@ const DetailPageBuilderModal: React.FC<DetailPageBuilderModalProps> = ({ isOpen,
                     return (
                       <div
                         key={photo.id}
-                        draggable
-                        onDragStart={handlePhotoDragStart(photo.id)}
-                        onDragOver={handlePhotoDragOver}
-                        onDrop={handlePhotoDrop(photo.id)}
-                        onDragEnd={handlePhotoDragEnd}
+                        data-photo-id={photo.id}
+                        onPointerDown={handlePhotoPointerDown(photo.id)}
+                        onPointerMove={handlePhotoPointerMove}
+                        onPointerUp={handlePhotoPointerUp}
+                        onPointerCancel={handlePhotoPointerCancel}
                         title={`${idx + 1}번째 · ${role} (드래그해서 순서 변경)`}
                         className="group relative w-16 h-16 cursor-grab active:cursor-grabbing"
-                        style={{ opacity: draggingPhotoId === photo.id ? 0.4 : 1 }}
+                        style={{
+                          opacity: draggingPhotoId === photo.id ? 0.4 : 1,
+                          touchAction: 'none',
+                          outline: dragOverPhotoId === photo.id && draggingPhotoId && draggingPhotoId !== photo.id ? '2px solid #3b82f6' : 'none',
+                          outlineOffset: 1,
+                        }}
                       >
                         {/* Clips only the thumbnail image to its rounded box — the star dropdown below
                             lives outside this wrapper so it isn't clipped along with the photo. */}

@@ -6,6 +6,11 @@ interface ImageCropModalProps {
   imageDataUrl: string | null;
   onCancel: () => void;
   onApply: (croppedDataUrl: string) => void;
+  // When cropping a batch of photos (see DetailPageBuilderModal's startCropQueue), these describe
+  // this photo's position in the queue so the modal can show progress and relabel the apply button
+  // ("다음 사진" mid-batch, final apply label on the last one) — undefined/1 for a single photo.
+  queueIndex?: number;
+  queueTotal?: number;
 }
 
 interface Rect {
@@ -79,7 +84,7 @@ const HANDLES: { mode: DragMode; className: string; cursor: string }[] = [
   { mode: 'e', className: 'right-0 top-1/2 -translate-y-1/2', cursor: 'ew-resize' },
 ];
 
-const ImageCropModal: React.FC<ImageCropModalProps> = ({ isOpen, imageDataUrl, onCancel, onApply }) => {
+const ImageCropModal: React.FC<ImageCropModalProps> = ({ isOpen, imageDataUrl, onCancel, onApply, queueIndex = 0, queueTotal = 1 }) => {
   const [naturalSize, setNaturalSize] = useState({ width: 0, height: 0 });
   const [rect, setRect] = useState<Rect>({ x: 0, y: 0, w: 100, h: 100 });
   const [aspect, setAspect] = useState<number | null>(null);
@@ -88,12 +93,21 @@ const ImageCropModal: React.FC<ImageCropModalProps> = ({ isOpen, imageDataUrl, o
   const wrapperRef = useRef<HTMLDivElement>(null);
   const dragRef = useRef<{ mode: DragMode; anchor: { x: number; y: number }; start: { x: number; y: number } } | null>(null);
 
-  useEffect(() => {
-    if (!isOpen) return;
-    setNaturalSize({ width: 0, height: 0 });
-    setRect({ x: 0, y: 0, w: 100, h: 100 });
-    setAspect(null);
-  }, [isOpen, imageDataUrl]);
+  // Resets the crop box whenever a new photo is shown (either a fresh open, or — for a batch —
+  // stepping to the next photo in the queue while the modal stays open). This runs during render
+  // (the "adjusting state during render" pattern) rather than in a useEffect: a useEffect fires
+  // *after* commit, but a cached/already-decoded data URL can fire the <img>'s load event
+  // synchronously during that same commit, so an effect-based reset would race it and could clobber
+  // the real naturalSize with stale zeros depending on timing.
+  const [prevKey, setPrevKey] = useState({ isOpen, imageDataUrl });
+  if (prevKey.isOpen !== isOpen || prevKey.imageDataUrl !== imageDataUrl) {
+    setPrevKey({ isOpen, imageDataUrl });
+    if (isOpen) {
+      setNaturalSize({ width: 0, height: 0 });
+      setRect({ x: 0, y: 0, w: 100, h: 100 });
+      setAspect(null);
+    }
+  }
 
   const handleImgLoad = (e: React.SyntheticEvent<HTMLImageElement>) => {
     const img = e.currentTarget;
@@ -257,6 +271,11 @@ const ImageCropModal: React.FC<ImageCropModalProps> = ({ isOpen, imageDataUrl, o
           <h2 className="text-lg font-bold text-slate-100 flex items-center gap-2">
             <CropIcon className="text-purple-400 w-5 h-5" />
             사진 자르기
+            {queueTotal > 1 && (
+              <span className="text-sm font-normal text-purple-400 tabular-nums">
+                ({queueIndex + 1}/{queueTotal})
+              </span>
+            )}
           </h2>
           <button onClick={onCancel} className="text-slate-400 hover:text-slate-200 transition-colors" aria-label="Close modal">
             <CloseIcon />
@@ -341,14 +360,15 @@ const ImageCropModal: React.FC<ImageCropModalProps> = ({ isOpen, imageDataUrl, o
 
         <div className="flex items-center justify-end gap-2 px-6 py-4 border-t border-slate-700">
           <button onClick={onCancel} className="px-4 py-2 text-sm bg-slate-700 text-slate-300 font-semibold rounded-lg hover:bg-slate-600 transition-colors">
-            취소
+            {queueTotal > 1 ? '전체 취소' : '취소'}
           </button>
           <button
             onClick={handleApply}
             disabled={!naturalSize.width || isApplying}
             className="flex items-center gap-1.5 px-4 py-2 text-sm bg-purple-600 text-white font-semibold rounded-lg hover:bg-purple-500 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
           >
-            <CropIcon className="h-4 w-4" /> 자르기 적용
+            <CropIcon className="h-4 w-4" />
+            {queueTotal > 1 ? (queueIndex < queueTotal - 1 ? '다음 사진 →' : '모두 적용') : '자르기 적용'}
           </button>
         </div>
       </div>

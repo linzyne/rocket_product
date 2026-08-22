@@ -11,7 +11,7 @@ import {
   FEATURE_BLOCK_COUNT_MIN,
   FEATURE_BLOCK_COUNT_MAX,
 } from '../utils/detailPageCopyTemplate';
-import { CloseIcon, SpinnerIcon, SaveIcon, DownloadIcon, SparklesIcon, UploadIcon, TrashIcon, ChevronUpIcon, ChevronDownIcon, BrushIcon, PlusIcon, StarIcon, CropIcon } from './Icons';
+import { CloseIcon, SpinnerIcon, SaveIcon, DownloadIcon, SparklesIcon, UploadIcon, TrashIcon, ChevronUpIcon, ChevronDownIcon, BrushIcon, PlusIcon, StarIcon, CropIcon, CheckIcon, EyedropperIcon, UndoIcon, LineIcon, SquareIcon, CircleIcon, ArrowIcon } from './Icons';
 import { editImageWithGemini, BRUSH_ERASE_PROMPT } from '../utils/geminiImageEdit';
 import { generateDetailPageCopyWithGemini } from '../utils/detailPageCopyGemini';
 import { saveDataUrlInProductFolder, productFolderName } from '../utils/fileSave';
@@ -40,6 +40,14 @@ interface PhotoItem {
   id: string;
   dataUrl: string;
 }
+
+// Free-draw layer: brush strokes are freehand point paths, the rest are drag-defined shapes
+// (from → to, in the same drawCanvas coordinate space as points). All persist as vector data (not
+// baked into a bitmap) so they can be redrawn whenever the canvas is resized — see redrawDrawObjects.
+type DrawTool = 'brush' | 'line' | 'rect' | 'ellipse' | 'arrow';
+type DrawObject =
+  | { type: 'brush'; points: { x: number; y: number }[]; color: string; size: number }
+  | { type: 'line' | 'rect' | 'ellipse' | 'arrow'; from: { x: number; y: number }; to: { x: number; y: number }; color: string; size: number };
 
 // Design width the whole preview is authored at (matches the reference detail page's proportions,
 // see scratchpad measurement notes) — html2canvas captures this DOM 1:1 (scaled up) for export.
@@ -206,9 +214,29 @@ const DetailPageBuilderModal: React.FC<DetailPageBuilderModalProps> = ({ isOpen,
   const [eraseStatus, setEraseStatus] = useState<'idle' | 'loading' | 'error'>('idle');
   const [eraseError, setEraseError] = useState('');
 
-  // Photo currently open in the crop modal; applying replaces just that photo's dataUrl in place
-  // (order/role in the layout stays the same, see handleApplyCrop).
-  const [cropTarget, setCropTarget] = useState<PhotoItem | null>(null);
+  // Free-draw flow: paint colored strokes/shapes directly onto the assembled detail page. Unlike the
+  // erase-brush mask above, these persist as an overlay layer (survives leaving draw mode, gets baked
+  // in on save/download via html2canvas) — see the drawCanvas effects and handleDraw* below.
+  const [drawMode, setDrawMode] = useState(false);
+  const [drawTool, setDrawTool] = useState<DrawTool>('brush');
+  const [drawColor, setDrawColor] = useState('#ff3b30');
+  const [drawSize, setDrawSize] = useState(6);
+  const [drawCursorPos, setDrawCursorPos] = useState<{ x: number; y: number } | null>(null);
+  const [drawObjects, setDrawObjects] = useState<DrawObject[]>([]);
+  const eyedropperSupported = typeof window !== 'undefined' && 'EyeDropper' in window;
+
+  // Photos queued for cropping — a single click on one photo queues just that one; the toolbar's
+  // "선택한 사진 크롭" button queues every checked photo instead. The modal steps through the queue
+  // one photo at a time; nothing is written back to `photos` until the *last* one is applied, so
+  // "적용하기" on a multi-photo batch commits every crop in the batch at once (see handleApplyCrop).
+  // Cancelling at any point discards the whole in-progress batch, not just the current photo.
+  const [cropQueue, setCropQueue] = useState<PhotoItem[]>([]);
+  const [cropQueueIndex, setCropQueueIndex] = useState(0);
+  const cropResultsRef = useRef<Record<string, string>>({});
+  const cropTarget = cropQueue[cropQueueIndex] ?? null;
+
+  // Photos checked via the selection checkbox overlay in the preview, for batch-cropping together.
+  const [selectedPhotoIds, setSelectedPhotoIds] = useState<Set<string>>(new Set());
 
   // 옵션이 여러 개일 때(groupProducts.length > 1) 별 아이콘을 누르면 "이 사진을 어느 옵션의
   // 대표이미지로 쓸지" 고르는 작은 드롭다운을 연다. 옵션이 1개뿐이면 드롭다운 없이 바로 지정한다.
@@ -242,9 +270,23 @@ const DetailPageBuilderModal: React.FC<DetailPageBuilderModalProps> = ({ isOpen,
   // re-render lands — this is what keeps one click to exactly one charge.
   const eraseProcessingRef = useRef(false);
 
+  const drawCanvasRef = useRef<HTMLCanvasElement>(null);
+  const isDrawingRef = useRef(false);
+  // Brush: previous point of the current stroke, to draw the next incremental segment from. Shapes:
+  // the latest cursor position, read back on pointer-up to know where the drag ended.
+  const lastDrawPointerRef = useRef<{ x: number; y: number } | null>(null);
+  const currentStrokePointsRef = useRef<{ x: number; y: number }[]>([]);
+  const shapeStartRef = useRef<{ x: number; y: number } | null>(null);
+  // Mirrors `drawObjects` for read access inside the ResizeObserver callback below, which is set up
+  // once and would otherwise close over a stale (empty) array.
+  const drawObjectsRef = useRef<DrawObject[]>([]);
+
   // Fixed photo slots: first photo = hero, last photo = closing (right above 마무리 문구).
   // Everything in between is split as evenly as possible across the featureBlockCount
   // numbered feature sections (01~0N), each of which can now hold more than one photo.
+  // Selected photos in display order (Set has no inherent order), so a batch crop steps through
+  // them top-to-bottom regardless of the order they were checked in.
+  const selectedPhotosOrdered = photos.filter(p => selectedPhotoIds.has(p.id));
   const heroPhoto = photos[0];
   const closingPhoto = photos.length >= 2 ? photos[photos.length - 1] : undefined;
   const middlePhotos: PhotoItem[] = photos.length >= 2 ? photos.slice(1, photos.length - 1) : [];
@@ -263,14 +305,14 @@ const DetailPageBuilderModal: React.FC<DetailPageBuilderModalProps> = ({ isOpen,
   // This modal is kept mounted for the whole session (see App.tsx) specifically so in-progress
   // work survives closing it — closing must not wipe state. Drafts are kept per product id here
   // so switching products doesn't leak one product's photos/copy into another's.
-  const draftsRef = useRef<Map<string, { photos: PhotoItem[]; sellingPoints: string; copy: DetailPageCopy; pastedText: string }>>(new Map());
+  const draftsRef = useRef<Map<string, { photos: PhotoItem[]; sellingPoints: string; copy: DetailPageCopy; pastedText: string; drawObjects: DrawObject[] }>>(new Map());
   const activeProductIdRef = useRef<string | null>(null);
 
   useEffect(() => {
     const nextId = product?.id ?? null;
     const prevId = activeProductIdRef.current;
     if (prevId && prevId !== nextId) {
-      draftsRef.current.set(prevId, { photos, sellingPoints, copy, pastedText });
+      draftsRef.current.set(prevId, { photos, sellingPoints, copy, pastedText, drawObjects });
     }
     if (nextId && nextId !== prevId) {
       const draft = draftsRef.current.get(nextId);
@@ -278,6 +320,7 @@ const DetailPageBuilderModal: React.FC<DetailPageBuilderModalProps> = ({ isOpen,
       setSellingPoints(draft?.sellingPoints ?? '');
       setCopy(draft?.copy ?? EMPTY_COPY);
       setPastedText(draft?.pastedText ?? '');
+      setDrawObjects(draft?.drawObjects ?? []);
     }
     activeProductIdRef.current = nextId;
     setBrushMode(false);
@@ -285,6 +328,7 @@ const DetailPageBuilderModal: React.FC<DetailPageBuilderModalProps> = ({ isOpen,
     paintedBoundsRef.current = null;
     setEraseStatus('idle');
     setEraseError('');
+    setDrawMode(false);
     // Only react to the product actually changing — reopening the same product must not reset it.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [product?.id]);
@@ -298,6 +342,7 @@ const DetailPageBuilderModal: React.FC<DetailPageBuilderModalProps> = ({ isOpen,
     paintedBoundsRef.current = null;
     setEraseStatus('idle');
     setEraseError('');
+    setDrawMode(false);
   }, [isOpen]);
 
   useEffect(() => {
@@ -327,6 +372,105 @@ const DetailPageBuilderModal: React.FC<DetailPageBuilderModalProps> = ({ isOpen,
     });
     return () => cancelAnimationFrame(raf);
   }, [brushMode, zoom]);
+
+  // Draw mode needs the same 1:1 screen-to-canvas coordinates as brush mode.
+  useEffect(() => {
+    if (!drawMode) return;
+    if (zoom !== 1) setZoom(1);
+  }, [drawMode, zoom]);
+
+  // Renders one draw object (freehand stroke or drag-defined shape) onto a 2D context.
+  const drawObjectOnCanvas = (ctx: CanvasRenderingContext2D, obj: DrawObject) => {
+    ctx.strokeStyle = obj.color;
+    ctx.fillStyle = obj.color;
+    ctx.lineWidth = obj.size;
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    if (obj.type === 'brush') {
+      if (obj.points.length === 0) return;
+      if (obj.points.length === 1) {
+        const p = obj.points[0];
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, obj.size / 2, 0, Math.PI * 2);
+        ctx.fill();
+        return;
+      }
+      ctx.beginPath();
+      ctx.moveTo(obj.points[0].x, obj.points[0].y);
+      for (let i = 1; i < obj.points.length; i++) ctx.lineTo(obj.points[i].x, obj.points[i].y);
+      ctx.stroke();
+      return;
+    }
+    const { from, to } = obj;
+    if (obj.type === 'line') {
+      ctx.beginPath();
+      ctx.moveTo(from.x, from.y);
+      ctx.lineTo(to.x, to.y);
+      ctx.stroke();
+    } else if (obj.type === 'rect') {
+      const x = Math.min(from.x, to.x);
+      const y = Math.min(from.y, to.y);
+      ctx.strokeRect(x, y, Math.abs(to.x - from.x), Math.abs(to.y - from.y));
+    } else if (obj.type === 'ellipse') {
+      const cx = (from.x + to.x) / 2;
+      const cy = (from.y + to.y) / 2;
+      const rx = Math.abs(to.x - from.x) / 2;
+      const ry = Math.abs(to.y - from.y) / 2;
+      ctx.beginPath();
+      ctx.ellipse(cx, cy, rx, ry, 0, 0, Math.PI * 2);
+      ctx.stroke();
+    } else if (obj.type === 'arrow') {
+      const angle = Math.atan2(to.y - from.y, to.x - from.x);
+      const headLen = Math.max(10, obj.size * 2.5);
+      ctx.beginPath();
+      ctx.moveTo(from.x, from.y);
+      ctx.lineTo(to.x, to.y);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(to.x, to.y);
+      ctx.lineTo(to.x - headLen * Math.cos(angle - Math.PI / 6), to.y - headLen * Math.sin(angle - Math.PI / 6));
+      ctx.moveTo(to.x, to.y);
+      ctx.lineTo(to.x - headLen * Math.cos(angle + Math.PI / 6), to.y - headLen * Math.sin(angle + Math.PI / 6));
+      ctx.stroke();
+    }
+  };
+
+  const redrawDrawObjects = (objects: DrawObject[]) => {
+    const canvas = drawCanvasRef.current;
+    const ctx = canvas?.getContext('2d');
+    if (!canvas || !ctx) return;
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    objects.forEach(obj => drawObjectOnCanvas(ctx, obj));
+  };
+
+  // Bakes committed draw objects onto the canvas whenever the list changes (stroke/shape finished,
+  // undo, clear).
+  useEffect(() => {
+    drawObjectsRef.current = drawObjects;
+    redrawDrawObjects(drawObjects);
+  }, [drawObjects]);
+
+  // The draw canvas lives inside previewRef so html2canvas captures it, but previewRef's height
+  // changes with content (photo count, copy length, template settings) — a naive canvas resize would
+  // wipe the bitmap, so instead every resize just re-renders the persisted vector data from scratch.
+  useEffect(() => {
+    const canvas = drawCanvasRef.current;
+    const preview = previewRef.current;
+    if (!canvas || !preview || photos.length === 0) return;
+    const syncSize = () => {
+      const w = preview.scrollWidth;
+      const h = preview.scrollHeight;
+      if (canvas.width !== w || canvas.height !== h) {
+        canvas.width = w;
+        canvas.height = h;
+        redrawDrawObjects(drawObjectsRef.current);
+      }
+    };
+    syncSize();
+    const observer = new ResizeObserver(syncSize);
+    observer.observe(preview);
+    return () => observer.disconnect();
+  }, [photos.length]);
 
   const zoomIn = () => setZoom(z => Math.min(2, Math.round((z + 0.1) * 100) / 100));
   const zoomOut = () => setZoom(z => Math.max(0.4, Math.round((z - 0.1) * 100) / 100));
@@ -403,6 +547,12 @@ const DetailPageBuilderModal: React.FC<DetailPageBuilderModalProps> = ({ isOpen,
 
   const removePhoto = (id: string) => {
     setPhotos(prev => prev.filter(p => p.id !== id));
+    setSelectedPhotoIds(prev => {
+      if (!prev.has(id)) return prev;
+      const next = new Set(prev);
+      next.delete(id);
+      return next;
+    });
   };
 
   // 옵션이 1개뿐이면 바로 그 옵션에 지정하고, 여러 개면 별 아이콘 클릭 시 어느 옵션에 지정할지
@@ -421,13 +571,44 @@ const DetailPageBuilderModal: React.FC<DetailPageBuilderModalProps> = ({ isOpen,
     setThumbnailAssignPhotoId(null);
   };
 
+  const startCropQueue = (targets: PhotoItem[]) => {
+    if (targets.length === 0) return;
+    cropResultsRef.current = {};
+    setCropQueueIndex(0);
+    setCropQueue(targets);
+  };
+
+  const cancelCropQueue = () => {
+    cropResultsRef.current = {};
+    setCropQueue([]);
+    setCropQueueIndex(0);
+  };
+
   const handleApplyCrop = (croppedDataUrl: string) => {
     if (!cropTarget) return;
-    setPhotos(prev => prev.map(p => (p.id === cropTarget.id ? { ...p, dataUrl: croppedDataUrl } : p)));
-    setCropTarget(null);
+    cropResultsRef.current[cropTarget.id] = croppedDataUrl;
+    if (cropQueueIndex < cropQueue.length - 1) {
+      setCropQueueIndex(i => i + 1);
+      return;
+    }
+    // Last (or only) photo in the batch — commit every queued crop to `photos` in one update.
+    const results = cropResultsRef.current;
+    setPhotos(prev => prev.map(p => (results[p.id] ? { ...p, dataUrl: results[p.id] } : p)));
+    setSelectedPhotoIds(new Set());
+    cancelCropQueue();
+  };
+
+  const togglePhotoSelected = (id: string) => {
+    setSelectedPhotoIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
   };
 
   const toggleBrushMode = () => {
+    setDrawMode(false);
     setBrushMode(prev => {
       const next = !prev;
       // Leaving brush mode unmounts the canvas (its painted pixels go with it), so drop the
@@ -439,6 +620,13 @@ const DetailPageBuilderModal: React.FC<DetailPageBuilderModalProps> = ({ isOpen,
       }
       return next;
     });
+  };
+
+  const toggleDrawMode = () => {
+    setBrushMode(false);
+    setHasPainted(false);
+    paintedBoundsRef.current = null;
+    setDrawMode(prev => !prev);
   };
 
   const getPointOnCanvas = (canvas: HTMLCanvasElement, e: React.PointerEvent) => {
@@ -512,6 +700,84 @@ const DetailPageBuilderModal: React.FC<DetailPageBuilderModalProps> = ({ isOpen,
     canvas?.getContext('2d')?.clearRect(0, 0, canvas.width, canvas.height);
     setHasPainted(false);
     paintedBoundsRef.current = null;
+  };
+
+  // Brush: draws each segment incrementally as the pointer moves, then commits the full point path to
+  // `drawObjects` on pointer-up. Shapes: redraws everything committed so far plus a live from→to
+  // preview of the shape being dragged, then commits just the final from→to on pointer-up.
+  const handleDrawPointerDown = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    const canvas = e.currentTarget;
+    canvas.setPointerCapture(e.pointerId);
+    const point = getPointOnCanvas(canvas, e);
+    setDrawCursorPos(point);
+    isDrawingRef.current = true;
+    lastDrawPointerRef.current = point;
+    if (drawTool === 'brush') {
+      currentStrokePointsRef.current = [point];
+      const ctx = canvas.getContext('2d');
+      if (ctx) drawObjectOnCanvas(ctx, { type: 'brush', points: [point], color: drawColor, size: drawSize });
+    } else {
+      shapeStartRef.current = point;
+    }
+  };
+
+  const handleDrawPointerMove = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    const canvas = e.currentTarget;
+    const point = getPointOnCanvas(canvas, e);
+    setDrawCursorPos(point);
+    if (!isDrawingRef.current) return;
+    const ctx = canvas.getContext('2d');
+    if (drawTool === 'brush') {
+      if (lastDrawPointerRef.current && ctx) {
+        drawObjectOnCanvas(ctx, { type: 'brush', points: [lastDrawPointerRef.current, point], color: drawColor, size: drawSize });
+        currentStrokePointsRef.current.push(point);
+      }
+    } else if (shapeStartRef.current && ctx) {
+      redrawDrawObjects(drawObjects);
+      drawObjectOnCanvas(ctx, { type: drawTool, from: shapeStartRef.current, to: point, color: drawColor, size: drawSize });
+    }
+    lastDrawPointerRef.current = point;
+  };
+
+  const handleDrawPointerUp = () => {
+    if (!isDrawingRef.current) return;
+    isDrawingRef.current = false;
+    if (drawTool === 'brush') {
+      const points = currentStrokePointsRef.current;
+      currentStrokePointsRef.current = [];
+      if (points.length > 0) setDrawObjects(prev => [...prev, { type: 'brush', points, color: drawColor, size: drawSize }]);
+    } else if (shapeStartRef.current) {
+      const start = shapeStartRef.current;
+      const end = lastDrawPointerRef.current;
+      shapeStartRef.current = null;
+      if (end && (Math.abs(end.x - start.x) > 2 || Math.abs(end.y - start.y) > 2)) {
+        setDrawObjects(prev => [...prev, { type: drawTool, from: start, to: end, color: drawColor, size: drawSize }]);
+      } else {
+        redrawDrawObjects(drawObjects);
+      }
+    }
+    lastDrawPointerRef.current = null;
+  };
+
+  const handleDrawPointerLeave = () => {
+    handleDrawPointerUp();
+    setDrawCursorPos(null);
+  };
+
+  const handleUndoDraw = () => setDrawObjects(prev => prev.slice(0, -1));
+  const handleClearDraw = () => setDrawObjects([]);
+
+  // Native browser eyedropper (Chrome/Edge) — samples a color from anywhere on screen, including the
+  // photos in the preview, not just a preset palette.
+  const handleEyedropper = async () => {
+    if (!eyedropperSupported) return;
+    try {
+      const eyeDropper = new (window as any).EyeDropper();
+      const result = await eyeDropper.open();
+      if (result?.sRGBHex) setDrawColor(result.sRGBHex);
+    } catch {
+      // 사용자가 Esc 등으로 취소한 경우 — 무시.
+    }
   };
 
   // Shared by both the download/save path and the erase path: reset zoom to 100% (html2canvas can
@@ -684,7 +950,7 @@ const DetailPageBuilderModal: React.FC<DetailPageBuilderModalProps> = ({ isOpen,
   };
 
   const handlePhotoPointerDown = (id: string) => (e: React.PointerEvent) => {
-    if (brushMode || e.button !== 0) return;
+    if (brushMode || drawMode || e.button !== 0) return;
     // Let the crop/move/star buttons layered on top of the photo handle their own clicks.
     if ((e.target as HTMLElement).closest('button')) return;
     e.currentTarget.setPointerCapture(e.pointerId);
@@ -724,23 +990,39 @@ const DetailPageBuilderModal: React.FC<DetailPageBuilderModalProps> = ({ isOpen,
         onClick={() => {
           // A stationary pointerdown+up (no drag) still fires a plain click — safe to share the
           // same image with drag-to-reorder.
-          if (!brushMode) setCropTarget(photo);
+          if (!brushMode && !drawMode) startCropQueue([photo]);
         }}
         style={{
           width: '100%',
           display: 'block',
-          cursor: brushMode ? 'default' : 'grab',
+          cursor: brushMode || drawMode ? 'default' : 'grab',
           opacity: draggingPhotoId === photo.id ? 0.4 : 1,
-          touchAction: brushMode ? undefined : 'none',
-          outline: dragOverPhotoId === photo.id && draggingPhotoId && draggingPhotoId !== photo.id ? '2px solid #3b82f6' : 'none',
+          touchAction: brushMode || drawMode ? undefined : 'none',
+          outline: selectedPhotoIds.has(photo.id)
+            ? '2px solid #a855f7'
+            : dragOverPhotoId === photo.id && draggingPhotoId && draggingPhotoId !== photo.id ? '2px solid #3b82f6' : 'none',
           outlineOffset: -2,
         }}
         alt=""
       />
-      {!brushMode && (
+      {!brushMode && !drawMode && (
+        <button
+          data-html2canvas-ignore="true"
+          onClick={() => togglePhotoSelected(photo.id)}
+          className={`absolute top-2.5 left-2.5 w-6 h-6 flex items-center justify-center rounded-md border-2 transition-colors [&_svg]:h-3.5 [&_svg]:w-3.5 ${
+            selectedPhotoIds.has(photo.id)
+              ? 'bg-purple-600 border-purple-400 text-white'
+              : 'bg-slate-900/60 border-white/70 text-transparent hover:border-purple-400'
+          }`}
+          title="크롭할 사진으로 선택"
+        >
+          <CheckIcon />
+        </button>
+      )}
+      {!brushMode && !drawMode && (
         <div data-html2canvas-ignore="true" className="absolute top-2.5 right-2.5 flex items-center gap-1.5">
           <button
-            onClick={() => setCropTarget(photo)}
+            onClick={() => startCropQueue([photo])}
             className="w-8 h-8 flex items-center justify-center rounded-full bg-slate-900/75 text-white hover:bg-purple-500/90 transition-colors [&_svg]:h-4 [&_svg]:w-4"
             title="사진 자르기"
           >
@@ -992,21 +1274,51 @@ const DetailPageBuilderModal: React.FC<DetailPageBuilderModalProps> = ({ isOpen,
           <div className="flex-1 min-w-0 flex flex-col gap-2 min-h-0">
             {photos.length > 0 && (
               <div className="flex items-center justify-between gap-1.5 flex-shrink-0">
-                <button
-                  onClick={toggleBrushMode}
-                  className={`flex items-center gap-1.5 px-2.5 h-7 rounded-md border text-xs font-semibold transition-colors ${
-                    brushMode
-                      ? 'bg-purple-600 border-purple-500 text-white hover:bg-purple-500'
-                      : 'bg-slate-800 border-slate-600 text-slate-200 hover:bg-slate-700'
-                  }`}
-                >
-                  <BrushIcon className="h-3.5 w-3.5" />
-                  {brushMode ? '브러쉬 모드 종료' : '브러쉬로 텍스트 지우기'}
-                </button>
                 <div className="flex items-center gap-1.5">
                   <button
+                    onClick={toggleBrushMode}
+                    className={`flex items-center gap-1.5 px-2.5 h-7 rounded-md border text-xs font-semibold transition-colors ${
+                      brushMode
+                        ? 'bg-purple-600 border-purple-500 text-white hover:bg-purple-500'
+                        : 'bg-slate-800 border-slate-600 text-slate-200 hover:bg-slate-700'
+                    }`}
+                  >
+                    <BrushIcon className="h-3.5 w-3.5" />
+                    {brushMode ? '브러쉬 모드 종료' : '브러쉬로 텍스트 지우기'}
+                  </button>
+                  <button
+                    onClick={toggleDrawMode}
+                    className={`flex items-center gap-1.5 px-2.5 h-7 rounded-md border text-xs font-semibold transition-colors ${
+                      drawMode
+                        ? 'bg-pink-600 border-pink-500 text-white hover:bg-pink-500'
+                        : 'bg-slate-800 border-slate-600 text-slate-200 hover:bg-slate-700'
+                    }`}
+                  >
+                    <BrushIcon className="h-3.5 w-3.5" />
+                    {drawMode ? '그리기 모드 종료' : '브러쉬/도형으로 칠하기'}
+                  </button>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  {selectedPhotosOrdered.length > 0 && !brushMode && !drawMode && (
+                    <>
+                      <button
+                        onClick={() => startCropQueue(selectedPhotosOrdered)}
+                        className="flex items-center gap-1.5 px-2.5 h-7 rounded-md border text-xs font-semibold bg-purple-600 border-purple-500 text-white hover:bg-purple-500 transition-colors"
+                      >
+                        <CropIcon className="h-3.5 w-3.5" />
+                        선택한 사진 크롭 ({selectedPhotosOrdered.length})
+                      </button>
+                      <button
+                        onClick={() => setSelectedPhotoIds(new Set())}
+                        className="px-2 h-7 flex items-center justify-center rounded-md bg-slate-800 border border-slate-600 text-slate-300 hover:bg-slate-700 transition-colors text-xs"
+                      >
+                        선택 해제
+                      </button>
+                    </>
+                  )}
+                  <button
                     onClick={zoomOut}
-                    disabled={zoom <= 0.4 || brushMode}
+                    disabled={zoom <= 0.4 || brushMode || drawMode}
                     className="w-7 h-7 flex items-center justify-center rounded-md bg-slate-800 border border-slate-600 text-slate-200 hover:bg-slate-700 transition-colors disabled:opacity-30 disabled:cursor-not-allowed text-base leading-none"
                     title="축소"
                   >
@@ -1014,7 +1326,7 @@ const DetailPageBuilderModal: React.FC<DetailPageBuilderModalProps> = ({ isOpen,
                   </button>
                   <button
                     onClick={() => setZoom(1)}
-                    disabled={brushMode}
+                    disabled={brushMode || drawMode}
                     className="px-2 h-7 flex items-center justify-center rounded-md bg-slate-800 border border-slate-600 text-slate-300 hover:bg-slate-700 transition-colors text-xs tabular-nums disabled:opacity-30 disabled:cursor-not-allowed"
                     title="100%로 초기화"
                   >
@@ -1022,7 +1334,7 @@ const DetailPageBuilderModal: React.FC<DetailPageBuilderModalProps> = ({ isOpen,
                   </button>
                   <button
                     onClick={zoomIn}
-                    disabled={zoom >= 2 || brushMode}
+                    disabled={zoom >= 2 || brushMode || drawMode}
                     className="w-7 h-7 flex items-center justify-center rounded-md bg-slate-800 border border-slate-600 text-slate-200 hover:bg-slate-700 transition-colors disabled:opacity-30 disabled:cursor-not-allowed text-base leading-none"
                     title="확대"
                   >
@@ -1071,11 +1383,90 @@ const DetailPageBuilderModal: React.FC<DetailPageBuilderModalProps> = ({ isOpen,
                 </div>
               </div>
             )}
+
+            {drawMode && (
+              <div className="flex-shrink-0 flex flex-col gap-2 bg-slate-800/70 border border-slate-700 rounded-lg px-3 py-2.5">
+                <p className="text-xs text-slate-400 leading-relaxed">
+                  원하는 도구·굵기·색상으로 상세페이지 위에 자유롭게 칠하거나 도형을 그리세요. 그려진 내용은 저장/다운로드 시 그대로 포함돼요.
+                </p>
+                <div className="flex items-center gap-1.5">
+                  {([
+                    { tool: 'brush' as DrawTool, label: '브러쉬', Icon: BrushIcon },
+                    { tool: 'line' as DrawTool, label: '직선', Icon: LineIcon },
+                    { tool: 'rect' as DrawTool, label: '사각형', Icon: SquareIcon },
+                    { tool: 'ellipse' as DrawTool, label: '원', Icon: CircleIcon },
+                    { tool: 'arrow' as DrawTool, label: '화살표', Icon: ArrowIcon },
+                  ]).map(({ tool, label, Icon }) => (
+                    <button
+                      key={tool}
+                      onClick={() => setDrawTool(tool)}
+                      title={label}
+                      className={`w-8 h-8 flex items-center justify-center rounded-md border transition-colors [&_svg]:h-4 [&_svg]:w-4 ${
+                        drawTool === tool
+                          ? 'bg-pink-600 border-pink-500 text-white'
+                          : 'bg-slate-700 border-slate-600 text-slate-200 hover:bg-slate-600'
+                      }`}
+                    >
+                      <Icon />
+                    </button>
+                  ))}
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-slate-400 w-14 flex-shrink-0">굵기</span>
+                  <input
+                    type="range"
+                    min={1}
+                    max={40}
+                    value={drawSize}
+                    onChange={e => setDrawSize(Number(e.target.value))}
+                    className="flex-1"
+                  />
+                  <span className="text-xs text-slate-400 w-8 text-right tabular-nums">{drawSize}</span>
+                </div>
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-slate-400">색상</span>
+                    <input
+                      type="color"
+                      value={drawColor}
+                      onChange={e => setDrawColor(e.target.value)}
+                      className="w-8 h-8 rounded cursor-pointer bg-transparent border border-slate-600"
+                      title="색상 선택"
+                    />
+                    <button
+                      onClick={handleEyedropper}
+                      disabled={!eyedropperSupported}
+                      className="w-8 h-8 flex items-center justify-center rounded-md bg-slate-700 border border-slate-600 text-slate-200 hover:bg-slate-600 transition-colors disabled:opacity-30 disabled:cursor-not-allowed [&_svg]:h-4 [&_svg]:w-4"
+                      title={eyedropperSupported ? '스포이드로 화면에서 색상 추출' : '이 브라우저는 스포이드 기능을 지원하지 않아요'}
+                    >
+                      <EyedropperIcon />
+                    </button>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={handleUndoDraw}
+                      disabled={drawObjects.length === 0}
+                      className="flex items-center gap-1 px-3 py-1.5 text-xs bg-slate-700 text-slate-200 rounded-lg hover:bg-slate-600 transition-colors disabled:opacity-40 disabled:cursor-not-allowed [&_svg]:h-3.5 [&_svg]:w-3.5"
+                    >
+                      <UndoIcon />
+                      되돌리기
+                    </button>
+                    <button
+                      onClick={handleClearDraw}
+                      disabled={drawObjects.length === 0}
+                      className="px-3 py-1.5 text-xs bg-slate-700 text-slate-200 rounded-lg hover:bg-slate-600 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                    >
+                      전체 지우기
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
             <div className="flex-1 min-w-0 bg-slate-950/60 rounded-xl border border-slate-700 p-4 min-h-[320px] max-h-[70vh] overflow-auto flex justify-center items-start">
             {photos.length === 0 ? null : (
               <div style={{ transform: `scale(${zoom})`, transformOrigin: 'top center', flexShrink: 0 }}>
               <div style={{ position: 'relative' }}>
-              <div ref={previewRef} style={{ width: CANVAS_WIDTH, backgroundColor: '#ffffff' }}>
+              <div ref={previewRef} style={{ width: CANVAS_WIDTH, backgroundColor: '#ffffff', position: 'relative' }}>
                 {/* Hero */}
                 {hasCopyText && (
                   <>
@@ -1169,6 +1560,19 @@ const DetailPageBuilderModal: React.FC<DetailPageBuilderModalProps> = ({ isOpen,
                     })}
                   </div>
                 )}
+                {/* Persistent paint layer — lives inside previewRef (unlike the erase-brush mask
+                    below) so html2canvas bakes it into the exported/saved image. Always mounted once
+                    there are photos so drawings stay visible after leaving draw mode; pointer events
+                    only engage while drawMode is on. */}
+                <canvas
+                  ref={drawCanvasRef}
+                  className="absolute inset-0"
+                  style={{ width: '100%', height: '100%', pointerEvents: drawMode ? 'auto' : 'none', cursor: drawMode ? 'none' : 'default' }}
+                  onPointerDown={handleDrawPointerDown}
+                  onPointerMove={handleDrawPointerMove}
+                  onPointerUp={handleDrawPointerUp}
+                  onPointerLeave={handleDrawPointerLeave}
+                />
               </div>
               {brushMode && (
                 <canvas
@@ -1190,6 +1594,20 @@ const DetailPageBuilderModal: React.FC<DetailPageBuilderModalProps> = ({ isOpen,
                     width: brushSize,
                     height: brushSize,
                     transform: 'translate(-50%, -50%)',
+                  }}
+                />
+              )}
+              {drawMode && drawCursorPos && (
+                <div
+                  className="absolute rounded-full pointer-events-none"
+                  style={{
+                    left: drawCursorPos.x,
+                    top: drawCursorPos.y,
+                    width: Math.max(drawSize, 6),
+                    height: Math.max(drawSize, 6),
+                    transform: 'translate(-50%, -50%)',
+                    border: `2px solid ${drawColor}`,
+                    backgroundColor: drawTool === 'brush' ? `${drawColor}33` : 'transparent',
                   }}
                 />
               )}
@@ -1498,8 +1916,10 @@ const DetailPageBuilderModal: React.FC<DetailPageBuilderModalProps> = ({ isOpen,
       <ImageCropModal
         isOpen={!!cropTarget}
         imageDataUrl={cropTarget?.dataUrl ?? null}
-        onCancel={() => setCropTarget(null)}
+        onCancel={cancelCropQueue}
         onApply={handleApplyCrop}
+        queueIndex={cropQueueIndex}
+        queueTotal={cropQueue.length}
       />
     </div>
   );

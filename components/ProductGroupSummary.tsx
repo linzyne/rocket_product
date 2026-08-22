@@ -238,7 +238,7 @@ const ProductGroupSummary: React.FC<ProductGroupSummaryProps> = ({
           disabled={isImportingFrom1688}
           className="flex-shrink-0 flex flex-col items-center justify-center gap-0.5 text-gray-400 hover:text-orange-700 transition-colors duration-200 px-1.5 py-0.5 rounded-md hover:bg-orange-500/10 disabled:opacity-50 disabled:cursor-not-allowed"
           aria-label="1688에서 붙여넣기"
-          title="1688 캡처 확장프로그램으로 복사한 데이터를 붙여넣기 (옵션이 여러 개면 그 개수만큼 상품행 자동 생성 · URL/중량은 공통, 원가/사이즈/노출속성은 옵션별로 반영, 상품명/제조사/검색어는 AI 변환)"
+          title="1688 캡처 확장프로그램으로 복사한 데이터를 붙여넣기 (옵션이 여러 개면 그 개수만큼 상품행 자동 생성 · URL/중량은 공통, 원가/사이즈/노출속성은 옵션별로 반영, 상품명/옵션명은 원문 그대로, 제조사/검색어는 AI 변환)"
         >
           {isImportingFrom1688 ? <SpinnerIcon className="w-5 h-5 animate-spin" /> : <ClipboardIcon className="h-5 w-5" />}
           <span className="text-[9px] leading-none font-semibold">복붙</span>

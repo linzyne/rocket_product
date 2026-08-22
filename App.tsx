@@ -1846,32 +1846,33 @@ const App: React.FC = () => {
     const registration = quoteTemplateRegistrations.find(r => r.id === product.quoteTemplateId);
     const optionFieldName = registration?.optionFieldName || OPTION_FIELD_COLOR;
 
-    // AI 번역을 꺼둔 경우, Gemini를 호출하지 않고 원문 그대로 채운다(비용 없음).
-    if (!use1688AiTranslation) {
-      setProducts(prev => prev.map(p => {
-        const variantIndex = targetIds.indexOf(p.id);
-        if (variantIndex === -1) return p;
-        const variant = variants[variantIndex];
-        const optionValue = variant.colorRaw || '';
-        const next: Product = {
-          ...p,
-          ...(payload.titleRaw ? { productName: String(payload.titleRaw) } : {}),
-          ...(payload.manufacturerRaw ? { manufacturer: String(payload.manufacturerRaw) } : {}),
-        };
-        if (optionFieldName === OPTION_FIELD_COLOR) {
-          next.color = optionValue;
-        } else if (optionValue) {
-          next.customFields = { ...p.customFields, [optionFieldName]: optionValue };
-        }
-        return next;
-      }));
-      return;
-    }
+    // 상품명/옵션명(색상)은 확장프로그램에서 이미 직접 입력해서 넘어오는 값이라 AI 여부와 무관하게
+    // 항상 원문 그대로 채운다(제조사 번역이 실패해도 이 값들은 반영되어야 하므로 AI 호출과 분리).
+    setProducts(prev => prev.map(p => {
+      const variantIndex = targetIds.indexOf(p.id);
+      if (variantIndex === -1) return p;
+      const variant = variants[variantIndex];
+      const optionValue = variant.colorRaw || '';
+      const next: Product = {
+        ...p,
+        ...(payload.titleRaw ? { productName: String(payload.titleRaw) } : {}),
+        ...(!use1688AiTranslation && payload.manufacturerRaw ? { manufacturer: String(payload.manufacturerRaw) } : {}),
+      };
+      if (optionFieldName === OPTION_FIELD_COLOR) {
+        next.color = optionValue;
+      } else if (optionValue) {
+        next.customFields = { ...p.customFields, [optionFieldName]: optionValue };
+      }
+      return next;
+    }));
+
+    // AI 번역을 꺼둔 경우, 여기서 끝(제조사는 위에서 이미 원문 그대로 채웠고 검색어는 비워둔다).
+    if (!use1688AiTranslation) return;
 
     setImporting1688ProductIds(prev => new Set([...prev, ...targetIds]));
     try {
-      // 상품명/제조사/검색어는 옵션과 무관한 공통 값이라 딱 1번만 호출해서 모든 행에 동일하게
-      // 적용한다(옵션마다 따로 호출하면 AI 응답이 매번 조금씩 달라져 행마다 값이 어긋난다).
+      // 제조사/검색어는 옵션과 무관한 공통 값이라 딱 1번만 호출해서 모든 행에 동일하게 적용한다
+      // (옵션마다 따로 호출하면 AI 응답이 매번 조금씩 달라져 행마다 값이 어긋난다).
       const aiFields = await generateProductImportFields(
         payload.titleRaw || '',
         payload.manufacturerRaw || '',
@@ -1881,25 +1882,16 @@ const App: React.FC = () => {
       setProducts(prev => prev.map(p => {
         const variantIndex = targetIds.indexOf(p.id);
         if (variantIndex === -1) return p;
-        const variant = variants[variantIndex];
-        const optionValue = aiFields.colorsKo[variantIndex] || variant.colorRaw || '';
-        const next: Product = {
+        return {
           ...p,
-          ...(aiFields.productNameKo ? { productName: aiFields.productNameKo } : {}),
           ...(aiFields.manufacturerEn ? { manufacturer: withCoLtdSuffix(aiFields.manufacturerEn) } : {}),
           ...(aiFields.keywords ? { searchKeyword: aiFields.keywords } : {}),
         };
-        if (optionFieldName === OPTION_FIELD_COLOR) {
-          next.color = optionValue;
-        } else if (optionValue) {
-          next.customFields = { ...p.customFields, [optionFieldName]: optionValue };
-        }
-        return next;
       }));
     } catch (error) {
       console.error('Failed to generate product import fields:', error);
       const errorMessage = error instanceof Error ? error.message : String(error);
-      alert(`AI 번역/검색어 생성에 실패했습니다: ${errorMessage}\n(URL/원가/사이즈/중량은 이미 반영되었습니다)`);
+      alert(`제조사 번역/검색어 생성에 실패했습니다: ${errorMessage}\n(URL/원가/사이즈/중량/상품명/옵션명은 이미 반영되었습니다)`);
     } finally {
       setImporting1688ProductIds(prev => {
         const next = new Set(prev);

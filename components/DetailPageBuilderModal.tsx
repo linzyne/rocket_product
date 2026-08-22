@@ -13,6 +13,7 @@ import {
 } from '../utils/detailPageCopyTemplate';
 import { CloseIcon, SpinnerIcon, SaveIcon, DownloadIcon, SparklesIcon, UploadIcon, TrashIcon, ChevronUpIcon, ChevronDownIcon, BrushIcon, PlusIcon, StarIcon, CropIcon } from './Icons';
 import { editImageWithGemini, BRUSH_ERASE_PROMPT } from '../utils/geminiImageEdit';
+import { generateDetailPageCopyWithGemini } from '../utils/detailPageCopyGemini';
 import { saveDataUrlInProductFolder, productFolderName } from '../utils/fileSave';
 import { generateId } from '../utils/id';
 import ImageCropModal from './ImageCropModal';
@@ -101,6 +102,27 @@ const EMPTY_COPY: DetailPageCopy = {
   closing: '',
 };
 
+// AI 문구생성 스타일 지침을 이름 붙여 저장해두는 프롬프트 라이브러리 — 상품과 무관하게 앱
+// 전체에서 공유(카테고리 목록과 같은 방식, App.tsx의 categories 참고)한다.
+interface SavedCopyPrompt {
+  id: string;
+  name: string;
+  instruction: string;
+}
+
+const COPY_PROMPTS_STORAGE_KEY = 'detailPageCopyPrompts';
+
+function loadSavedCopyPrompts(): SavedCopyPrompt[] {
+  try {
+    const raw = localStorage.getItem(COPY_PROMPTS_STORAGE_KEY);
+    const parsed = raw ? JSON.parse(raw) : [];
+    return Array.isArray(parsed) ? parsed : [];
+  } catch (error) {
+    console.error('Failed to load detail page copy prompts from localStorage', error);
+    return [];
+  }
+}
+
 // Base font sizes (at fontScale 1) for every text role — see the `styles` useMemo in the component,
 // which turns these into the actual React.CSSProperties objects once fontFamily/textColor/fontScale
 // (all user-adjustable) are known.
@@ -159,6 +181,15 @@ const DetailPageBuilderModal: React.FC<DetailPageBuilderModalProps> = ({ isOpen,
   const [pastedText, setPastedText] = useState('');
   const [promptCopyStatus, setPromptCopyStatus] = useState<'idle' | 'copied'>('idle');
   const [zoom, setZoom] = useState(1);
+
+  // AI 문구생성: 저장된 프롬프트(이름 + 스타일 지침) 목록과 현재 선택/편집 중인 지침.
+  // savedPrompts는 상품과 무관하게 앱 전체에서 공유되고, promptInstruction은 선택한 프롬프트를
+  // 불러온 값이거나 저장 없이 즉석에서 쓰는 값이다.
+  const [savedPrompts, setSavedPrompts] = useState<SavedCopyPrompt[]>(loadSavedCopyPrompts);
+  const [selectedPromptId, setSelectedPromptId] = useState('');
+  const [promptInstruction, setPromptInstruction] = useState('');
+  const [copyGenStatus, setCopyGenStatus] = useState<'idle' | 'loading' | 'error'>('idle');
+  const [copyGenError, setCopyGenError] = useState('');
   // Template-level settings (not per-product): shared across every product's detail page so the
   // whole shop keeps one consistent look. highlightCount controls how many "특별한점" cards render.
   const [templateStyle, setTemplateStyle] = useState<TemplateStyleSettings>(DEFAULT_TEMPLATE_STYLE);
@@ -218,6 +249,16 @@ const DetailPageBuilderModal: React.FC<DetailPageBuilderModalProps> = ({ isOpen,
   const middlePhotos: PhotoItem[] = photos.length >= 2 ? photos.slice(1, photos.length - 1) : [];
   const featurePhotoGroups = distributeEvenly(middlePhotos, featureBlockCount);
 
+  // Before any 문구 has been generated/pasted in, the preview should read as "photos only" —
+  // no placeholder text blocks cluttering the layout while just arranging photos. Once copy has
+  // any content (from 문구생성하기, 붙여넣은 문구 적용, or direct edits after that point), every
+  // text block (including empty placeholders for any still-blank fields) shows again as usual.
+  const hasCopyText =
+    copy.productName.trim() !== '' || copy.hookCopy.trim() !== '' ||
+    copy.highlights.some(h => h.trim() !== '') ||
+    copy.features.some(f => f.title.trim() !== '' || f.description.trim() !== '') ||
+    copy.closing.trim() !== '';
+
   // This modal is kept mounted for the whole session (see App.tsx) specifically so in-progress
   // work survives closing it — closing must not wipe state. Drafts are kept per product id here
   // so switching products doesn't leak one product's photos/copy into another's.
@@ -257,6 +298,14 @@ const DetailPageBuilderModal: React.FC<DetailPageBuilderModalProps> = ({ isOpen,
     setEraseStatus('idle');
     setEraseError('');
   }, [isOpen]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(COPY_PROMPTS_STORAGE_KEY, JSON.stringify(savedPrompts));
+    } catch (error) {
+      console.error('Failed to save detail page copy prompts to localStorage', error);
+    }
+  }, [savedPrompts]);
 
   // Brush mode needs 1:1 screen-to-canvas coordinates, so force zoom to 100% while it's active (same
   // reason captureImage/captureCanvas reset zoom before capturing) and size the paint canvas to match
@@ -701,6 +750,55 @@ const DetailPageBuilderModal: React.FC<DetailPageBuilderModalProps> = ({ isOpen,
     </div>
   );
 
+  const handleSelectPrompt = (id: string) => {
+    setSelectedPromptId(id);
+    setPromptInstruction(savedPrompts.find(p => p.id === id)?.instruction ?? '');
+  };
+
+  const handleSaveCurrentPrompt = () => {
+    const trimmed = promptInstruction.trim();
+    if (!trimmed) return;
+    const existing = savedPrompts.find(p => p.id === selectedPromptId);
+    const name = window.prompt('이 프롬프트의 이름을 입력해주세요.', existing?.name ?? '');
+    if (!name || !name.trim()) return;
+    if (existing) {
+      setSavedPrompts(prev => prev.map(p => (p.id === existing.id ? { ...p, name: name.trim(), instruction: trimmed } : p)));
+    } else {
+      const id = generateId();
+      setSavedPrompts(prev => [...prev, { id, name: name.trim(), instruction: trimmed }]);
+      setSelectedPromptId(id);
+    }
+  };
+
+  const handleDeleteSelectedPrompt = () => {
+    const target = savedPrompts.find(p => p.id === selectedPromptId);
+    if (!target) return;
+    if (!window.confirm(`"${target.name}" 프롬프트를 삭제할까요?`)) return;
+    setSavedPrompts(prev => prev.filter(p => p.id !== target.id));
+    setSelectedPromptId('');
+    setPromptInstruction('');
+  };
+
+  const handleGenerateCopy = async () => {
+    if (!product) return;
+    setCopyGenStatus('loading');
+    setCopyGenError('');
+    try {
+      const result = await generateDetailPageCopyWithGemini(
+        { productName: product.productName, category: product.category, material, sellingPoints },
+        highlightCount,
+        featureBlockCount,
+        promptInstruction.trim() || undefined,
+      );
+      setCopy(result);
+      setCopyGenStatus('idle');
+    } catch (err) {
+      console.error('문구 생성 실패:', err);
+      setCopyGenError(err instanceof Error ? err.message : '문구 생성에 실패했어요.');
+      setCopyGenStatus('error');
+    }
+  };
+
   const handleCopyPrompt = async () => {
     if (!product) return;
     const prompt = buildDetailPageCopyPrompt({
@@ -952,45 +1050,47 @@ const DetailPageBuilderModal: React.FC<DetailPageBuilderModalProps> = ({ isOpen,
               </div>
             )}
             <div className="flex-1 min-w-0 bg-slate-950/60 rounded-xl border border-slate-700 p-4 min-h-[320px] max-h-[70vh] overflow-auto flex justify-center items-start">
-            {photos.length === 0 ? (
-              <div className="flex items-center justify-center">
-                <p className="text-slate-500 text-sm text-center px-6">
-                  사진을 업로드하면 여기에 미리보기가 나타나요. 문구는 클릭해서 바로 수정하고, 사진은 드래그해서 순서를 바꿀 수 있어요.
-                </p>
-              </div>
-            ) : (
+            {photos.length === 0 ? null : (
               <div style={{ transform: `scale(${zoom})`, transformOrigin: 'top center', flexShrink: 0 }}>
               <div style={{ position: 'relative' }}>
               <div ref={previewRef} style={{ width: CANVAS_WIDTH, backgroundColor: '#ffffff' }}>
                 {/* Hero */}
-                <div style={{ marginTop: SPACE.lg, marginBottom: SPACE.sm }}>
-                  <EditableText value={copy.productName} onChange={v => setCopy(prev => ({ ...prev, productName: v }))} placeholder="제품명" style={styles.heroTitle} />
-                </div>
-                <div style={{ marginBottom: SPACE.lg }}>
-                  <EditableText value={copy.hookCopy} onChange={v => setCopy(prev => ({ ...prev, hookCopy: v }))} placeholder="후킹 문구" style={styles.heroSubtitle} />
-                </div>
-                {heroPhoto && renderPhoto(heroPhoto, SPACE.xl + SECTION_GAP)}
+                {hasCopyText && (
+                  <>
+                    <div style={{ marginTop: SPACE.lg, marginBottom: SPACE.sm }}>
+                      <EditableText value={copy.productName} onChange={v => setCopy(prev => ({ ...prev, productName: v }))} placeholder="제품명" style={styles.heroTitle} />
+                    </div>
+                    <div style={{ marginBottom: SPACE.lg }}>
+                      <EditableText value={copy.hookCopy} onChange={v => setCopy(prev => ({ ...prev, hookCopy: v }))} placeholder="후킹 문구" style={styles.heroSubtitle} />
+                    </div>
+                  </>
+                )}
+                {heroPhoto && renderPhoto(heroPhoto, (hasCopyText ? SPACE.xl : SPACE.lg) + SECTION_GAP)}
 
                 {/* 특별한점 */}
-                <div style={{ ...styles.sectionHeading, marginBottom: SPACE.md }}>특별한점</div>
-                {Array.from({ length: highlightCount }, (_, idx) => (
-                  <div
-                    key={idx}
-                    style={{
-                      margin: `0 ${PADDING_X}px ${idx === highlightCount - 1 ? SPACE.xl + SECTION_GAP : SPACE.sm}px`,
-                      background: CARD_COLOR,
-                      borderRadius: 14,
-                      padding: '22px 30px',
-                    }}
-                  >
-                    <EditableText
-                      value={copy.highlights[idx] || ''}
-                      onChange={v => updateHighlight(idx, v)}
-                      placeholder={`특별한점 ${String(idx + 1).padStart(2, '0')}`}
-                      style={styles.highlight}
-                    />
-                  </div>
-                ))}
+                {hasCopyText && (
+                  <>
+                    <div style={{ ...styles.sectionHeading, marginBottom: SPACE.md }}>특별한점</div>
+                    {Array.from({ length: highlightCount }, (_, idx) => (
+                      <div
+                        key={idx}
+                        style={{
+                          margin: `0 ${PADDING_X}px ${idx === highlightCount - 1 ? SPACE.xl + SECTION_GAP : SPACE.sm}px`,
+                          background: CARD_COLOR,
+                          borderRadius: 14,
+                          padding: '22px 30px',
+                        }}
+                      >
+                        <EditableText
+                          value={copy.highlights[idx] || ''}
+                          onChange={v => updateHighlight(idx, v)}
+                          placeholder={`특별한점 ${String(idx + 1).padStart(2, '0')}`}
+                          style={styles.highlight}
+                        />
+                      </div>
+                    ))}
+                  </>
+                )}
 
                 {/* Feature blocks (01~0N), each sharing an even slice of the leftover photos */}
                 {Array.from({ length: featureBlockCount }, (_, idx) => {
@@ -1002,13 +1102,17 @@ const DetailPageBuilderModal: React.FC<DetailPageBuilderModalProps> = ({ isOpen,
                   if (groupPhotos.length === 0 && !title.trim() && !description.trim()) return null;
                   return (
                     <div key={idx}>
-                      <div style={{ ...styles.featureNumber, marginTop: SPACE.lg, marginBottom: SPACE.xs }}>{number}</div>
-                      <div style={{ marginBottom: SPACE.sm }}>
-                        <EditableText value={title} onChange={v => updateFeatureField(number, 'title', v)} placeholder="특징 소제목" style={styles.featureTitle} />
-                      </div>
-                      <div style={{ marginBottom: SPACE.md }}>
-                        <EditableText value={description} onChange={v => updateFeatureField(number, 'description', v)} placeholder="특징 설명" style={styles.featureDesc} />
-                      </div>
+                      {hasCopyText && (
+                        <>
+                          <div style={{ ...styles.featureNumber, marginTop: SPACE.lg, marginBottom: SPACE.xs }}>{number}</div>
+                          <div style={{ marginBottom: SPACE.sm }}>
+                            <EditableText value={title} onChange={v => updateFeatureField(number, 'title', v)} placeholder="특징 소제목" style={styles.featureTitle} />
+                          </div>
+                          <div style={{ marginBottom: SPACE.md }}>
+                            <EditableText value={description} onChange={v => updateFeatureField(number, 'description', v)} placeholder="특징 설명" style={styles.featureDesc} />
+                          </div>
+                        </>
+                      )}
                       {groupPhotos.map((photo, pIdx) =>
                         renderPhoto(photo, pIdx === groupPhotos.length - 1 ? SPACE.xs + SECTION_GAP : SPACE.sm)
                       )}
@@ -1019,7 +1123,9 @@ const DetailPageBuilderModal: React.FC<DetailPageBuilderModalProps> = ({ isOpen,
                 {/* 마무리 문구 — closingPhoto (last upload) sits right above it, fixed */}
                 {closingPhoto && renderPhoto(closingPhoto, SPACE.lg)}
                 <div style={{ marginTop: SPACE.lg, marginBottom: SPACE.xl + SECTION_GAP }}>
-                  <EditableText value={copy.closing} onChange={v => setCopy(prev => ({ ...prev, closing: v }))} placeholder="마무리 문구" style={styles.closingTitle} />
+                  {hasCopyText && (
+                    <EditableText value={copy.closing} onChange={v => setCopy(prev => ({ ...prev, closing: v }))} placeholder="마무리 문구" style={styles.closingTitle} />
+                  )}
                 </div>
 
                 {/* Product Information — always last */}
@@ -1170,6 +1276,70 @@ const DetailPageBuilderModal: React.FC<DetailPageBuilderModalProps> = ({ isOpen,
                   ? '별 아이콘을 누르면 그 사진을 어느 옵션의 대표이미지로 쓸지 고를 수 있어요(옵션마다 다른 사진을 지정할 수 있어요).'
                   : `별 아이콘을 누르면 그 사진이 대표이미지(${product?.thumbnailFile || '순번s.png'})로 저장돼요.`}
                 {' '}상세페이지는 저장하면 이 상품의 옵션 {groupProducts.length}개 모두에 똑같이 적용돼요.
+              </p>
+            </div>
+
+            <div className="space-y-2 pt-2 border-t border-slate-700">
+              <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">문구생성하기 (AI 자동 생성)</p>
+              <p className="text-xs text-slate-500 leading-relaxed">
+                소구점을 적어두면 더 정확한 문구가 나와요. 스타일 지침은 이름을 붙여 저장해두고 다음에도 골라서 바로 쓸 수 있어요.
+              </p>
+              <textarea
+                value={sellingPoints}
+                onChange={e => setSellingPoints(e.target.value)}
+                placeholder="소구점 메모 (예: 방수, 초경량, 3중 스티칭 등 쉼표로 구분)"
+                rows={2}
+                className="w-full px-2.5 py-2 bg-slate-800 border border-slate-600 rounded-md text-sm text-slate-100 placeholder:text-slate-500 resize-none"
+              />
+              <div className="flex items-center gap-2">
+                <select
+                  value={selectedPromptId}
+                  onChange={e => handleSelectPrompt(e.target.value)}
+                  className="flex-1 px-2 py-1.5 bg-slate-800 border border-slate-600 rounded-md text-sm text-slate-100"
+                >
+                  <option value="">직접 입력 (저장 안 함)</option>
+                  {savedPrompts.map(p => (
+                    <option key={p.id} value={p.id}>{p.name}</option>
+                  ))}
+                </select>
+                {selectedPromptId && (
+                  <button
+                    onClick={handleDeleteSelectedPrompt}
+                    title="선택한 프롬프트 삭제"
+                    className="w-8 h-8 flex-shrink-0 flex items-center justify-center rounded-md bg-slate-700 text-slate-300 hover:bg-red-600 hover:text-white transition-colors [&_svg]:h-3.5 [&_svg]:w-3.5"
+                  >
+                    <TrashIcon />
+                  </button>
+                )}
+              </div>
+              <textarea
+                value={promptInstruction}
+                onChange={e => setPromptInstruction(e.target.value)}
+                placeholder="문구 스타일/톤 지침 (예: 20대 여성 타깃, 친근하고 발랄한 말투로 작성해줘)"
+                rows={3}
+                className="w-full px-2.5 py-2 bg-slate-800 border border-slate-600 rounded-md text-sm text-slate-100 placeholder:text-slate-500 resize-none"
+              />
+              <button
+                onClick={handleSaveCurrentPrompt}
+                disabled={!promptInstruction.trim()}
+                className="w-full px-3 py-1.5 text-xs bg-slate-700 text-slate-100 font-semibold rounded-lg hover:bg-slate-600 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                이름 지정해서 프롬프트 저장
+              </button>
+              {copyGenStatus === 'error' && (
+                <p className="text-xs text-red-400">{copyGenError}</p>
+              )}
+              <button
+                onClick={handleGenerateCopy}
+                disabled={copyGenStatus === 'loading' || !product}
+                className="w-full flex items-center justify-center gap-2 px-3 py-2 text-sm bg-indigo-600 text-white font-semibold rounded-lg hover:bg-indigo-500 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                {copyGenStatus === 'loading'
+                  ? <><SpinnerIcon className="h-4 w-4 animate-spin" /> 생성 중...</>
+                  : <><SparklesIcon className="h-4 w-4" /> 문구생성하기</>}
+              </button>
+              <p className="text-xs text-slate-500 leading-relaxed">
+                현재 설정된 특별한점 {highlightCount}개, 특징 {featureBlockCount}개에 맞춰 생성되고, 생성된 문구는 기존 내용을 덮어써요.
               </p>
             </div>
 

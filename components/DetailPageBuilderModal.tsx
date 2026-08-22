@@ -342,7 +342,7 @@ const DetailPageBuilderModal: React.FC<DetailPageBuilderModalProps> = ({ isOpen,
       { label: '제조국', value: product.countryOfOrigin },
       { label: '수입사', value: product.importer },
       { label: '사이즈', value: size },
-      { label: '무게', value: product.weight },
+      { label: '무게', value: product.weight ? `${product.weight}g` : '' },
       { label: '사용연령', value: product.recommendedAge },
       { label: 'A/S', value: product.asContact },
     ];

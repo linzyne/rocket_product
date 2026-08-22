@@ -39,8 +39,9 @@ export interface Product {
   customFields: { [key: string]: string };
 }
 
-// 상품 게시판(등록 이력)에 보관되는 가벼운 스냅샷. 이미지/엑셀 등 파일은 담지 않고
-// url/상품명/가격 정보만 남겨서, 작업 중인 상품 목록이 삭제/초기화된 뒤에도 나중에 찾아볼 수 있게 한다.
+// 상품 게시판(등록 이력)에 보관되는 가벼운 스냅샷. 원본 이미지·엑셀 등 파일은 담지 않고
+// url/상품명/가격 정보와 작게 리사이즈한 썸네일만 남겨서, 작업 중인 상품 목록이 삭제/초기화된
+// 뒤에도 나중에 찾아볼 수 있게 한다.
 export interface ArchivedProduct {
   id: string;
   savedAt: string;
@@ -62,6 +63,9 @@ export interface ArchivedProduct {
   cautionNote: string;
   importer: string;
   manufacturer: string;
+  // 목록에서 한눈에 알아볼 수 있도록, 원본 대표 이미지를 작게 리사이즈한 썸네일만 함께 저장한다
+  // (용량 때문에 원본은 저장하지 않음. utils/imageResize.ts 참고).
+  thumbnailDataUrl?: string;
 }
 
 export interface ImageFile {

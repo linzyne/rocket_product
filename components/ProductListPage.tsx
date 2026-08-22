@@ -109,7 +109,7 @@ const ProductListPage: React.FC<ProductListPageProps> = ({ entries, onBack, onDe
       </header>
 
       <p className="text-sm text-gray-500 mb-4">
-        상품 행의 별 버튼을 누르거나 상품을 삭제/초기화하면 URL·상품명·공급가·판매가·바코드가 여기 남습니다. 이미지·엑셀 파일은 저장되지 않습니다.
+        상품 행의 별 버튼을 누르거나 상품을 삭제/초기화하면 URL·상품명·공급가·판매가·바코드·대표이미지 썸네일이 여기 남습니다. 원본 이미지·엑셀 파일은 저장되지 않습니다.
       </p>
 
       {entries.length === 0 ? (
@@ -198,6 +198,16 @@ const ProductListRow: React.FC<ProductListRowProps> = ({ entry, isExpanded, onTo
           {isExpanded ? <ChevronUpIcon /> : <ChevronDownIcon />}
         </span>
 
+        <div className="w-9 h-9 flex-shrink-0 bg-gray-50 rounded-md overflow-hidden border border-gray-200">
+          {entry.thumbnailDataUrl ? (
+            <img src={entry.thumbnailDataUrl} alt={entry.productName} className="w-full h-full object-cover" />
+          ) : (
+            <div className="w-full h-full flex items-center justify-center">
+              <span className="text-[9px] text-gray-300 px-1 text-center leading-tight">이미지<br />없음</span>
+            </div>
+          )}
+        </div>
+
         <div className="w-14 h-9 flex-shrink-0 bg-gray-50 rounded-md flex items-center justify-center overflow-hidden border border-gray-200">
           {entry.barcode ? (
             <button
@@ -237,6 +247,16 @@ const ProductListRow: React.FC<ProductListRowProps> = ({ entry, isExpanded, onTo
 
       {isExpanded && (
         <div className="px-4 pb-4 pt-1 border-t border-gray-100 space-y-3">
+          {entry.thumbnailDataUrl && (
+            <div className="pt-3">
+              <img
+                src={entry.thumbnailDataUrl}
+                alt={entry.productName}
+                className="w-24 h-24 object-cover rounded-md border border-gray-200"
+              />
+            </div>
+          )}
+
           <div className="flex items-center gap-2 pt-3">
             <span className="text-xs text-gray-400 flex-shrink-0 w-16">URL</span>
             {entry.url ? (

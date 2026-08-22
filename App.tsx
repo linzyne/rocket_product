@@ -42,6 +42,7 @@ import { getAllQuoteTemplates, putQuoteTemplate, deleteQuoteTemplate } from './d
 import { generateProductImportFields } from './utils/geminiProductImport';
 import { generateId } from './utils/id';
 import { generateBarcodeNumber } from './utils/barcode';
+import { resizeImageDataUrl } from './utils/imageResize';
 import { withCoLtdSuffix } from './utils/manufacturerFormat';
 import { db, isFirebaseConfigured, ensureSignedIn } from './utils/firebase';
 import { collection, doc, setDoc, deleteDoc, getDocs, onSnapshot } from 'firebase/firestore';
@@ -243,7 +244,7 @@ const getInitialArchivedProducts = (): ArchivedProduct[] => {
 
 const isBlankProductForArchive = (p: Product): boolean => !p.url.trim() && !p.productName.trim();
 
-const buildArchiveEntry = (p: Product): ArchivedProduct => ({
+const buildArchiveEntry = (p: Product, thumbnailDataUrl: string): ArchivedProduct => ({
   id: generateId(),
   savedAt: new Date().toISOString(),
   url: p.url.trim(),
@@ -262,6 +263,7 @@ const buildArchiveEntry = (p: Product): ArchivedProduct => ({
   cautionNote: p.cautionNote,
   importer: p.importer,
   manufacturer: p.manufacturer,
+  thumbnailDataUrl,
 });
 
 
@@ -425,7 +427,7 @@ const App: React.FC = () => {
     }
   }, [products]);
 
-  // 상품목록은 용량이 작아(이미지 없음) 바뀔 때마다 바로 저장해도 부담이 없다. 다만 최초
+  // 상품목록은 용량이 작아(썸네일도 리사이즈해서 저장) 바뀔 때마다 바로 저장해도 부담이 없다. 다만 최초
   // 마운트 시 이 effect가 한 번 더 도는 것까지 그대로 저장해버리면, 어떤 이유로든(다른 곳에서
   // 손상시킨 값 등) 불러오기가 실패해 빈 배열로 시작한 경우 그 순간 원본 데이터를 덮어써서
   // 영구히 잃어버릴 수 있다. 그래서 마운트 직후 첫 실행은 건너뛰고, 실제로 상품을 저장/삭제해서
@@ -475,12 +477,21 @@ const App: React.FC = () => {
   }, []);
 
   const archiveProducts = useCallback((toArchive: Product[]): boolean => {
-    const entries = toArchive.filter(p => !isBlankProductForArchive(p)).map(buildArchiveEntry);
-    if (entries.length === 0) return false;
+    const candidates = toArchive.filter(p => !isBlankProductForArchive(p));
+    if (candidates.length === 0) return false;
 
-    if (isFirebaseConfigured && db) {
-      const firestore = db;
-      (async () => {
+    (async () => {
+      // 원본 대표 이미지는 크기가 커서(Firestore 문서당 1MB 제한, localStorage 용량) 그대로
+      // 저장하지 않고, 목록 미리보기에 필요한 만큼만 작게 리사이즈해서 저장한다.
+      const entries = await Promise.all(candidates.map(async p => {
+        const thumbnailDataUrl = p.thumbnailDataUrl
+          ? await resizeImageDataUrl(p.thumbnailDataUrl).catch(() => '')
+          : '';
+        return buildArchiveEntry(p, thumbnailDataUrl);
+      }));
+
+      if (isFirebaseConfigured && db) {
+        const firestore = db;
         try {
           await ensureSignedIn();
           await Promise.all(entries.map(entry => setDoc(doc(firestore, ARCHIVE_COLLECTION, entry.id), entry)));
@@ -488,10 +499,10 @@ const App: React.FC = () => {
           console.error('상품목록 클라우드 저장 실패, 이 기기에만 저장합니다:', error);
           setArchivedProducts(prev => [...entries, ...prev]);
         }
-      })();
-    } else {
-      setArchivedProducts(prev => [...entries, ...prev]);
-    }
+      } else {
+        setArchivedProducts(prev => [...entries, ...prev]);
+      }
+    })();
     return true;
   }, []);
 

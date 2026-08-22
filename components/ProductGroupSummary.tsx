@@ -21,6 +21,8 @@ interface ProductGroupSummaryProps {
   isIntegratedDownloading: boolean;
   isIntegratedDownloadDone: boolean;
   onArchiveGroup: (products: Product[]) => boolean;
+  // 통합다운 후 "상품목록에 저장할까요?" 확인을 눌러 자동 저장됐을 때 부모가 잠깐 true로 켜주는 값.
+  isArchiveDoneExternal?: boolean;
 }
 
 const inputClass = "w-full px-3 py-1 bg-white border border-gray-200 rounded-md text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition duration-200";
@@ -41,6 +43,7 @@ const ProductGroupSummary: React.FC<ProductGroupSummaryProps> = ({
   isIntegratedDownloading,
   isIntegratedDownloadDone,
   onArchiveGroup,
+  isArchiveDoneExternal = false,
 }) => {
   const lead = products[0];
   const thumbnail = products.find(p => p.thumbnailDataUrl)?.thumbnailDataUrl;
@@ -276,11 +279,11 @@ const ProductGroupSummary: React.FC<ProductGroupSummaryProps> = ({
         <button
           type="button"
           onClick={handleArchiveClick}
-          className={`flex-shrink-0 transition-colors duration-200 p-1 rounded-md hover:bg-yellow-400/10 ${isArchiveDone ? 'text-yellow-500' : 'text-gray-400 hover:text-yellow-500'}`}
+          className={`flex-shrink-0 transition-colors duration-200 p-1 rounded-md hover:bg-yellow-400/10 ${isArchiveDone || isArchiveDoneExternal ? 'text-yellow-500' : 'text-gray-400 hover:text-yellow-500'}`}
           aria-label="옵션 전체를 상품목록에 저장"
           title="URL/상품명/가격/바코드를 옵션 전체 상품목록에 저장 (나중에 검색해서 볼 수 있어요)"
         >
-          {isArchiveDone ? <CheckIcon className="text-emerald-600" /> : <StarIcon />}
+          {isArchiveDone || isArchiveDoneExternal ? <CheckIcon className="text-emerald-600" /> : <StarIcon />}
         </button>
       </div>
     </div>

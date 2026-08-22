@@ -290,6 +290,8 @@ const App: React.FC = () => {
   const [generatingProductQuoteId, setGeneratingProductQuoteId] = useState<string | null>(null);
   const [integratedDownloadingId, setIntegratedDownloadingId] = useState<string | null>(null);
   const [integratedDownloadDoneId, setIntegratedDownloadDoneId] = useState<string | null>(null);
+  // 통합다운 완료 후 "상품목록에 저장할까요?" 확인을 눌러 저장했을 때, 별표를 잠깐 활성화 표시하기 위한 id.
+  const [integratedDownloadArchiveDoneId, setIntegratedDownloadArchiveDoneId] = useState<string | null>(null);
   // 상세페이지 빌더에서 "상세 이미지로 저장"을 누른 직후 잠깐 체크 아이콘으로 바꿔서, 목록을 훑어볼 때
   // 이 상품은 상세페이지 작업이 끝났다는 걸 알 수 있게 한다(통합다운로드 완료 표시와 같은 패턴).
   const [detailPageDoneId, setDetailPageDoneId] = useState<string | null>(null);
@@ -1681,13 +1683,22 @@ const App: React.FC = () => {
       // 반응하지 않은 것처럼 보일 수 있다. 잠깐 체크 아이콘으로 바꿔 완료됐다는 걸 알려준다.
       setIntegratedDownloadDoneId(productId);
       setTimeout(() => setIntegratedDownloadDoneId(prev => (prev === productId ? null : prev)), 1500);
+
+      // 통합다운을 받았다는 건 이 상품을 다루고 있다는 뜻이므로, 상품목록(별표 저장)에도
+      // 자동으로 남겨둘지 바로 물어본다.
+      if (window.confirm('상품목록에 자동으로 저장할까요?')) {
+        if (archiveProducts(groupProducts)) {
+          setIntegratedDownloadArchiveDoneId(productId);
+          setTimeout(() => setIntegratedDownloadArchiveDoneId(prev => (prev === productId ? null : prev)), 1500);
+        }
+      }
     } catch (error) {
       console.error('통합 다운로드 실패:', error);
       alert('통합 다운로드 중 오류가 발생했습니다.');
     } finally {
       setIntegratedDownloadingId(null);
     }
-  }, [products, quoteTemplateRegistrations, quoteFixedValues, integratedDownloadingId, captureLabelImage]);
+  }, [products, quoteTemplateRegistrations, quoteFixedValues, integratedDownloadingId, captureLabelImage, archiveProducts]);
 
   const handleImportProductQuote = useCallback(async (productId: string, file: File) => {
     setImportingProductQuoteId(productId);
@@ -2217,6 +2228,7 @@ const App: React.FC = () => {
                     isIntegratedDownloading={integratedDownloadingId === group.products[0].id}
                     isIntegratedDownloadDone={integratedDownloadDoneId === group.products[0].id}
                     onArchiveGroup={handleArchiveProductGroup}
+                    isArchiveDoneExternal={integratedDownloadArchiveDoneId === group.products[0].id}
                   />
                   {isExpanded && (
                     <div className="mt-3 ml-3 pl-4 border-l-2 border-gray-200 space-y-4">

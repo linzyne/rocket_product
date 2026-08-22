@@ -103,7 +103,7 @@ export interface QuoteFixedValues {
 
 export const DEFAULT_QUOTE_FIXED_VALUES: QuoteFixedValues = {
   brand: '주노엘',
-  manufacturer: '주노엘 협력업체',
+  manufacturer: '주노엘협력사',
   dealType: '제조사',
   importStatus: '수입상품',
   taxStatus: '과세',

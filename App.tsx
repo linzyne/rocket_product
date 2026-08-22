@@ -1096,7 +1096,7 @@ const App: React.FC = () => {
                 Number(product.sellingPrice) || '',
                 '',
                 '과세',
-                '주노엘 협력업체',
+                '주노엘협력사',
                 '제조사',
                 '수입상품',
                 product.sku,

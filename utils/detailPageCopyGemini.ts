@@ -29,6 +29,9 @@ export async function generateDetailPageCopyWithGemini(
     model: 'gemini-2.5-flash',
     contents: prompt,
     config: {
+      // gemini-2.5-flash의 기본 thinking(내부 추론) 토큰도 출력 단가로 과금되므로 꺼서 호출당
+      // 비용을 줄인다(utils/geminiProductImport.ts와 동일한 이유).
+      thinkingConfig: { thinkingBudget: 0 },
       responseMimeType: 'application/json',
       responseSchema: {
         type: Type.OBJECT,

@@ -37,6 +37,10 @@ export async function generateProductImportFields(
     model: 'gemini-2.5-flash',
     contents: prompt,
     config: {
+      // gemini-2.5-flash는 기본적으로 "thinking"(내부 추론) 토큰을 자동으로 쓰는데, 그 토큰도
+      // 출력 단가로 과금된다. 이 작업은 짧은 추출/변환이라 깊은 추론이 필요 없으므로 꺼서
+      // 호출당 비용을 크게 줄인다.
+      thinkingConfig: { thinkingBudget: 0 },
       responseMimeType: 'application/json',
       responseSchema: {
         type: Type.OBJECT,

@@ -24,6 +24,7 @@ interface ProductRowProps {
   onOpenTranslation: (imageDataUrl: string | undefined, field: 'thumbnailDataUrl' | 'detailDataUrl') => void;
   onOpenImageEditor: (product: Product) => void;
   onOpenDetailPageBuilder: (product: Product) => void;
+  isDetailPageDone: boolean;
   onMenuToggle: (isOpen: boolean) => void;
   onSetCustomField: (id: string, name: string, value: string) => void;
   onRemoveCustomField: (id: string, name: string) => void;
@@ -66,6 +67,7 @@ const ProductRow: React.FC<ProductRowProps> = ({
   onOpenTranslation,
   onOpenImageEditor,
   onOpenDetailPageBuilder,
+  isDetailPageDone,
   onMenuToggle,
   onSetCustomField,
   onRemoveCustomField,
@@ -425,8 +427,8 @@ const ProductRow: React.FC<ProductRowProps> = ({
           aria-label="상세페이지 만들기"
           title="상세페이지 만들기 (사진 + 소구점 → AI 문구 생성)"
         >
-          <DocumentAddIcon className="h-5 w-5 mr-0" />
-          <span className="text-[9px] leading-none font-semibold">상세</span>
+          {isDetailPageDone ? <CheckIcon className="h-5 w-5 text-emerald-600" /> : <DocumentAddIcon className="h-5 w-5 mr-0" />}
+          <span className="text-[9px] leading-none font-semibold">{isDetailPageDone ? '완료!' : '상세'}</span>
         </button>
 
         <button

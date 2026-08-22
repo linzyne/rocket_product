@@ -290,6 +290,9 @@ const App: React.FC = () => {
   const [generatingProductQuoteId, setGeneratingProductQuoteId] = useState<string | null>(null);
   const [integratedDownloadingId, setIntegratedDownloadingId] = useState<string | null>(null);
   const [integratedDownloadDoneId, setIntegratedDownloadDoneId] = useState<string | null>(null);
+  // 상세페이지 빌더에서 "상세 이미지로 저장"을 누른 직후 잠깐 체크 아이콘으로 바꿔서, 목록을 훑어볼 때
+  // 이 상품은 상세페이지 작업이 끝났다는 걸 알 수 있게 한다(통합다운로드 완료 표시와 같은 패턴).
+  const [detailPageDoneId, setDetailPageDoneId] = useState<string | null>(null);
   const [extensionsLinkCopied, setExtensionsLinkCopied] = useState(false);
   const [missingFieldsProductId, setMissingFieldsProductId] = useState<string | null>(null);
   const [requiredFieldGaps, setRequiredFieldGaps] = useState<RequiredFieldGap[] | null>(null);
@@ -2010,7 +2013,12 @@ const App: React.FC = () => {
       }
       // detailFile은 용량 때문에 JPEG로 대체될 때 detailDataUrl 저장 직전에 확장자만 맞추려고
       // 함께 오는 부수 업데이트라 여기서 완료 알림/모달 닫기를 트리거하지 않는다.
-      if (field === 'detailDataUrl') alert('상세페이지 이미지로 저장되었습니다.');
+      if (field === 'detailDataUrl') {
+        alert('상세페이지 이미지로 저장되었습니다.');
+        const productId = detailPageBuilderState.product.id;
+        setDetailPageDoneId(productId);
+        setTimeout(() => setDetailPageDoneId(prev => (prev === productId ? null : prev)), 1500);
+      }
     }
     if (field !== 'detailFile') closeDetailPageBuilder();
   }, [detailPageBuilderState.product, handleProductChange, closeDetailPageBuilder, getGroupProducts]);
@@ -2221,6 +2229,7 @@ const App: React.FC = () => {
                             onOpenTranslation={(dataUrl, field) => handleOpenTranslation(product.id, dataUrl, field)}
                             onOpenImageEditor={openImageEditor}
                             onOpenDetailPageBuilder={openDetailPageBuilder}
+                            isDetailPageDone={detailPageDoneId === product.id}
                             onMenuToggle={(isOpen) => setActiveProductId(isOpen ? product.id : null)}
                             onSetCustomField={handleSetProductCustomField}
                             onRemoveCustomField={handleRemoveProductCustomField}

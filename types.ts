@@ -50,6 +50,18 @@ export interface ArchivedProduct {
   supplyPrice: string;
   sellingPrice: string;
   barcode: string;
+  // 바코드 라벨(제품 필수 표시사항 + 바코드) 이미지를 상품목록에서도 그대로 다시 그려서 볼 수
+  // 있도록, 라벨 구성에 필요한 값만 함께 저장한다.
+  color: string;
+  sizeWidth: string;
+  sizeHeight: string;
+  sizeDepth: string;
+  material: string;
+  countryOfOrigin: string;
+  recommendedAge: string;
+  cautionNote: string;
+  importer: string;
+  manufacturer: string;
 }
 
 export interface ImageFile {

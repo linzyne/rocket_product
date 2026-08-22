@@ -33,13 +33,15 @@ export interface QuoteTemplateRegistration {
 }
 
 // 견적서 '상품명' 컬럼과 바코드 라벨(BarcodeLabel)이 항상 같은 값을 쓰도록 공유하는 계산식.
-export const getProductQuoteTitle = (product: Product): string =>
+// Product 전체가 아니라 실제로 읽는 필드만 요구해서, 상품목록(ArchivedProduct) 스냅샷처럼
+// 이 필드들만 뽑아 저장해둔 값도 그대로 넘길 수 있게 한다.
+export const getProductQuoteTitle = (product: Pick<Product, 'productName' | 'color'>): string =>
   [product.productName, product.color].filter(Boolean).join(', ');
 
 // 소재는 앱 안에서 저장 위치가 여러 번 바뀌었습니다: 신규 등록 화면의 전용 material 필드를
 // 우선 쓰고, 예전에 "+추가 항목"으로 등록해둔 customFields['재질']/['소재']가 있으면 그 값을
 // 이어서 씁니다(견적서 매핑과 바코드 라벨이 항상 같은 값을 보도록 공유합니다).
-export const getProductMaterialValue = (product: Product): string =>
+export const getProductMaterialValue = (product: Pick<Product, 'material' | 'customFields'>): string =>
   product.material || (product.customFields || {})['재질'] || (product.customFields || {})['소재'] || '';
 
 export const dataUrlToArrayBuffer = (dataUrl: string): ArrayBuffer => {

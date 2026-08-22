@@ -2,7 +2,25 @@
 import React, { useMemo, useState } from 'react';
 import { ArchivedProduct } from '../types';
 import BarcodeImage from './BarcodeImage';
+import BarcodeLabel, { BarcodeLabelProduct } from './BarcodeLabel';
 import { ChevronLeftIcon, SearchIcon, TrashIcon, ExternalLinkIcon, ChevronDownIcon, ChevronUpIcon, CloseIcon, BroomIcon } from './Icons';
+import { isFirebaseConfigured } from '../utils/firebase';
+
+const toBarcodeLabelProduct = (entry: ArchivedProduct): BarcodeLabelProduct => ({
+  productName: entry.productName,
+  color: entry.color,
+  sizeWidth: entry.sizeWidth,
+  sizeHeight: entry.sizeHeight,
+  sizeDepth: entry.sizeDepth,
+  material: entry.material,
+  customFields: {},
+  countryOfOrigin: entry.countryOfOrigin,
+  recommendedAge: entry.recommendedAge,
+  cautionNote: entry.cautionNote,
+  importer: entry.importer,
+  manufacturer: entry.manufacturer,
+  barcode: entry.barcode,
+});
 
 interface ProductListPageProps {
   entries: ArchivedProduct[];
@@ -22,7 +40,7 @@ const formatDate = (iso: string) => {
 const ProductListPage: React.FC<ProductListPageProps> = ({ entries, onBack, onDelete, onClearAll }) => {
   const [query, setQuery] = useState('');
   const [expandedId, setExpandedId] = useState<string | null>(null);
-  const [enlargedBarcode, setEnlargedBarcode] = useState<string | null>(null);
+  const [enlargedEntry, setEnlargedEntry] = useState<ArchivedProduct | null>(null);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -68,6 +86,15 @@ const ProductListPage: React.FC<ProductListPageProps> = ({ entries, onBack, onDe
           </div>
         </div>
         <div className="flex items-center gap-1.5 flex-wrap justify-center">
+          <span
+            className={`inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs font-medium whitespace-nowrap ${
+              isFirebaseConfigured ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-amber-50 text-amber-700 border border-amber-200'
+            }`}
+            title={isFirebaseConfigured ? '다른 컴퓨터와 실시간으로 같은 목록을 봅니다' : '이 컴퓨터에만 저장됩니다 (클라우드 미설정)'}
+          >
+            <span className={`w-1.5 h-1.5 rounded-full ${isFirebaseConfigured ? 'bg-emerald-500' : 'bg-amber-500'}`} />
+            {isFirebaseConfigured ? '클라우드 동기화 중' : '이 컴퓨터에만 저장'}
+          </span>
           <span className="text-sm text-gray-500 whitespace-nowrap">{entries.length}건 저장됨</span>
           {entries.length > 0 && (
             <button
@@ -102,31 +129,33 @@ const ProductListPage: React.FC<ProductListPageProps> = ({ entries, onBack, onDe
               isExpanded={expandedId === entry.id}
               onToggle={() => setExpandedId(prev => (prev === entry.id ? null : entry.id))}
               onDelete={() => handleDelete(entry.id)}
-              onEnlargeBarcode={setEnlargedBarcode}
+              onEnlargeBarcode={setEnlargedEntry}
             />
           ))}
         </div>
       )}
 
-      {enlargedBarcode && (
+      {enlargedEntry && (
         <div
           className="fixed inset-0 bg-black bg-opacity-60 flex justify-center items-center z-[1000] p-4 transition-opacity duration-300"
-          onClick={() => setEnlargedBarcode(null)}
+          onClick={() => setEnlargedEntry(null)}
         >
           <div
-            className="bg-slate-800 rounded-xl shadow-2xl max-w-md w-full p-6 sm:p-8 relative transform transition-all duration-300 scale-95"
+            className="bg-slate-800 rounded-xl shadow-2xl max-w-2xl w-full p-6 sm:p-8 relative transform transition-all duration-300 scale-95 max-h-[85vh] overflow-y-auto"
             onClick={e => e.stopPropagation()}
           >
             <button
-              onClick={() => setEnlargedBarcode(null)}
+              onClick={() => setEnlargedEntry(null)}
               className="absolute top-4 right-4 text-slate-400 hover:text-slate-200 transition-colors"
               aria-label="Close"
             >
               <CloseIcon />
             </button>
-            <h2 className="text-xl font-bold text-slate-100 mb-6">바코드 이미지</h2>
-            <div className="bg-white rounded-lg p-6 flex justify-center items-center min-h-[160px]">
-              <BarcodeImage value={enlargedBarcode} height={140} fontSize={28} />
+            <h2 className="text-xl font-bold text-slate-100 mb-6">바코드 라벨</h2>
+            <div className="bg-white rounded-lg p-4 flex justify-center overflow-x-auto">
+              <div style={{ zoom: 0.32 }}>
+                <BarcodeLabel product={toBarcodeLabelProduct(enlargedEntry)} />
+              </div>
             </div>
           </div>
         </div>
@@ -140,7 +169,7 @@ interface ProductListRowProps {
   isExpanded: boolean;
   onToggle: () => void;
   onDelete: () => void;
-  onEnlargeBarcode: (value: string) => void;
+  onEnlargeBarcode: (entry: ArchivedProduct) => void;
 }
 
 const ProductListRow: React.FC<ProductListRowProps> = ({ entry, isExpanded, onToggle, onDelete, onEnlargeBarcode }) => {
@@ -173,9 +202,9 @@ const ProductListRow: React.FC<ProductListRowProps> = ({ entry, isExpanded, onTo
           {entry.barcode ? (
             <button
               type="button"
-              onClick={e => { e.stopPropagation(); onEnlargeBarcode(entry.barcode); }}
+              onClick={e => { e.stopPropagation(); onEnlargeBarcode(entry); }}
               className="w-full h-full flex items-center justify-center hover:bg-gray-100 transition-colors"
-              title="바코드 크게 보기"
+              title="바코드 라벨 크게 보기"
             >
               <BarcodeImage value={entry.barcode} height={22} className="max-h-full object-contain" />
             </button>
@@ -245,10 +274,10 @@ const ProductListRow: React.FC<ProductListRowProps> = ({ entry, isExpanded, onTo
 
           {entry.barcode && (
             <div>
-              <p className="text-[10px] text-gray-400 mb-1">바코드 (클릭하면 크게 보기)</p>
+              <p className="text-[10px] text-gray-400 mb-1">바코드 (클릭하면 라벨 크게 보기)</p>
               <button
                 type="button"
-                onClick={() => onEnlargeBarcode(entry.barcode)}
+                onClick={() => onEnlargeBarcode(entry)}
                 className="bg-gray-50 border border-gray-200 rounded-md px-3 py-2 inline-flex hover:bg-gray-100 transition-colors"
               >
                 <BarcodeImage value={entry.barcode} height={40} />

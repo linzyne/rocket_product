@@ -34,6 +34,7 @@ import {
   extractExposureAttributeLabels,
   findNewExposureAttributeLabels,
   normalizeHeader,
+  getProductMaterialValue,
   RequiredFieldGap,
   OPTION_FIELD_COLOR,
 } from './data/quoteTemplates';
@@ -42,6 +43,8 @@ import { generateProductImportFields } from './utils/geminiProductImport';
 import { generateId } from './utils/id';
 import { generateBarcodeNumber } from './utils/barcode';
 import { withCoLtdSuffix } from './utils/manufacturerFormat';
+import { db, isFirebaseConfigured, ensureSignedIn } from './utils/firebase';
+import { collection, doc, setDoc, deleteDoc, getDocs, onSnapshot } from 'firebase/firestore';
 
 // This tells TypeScript that the global variables from CDNs exist.
 declare var XLSX: any;
@@ -211,6 +214,9 @@ const getInitialCategories = (): string[] => {
 // 키에도 함께 저장해두고 원본 키가 어떤 이유로든 깨져 있으면 백업에서 복구한다.
 const ARCHIVE_STORAGE_KEY = 'productArchive';
 const ARCHIVE_BACKUP_STORAGE_KEY = 'productArchive_backup';
+// Firebase가 설정돼 있으면(utils/firebase.ts) 이 Firestore 컬렉션이 진짜 저장소가 되고, 여러
+// 컴퓨터가 이 컬렉션 하나를 실시간으로 공유해서 본다. localStorage는 그 위에 얹는 로컬 캐시일 뿐이다.
+const ARCHIVE_COLLECTION = 'rocketProposalArchive';
 
 const parseArchiveJSON = (json: string | null): ArchivedProduct[] | null => {
   if (!json) return null;
@@ -246,6 +252,16 @@ const buildArchiveEntry = (p: Product): ArchivedProduct => ({
   supplyPrice: p.supplyPrice,
   sellingPrice: p.sellingPrice,
   barcode: p.barcode,
+  color: p.color,
+  sizeWidth: p.sizeWidth,
+  sizeHeight: p.sizeHeight,
+  sizeDepth: p.sizeDepth,
+  material: getProductMaterialValue(p),
+  countryOfOrigin: p.countryOfOrigin,
+  recommendedAge: p.recommendedAge,
+  cautionNote: p.cautionNote,
+  importer: p.importer,
+  manufacturer: p.manufacturer,
 });
 
 
@@ -424,10 +440,53 @@ const App: React.FC = () => {
     }
   }, [archivedProducts]);
 
+  // Firebase가 설정돼 있으면 이 컬렉션을 실시간 구독해서, 다른 컴퓨터에서 저장/삭제한 내용이
+  // 이 화면에도 바로 반영되게 한다(두 컴퓨터 동시 작업 동기화).
+  useEffect(() => {
+    if (!isFirebaseConfigured || !db) return;
+    const firestore = db;
+    let unsubscribe: (() => void) | undefined;
+    let cancelled = false;
+
+    (async () => {
+      await ensureSignedIn();
+      if (cancelled) return;
+      unsubscribe = onSnapshot(
+        collection(firestore, ARCHIVE_COLLECTION),
+        snapshot => {
+          const entries = snapshot.docs.map(d => d.data() as ArchivedProduct);
+          setArchivedProducts(entries);
+        },
+        error => {
+          console.error('상품목록 실시간 동기화 실패(이 기기에 저장된 내용은 유지됩니다):', error);
+        }
+      );
+    })();
+
+    return () => {
+      cancelled = true;
+      unsubscribe?.();
+    };
+  }, []);
+
   const archiveProducts = useCallback((toArchive: Product[]): boolean => {
     const entries = toArchive.filter(p => !isBlankProductForArchive(p)).map(buildArchiveEntry);
     if (entries.length === 0) return false;
-    setArchivedProducts(prev => [...entries, ...prev]);
+
+    if (isFirebaseConfigured && db) {
+      const firestore = db;
+      (async () => {
+        try {
+          await ensureSignedIn();
+          await Promise.all(entries.map(entry => setDoc(doc(firestore, ARCHIVE_COLLECTION, entry.id), entry)));
+        } catch (error) {
+          console.error('상품목록 클라우드 저장 실패, 이 기기에만 저장합니다:', error);
+          setArchivedProducts(prev => [...entries, ...prev]);
+        }
+      })();
+    } else {
+      setArchivedProducts(prev => [...entries, ...prev]);
+    }
     return true;
   }, []);
 
@@ -440,11 +499,36 @@ const App: React.FC = () => {
   }, [archiveProducts]);
 
   const handleDeleteArchivedProduct = useCallback((id: string) => {
-    setArchivedProducts(prev => prev.filter(e => e.id !== id));
+    if (isFirebaseConfigured && db) {
+      const firestore = db;
+      (async () => {
+        try {
+          await ensureSignedIn();
+          await deleteDoc(doc(firestore, ARCHIVE_COLLECTION, id));
+        } catch (error) {
+          console.error('상품목록 삭제 실패(클라우드):', error);
+        }
+      })();
+    } else {
+      setArchivedProducts(prev => prev.filter(e => e.id !== id));
+    }
   }, []);
 
   const handleClearArchivedProducts = useCallback(() => {
-    setArchivedProducts([]);
+    if (isFirebaseConfigured && db) {
+      const firestore = db;
+      (async () => {
+        try {
+          await ensureSignedIn();
+          const snapshot = await getDocs(collection(firestore, ARCHIVE_COLLECTION));
+          await Promise.all(snapshot.docs.map(d => deleteDoc(d.ref)));
+        } catch (error) {
+          console.error('상품목록 전체 삭제 실패(클라우드):', error);
+        }
+      })();
+    } else {
+      setArchivedProducts([]);
+    }
   }, []);
 
   // 웹페이지는 브라우저 보안 정책상 chrome:// 주소로 직접 이동시킬 수 없어서(클릭해도

@@ -1,10 +1,27 @@
 import React from 'react';
-import { Product } from '../types';
 import BarcodeImage from './BarcodeImage';
 import { getProductQuoteTitle, getProductMaterialValue } from '../data/quoteTemplates';
 
+// Product 전체가 아니라 라벨 렌더링에 실제로 쓰는 필드만 요구한다. 이렇게 해두면 Product 자체는
+// 물론, 이 필드들만 뽑아 저장해둔 상품목록(ArchivedProduct) 스냅샷도 그대로 넘길 수 있다.
+export interface BarcodeLabelProduct {
+  productName: string;
+  color: string;
+  sizeWidth: string;
+  sizeHeight: string;
+  sizeDepth: string;
+  material: string;
+  customFields: { [key: string]: string };
+  countryOfOrigin: string;
+  recommendedAge: string;
+  cautionNote: string;
+  importer: string;
+  manufacturer: string;
+  barcode: string;
+}
+
 interface BarcodeLabelProps {
-  product: Product | null;
+  product: BarcodeLabelProduct | null;
 }
 
 const BarcodeLabel = React.forwardRef<HTMLDivElement, BarcodeLabelProps>(({ product }, ref) => {

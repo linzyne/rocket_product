@@ -33,7 +33,7 @@ const BarcodeLabel = React.forwardRef<HTMLDivElement, BarcodeLabelProps>(({ prod
 
   const infoLines = [
     { label: '수입사', value: product.importer },
-    { label: '제조사', value: product.manufacturer },
+    { label: '제조사', value: '주노엘협력사' },
     { label: '사이즈', value: sizeText },
     { label: '소재', value: getProductMaterialValue(product) },
     { label: '제조국', value: product.countryOfOrigin },

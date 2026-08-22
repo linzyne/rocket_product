@@ -15,7 +15,8 @@ const BarcodeLabel = React.forwardRef<HTMLDivElement, BarcodeLabelProps>(({ prod
   const sizeText = sizeParts.length ? `${sizeParts.join(' x ')}cm` : '';
 
   const infoLines = [
-    { label: '수입자/제조사', value: [product.importer, product.manufacturer].filter(Boolean).join('/') },
+    { label: '수입사', value: product.importer },
+    { label: '제조사', value: product.manufacturer },
     { label: '사이즈', value: sizeText },
     { label: '소재', value: getProductMaterialValue(product) },
     { label: '제조국', value: product.countryOfOrigin },
@@ -32,27 +33,27 @@ const BarcodeLabel = React.forwardRef<HTMLDivElement, BarcodeLabelProps>(({ prod
     <div
       ref={ref}
       style={{
-        width: '1600px',
-        padding: '16px',
+        width: '1750px',
+        padding: '48px',
         background: '#ffffff',
         color: '#000000',
         textAlign: 'left',
       }}
     >
-      <h2 style={{ fontSize: '84px', fontWeight: 700, lineHeight: 1.15, margin: '0 0 64px 0', whiteSpace: 'nowrap' }}>
+      <h2 style={{ fontSize: '100px', fontWeight: 700, lineHeight: 1.15, letterSpacing: '3px', margin: '0 0 32px 0', whiteSpace: 'normal', wordBreak: 'keep-all', overflowWrap: 'break-word' }}>
         {title || '-'}
       </h2>
-      <div style={{ display: 'flex', alignItems: 'center', gap: '64px' }}>
-        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '16px', minWidth: 0 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '32px' }}>
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '10px', minWidth: 0 }}>
           {infoLines.map(({ label, value }) => (
-            <p key={label} style={{ fontSize: '50px', fontWeight: 700, lineHeight: 1.4, whiteSpace: 'nowrap', margin: 0 }}>
+            <p key={label} style={{ fontSize: '60px', fontWeight: 700, lineHeight: 1.3, letterSpacing: '3px', whiteSpace: 'nowrap', margin: 0 }}>
               {label} : {value || '-'}
             </p>
           ))}
         </div>
         {product.barcode && (
           <div style={{ flexShrink: 0 }}>
-            <BarcodeImage value={product.barcode} height={480} width={6} fontSize={44} />
+            <BarcodeImage value={product.barcode} height={520} width={7} fontSize={48} />
           </div>
         )}
       </div>

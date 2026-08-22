@@ -1813,7 +1813,7 @@ const App: React.FC = () => {
       setProducts(prev => {
         const idx = prev.findIndex(p => p.id === productId);
         if (idx === -1) return prev;
-        const clones = targetIds.slice(1).map(id => ({ ...prev[idx], id }));
+        const clones = targetIds.slice(1).map(id => ({ ...prev[idx], id, barcode: generateBarcodeNumber() }));
         const next = [...prev];
         next.splice(idx + 1, 0, ...clones);
         return next;

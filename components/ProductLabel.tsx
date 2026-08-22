@@ -17,7 +17,7 @@ const ProductLabel = React.forwardRef<HTMLDivElement, ProductLabelProps>(({ prod
     { label: '수입사', value: product.importer || '주노엘' },
     { label: '제조사', value: product.manufacturer },
     { label: '사용연령', value: product.recommendedAge || '만14세이상' },
-    { label: '사이즈(CM)', value: size },
+    { label: '사이즈(MM)', value: size },
     { label: 'A/S', value: product.asContact || '주노엘 01048629452' },
   ];
 

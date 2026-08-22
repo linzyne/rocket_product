@@ -1,6 +1,7 @@
 import React from 'react';
 import { Product } from '../types';
 import BarcodeImage from './BarcodeImage';
+import { getProductMaterialValue } from '../data/quoteTemplates';
 
 interface ProductLabelProps {
   product: Product | null;
@@ -16,6 +17,7 @@ const ProductLabel = React.forwardRef<HTMLDivElement, ProductLabelProps>(({ prod
     { label: '제조국', value: product.countryOfOrigin || 'Made in China' },
     { label: '수입사', value: product.importer || '주노엘' },
     { label: '제조사', value: product.manufacturer },
+    { label: '소재', value: getProductMaterialValue(product) },
     { label: '사용연령', value: product.recommendedAge || '만14세이상' },
     { label: '사이즈(MM)', value: size },
     { label: 'A/S', value: product.asContact || '주노엘 01048629452' },

@@ -221,6 +221,7 @@ const ProductListRow: React.FC<ProductListRowProps> = ({ entry, isExpanded, onTo
         <div className="flex-shrink-0 flex items-center gap-3 text-xs font-mono">
           <span className="text-emerald-700 whitespace-nowrap">공급 {formatWon(supplyPrice)}</span>
           <span className="text-blue-700 whitespace-nowrap hidden sm:inline">판매 {formatWon(sellingPrice)}</span>
+          <span className="text-amber-700 whitespace-nowrap hidden sm:inline">마진 {formatWon(sellingMargin)}</span>
         </div>
 
         <button

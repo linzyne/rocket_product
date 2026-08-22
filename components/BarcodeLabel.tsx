@@ -29,7 +29,7 @@ const BarcodeLabel = React.forwardRef<HTMLDivElement, BarcodeLabelProps>(({ prod
 
   const title = getProductQuoteTitle(product) || product.productName;
   const sizeParts = [product.sizeWidth, product.sizeHeight, product.sizeDepth].filter(Boolean);
-  const sizeText = sizeParts.length ? `${sizeParts.join(' x ')}cm` : '';
+  const sizeText = sizeParts.length ? `${sizeParts.join(' x ')}mm` : '';
 
   const infoLines = [
     { label: '수입사', value: product.importer },

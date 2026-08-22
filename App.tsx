@@ -807,7 +807,7 @@ const App: React.FC = () => {
                     margin: sourceProduct.margin,
                     searchKeyword: sourceProduct.searchKeyword,
                     sku: sourceProduct.sku,
-                    barcode: sourceProduct.barcode,
+                    barcode: generateBarcodeNumber(),
                     sizeWidth: sourceProduct.sizeWidth,
                     sizeHeight: sourceProduct.sizeHeight,
                     sizeDepth: sourceProduct.sizeDepth,

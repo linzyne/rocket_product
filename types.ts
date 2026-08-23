@@ -50,6 +50,9 @@ export interface ArchivedProduct {
   costPrice: string;
   supplyPrice: string;
   sellingPrice: string;
+  // 판매가-공급가 마진. 저장 시점 값으로 채워지지만, 상품목록 화면에서 직접 클릭해 고쳐 쓸 수
+  // 있고 그 뒤로는 공급가/판매가가 바뀌어도 자동으로 다시 계산하지 않는다(사용자가 고친 값 유지).
+  margin: string;
   barcode: string;
   // 바코드 라벨(제품 필수 표시사항 + 바코드) 이미지를 상품목록에서도 그대로 다시 그려서 볼 수
   // 있도록, 라벨 구성에 필요한 값만 함께 저장한다.

@@ -252,6 +252,7 @@ const buildArchiveEntry = (p: Product, thumbnailDataUrl: string): ArchivedProduc
   costPrice: p.costPrice,
   supplyPrice: p.supplyPrice,
   sellingPrice: p.sellingPrice,
+  margin: String((Number(p.sellingPrice) || 0) - (Number(p.supplyPrice) || 0)),
   barcode: p.barcode,
   color: p.color,
   sizeWidth: p.sizeWidth,
@@ -534,6 +535,25 @@ const App: React.FC = () => {
       })();
     } else {
       setArchivedProducts(prev => prev.filter(e => e.id !== id));
+    }
+  }, []);
+
+  // 상품목록 화면에서 공급가/판매가/마진을 직접 클릭해 고친 값을 반영한다. 클라우드 연동 중이면
+  // 문서를 병합 저장해서(onSnapshot이 다시 받아 화면에 반영) 다른 컴퓨터와도 값이 맞춰지고,
+  // 아니면 이 기기의 상태를 바로 바꾼다(그러면 위 effect가 localStorage에 저장해준다).
+  const handleUpdateArchivedProduct = useCallback((id: string, updates: Partial<ArchivedProduct>) => {
+    if (isFirebaseConfigured && db) {
+      const firestore = db;
+      (async () => {
+        try {
+          await ensureSignedIn();
+          await setDoc(doc(firestore, ARCHIVE_COLLECTION, id), updates, { merge: true });
+        } catch (error) {
+          console.error('상품목록 수정 실패(클라우드):', error);
+        }
+      })();
+    } else {
+      setArchivedProducts(prev => prev.map(e => (e.id === id ? { ...e, ...updates } : e)));
     }
   }, []);
 
@@ -2113,6 +2133,7 @@ const App: React.FC = () => {
           onBack={() => setCurrentView('products')}
           onDelete={handleDeleteArchivedProduct}
           onClearAll={handleClearArchivedProducts}
+          onUpdate={handleUpdateArchivedProduct}
         />
       ) : (
         <div className="w-full max-w-screen-2xl text-gray-900">

@@ -27,6 +27,7 @@ interface ProductListPageProps {
   onBack: () => void;
   onDelete: (id: string) => void;
   onClearAll: () => void;
+  onUpdate: (id: string, updates: Partial<ArchivedProduct>) => void;
 }
 
 const formatWon = (value: string | number) => `₩ ${(Number(value) || 0).toLocaleString()}`;
@@ -37,7 +38,7 @@ const formatDate = (iso: string) => {
   return d.toLocaleString('ko-KR', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' });
 };
 
-const ProductListPage: React.FC<ProductListPageProps> = ({ entries, onBack, onDelete, onClearAll }) => {
+const ProductListPage: React.FC<ProductListPageProps> = ({ entries, onBack, onDelete, onClearAll, onUpdate }) => {
   const [query, setQuery] = useState('');
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [enlargedEntry, setEnlargedEntry] = useState<ArchivedProduct | null>(null);
@@ -130,6 +131,7 @@ const ProductListPage: React.FC<ProductListPageProps> = ({ entries, onBack, onDe
               onToggle={() => setExpandedId(prev => (prev === entry.id ? null : entry.id))}
               onDelete={() => handleDelete(entry.id)}
               onEnlargeBarcode={setEnlargedEntry}
+              onUpdate={updates => onUpdate(entry.id, updates)}
             />
           ))}
         </div>
@@ -170,14 +172,72 @@ interface ProductListRowProps {
   onToggle: () => void;
   onDelete: () => void;
   onEnlargeBarcode: (entry: ArchivedProduct) => void;
+  onUpdate: (updates: Partial<ArchivedProduct>) => void;
 }
 
-const ProductListRow: React.FC<ProductListRowProps> = ({ entry, isExpanded, onToggle, onDelete, onEnlargeBarcode }) => {
+type EditableAmountField = 'supplyPrice' | 'sellingPrice' | 'margin';
+
+const ProductListRow: React.FC<ProductListRowProps> = ({ entry, isExpanded, onToggle, onDelete, onEnlargeBarcode, onUpdate }) => {
   const costPrice = Number(entry.costPrice) || 0;
   const supplyPrice = Number(entry.supplyPrice) || 0;
   const sellingPrice = Number(entry.sellingPrice) || 0;
   const supplyMargin = supplyPrice - costPrice;
-  const sellingMargin = sellingPrice - supplyPrice;
+  // 기존에 저장된 항목에는 margin 필드가 없을 수 있어, 그럴 때만 판매가-공급가로 계산해 보여준다.
+  const margin = entry.margin !== undefined && entry.margin !== '' ? Number(entry.margin) || 0 : sellingPrice - supplyPrice;
+
+  const [editingField, setEditingField] = useState<EditableAmountField | null>(null);
+  const [draftValue, setDraftValue] = useState('');
+
+  const amountValues: Record<EditableAmountField, number> = {
+    supplyPrice,
+    sellingPrice,
+    margin,
+  };
+
+  const startEdit = (field: EditableAmountField) => {
+    setEditingField(field);
+    setDraftValue(String(amountValues[field]));
+  };
+
+  const commitEdit = () => {
+    if (!editingField) return;
+    const numeric = draftValue.trim();
+    onUpdate({ [editingField]: numeric === '' ? '0' : numeric });
+    setEditingField(null);
+  };
+
+  const renderAmount = (field: EditableAmountField, label: string, colorClass: string, extraClass = '') => (
+    <span className={`${extraClass} inline-flex items-center`}>
+      {editingField === field ? (
+        <span className="inline-flex items-center gap-1" onClick={e => e.stopPropagation()}>
+          <span className={`${colorClass} whitespace-nowrap`}>{label}</span>
+          <input
+            type="number"
+            autoFocus
+            value={draftValue}
+            onChange={e => setDraftValue(e.target.value)}
+            onFocus={e => e.target.select()}
+            onBlur={commitEdit}
+            onKeyDown={e => {
+              e.stopPropagation();
+              if (e.key === 'Enter') { e.preventDefault(); commitEdit(); }
+              if (e.key === 'Escape') { e.preventDefault(); setEditingField(null); }
+            }}
+            className="w-20 px-1 py-0.5 border border-blue-400 rounded text-xs font-mono focus:outline-none focus:ring-1 focus:ring-blue-400"
+          />
+        </span>
+      ) : (
+        <button
+          type="button"
+          onClick={e => { e.stopPropagation(); startEdit(field); }}
+          className={`${colorClass} whitespace-nowrap hover:underline decoration-dotted underline-offset-2 focus:outline-none`}
+          title="클릭해서 수정"
+        >
+          {label} {formatWon(amountValues[field])}
+        </button>
+      )}
+    </span>
+  );
 
   return (
     <div className="bg-white rounded-xl border border-gray-200 shadow-lg overflow-hidden">
@@ -225,13 +285,13 @@ const ProductListRow: React.FC<ProductListRowProps> = ({ entry, isExpanded, onTo
 
         <div className="min-w-0 flex-1">
           <p className="text-sm font-semibold text-gray-900 truncate">{entry.productName || '상품명 없음'}</p>
-          <p className="text-xs text-gray-400 truncate">{entry.url || 'URL 없음'}</p>
+          <p className="text-xs text-gray-400 truncate">{entry.color || '색상 없음'}</p>
         </div>
 
         <div className="flex-shrink-0 flex items-center gap-3 text-xs font-mono">
-          <span className="text-emerald-700 whitespace-nowrap">공급 {formatWon(supplyPrice)}</span>
-          <span className="text-blue-700 whitespace-nowrap hidden sm:inline">판매 {formatWon(sellingPrice)}</span>
-          <span className="text-amber-700 whitespace-nowrap hidden sm:inline">마진 {formatWon(sellingMargin)}</span>
+          {renderAmount('supplyPrice', '공급', 'text-emerald-700')}
+          {renderAmount('sellingPrice', '판매', 'text-blue-700', 'hidden sm:inline-flex')}
+          {renderAmount('margin', '마진', 'text-amber-700', 'hidden sm:inline-flex')}
         </div>
 
         <button
@@ -288,8 +348,8 @@ const ProductListRow: React.FC<ProductListRowProps> = ({ entry, isExpanded, onTo
               <p className="text-sm font-semibold text-gray-900">{formatWon(sellingPrice)}</p>
             </div>
             <div className="bg-gray-50 border border-gray-200 rounded-md px-2.5 py-2">
-              <p className="text-[10px] text-gray-400">판매가마진</p>
-              <p className="text-sm font-semibold text-amber-600">{formatWon(sellingMargin)}</p>
+              <p className="text-[10px] text-gray-400">마진</p>
+              <p className="text-sm font-semibold text-amber-600">{formatWon(margin)}</p>
             </div>
           </div>
 

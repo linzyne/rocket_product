@@ -31,8 +31,7 @@ import {
   findMissingRequiredCells,
   ensureRequiredCustomFields,
   getAutoCustomFieldValue,
-  extractExposureAttributeLabels,
-  findNewExposureAttributeLabels,
+  computeMissingExposureAttributeLabels,
   normalizeHeader,
   getProductMaterialValue,
   RequiredFieldGap,
@@ -1356,27 +1355,23 @@ const App: React.FC = () => {
     reader.onloadend = async () => {
       if (!reader.result) return;
 
-      // 노출속성 기본 양식이 지정돼 있으면, 그 견적서와 이번에 새로 등록하는 견적서의 노출속성
-      // 항목(색상/수량/높이 등)을 비교해서 기본 양식에는 없는 항목만 추가 항목 이름에 자동으로
-      // 더해줍니다. 카테고리마다 노출속성 개수가 달라서, 사람이 매번 직접 등록하지 않아도 되게 합니다.
+      // 이번에 새로 등록하는 견적서의 노출속성 항목(색상/수량/높이 등)을 기본 항목
+      // (EXPOSURE_ATTRIBUTE_BASE_LABELS)과 비교해서, 기본 항목에는 없는 것만 추가 항목 이름에
+      // 자동으로 더해줍니다. 카테고리마다 노출속성 개수가 달라서, 사람이 매번 직접 등록하지
+      // 않아도 되게 합니다.
       let finalCustomFieldNames = customFieldNames;
       try {
-        const baseReg = quoteTemplateRegistrations.find(r => r.isExposureBaseTemplate);
         const template = getQuoteTemplates(quoteFixedValues)[0];
-        if (baseReg && template) {
-          const newBuffer = dataUrlToArrayBuffer(reader.result as string);
-          const baseBuffer = dataUrlToArrayBuffer(baseReg.fileDataUrl);
-          const [baseLabels, newLabels] = await Promise.all([
-            extractExposureAttributeLabels(baseBuffer, template),
-            extractExposureAttributeLabels(newBuffer, template),
-          ]);
-          const extraLabels = findNewExposureAttributeLabels(baseLabels, newLabels).filter(
-            label => !finalCustomFieldNames.some(existing => normalizeHeader(existing) === normalizeHeader(label))
+        if (template) {
+          const extraLabels = await computeMissingExposureAttributeLabels(
+            reader.result as string,
+            finalCustomFieldNames,
+            template
           );
           if (extraLabels.length > 0) finalCustomFieldNames = [...finalCustomFieldNames, ...extraLabels];
         }
       } catch (error) {
-        console.error("Failed to compare exposure attribute columns against base template", error);
+        console.error("Failed to compare exposure attribute columns against base labels", error);
       }
 
       const newRegistration: QuoteTemplateRegistration = {
@@ -1406,29 +1401,38 @@ const App: React.FC = () => {
       alert('견적서 파일을 읽는 데 실패했습니다.');
     };
     reader.readAsDataURL(file);
-  }, [handleRegisterCategory, quoteTemplateRegistrations, quoteFixedValues]);
+  }, [handleRegisterCategory, quoteFixedValues]);
 
-  // 견적서 목록에서 하나를 "노출속성 기본 양식"으로 지정합니다. 항상 한 개만 지정될 수 있도록
-  // 이전에 지정돼 있던 견적서는 자동으로 해제됩니다.
-  const handleSetExposureBaseTemplate = useCallback((id: string) => {
-    setQuoteTemplateRegistrations(prev => {
-      const changed: QuoteTemplateRegistration[] = [];
-      const updated = prev.map(r => {
-        const nextFlag = r.id === id;
-        if (!!r.isExposureBaseTemplate === nextFlag) return r;
-        const next = { ...r, isExposureBaseTemplate: nextFlag };
-        changed.push(next);
-        return next;
-      });
-      changed.forEach(r => {
-        putQuoteTemplate(r).catch(error => {
-          console.error("Failed to update exposure base template flag in IndexedDB", error);
-          alert(`기본 양식 지정에 실패했습니다.\n오류: ${error instanceof Error ? error.message : String(error)}`);
-        });
-      });
-      return updated;
-    });
-  }, []);
+  // 이미 등록된 견적서 하나의 노출속성 항목을 기본 항목(EXPOSURE_ATTRIBUTE_BASE_LABELS)과 다시
+  // 비교해서, 기본 항목에는 없고 이 견적서에만 있는 항목을 추가 항목 이름에 채워 넣습니다. 새로
+  // 견적서를 등록할 때는 자동으로 비교되지만(handleAddQuoteTemplateRegistration), 이 기능이
+  // 생기기 전에 등록해둔 견적서는 자동으로 다시 비교되지 않으므로, 사용자가 이 버튼으로 직접
+  // 다시 비교해 누락된 항목을 채워 넣을 수 있게 합니다.
+  const handleResyncExposureAttributeColumns = useCallback(async (id: string) => {
+    const target = quoteTemplateRegistrations.find(r => r.id === id);
+    if (!target) return;
+
+    try {
+      const template = getQuoteTemplates(quoteFixedValues)[0];
+      const existingNames = target.customFieldNames || [];
+      const extraLabels = await computeMissingExposureAttributeLabels(
+        target.fileDataUrl,
+        existingNames,
+        template
+      );
+      if (extraLabels.length === 0) {
+        alert('기본 항목(색상, 수량)과 비교했을 때 새로 추가할 노출속성 항목이 없습니다.');
+        return;
+      }
+      const nextRegistration = { ...target, customFieldNames: [...existingNames, ...extraLabels] };
+      await putQuoteTemplate(nextRegistration);
+      setQuoteTemplateRegistrations(prev => prev.map(r => (r.id === id ? nextRegistration : r)));
+      alert(`다음 항목을 추가했습니다: ${extraLabels.join(', ')}`);
+    } catch (error) {
+      console.error("Failed to resync exposure attribute columns against base labels", error);
+      alert(`노출속성 항목을 다시 비교하는 데 실패했습니다.\n오류: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }, [quoteTemplateRegistrations, quoteFixedValues]);
 
   const handleUpdateQuoteTemplateCustomFieldNames = useCallback((id: string, customFieldNames: string[]) => {
     setQuoteTemplateRegistrations(prev => {
@@ -2507,7 +2511,7 @@ const App: React.FC = () => {
           onCleanupDuplicates={handleCleanupDuplicateQuoteTemplates}
           onUpdateCustomFieldNames={handleUpdateQuoteTemplateCustomFieldNames}
           onUpdateOptionFieldName={handleUpdateQuoteTemplateOptionFieldName}
-          onSetExposureBaseTemplate={handleSetExposureBaseTemplate}
+          onResyncExposureAttributes={handleResyncExposureAttributeColumns}
           categories={categories}
           onDeleteCategory={handleDeleteCategory}
         />

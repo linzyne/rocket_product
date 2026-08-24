@@ -9,6 +9,11 @@ export const OPTION_FIELD_COLOR = 'color';
 // normalizeHeader가 공백을 제거하므로 "노출 속성"/"노출속성" 표기는 모두 같은 값으로 비교됩니다.
 export const EXPOSURE_ATTRIBUTE_GROUP_LABEL = '노출속성';
 
+// 모든 카테고리 견적서에 공통으로 있는 기본 노출속성 항목. 등록된 특정 견적서 파일을 기준으로
+// 비교하면 그 견적서가 삭제됐을 때 더 이상 비교할 수 없으므로, 고정값으로 둡니다. 새로 견적서를
+// 등록할 때 이 목록에 없는 노출속성 항목(예: 높이)만 추가 항목 이름에 자동으로 채워 넣습니다.
+export const EXPOSURE_ATTRIBUTE_BASE_LABELS = ['색상', '수량'];
+
 // 앱에 등록된 견적서 양식 파일. 카테고리와 함께 저장되며, 상품에서 선택해 사용합니다.
 export interface QuoteTemplateRegistration {
   id: string;
@@ -26,10 +31,6 @@ export interface QuoteTemplateRegistration {
   // 등록 시각(ms). 같은 카테고리로 여러 번 등록했을 때 "중복 정리"에서 가장 최근 것을
   // 가려내는 데 사용합니다. 구버전에서 등록된 항목은 이 값이 없을 수 있습니다.
   createdAt?: number;
-  // 이 견적서를 "노출속성 기본 양식"으로 지정했는지. 다른 견적서를 새로 등록할 때, 이 견적서의
-  // 노출속성 항목(색상/수량/높이 등)과 비교해서 새로 등록하는 견적서에만 있는 항목을 자동으로
-  // customFieldNames에 추가합니다. 최대 한 개 견적서만 true일 수 있습니다.
-  isExposureBaseTemplate?: boolean;
 }
 
 // 견적서 '상품명' 컬럼과 바코드 라벨(BarcodeLabel)이 항상 같은 값을 쓰도록 공유하는 계산식.
@@ -455,6 +456,22 @@ export const findNewExposureAttributeLabels = (baseLabels: string[], newLabels: 
     seen.add(key);
     return true;
   });
+};
+
+// targetFileDataUrl(견적서 파일)의 노출속성 항목을 EXPOSURE_ATTRIBUTE_BASE_LABELS(기본 항목)과
+// 비교해서, 기본 항목에는 없고 이 견적서에만 있는 항목 중 existingFieldNames(이미 추가 항목
+// 이름으로 등록돼 있는 것)에는 없는 것만 돌려줍니다. 새로 견적서를 등록할 때와, 이미 등록된
+// 견적서를 나중에 다시 비교(재동기화)할 때 양쪽에서 재사용합니다.
+export const computeMissingExposureAttributeLabels = async (
+  targetFileDataUrl: string,
+  existingFieldNames: string[],
+  template: QuoteTemplateProfile
+): Promise<string[]> => {
+  const targetBuffer = dataUrlToArrayBuffer(targetFileDataUrl);
+  const targetLabels = await extractExposureAttributeLabels(targetBuffer, template);
+  return findNewExposureAttributeLabels(EXPOSURE_ATTRIBUTE_BASE_LABELS, targetLabels).filter(
+    label => !existingFieldNames.some(existing => normalizeHeader(existing) === normalizeHeader(label))
+  );
 };
 
 // 한 상품에 대해, 컬럼 번호 -> 실제로 채워질 값을 계산합니다. 실제로 셀에 쓰는 fillQuoteWorkbook과

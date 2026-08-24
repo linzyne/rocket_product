@@ -1403,6 +1403,27 @@ const App: React.FC = () => {
     reader.readAsDataURL(file);
   }, [handleRegisterCategory, quoteFixedValues]);
 
+  // 견적서(registrationId)의 customFieldNames에 새로 추가된 이름(newNames)을, 지금 그 견적서를
+  // 선택해서 쓰고 있는 상품들의 customFields에도 빈 값으로 채워 넣습니다. 견적서를 처음 선택할
+  // 때는 handleProductChange가 채워주지만, 이미 견적서를 선택해둔 상품은 그 뒤에 견적서 쪽
+  // 항목이 추가돼도 자동으로 반영되지 않으므로(quoteTemplateId 값 자체는 안 바뀌니까), 항목이
+  // 추가되는 지점(다시 비교 / 추가 항목 이름 수정)마다 이 함수로 직접 동기화해줍니다.
+  const syncNewCustomFieldNamesToProducts = useCallback((registrationId: string, newNames: string[]) => {
+    if (newNames.length === 0) return;
+    setProducts(prev => prev.map(p => {
+      if (p.quoteTemplateId !== registrationId) return p;
+      const nextCustomFields = { ...p.customFields };
+      let changed = false;
+      newNames.forEach(name => {
+        if (!(name in nextCustomFields)) {
+          nextCustomFields[name] = getAutoCustomFieldValue(name);
+          changed = true;
+        }
+      });
+      return changed ? { ...p, customFields: nextCustomFields } : p;
+    }));
+  }, []);
+
   // 이미 등록된 견적서 하나의 노출속성 항목을 기본 항목(EXPOSURE_ATTRIBUTE_BASE_LABELS)과 다시
   // 비교해서, 기본 항목에는 없고 이 견적서에만 있는 항목을 추가 항목 이름에 채워 넣습니다. 새로
   // 견적서를 등록할 때는 자동으로 비교되지만(handleAddQuoteTemplateRegistration), 이 기능이
@@ -1427,27 +1448,29 @@ const App: React.FC = () => {
       const nextRegistration = { ...target, customFieldNames: [...existingNames, ...extraLabels] };
       await putQuoteTemplate(nextRegistration);
       setQuoteTemplateRegistrations(prev => prev.map(r => (r.id === id ? nextRegistration : r)));
+      syncNewCustomFieldNamesToProducts(id, extraLabels);
       alert(`다음 항목을 추가했습니다: ${extraLabels.join(', ')}`);
     } catch (error) {
       console.error("Failed to resync exposure attribute columns against base labels", error);
       alert(`노출속성 항목을 다시 비교하는 데 실패했습니다.\n오류: ${error instanceof Error ? error.message : String(error)}`);
     }
-  }, [quoteTemplateRegistrations, quoteFixedValues]);
+  }, [quoteTemplateRegistrations, quoteFixedValues, syncNewCustomFieldNamesToProducts]);
 
   const handleUpdateQuoteTemplateCustomFieldNames = useCallback((id: string, customFieldNames: string[]) => {
-    setQuoteTemplateRegistrations(prev => {
-      const target = prev.find(r => r.id === id);
-      if (!target) return prev;
-      const updated = { ...target, customFieldNames };
+    const target = quoteTemplateRegistrations.find(r => r.id === id);
+    if (!target) return;
+    const updated = { ...target, customFieldNames };
 
-      putQuoteTemplate(updated).catch(error => {
-        console.error("Failed to update quote template in IndexedDB", error);
-        alert(`견적서 항목 수정에 실패했습니다.\n오류: ${error instanceof Error ? error.message : String(error)}`);
-      });
-
-      return prev.map(r => (r.id === id ? updated : r));
+    putQuoteTemplate(updated).catch(error => {
+      console.error("Failed to update quote template in IndexedDB", error);
+      alert(`견적서 항목 수정에 실패했습니다.\n오류: ${error instanceof Error ? error.message : String(error)}`);
     });
-  }, []);
+
+    setQuoteTemplateRegistrations(prev => prev.map(r => (r.id === id ? updated : r)));
+
+    const addedNames = customFieldNames.filter(name => !(target.customFieldNames || []).includes(name));
+    syncNewCustomFieldNamesToProducts(id, addedNames);
+  }, [quoteTemplateRegistrations, syncNewCustomFieldNamesToProducts]);
 
   const handleUpdateQuoteTemplateOptionFieldName = useCallback((id: string, optionFieldName: string) => {
     setQuoteTemplateRegistrations(prev => {

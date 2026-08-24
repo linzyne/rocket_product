@@ -1158,27 +1158,37 @@
     });
 
     // 상품명/제조사/SKU/중량은 상품이 바뀌어도 계속 재사용하고 싶어하는 값이라 draft를 그대로
-    // 유지한다. 다만 상품명/제조사/SKU는 상품마다 고유해서 이전 상품 draft가 그대로 남으면 잘못된
-    // 값이 되므로, 이 페이지에서 새로 읽어오는 데 성공했을 때는 항상 그 값을 우선한다.
+    // 유지한다. 다만 상품명/제조사/SKU는 상품마다 고유해서 이전 "다른" 상품의 draft가 그대로
+    // 남으면 잘못된 값이 되므로, 이 페이지가 이전에 draft를 저장했던 상품과 다른 상품일 때만
+    // 새로 읽어온 값을 우선한다. 같은 상품 페이지에서 모달을 다시 열 때(사용자가 값을 직접 고친
+    // 뒤 나갔다 돌아오는 경우 포함)는 매번 페이지에서 재추출한 값이 사용자가 고친 값을 덮어써
+    // 버리는 문제가 있었으므로, 이때는 draft 값을 그대로 쓴다.
     const draft = await loadDraft();
     const guessed = valuesFromGuess(initial);
-    const merged = draft
-      ? {
-          ...draft,
-          title: guessed.title || draft.title,
-          manufacturer: guessed.manufacturer || draft.manufacturer,
-          sku: guessed.sku || draft.sku,
-        }
-      : guessed;
+    const sameProduct = !!(draft && draft.guessedSku && initial.sku && draft.guessedSku === initial.sku);
+    const merged = !draft
+      ? guessed
+      : sameProduct
+        ? draft
+        : {
+            ...draft,
+            title: guessed.title || draft.title,
+            manufacturer: guessed.manufacturer || draft.manufacturer,
+            sku: guessed.sku || draft.sku,
+          };
     applyValues(box, merged);
 
     const isOptionRowInput = (el) => el.classList && (el.classList.contains('rc-option-label') || el.classList.contains('rc-option-dim') || el.classList.contains('rc-option-price'));
+
+    // draft에는 편집된 값과 함께, 이 값이 어느 상품 페이지에서 저장된 것인지(guessedSku)도 같이
+    // 남겨서, 다음에 모달을 열 때 "같은 상품으로 돌아온 것"인지 판별할 수 있게 한다.
+    const persistDraft = () => saveDraft({ ...readFormValues(box), guessedSku: initial.sku });
 
     box.querySelector('.rc-fields').addEventListener('input', (e) => {
       if (e.target.classList && e.target.classList.contains('rc-input') && !isOptionRowInput(e.target)) {
         e.target.dataset.rcPristine = '0';
       }
-      saveDraft(readFormValues(box));
+      persistDraft();
     });
 
     // 이전 값이 그대로 남아있는 필드를 처음 클릭하면 그 값을 지워서, 지우지 않고 바로 새 값을 입력할 수 있게 한다.
@@ -1187,12 +1197,12 @@
       if (target.tagName === 'INPUT' && target.dataset.rcPristine === '1' && target.value !== '' && !isOptionRowInput(target)) {
         target.value = '';
         target.dataset.rcPristine = '0';
-        saveDraft(readFormValues(box));
+        persistDraft();
       }
     });
 
     const close = () => {
-      saveDraft(readFormValues(box));
+      persistDraft();
       persistWork();
       overlay.remove();
     };

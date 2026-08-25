@@ -1662,6 +1662,7 @@ const App: React.FC = () => {
   const handleDeleteQuoteTemplateRegistration = useCallback(async (id: string) => {
     try {
       await deleteQuoteTemplate(id);
+      deleteQuoteTemplateRemote(id).catch(error => console.error('견적서 클라우드 삭제 실패:', error));
       setQuoteTemplateRegistrations(prev => {
         const target = prev.find(r => r.id === id);
         const namesToRemove = target?.customFieldNames || [];
@@ -1717,6 +1718,7 @@ const App: React.FC = () => {
     try {
       for (const id of idsToDelete) {
         await deleteQuoteTemplate(id);
+        deleteQuoteTemplateRemote(id).catch(error => console.error('견적서 클라우드 삭제 실패:', error));
       }
       const deletedIds = new Set(idsToDelete);
       setQuoteTemplateRegistrations(prev => {

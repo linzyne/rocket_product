@@ -556,6 +556,26 @@ const App: React.FC = () => {
     }
   }, []);
 
+  // 상품목록 화면의 "직접 추가" 버튼으로 만든, 자동 캡처 없이 사용자가 손으로 입력한 항목을
+  // 저장한다. id/savedAt만 이 함수에서 채우고 나머지 값은 입력 폼에서 그대로 받는다.
+  const handleAddManualArchivedProduct = useCallback((input: Omit<ArchivedProduct, 'id' | 'savedAt'>) => {
+    const entry: ArchivedProduct = { ...input, id: generateId(), savedAt: new Date().toISOString() };
+    if (isFirebaseConfigured && db) {
+      const firestore = db;
+      (async () => {
+        try {
+          await ensureSignedIn();
+          await setDoc(doc(firestore, ARCHIVE_COLLECTION, entry.id), entry);
+        } catch (error) {
+          console.error('상품목록 클라우드 저장 실패, 이 기기에만 저장합니다:', error);
+          setArchivedProducts(prev => [entry, ...prev]);
+        }
+      })();
+    } else {
+      setArchivedProducts(prev => [entry, ...prev]);
+    }
+  }, []);
+
   const handleClearArchivedProducts = useCallback(() => {
     if (isFirebaseConfigured && db) {
       const firestore = db;
@@ -2161,6 +2181,7 @@ const App: React.FC = () => {
           onDelete={handleDeleteArchivedProduct}
           onClearAll={handleClearArchivedProducts}
           onUpdate={handleUpdateArchivedProduct}
+          onAddManual={handleAddManualArchivedProduct}
         />
       ) : (
         <div className="w-full max-w-screen-2xl text-gray-900">

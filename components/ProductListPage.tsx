@@ -3,8 +3,10 @@ import React, { useMemo, useState } from 'react';
 import { ArchivedProduct } from '../types';
 import BarcodeImage from './BarcodeImage';
 import BarcodeLabel, { BarcodeLabelProduct } from './BarcodeLabel';
-import { ChevronLeftIcon, SearchIcon, TrashIcon, ExternalLinkIcon, ChevronDownIcon, ChevronUpIcon, CloseIcon, BroomIcon } from './Icons';
+import { ChevronLeftIcon, SearchIcon, TrashIcon, ExternalLinkIcon, ChevronDownIcon, ChevronUpIcon, CloseIcon, BroomIcon, PlusIcon } from './Icons';
 import { isFirebaseConfigured } from '../utils/firebase';
+import { generateBarcodeNumber } from '../utils/barcode';
+import { resizeImageDataUrl } from '../utils/imageResize';
 
 const toBarcodeLabelProduct = (entry: ArchivedProduct): BarcodeLabelProduct => ({
   productName: entry.productName,
@@ -28,6 +30,7 @@ interface ProductListPageProps {
   onDelete: (id: string) => void;
   onClearAll: () => void;
   onUpdate: (id: string, updates: Partial<ArchivedProduct>) => void;
+  onAddManual: (entry: Omit<ArchivedProduct, 'id' | 'savedAt'>) => void;
 }
 
 const formatWon = (value: string | number) => `₩ ${(Number(value) || 0).toLocaleString()}`;
@@ -38,10 +41,11 @@ const formatDate = (iso: string) => {
   return d.toLocaleString('ko-KR', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' });
 };
 
-const ProductListPage: React.FC<ProductListPageProps> = ({ entries, onBack, onDelete, onClearAll, onUpdate }) => {
+const ProductListPage: React.FC<ProductListPageProps> = ({ entries, onBack, onDelete, onClearAll, onUpdate, onAddManual }) => {
   const [query, setQuery] = useState('');
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [enlargedEntry, setEnlargedEntry] = useState<ArchivedProduct | null>(null);
+  const [showAddForm, setShowAddForm] = useState(false);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -97,6 +101,13 @@ const ProductListPage: React.FC<ProductListPageProps> = ({ entries, onBack, onDe
             {isFirebaseConfigured ? '클라우드 동기화 중' : '이 컴퓨터에만 저장'}
           </span>
           <span className="text-sm text-gray-500 whitespace-nowrap">{entries.length}건 저장됨</span>
+          <button
+            onClick={() => setShowAddForm(true)}
+            className="inline-flex items-center justify-center gap-1.5 px-3 py-1.5 bg-blue-600 border border-blue-600 text-white text-sm font-medium rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-400 transition-colors"
+          >
+            <PlusIcon />
+            <span className="hidden sm:inline">직접 추가</span>
+          </button>
           {entries.length > 0 && (
             <button
               onClick={handleClearAll}
@@ -162,6 +173,202 @@ const ProductListPage: React.FC<ProductListPageProps> = ({ entries, onBack, onDe
           </div>
         </div>
       )}
+
+      {showAddForm && (
+        <AddManualEntryModal
+          onCancel={() => setShowAddForm(false)}
+          onSave={entry => {
+            onAddManual(entry);
+            setShowAddForm(false);
+          }}
+        />
+      )}
+    </div>
+  );
+};
+
+interface AddManualEntryModalProps {
+  onCancel: () => void;
+  onSave: (entry: Omit<ArchivedProduct, 'id' | 'savedAt'>) => void;
+}
+
+const emptyManualEntry = () => ({
+  url: '',
+  productName: '',
+  costPrice: '0',
+  supplyPrice: '0',
+  sellingPrice: '0',
+  margin: '0',
+  barcode: generateBarcodeNumber(),
+  color: '',
+  sizeWidth: '',
+  sizeHeight: '',
+  sizeDepth: '',
+  material: '',
+  countryOfOrigin: '',
+  recommendedAge: '',
+  cautionNote: '',
+  importer: '',
+  manufacturer: '',
+  thumbnailDataUrl: '',
+});
+
+const AddManualEntryModal: React.FC<AddManualEntryModalProps> = ({ onCancel, onSave }) => {
+  const [form, setForm] = useState(emptyManualEntry);
+  const [thumbLoading, setThumbLoading] = useState(false);
+
+  const setField = (field: keyof ReturnType<typeof emptyManualEntry>) => (
+    e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>
+  ) => setForm(prev => ({ ...prev, [field]: e.target.value }));
+
+  const handleThumbnailChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+    setThumbLoading(true);
+    try {
+      const dataUrl = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result as string);
+        reader.onerror = () => reject(reader.error);
+        reader.readAsDataURL(file);
+      });
+      const resized = await resizeImageDataUrl(dataUrl);
+      setForm(prev => ({ ...prev, thumbnailDataUrl: resized }));
+    } catch {
+      alert('이미지를 불러오지 못했습니다.');
+    } finally {
+      setThumbLoading(false);
+    }
+  };
+
+  const handleSave = () => {
+    if (!form.url.trim() && !form.productName.trim()) {
+      alert('URL 또는 상품명이 있어야 저장할 수 있습니다.');
+      return;
+    }
+    onSave(form);
+  };
+
+  const inputClass = 'w-full px-2.5 py-1.5 bg-white border border-gray-300 text-gray-900 text-sm rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors';
+  const labelClass = 'block text-xs text-gray-500 mb-1';
+
+  return (
+    <div
+      className="fixed inset-0 bg-black bg-opacity-60 flex justify-center items-center z-[1000] p-4 transition-opacity duration-300"
+      onClick={onCancel}
+    >
+      <div
+        className="bg-white rounded-xl shadow-2xl max-w-2xl w-full p-6 sm:p-8 relative max-h-[85vh] overflow-y-auto"
+        onClick={e => e.stopPropagation()}
+      >
+        <button
+          onClick={onCancel}
+          className="absolute top-4 right-4 text-gray-400 hover:text-gray-600 transition-colors"
+          aria-label="Close"
+        >
+          <CloseIcon />
+        </button>
+        <h2 className="text-lg font-bold text-gray-900 mb-4">상품 직접 추가</h2>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div className="sm:col-span-2">
+            <label className={labelClass}>상품명</label>
+            <input type="text" value={form.productName} onChange={setField('productName')} className={inputClass} autoFocus />
+          </div>
+          <div className="sm:col-span-2">
+            <label className={labelClass}>URL</label>
+            <input type="text" value={form.url} onChange={setField('url')} className={inputClass} />
+          </div>
+          <div>
+            <label className={labelClass}>공급가</label>
+            <input type="number" value={form.supplyPrice} onChange={setField('supplyPrice')} className={inputClass} />
+          </div>
+          <div>
+            <label className={labelClass}>판매가</label>
+            <input type="number" value={form.sellingPrice} onChange={setField('sellingPrice')} className={inputClass} />
+          </div>
+          <div>
+            <label className={labelClass}>매입가</label>
+            <input type="number" value={form.costPrice} onChange={setField('costPrice')} className={inputClass} />
+          </div>
+          <div>
+            <label className={labelClass}>마진</label>
+            <input type="number" value={form.margin} onChange={setField('margin')} className={inputClass} />
+          </div>
+          <div>
+            <label className={labelClass}>바코드</label>
+            <input type="text" value={form.barcode} onChange={setField('barcode')} className={inputClass} />
+          </div>
+          <div>
+            <label className={labelClass}>색상</label>
+            <input type="text" value={form.color} onChange={setField('color')} className={inputClass} />
+          </div>
+          <div>
+            <label className={labelClass}>가로(mm)</label>
+            <input type="text" value={form.sizeWidth} onChange={setField('sizeWidth')} className={inputClass} />
+          </div>
+          <div>
+            <label className={labelClass}>세로(mm)</label>
+            <input type="text" value={form.sizeHeight} onChange={setField('sizeHeight')} className={inputClass} />
+          </div>
+          <div>
+            <label className={labelClass}>높이(mm)</label>
+            <input type="text" value={form.sizeDepth} onChange={setField('sizeDepth')} className={inputClass} />
+          </div>
+          <div>
+            <label className={labelClass}>재질</label>
+            <input type="text" value={form.material} onChange={setField('material')} className={inputClass} />
+          </div>
+          <div>
+            <label className={labelClass}>원산지</label>
+            <input type="text" value={form.countryOfOrigin} onChange={setField('countryOfOrigin')} className={inputClass} />
+          </div>
+          <div>
+            <label className={labelClass}>사용연령</label>
+            <input type="text" value={form.recommendedAge} onChange={setField('recommendedAge')} className={inputClass} />
+          </div>
+          <div>
+            <label className={labelClass}>제조자</label>
+            <input type="text" value={form.manufacturer} onChange={setField('manufacturer')} className={inputClass} />
+          </div>
+          <div>
+            <label className={labelClass}>수입자</label>
+            <input type="text" value={form.importer} onChange={setField('importer')} className={inputClass} />
+          </div>
+          <div className="sm:col-span-2">
+            <label className={labelClass}>주의사항</label>
+            <textarea value={form.cautionNote} onChange={setField('cautionNote')} className={`${inputClass} min-h-[60px]`} />
+          </div>
+          <div className="sm:col-span-2">
+            <label className={labelClass}>대표 이미지 (선택)</label>
+            <div className="flex items-center gap-3">
+              <div className="w-14 h-14 flex-shrink-0 bg-gray-50 rounded-md overflow-hidden border border-gray-200">
+                {form.thumbnailDataUrl && (
+                  <img src={form.thumbnailDataUrl} alt="" className="w-full h-full object-cover" />
+                )}
+              </div>
+              <input type="file" accept="image/*" onChange={handleThumbnailChange} className="text-sm text-gray-600" />
+              {thumbLoading && <span className="text-xs text-gray-400">불러오는 중...</span>}
+            </div>
+          </div>
+        </div>
+
+        <div className="flex justify-end gap-2 mt-6">
+          <button
+            onClick={onCancel}
+            className="px-4 py-2 bg-white border border-gray-300 text-gray-700 text-sm font-medium rounded-md hover:bg-gray-50 transition-colors"
+          >
+            취소
+          </button>
+          <button
+            onClick={handleSave}
+            className="px-4 py-2 bg-blue-600 border border-blue-600 text-white text-sm font-medium rounded-md hover:bg-blue-700 transition-colors"
+          >
+            저장
+          </button>
+        </div>
+      </div>
     </div>
   );
 };

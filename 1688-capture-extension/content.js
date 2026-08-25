@@ -1234,6 +1234,13 @@
         return;
       }
 
+      // 1번 섹션(기본 정보)의 가로/세로/높이는 "↑ 옵션에 적용하기"를 눌러야 옵션 행에 반영되는데,
+      // 상품명/중량처럼 바로 반영되는 필드로 오해하기 쉽다. 그래서 옵션 행 자체에 값이 없을 때는
+      // "적용"을 안 눌렀더라도 이 기본 정보 칸의 값을 그대로 사용해 복사되게 한다.
+      const topWidth = num('#rc-margin-width');
+      const topHeight = num('#rc-margin-height');
+      const topDepth = num('#rc-margin-depth');
+
       const payload = {
         source: '1688-import',
         url: location.href,
@@ -1249,9 +1256,9 @@
             colorRaw: r.label.trim(),
             priceCny: r.price === '' || r.price === null || isNaN(r.price) ? null : r.price,
             sizeCm: {
-              width: r.width === '' || r.width === null || isNaN(r.width) ? null : r.width,
-              height: r.height === '' || r.height === null || isNaN(r.height) ? null : r.height,
-              depth: r.depth === '' || r.depth === null || isNaN(r.depth) ? null : r.depth,
+              width: r.width === '' || r.width === null || isNaN(r.width) ? topWidth : r.width,
+              height: r.height === '' || r.height === null || isNaN(r.height) ? topHeight : r.height,
+              depth: r.depth === '' || r.depth === null || isNaN(r.depth) ? topDepth : r.depth,
             },
             // 수익 계산기 입력(환율/마진율)을 채운 경우에만 포함. 앱에서는 이 값이 있으면
             // priceCny×환율 대신 이 값을 그대로 원가/공급가/판매가/마진에 채워 넣는다.

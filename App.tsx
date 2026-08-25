@@ -45,6 +45,7 @@ import { resizeImageDataUrl } from './utils/imageResize';
 import { withCoLtdSuffix } from './utils/manufacturerFormat';
 import { db, isFirebaseConfigured, ensureSignedIn } from './utils/firebase';
 import { collection, doc, setDoc, deleteDoc, getDocs, onSnapshot } from 'firebase/firestore';
+import { stripClonedScripts, withTimeout } from './utils/html2canvasHelpers';
 
 // This tells TypeScript that the global variables from CDNs exist.
 declare var XLSX: any;
@@ -217,6 +218,24 @@ const ARCHIVE_BACKUP_STORAGE_KEY = 'productArchive_backup';
 // Firebase가 설정돼 있으면(utils/firebase.ts) 이 Firestore 컬렉션이 진짜 저장소가 되고, 여러
 // 컴퓨터가 이 컬렉션 하나를 실시간으로 공유해서 본다. localStorage는 그 위에 얹는 로컬 캐시일 뿐이다.
 const ARCHIVE_COLLECTION = 'rocketProposalArchive';
+// 카테고리와 견적서 등록 내역도 상품목록과 같은 방식으로 Firestore 컬렉션을 진짜 저장소로 삼아
+// 여러 컴퓨터가 공유한다. 카테고리는 이름 자체를 문서 id로 써서 자연스럽게 중복을 막는다.
+const CATEGORY_COLLECTION = 'rocketProposalCategories';
+const QUOTE_TEMPLATE_COLLECTION = 'rocketProposalQuoteTemplates';
+
+const putQuoteTemplateRemote = async (registration: QuoteTemplateRegistration): Promise<void> => {
+  if (!isFirebaseConfigured || !db) return;
+  const firestore = db;
+  await ensureSignedIn();
+  await setDoc(doc(firestore, QUOTE_TEMPLATE_COLLECTION, registration.id), registration);
+};
+
+const deleteQuoteTemplateRemote = async (id: string): Promise<void> => {
+  if (!isFirebaseConfigured || !db) return;
+  const firestore = db;
+  await ensureSignedIn();
+  await deleteDoc(doc(firestore, QUOTE_TEMPLATE_COLLECTION, id));
+};
 
 const parseArchiveJSON = (json: string | null): ArchivedProduct[] | null => {
   if (!json) return null;
@@ -447,6 +466,21 @@ const App: React.FC = () => {
     }
   }, [archivedProducts]);
 
+  // 카테고리 상태가 바뀔 때마다(로컬 등록이든, 클라우드에서 받아온 것이든) localStorage에도
+  // 그대로 반영해 둔다. Firebase가 꺼져 있거나 오프라인일 때도 이 캐시로 계속 동작한다.
+  const isFirstCategoriesPersistRef = useRef(true);
+  useEffect(() => {
+    if (isFirstCategoriesPersistRef.current) {
+      isFirstCategoriesPersistRef.current = false;
+      return;
+    }
+    try {
+      localStorage.setItem('categories', JSON.stringify(categories));
+    } catch (error) {
+      console.error("Failed to save categories to localStorage", error);
+    }
+  }, [categories]);
+
   // Firebase가 설정돼 있으면 이 컬렉션을 실시간 구독해서, 다른 컴퓨터에서 저장/삭제한 내용이
   // 이 화면에도 바로 반영되게 한다(두 컴퓨터 동시 작업 동기화).
   useEffect(() => {
@@ -466,6 +500,96 @@ const App: React.FC = () => {
         },
         error => {
           console.error('상품목록 실시간 동기화 실패(이 기기에 저장된 내용은 유지됩니다):', error);
+        }
+      );
+    })();
+
+    return () => {
+      cancelled = true;
+      unsubscribe?.();
+    };
+  }, []);
+
+  // Firebase가 설정돼 있으면 카테고리도 실시간으로 공유합니다. 이 기기에 이미 등록돼 있던(과거
+  // 로컬 전용 시절 등록분 포함) 카테고리는 최초 연결 시 한 번 클라우드로 올려 보내서, 서로 다른
+  // 컴퓨터에서 각자 등록해둔 카테고리가 합쳐지고 어느 쪽에서도 사라지지 않게 합니다.
+  useEffect(() => {
+    if (!isFirebaseConfigured || !db) return;
+    const firestore = db;
+    let unsubscribe: (() => void) | undefined;
+    let cancelled = false;
+    let pushedLocalOnly = false;
+
+    (async () => {
+      await ensureSignedIn();
+      if (cancelled) return;
+      unsubscribe = onSnapshot(
+        collection(firestore, CATEGORY_COLLECTION),
+        snapshot => {
+          const cloudNames = snapshot.docs.map(d => (d.data().name as string) || d.id);
+          setCategories(prev => Array.from(new Set([...cloudNames, ...prev])));
+
+          if (!pushedLocalOnly) {
+            pushedLocalOnly = true;
+            const cloudSet = new Set(cloudNames);
+            const localOnly = getInitialCategories().filter(name => !cloudSet.has(name));
+            if (localOnly.length > 0) {
+              Promise.all(
+                localOnly.map(name => setDoc(doc(firestore, CATEGORY_COLLECTION, name), { name, createdAt: Date.now() }))
+              ).catch(error => console.error('로컬 카테고리를 클라우드로 옮기는 데 실패했습니다:', error));
+            }
+          }
+        },
+        error => {
+          console.error('카테고리 실시간 동기화 실패(이 기기에 저장된 내용은 유지됩니다):', error);
+        }
+      );
+    })();
+
+    return () => {
+      cancelled = true;
+      unsubscribe?.();
+    };
+  }, []);
+
+  // Firebase가 설정돼 있으면 견적서 등록 내역도 실시간으로 공유합니다. IndexedDB에 이미 등록돼
+  // 있던(과거 로컬 전용 시절 포함) 견적서는 최초 연결 시 한 번 클라우드로 올려 보냅니다. 클라우드에서
+  // 받은 등록 내역은 오프라인 대비용으로 이 기기의 IndexedDB에도 그대로 다시 캐시해 둡니다.
+  useEffect(() => {
+    if (!isFirebaseConfigured || !db) return;
+    const firestore = db;
+    let unsubscribe: (() => void) | undefined;
+    let cancelled = false;
+    let pushedLocalOnly = false;
+
+    (async () => {
+      await ensureSignedIn();
+      if (cancelled) return;
+      unsubscribe = onSnapshot(
+        collection(firestore, QUOTE_TEMPLATE_COLLECTION),
+        snapshot => {
+          const cloudRegistrations = snapshot.docs.map(d => d.data() as QuoteTemplateRegistration);
+          setQuoteTemplateRegistrations(cloudRegistrations);
+          cloudRegistrations.forEach(r => {
+            putQuoteTemplate(r).catch(error => console.error('견적서를 이 기기 캐시에 저장하는 데 실패했습니다:', error));
+          });
+
+          if (!pushedLocalOnly) {
+            pushedLocalOnly = true;
+            (async () => {
+              try {
+                const localRegistrations = await getAllQuoteTemplates();
+                const cloudIds = new Set(cloudRegistrations.map(r => r.id));
+                const localOnly = localRegistrations.filter(r => r && r.id && !cloudIds.has(r.id));
+                await Promise.all(localOnly.map(r => setDoc(doc(firestore, QUOTE_TEMPLATE_COLLECTION, r.id), r)));
+              } catch (error) {
+                console.error('로컬 견적서를 클라우드로 옮기는 데 실패했습니다:', error);
+              }
+            })();
+          }
+        },
+        error => {
+          console.error('견적서 실시간 동기화 실패(이 기기에 저장된 내용은 유지됩니다):', error);
         }
       );
     })();
@@ -1213,7 +1337,11 @@ const App: React.FC = () => {
       if (currentProductForLabel && isLabelModalOpen && labelRef.current) {
         setIsGenerating(true);
         try {
-          const canvas = await html2canvas(labelRef.current, { scale: 2, backgroundColor: null });
+          const canvas = await withTimeout<any>(
+            html2canvas(labelRef.current, { scale: 2, backgroundColor: null, onclone: stripClonedScripts }),
+            20000,
+            '라벨 이미지 생성'
+          );
           setGeneratedLabelImage(canvas.toDataURL('image/png'));
         } catch (error) {
           console.error("Error generating image:", error);
@@ -1255,7 +1383,11 @@ const App: React.FC = () => {
       if (currentProductForBarcodeLabel && isBarcodeLabelModalOpen && barcodeLabelRef.current) {
         setIsGeneratingBarcodeLabel(true);
         try {
-          const canvas = await html2canvas(barcodeLabelRef.current, { scale: 2, backgroundColor: null });
+          const canvas = await withTimeout<any>(
+            html2canvas(barcodeLabelRef.current, { scale: 2, backgroundColor: null, onclone: stripClonedScripts }),
+            20000,
+            '바코드 라벨 이미지 생성'
+          );
           setGeneratedBarcodeLabelImage(canvas.toDataURL('image/png'));
         } catch (error) {
           console.error("Error generating barcode label image:", error);
@@ -1293,7 +1425,11 @@ const App: React.FC = () => {
         return;
       }
       try {
-        const canvas = await html2canvas(hiddenLabelCaptureRef.current, { scale: 2, backgroundColor: null });
+        const canvas = await withTimeout<any>(
+          html2canvas(hiddenLabelCaptureRef.current, { scale: 2, backgroundColor: null, onclone: stripClonedScripts }),
+          20000,
+          '라벨 이미지 캡처(통합다운)'
+        );
         labelCaptureResolveRef.current?.(canvas.toDataURL('image/png'));
       } catch (error) {
         console.error('라벨 이미지 생성 실패 (통합다운):', error);
@@ -1342,32 +1478,40 @@ const App: React.FC = () => {
 
   // 카테고리는 견적서와 독립적으로 저장/관리됩니다. 이 함수로 추가된 카테고리는
   // handleDeleteCategory를 통해 사용자가 직접 삭제하기 전까지는 절대 사라지지 않습니다.
+  // Firebase가 설정돼 있으면 클라우드에도 함께 등록해서 다른 컴퓨터에도 바로 보이게 합니다.
   const handleRegisterCategory = useCallback((category: string) => {
     const trimmed = category.trim();
     if (!trimmed) return;
 
-    setCategories(prev => {
-      if (prev.includes(trimmed)) return prev;
-      const next = [...prev, trimmed];
-      try {
-        localStorage.setItem('categories', JSON.stringify(next));
-      } catch (error) {
-        console.error("Failed to save categories to localStorage", error);
-      }
-      return next;
-    });
+    setCategories(prev => (prev.includes(trimmed) ? prev : [...prev, trimmed]));
+
+    if (isFirebaseConfigured && db) {
+      const firestore = db;
+      (async () => {
+        try {
+          await ensureSignedIn();
+          await setDoc(doc(firestore, CATEGORY_COLLECTION, trimmed), { name: trimmed, createdAt: Date.now() });
+        } catch (error) {
+          console.error('카테고리 클라우드 저장 실패, 이 기기에만 저장됩니다:', error);
+        }
+      })();
+    }
   }, []);
 
   const handleDeleteCategory = useCallback((category: string) => {
-    setCategories(prev => {
-      const next = prev.filter(c => c !== category);
-      try {
-        localStorage.setItem('categories', JSON.stringify(next));
-      } catch (error) {
-        console.error("Failed to save categories to localStorage", error);
-      }
-      return next;
-    });
+    setCategories(prev => prev.filter(c => c !== category));
+
+    if (isFirebaseConfigured && db) {
+      const firestore = db;
+      (async () => {
+        try {
+          await ensureSignedIn();
+          await deleteDoc(doc(firestore, CATEGORY_COLLECTION, category));
+        } catch (error) {
+          console.error('카테고리 클라우드 삭제 실패:', error);
+        }
+      })();
+    }
   }, []);
 
   const handleAddQuoteTemplateRegistration = useCallback((category: string, file: File, customFieldNames: string[], optionFieldName: string) => {
@@ -1411,6 +1555,9 @@ const App: React.FC = () => {
         setQuoteTemplateRegistrations(prev => [...prev, newRegistration]);
         // 견적서를 나중에 삭제하더라도 카테고리는 레지스트리에 남아있도록 별도로 등록합니다.
         handleRegisterCategory(category);
+        putQuoteTemplateRemote(newRegistration).catch(error => {
+          console.error('견적서 클라우드 저장 실패, 이 기기에만 저장됩니다:', error);
+        });
       } catch (error) {
         console.error("Failed to save quote template to IndexedDB", error);
         alert(`견적서 저장에 실패했습니다. 새로고침하면 이 견적서는 사라집니다.\n오류: ${error instanceof Error ? error.message : String(error)}`);
@@ -1468,6 +1615,7 @@ const App: React.FC = () => {
       const nextRegistration = { ...target, customFieldNames: [...existingNames, ...extraLabels] };
       await putQuoteTemplate(nextRegistration);
       setQuoteTemplateRegistrations(prev => prev.map(r => (r.id === id ? nextRegistration : r)));
+      putQuoteTemplateRemote(nextRegistration).catch(error => console.error('견적서 클라우드 저장 실패:', error));
       syncNewCustomFieldNamesToProducts(id, extraLabels);
       alert(`다음 항목을 추가했습니다: ${extraLabels.join(', ')}`);
     } catch (error) {
@@ -1485,6 +1633,7 @@ const App: React.FC = () => {
       console.error("Failed to update quote template in IndexedDB", error);
       alert(`견적서 항목 수정에 실패했습니다.\n오류: ${error instanceof Error ? error.message : String(error)}`);
     });
+    putQuoteTemplateRemote(updated).catch(error => console.error('견적서 클라우드 저장 실패:', error));
 
     setQuoteTemplateRegistrations(prev => prev.map(r => (r.id === id ? updated : r)));
 
@@ -1502,6 +1651,7 @@ const App: React.FC = () => {
         console.error("Failed to update quote template in IndexedDB", error);
         alert(`견적서 항목 수정에 실패했습니다.\n오류: ${error instanceof Error ? error.message : String(error)}`);
       });
+      putQuoteTemplateRemote(updated).catch(error => console.error('견적서 클라우드 저장 실패:', error));
 
       return prev.map(r => (r.id === id ? updated : r));
     });
@@ -1698,11 +1848,13 @@ const App: React.FC = () => {
     const groupProducts = withSharedGroupFiles(products.filter(p => getProductGroupKey(p) === groupKey));
 
     setIntegratedDownloadingId(productId);
+    console.log('[통합다운] 시작', { productId, groupCount: groupProducts.length });
     try {
       // 폴더 접근 권한을 클릭 직후 가장 먼저 요청한다. showDirectoryPicker/showSaveFilePicker는
       // "user activation"이 있어야 동작하는데, 라벨 캡처·zip 압축·엑셀 생성처럼 시간이 걸리는
       // 비동기 작업을 먼저 거치면 그 활성 상태가 소멸해 조용히 실패(버튼 클릭해도 무반응)한다.
-      await getRootDirectory();
+      const rootDir = await getRootDirectory();
+      console.log('[통합다운] getRootDirectory 완료', { rootDir: rootDir ? rootDir.name : null });
 
       const files: { name: string; blob: Blob }[] = [];
 
@@ -1715,6 +1867,7 @@ const App: React.FC = () => {
           files.push({ name: p.labelFile || `${p.productName || '상품'}_라벨.png`, blob: labelBlob });
         }
       }
+      console.log('[통합다운] 라벨 캡처 완료', { fileCount: files.length });
 
       // 이미지: 대표이미지는 옵션마다, 상세이미지는 그룹이 공유하는 한 장만 함께 압축한다.
       const imageFiles: { name: string; blob: Blob }[] = [];
@@ -1730,6 +1883,7 @@ const App: React.FC = () => {
         const zipBlob = await buildZipBlob(imageFiles);
         files.push({ name: `${product.productName || '상품'}_이미지.zip`, blob: zipBlob });
       }
+      console.log('[통합다운] 이미지 zip 완료', { imageFileCount: imageFiles.length });
 
       if (product.quoteTemplateId) {
         const registration = quoteTemplateRegistrations.find(r => r.id === product.quoteTemplateId);
@@ -1750,13 +1904,16 @@ const App: React.FC = () => {
           }
         }
       }
+      console.log('[통합다운] 견적서 단계 완료', { totalFileCount: files.length });
 
       if (files.length === 0) {
+        console.log('[통합다운] 저장할 파일 없음, 종료');
         alert('다운로드할 파일이 없습니다. (라벨/이미지/견적서 중 준비된 항목이 없습니다)');
         return;
       }
 
       await saveFilesInProductFolder(productNameFolderName(product), files);
+      console.log('[통합다운] saveFilesInProductFolder 완료');
       // 폴더 접근 권한이 이미 있으면 저장이 다이얼로그 없이 조용히 끝나서 사용자 눈에는 버튼이
       // 반응하지 않은 것처럼 보일 수 있다. 잠깐 체크 아이콘으로 바꿔 완료됐다는 걸 알려준다.
       setIntegratedDownloadDoneId(productId);
@@ -1771,9 +1928,10 @@ const App: React.FC = () => {
         }
       }
     } catch (error) {
-      console.error('통합 다운로드 실패:', error);
+      console.error('[통합다운] 통합 다운로드 실패:', error);
       alert('통합 다운로드 중 오류가 발생했습니다.');
     } finally {
+      console.log('[통합다운] 종료(finally)');
       setIntegratedDownloadingId(null);
     }
   }, [products, quoteTemplateRegistrations, quoteFixedValues, integratedDownloadingId, captureLabelImage, archiveProducts]);

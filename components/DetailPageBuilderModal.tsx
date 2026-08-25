@@ -16,6 +16,7 @@ import { editImageWithGemini, BRUSH_ERASE_PROMPT } from '../utils/geminiImageEdi
 import { generateDetailPageCopyWithGemini } from '../utils/detailPageCopyGemini';
 import { saveDataUrlInProductFolder, productFolderName } from '../utils/fileSave';
 import { generateId } from '../utils/id';
+import { withTimeout, stripClonedScripts } from '../utils/html2canvasHelpers';
 import ImageCropModal from './ImageCropModal';
 
 declare var html2canvas: any;
@@ -799,16 +800,21 @@ const DetailPageBuilderModal: React.FC<DetailPageBuilderModalProps> = ({ isOpen,
       // only captures the currently-scrolled-into-view slice instead of the full page.
       const fullWidth = previewRef.current.scrollWidth;
       const fullHeight = previewRef.current.scrollHeight;
-      return await html2canvas(previewRef.current, {
-        backgroundColor: '#ffffff',
-        scale: 2,
-        useCORS: true,
-        width: fullWidth,
-        height: fullHeight,
-        windowWidth: fullWidth,
-        windowHeight: fullHeight,
-        ignoreElements: (el: Element) => el.hasAttribute('data-html2canvas-ignore'),
-      });
+      return await withTimeout(
+        html2canvas(previewRef.current, {
+          backgroundColor: '#ffffff',
+          scale: 2,
+          useCORS: true,
+          width: fullWidth,
+          height: fullHeight,
+          windowWidth: fullWidth,
+          windowHeight: fullHeight,
+          ignoreElements: (el: Element) => el.hasAttribute('data-html2canvas-ignore'),
+          onclone: stripClonedScripts,
+        }),
+        20000,
+        '상세페이지 캡처'
+      );
     } finally {
       if (previousZoom !== 1) setZoom(previousZoom);
     }

@@ -46,7 +46,10 @@ export function productNameFolderName(product: { productName?: string } | null |
 // time saveFilesInProductFolder gets around to calling this internally.
 export async function getRootDirectory(): Promise<any | null> {
   const picker = (window as any).showDirectoryPicker;
-  if (typeof picker !== 'function') return null;
+  if (typeof picker !== 'function') {
+    console.log('[통합다운] showDirectoryPicker 미지원 브라우저');
+    return null;
+  }
 
   if (cachedRootDir) {
     try {
@@ -54,8 +57,10 @@ export async function getRootDirectory(): Promise<any | null> {
         (await cachedRootDir.queryPermission?.({ mode: 'readwrite' })) === 'granted'
           ? 'granted'
           : await cachedRootDir.requestPermission?.({ mode: 'readwrite' });
+      console.log('[통합다운] 캐시된 폴더 권한 상태:', perm);
       if (perm === 'granted') return cachedRootDir;
-    } catch {
+    } catch (err) {
+      console.log('[통합다운] 캐시된 폴더 권한 확인 중 예외:', err);
       // fall through to re-prompt below
     }
     cachedRootDir = null;
@@ -63,9 +68,11 @@ export async function getRootDirectory(): Promise<any | null> {
 
   try {
     cachedRootDir = await picker({ mode: 'readwrite' });
+    console.log('[통합다운] 새 폴더 선택 완료:', cachedRootDir?.name);
     return cachedRootDir;
   } catch (err: any) {
     if (err?.name !== 'AbortError') console.error('폴더 선택 실패:', err);
+    else console.log('[통합다운] 폴더 선택 취소(AbortError)');
     return null;
   }
 }
@@ -176,6 +183,7 @@ export async function saveFilesInProductFolder(
 ): Promise<void> {
   const safeFolderName = sanitizeFolderName(folderName);
   const root = await getRootDirectory();
+  console.log('[통합다운] saveFilesInProductFolder: root =', root ? root.name : null, 'fileCount =', files.length);
   if (root) {
     try {
       const subDir = await root.getDirectoryHandle(safeFolderName, { create: true });
@@ -184,14 +192,16 @@ export async function saveFilesInProductFolder(
         const writable = await fileHandle.createWritable();
         await writable.write(file.blob);
         await writable.close();
+        console.log('[통합다운] 파일 저장됨:', `${safeFolderName}/${file.name}`);
       }
       return;
     } catch (err: any) {
-      if (err?.name === 'AbortError') return;
+      if (err?.name === 'AbortError') { console.log('[통합다운] 저장 중 AbortError'); return; }
       console.error('폴더에 파일 저장 실패:', err);
       // fall through to the fallback below
     }
   }
+  console.log('[통합다운] fallback zip 다운로드 경로 진입');
   const prefixedFiles = files.map(file => ({ name: `${safeFolderName}/${file.name}`, blob: file.blob }));
   const zipBlob = await buildZipBlob(prefixedFiles);
   await saveBlob(zipBlob, `${safeFolderName}.zip`, 'application/zip');

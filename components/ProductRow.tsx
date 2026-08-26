@@ -1,7 +1,7 @@
 
 import React, { useState } from 'react';
 import { Product } from '../types';
-import { TrashIcon, ImageIcon, CopyIcon, UploadIcon, MemoIcon, CalculatorIcon, CopyFromAboveIcon, DownloadIcon, SpinnerIcon, SparklesIcon, ChevronDownIcon, DocumentAddIcon, ImageEditIcon, CloseIcon, CheckIcon, RefreshIcon, BarcodeIcon } from './Icons';
+import { TrashIcon, ImageIcon, CopyIcon, UploadIcon, MemoIcon, CalculatorIcon, CopyFromAboveIcon, DownloadIcon, SpinnerIcon, ChevronDownIcon, DocumentAddIcon, ImageEditIcon, CloseIcon, CheckIcon, RefreshIcon, BarcodeIcon } from './Icons';
 import ProductCustomFields from './ProductCustomFields';
 import BarcodeImage from './BarcodeImage';
 import { saveBlobInProductFolder, saveDataUrlsAsZipInProductFolder, productFolderName, getRootDirectory } from '../utils/fileSave';
@@ -19,7 +19,6 @@ interface ProductRowProps {
   onOpenMemoModal: (product: Product) => void;
   onOpenMarginCalculator: (id: string) => void;
   onCopyFromAbove: (id: string) => void;
-  onOpenTranslation: (imageDataUrl: string | undefined, field: 'thumbnailDataUrl' | 'detailDataUrl') => void;
   onOpenImageEditor: (product: Product) => void;
   onMenuToggle: (isOpen: boolean) => void;
   onSetCustomField: (id: string, name: string, value: string) => void;
@@ -52,7 +51,6 @@ const ProductRow: React.FC<ProductRowProps> = ({
   onOpenMemoModal,
   onOpenMarginCalculator,
   onCopyFromAbove,
-  onOpenTranslation,
   onOpenImageEditor,
   onMenuToggle,
   onSetCustomField,
@@ -500,16 +498,7 @@ const ProductRow: React.FC<ProductRowProps> = ({
               <UploadIcon />
             </label>
             <input type="file" id={`thumbnail-file-upload-${product.id}`} className="sr-only" onChange={(e) => handleFileSelect(e, 'thumbnailFile')} accept="image/*" />
-            <input type="text" name="thumbnailFile" value={product.thumbnailFile} onChange={handleChange} onFocus={handleFocus} className={`${fileInputClass} pl-8 ${product.thumbnailDataUrl ? 'pr-6' : 'pr-2'}`} placeholder="대표" />
-            {product.thumbnailDataUrl && (
-              <button
-                onClick={() => onOpenTranslation(product.thumbnailDataUrl, 'thumbnailDataUrl')}
-                className="absolute right-1 text-blue-600 hover:text-blue-700 transition-colors"
-                title="이미지 내 텍스트 번역"
-              >
-                <SparklesIcon className="w-4 h-4" />
-              </button>
-            )}
+            <input type="text" name="thumbnailFile" value={product.thumbnailFile} onChange={handleChange} onFocus={handleFocus} className={`${fileInputClass} pl-8 pr-2`} placeholder="대표" />
           </div>
         </Field>
 
@@ -529,16 +518,7 @@ const ProductRow: React.FC<ProductRowProps> = ({
               <UploadIcon />
             </label>
             <input type="file" id={`detail-file-upload-${product.id}`} className="sr-only" onChange={(e) => handleFileSelect(e, 'detailFile')} accept="image/*" />
-            <input type="text" name="detailFile" value={product.detailFile} onChange={handleChange} onFocus={handleFocus} className={`${fileInputClass} pl-8 ${product.detailDataUrl ? 'pr-6' : 'pr-2'}`} placeholder="상세" />
-            {product.detailDataUrl && (
-              <button
-                onClick={() => onOpenTranslation(product.detailDataUrl, 'detailDataUrl')}
-                className="absolute right-1 text-blue-600 hover:text-blue-700 transition-colors"
-                title="이미지 내 텍스트 번역"
-              >
-                <SparklesIcon className="w-4 h-4" />
-              </button>
-            )}
+            <input type="text" name="detailFile" value={product.detailFile} onChange={handleChange} onFocus={handleFocus} className={`${fileInputClass} pl-8 pr-2`} placeholder="상세" />
           </div>
         </Field>
 

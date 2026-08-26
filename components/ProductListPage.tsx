@@ -1,5 +1,5 @@
 
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { ArchivedProduct } from '../types';
 import BarcodeImage from './BarcodeImage';
 import BarcodeLabel, { BarcodeLabelProduct } from './BarcodeLabel';
@@ -78,6 +78,23 @@ const ProductListPage: React.FC<ProductListPageProps> = ({
   const [enlargedEntry, setEnlargedEntry] = useState<ArchivedProduct | null>(null);
   const [showAddForm, setShowAddForm] = useState(false);
   const [approvedOnly, setApprovedOnly] = useState(false);
+
+  // 입력칸에 타이핑하는 도중 글자 하나하나마다 onLookbackDaysChange를 호출하면(예: "1" 입력
+  // 시점에 1일치로 즉시 재조회됐다가 "14"까지 마저 입력하면 또 재조회) 그때마다 Firestore를
+  // 다시 구독하게 되어 낭비다. 입력은 로컬에서만 받고, 포커스를 벗어날 때만 확정해서 알린다.
+  const [lookbackDraft, setLookbackDraft] = useState(String(lookbackDays));
+  useEffect(() => {
+    setLookbackDraft(String(lookbackDays));
+  }, [lookbackDays]);
+
+  const commitLookbackDraft = () => {
+    const parsed = parseInt(lookbackDraft, 10);
+    if (Number.isFinite(parsed) && parsed > 0) {
+      onLookbackDaysChange(parsed);
+    } else {
+      setLookbackDraft(String(lookbackDays));
+    }
+  };
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -211,8 +228,10 @@ const ProductListPage: React.FC<ProductListPageProps> = ({
             <input
               type="number"
               min={1}
-              value={lookbackDays}
-              onChange={e => onLookbackDaysChange(Number(e.target.value))}
+              value={lookbackDraft}
+              onChange={e => setLookbackDraft(e.target.value)}
+              onBlur={commitLookbackDraft}
+              onKeyDown={e => { if (e.key === 'Enter') e.currentTarget.blur(); }}
               className="w-14 px-1.5 py-1 bg-white border border-gray-300 text-gray-900 text-sm rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
             />
             일치 불러오기

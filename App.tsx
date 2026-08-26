@@ -14,7 +14,6 @@ import QuoteTemplateManagerModal from './components/QuoteTemplateManagerModal';
 import MemoModal from './components/MemoModal';
 import NotepadSidebar from './components/NotepadSidebar';
 import ImageRenamer from './components/ImageRenamer';
-import TranslationModal from './components/TranslationModal';
 import ImageEditorModal from './components/ImageEditorModal';
 import DetailPageBuilderModal from './components/DetailPageBuilderModal';
 import MissingFieldsModal from './components/MissingFieldsModal';
@@ -400,14 +399,6 @@ const App: React.FC = () => {
     product: Product | null;
   }>({ isOpen: false, product: null });
   
-  // Translation Modal State
-  const [translationState, setTranslationState] = useState<{
-    isOpen: boolean;
-    imageDataUrl: string | undefined;
-    productId: string | null;
-    field: 'thumbnailDataUrl' | 'detailDataUrl' | null;
-  }>({ isOpen: false, imageDataUrl: undefined, productId: null, field: null });
-
   // Image Editor Modal State
   const [imageEditorState, setImageEditorState] = useState<{
     isOpen: boolean;
@@ -2286,28 +2277,6 @@ const App: React.FC = () => {
     handleProductChange(memoModalState.product.id, 'memo', memo);
   }, [memoModalState.product, handleProductChange]);
 
-  // Translation Handlers
-  const handleOpenTranslation = useCallback((productId: string, imageDataUrl: string | undefined, field: 'thumbnailDataUrl' | 'detailDataUrl') => {
-    setTranslationState({
-      isOpen: true,
-      imageDataUrl,
-      productId,
-      field
-    });
-  }, []);
-
-  const handleCloseTranslation = useCallback(() => {
-    setTranslationState(prev => ({ ...prev, isOpen: false, imageDataUrl: undefined, productId: null, field: null }));
-  }, []);
-
-  const handleSaveTranslationImage = useCallback((newDataUrl: string) => {
-    if (translationState.productId && translationState.field) {
-        handleProductChange(translationState.productId, translationState.field as keyof Product, newDataUrl);
-        alert('번역된 이미지로 교체되었습니다.');
-    }
-    handleCloseTranslation();
-  }, [translationState, handleProductChange, handleCloseTranslation]);
-
   // Image Editor Handlers
   const openImageEditor = useCallback((product: Product) => {
     setImageEditorState({ isOpen: true, product });
@@ -2584,7 +2553,6 @@ const App: React.FC = () => {
                             onOpenMemoModal={openMemoModal}
                             onOpenMarginCalculator={openMarginCalculator}
                             onCopyFromAbove={handleCopyFromAbove}
-                            onOpenTranslation={(dataUrl, field) => handleOpenTranslation(product.id, dataUrl, field)}
                             onOpenImageEditor={openImageEditor}
                             onMenuToggle={(isOpen) => setActiveProductId(isOpen ? product.id : null)}
                             onSetCustomField={handleSetProductCustomField}
@@ -2823,15 +2791,6 @@ const App: React.FC = () => {
             onClose={closeMemoModal}
             onSave={handleSaveMemo}
             initialMemo={memoModalState.product.memo}
-        />
-      )}
-
-      {translationState.isOpen && (
-        <TranslationModal 
-          isOpen={translationState.isOpen}
-          onClose={handleCloseTranslation}
-          imageDataUrl={translationState.imageDataUrl}
-          onSaveImage={handleSaveTranslationImage}
         />
       )}
 

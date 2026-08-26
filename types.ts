@@ -69,6 +69,9 @@ export interface ArchivedProduct {
   // 목록에서 한눈에 알아볼 수 있도록, 원본 대표 이미지를 작게 리사이즈한 썸네일만 함께 저장한다
   // (용량 때문에 원본은 저장하지 않음. utils/imageResize.ts 참고).
   thumbnailDataUrl?: string;
+  // 상품목록 화면에서 사람이 직접 체크해서 바꾸는 승인 상태. 기존에 저장된 항목에는 이 필드가
+  // 없을 수 있는데, 그런 경우는 'pending'으로 취급한다(하위 호환).
+  approvalStatus?: 'pending' | 'approved';
 }
 
 export interface ImageFile {

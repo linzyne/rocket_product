@@ -44,7 +44,7 @@ import { generateBarcodeNumber } from './utils/barcode';
 import { resizeImageDataUrl } from './utils/imageResize';
 import { withCoLtdSuffix } from './utils/manufacturerFormat';
 import { db, isFirebaseConfigured, ensureSignedIn } from './utils/firebase';
-import { collection, doc, setDoc, deleteDoc, getDocs, onSnapshot } from 'firebase/firestore';
+import { collection, doc, setDoc, deleteDoc, onSnapshot, query, where } from 'firebase/firestore';
 import { stripClonedScripts, withTimeout } from './utils/html2canvasHelpers';
 
 // This tells TypeScript that the global variables from CDNs exist.
@@ -260,7 +260,49 @@ const getInitialArchivedProducts = (): ArchivedProduct[] => {
   return [];
 };
 
+// 상품목록이 많아질수록 Firestore 읽기 비용과 초기 로딩이 느려지므로, 앱을 열 때 전체를 다
+// 불러오지 않고 최근 며칠치만 불러온다. 이 기본 기간은 사용자가 상품목록 화면에서 직접 바꿀 수
+// 있고, 한 번 바꾸면 다음에 앱을 열 때도 그 값을 그대로 사용한다(localStorage에 저장).
+const ARCHIVE_LOOKBACK_DAYS_KEY = 'productArchiveLookbackDays';
+const DEFAULT_ARCHIVE_LOOKBACK_DAYS = 3;
+
+const getInitialArchiveLookbackDays = (): number => {
+  const raw = parseInt(localStorage.getItem(ARCHIVE_LOOKBACK_DAYS_KEY) || '', 10);
+  return Number.isFinite(raw) && raw > 0 ? raw : DEFAULT_ARCHIVE_LOOKBACK_DAYS;
+};
+
+const toLocalDateOnly = (d: Date): string => {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+};
+
+const dateRangeFromLookbackDays = (days: number): { start: string; end: string } => {
+  const end = new Date();
+  const start = new Date();
+  start.setDate(start.getDate() - (days - 1));
+  return { start: toLocalDateOnly(start), end: toLocalDateOnly(end) };
+};
+
+// 'YYYY-MM-DD'(달력상 로컬 날짜)를 Firestore savedAt(UTC ISO 문자열) 범위 비교에 쓸 수 있게 바꾼다.
+const localDateBoundToISO = (dateStr: string, endOfDay: boolean): string => {
+  const [y, m, d] = dateStr.split('-').map(Number);
+  const dt = endOfDay ? new Date(y, m - 1, d, 23, 59, 59, 999) : new Date(y, m - 1, d, 0, 0, 0, 0);
+  return dt.toISOString();
+};
+
 const isBlankProductForArchive = (p: Product): boolean => !p.url.trim() && !p.productName.trim();
+
+// 상품목록에 이미 저장된 항목인지 판단하는 키. 같은 URL이라도 옵션(색상 등)마다 다른 상품이므로
+// 바코드로 옵션까지 구분하고, 바코드가 비어 있으면 상품명+색상으로 구분한다.
+const archiveMatchKey = (url: string, barcode: string, productName: string, color: string): string => {
+  const u = url.trim();
+  const bc = barcode.trim();
+  if (u && bc) return `url:${u}|bc:${bc}`;
+  if (u) return `url:${u}|name:${productName.trim()}|color:${color.trim()}`;
+  return `name:${productName.trim()}|color:${color.trim()}`;
+};
 
 const buildArchiveEntry = (p: Product, thumbnailDataUrl: string): ArchivedProduct => ({
   id: generateId(),
@@ -283,6 +325,7 @@ const buildArchiveEntry = (p: Product, thumbnailDataUrl: string): ArchivedProduc
   importer: p.importer,
   manufacturer: p.manufacturer,
   thumbnailDataUrl,
+  approvalStatus: 'pending',
 });
 
 
@@ -341,6 +384,12 @@ const App: React.FC = () => {
   const resetAllTimeoutRef = useRef<number | null>(null);
   const [activeProductId, setActiveProductId] = useState<string | null>(null);
   const [archivedProducts, setArchivedProducts] = useState<ArchivedProduct[]>(getInitialArchivedProducts());
+  // 상품목록(클라우드 모드)을 몇 일치까지 불러올지. 상품목록 화면에서 사용자가 바꾸면 즉시 이
+  // 범위로 다시 불러오고, 다음 실행 때 기본값으로도 저장된다.
+  const [archiveLookbackDays, setArchiveLookbackDays] = useState<number>(getInitialArchiveLookbackDays());
+  const [archiveDateRange, setArchiveDateRange] = useState<{ start: string; end: string }>(() =>
+    dateRangeFromLookbackDays(getInitialArchiveLookbackDays())
+  );
 
   const [marginCalculatorState, setMarginCalculatorState] = useState<{isOpen: boolean; productId: string | null}>({
     isOpen: false,
@@ -482,18 +531,28 @@ const App: React.FC = () => {
   }, [categories]);
 
   // Firebase가 설정돼 있으면 이 컬렉션을 실시간 구독해서, 다른 컴퓨터에서 저장/삭제한 내용이
-  // 이 화면에도 바로 반영되게 한다(두 컴퓨터 동시 작업 동기화).
+  // 이 화면에도 바로 반영되게 한다(두 컴퓨터 동시 작업 동기화). 전체를 다 읽으면 상품목록이
+  // 많아질수록 Firestore 읽기 비용과 로딩 속도가 나빠지므로, savedAt 기준으로 선택된 기간만
+  // 읽어온다. archiveDateRange가 바뀌면(사용자가 기간을 조정하면) 이 범위로 다시 구독한다.
   useEffect(() => {
     if (!isFirebaseConfigured || !db) return;
     const firestore = db;
     let unsubscribe: (() => void) | undefined;
     let cancelled = false;
 
+    const startISO = localDateBoundToISO(archiveDateRange.start, false);
+    const endISO = localDateBoundToISO(archiveDateRange.end, true);
+    const archiveQuery = query(
+      collection(firestore, ARCHIVE_COLLECTION),
+      where('savedAt', '>=', startISO),
+      where('savedAt', '<=', endISO)
+    );
+
     (async () => {
       await ensureSignedIn();
       if (cancelled) return;
       unsubscribe = onSnapshot(
-        collection(firestore, ARCHIVE_COLLECTION),
+        archiveQuery,
         snapshot => {
           const entries = snapshot.docs.map(d => d.data() as ArchivedProduct);
           setArchivedProducts(entries);
@@ -508,7 +567,7 @@ const App: React.FC = () => {
       cancelled = true;
       unsubscribe?.();
     };
-  }, []);
+  }, [archiveDateRange]);
 
   // Firebase가 설정돼 있으면 카테고리도 실시간으로 공유합니다. 이 기기에 이미 등록돼 있던(과거
   // 로컬 전용 시절 등록분 포함) 카테고리는 최초 연결 시 한 번 클라우드로 올려 보내서, 서로 다른
@@ -604,14 +663,35 @@ const App: React.FC = () => {
     const candidates = toArchive.filter(p => !isBlankProductForArchive(p));
     if (candidates.length === 0) return false;
 
+    // 같은 옵션이 이미 상품목록에 저장돼 있으면 매번 새로 쌓이지 않도록, 저장 전에 확인해서
+    // 덮어쓸지 건너뛸지 물어본다. 새로 추가되는 항목(중복 아님)은 항상 그대로 저장한다.
+    const existingByKey = new Map<string, ArchivedProduct>();
+    archivedProducts.forEach(e => existingByKey.set(archiveMatchKey(e.url, e.barcode, e.productName, e.color), e));
+
+    const isDuplicate = (p: Product) => existingByKey.has(archiveMatchKey(p.url, p.barcode, p.productName, p.color));
+    const duplicateCount = candidates.filter(isDuplicate).length;
+
+    let overwriteDuplicates = true;
+    if (duplicateCount > 0) {
+      overwriteDuplicates = window.confirm(
+        `이미 상품목록에 저장된 항목이 ${duplicateCount}개 있습니다. 덮어쓸까요?\n(취소하면 이미 저장된 항목은 건너뛰고 새 항목만 저장합니다)`
+      );
+    }
+    const toSave = overwriteDuplicates ? candidates : candidates.filter(p => !isDuplicate(p));
+    if (toSave.length === 0) return false;
+
     (async () => {
       // 원본 대표 이미지는 크기가 커서(Firestore 문서당 1MB 제한, localStorage 용량) 그대로
       // 저장하지 않고, 목록 미리보기에 필요한 만큼만 작게 리사이즈해서 저장한다.
-      const entries = await Promise.all(candidates.map(async p => {
+      const entries = await Promise.all(toSave.map(async p => {
         const thumbnailDataUrl = p.thumbnailDataUrl
           ? await resizeImageDataUrl(p.thumbnailDataUrl).catch(() => '')
           : '';
-        return buildArchiveEntry(p, thumbnailDataUrl);
+        const built = buildArchiveEntry(p, thumbnailDataUrl);
+        // 기존 항목을 덮어쓰는 경우 같은 id를 재사용해서(새 문서를 만드는 대신) 원래 있던
+        // 자리에서 그대로 갱신되게 한다.
+        const existing = existingByKey.get(archiveMatchKey(p.url, p.barcode, p.productName, p.color));
+        return existing ? { ...built, id: existing.id } : built;
       }));
 
       if (isFirebaseConfigured && db) {
@@ -621,14 +701,14 @@ const App: React.FC = () => {
           await Promise.all(entries.map(entry => setDoc(doc(firestore, ARCHIVE_COLLECTION, entry.id), entry)));
         } catch (error) {
           console.error('상품목록 클라우드 저장 실패, 이 기기에만 저장합니다:', error);
-          setArchivedProducts(prev => [...entries, ...prev]);
+          setArchivedProducts(prev => [...entries, ...prev.filter(e => !entries.some(ne => ne.id === e.id))]);
         }
       } else {
-        setArchivedProducts(prev => [...entries, ...prev]);
+        setArchivedProducts(prev => [...entries, ...prev.filter(e => !entries.some(ne => ne.id === e.id))]);
       }
     })();
     return true;
-  }, []);
+  }, [archivedProducts]);
 
   const handleArchiveProduct = useCallback((product: Product): boolean => {
     if (isBlankProductForArchive(product)) {
@@ -644,6 +724,15 @@ const App: React.FC = () => {
     if (!saved) alert('URL 또는 상품명이 있어야 상품목록에 저장할 수 있습니다.');
     return saved;
   }, [archiveProducts]);
+
+  // 상품목록 화면에서 "기본 조회 기간"을 바꾸면, 다음에 앱을 열 때도 이 값을 기본으로 쓰도록
+  // localStorage에 저장하고, 지금 보고 있는 화면도 바로 이 범위로 다시 불러온다.
+  const handleChangeArchiveLookbackDays = useCallback((days: number) => {
+    const safeDays = Number.isFinite(days) && days > 0 ? Math.floor(days) : DEFAULT_ARCHIVE_LOOKBACK_DAYS;
+    localStorage.setItem(ARCHIVE_LOOKBACK_DAYS_KEY, String(safeDays));
+    setArchiveLookbackDays(safeDays);
+    setArchiveDateRange(dateRangeFromLookbackDays(safeDays));
+  }, []);
 
   const handleDeleteArchivedProduct = useCallback((id: string) => {
     if (isFirebaseConfigured && db) {
@@ -700,22 +789,25 @@ const App: React.FC = () => {
     }
   }, []);
 
+  // "전체 삭제"는 지금 화면에 로드된(=선택된 조회 기간 안의) 항목만 지운다. 화면에 보이는
+  // 개수와 확인창에 뜬 개수가 어긋나 기간 밖의 과거 데이터까지 통째로 지워지는 일이 없도록,
+  // 전체 컬렉션을 조회하지 않고 archivedProducts에 있는 id만 지운다.
   const handleClearArchivedProducts = useCallback(() => {
     if (isFirebaseConfigured && db) {
       const firestore = db;
+      const idsToDelete = archivedProducts.map(e => e.id);
       (async () => {
         try {
           await ensureSignedIn();
-          const snapshot = await getDocs(collection(firestore, ARCHIVE_COLLECTION));
-          await Promise.all(snapshot.docs.map(d => deleteDoc(d.ref)));
+          await Promise.all(idsToDelete.map(id => deleteDoc(doc(firestore, ARCHIVE_COLLECTION, id))));
         } catch (error) {
-          console.error('상품목록 전체 삭제 실패(클라우드):', error);
+          console.error('상품목록 삭제 실패(클라우드):', error);
         }
       })();
     } else {
       setArchivedProducts([]);
     }
-  }, []);
+  }, [archivedProducts]);
 
   // 웹페이지는 브라우저 보안 정책상 chrome:// 주소로 직접 이동시킬 수 없어서(클릭해도
   // 조용히 무시됨), 대신 주소를 클립보드에 복사해 사용자가 새 탭에 붙여넣도록 안내한다.
@@ -2342,6 +2434,10 @@ const App: React.FC = () => {
           onClearAll={handleClearArchivedProducts}
           onUpdate={handleUpdateArchivedProduct}
           onAddManual={handleAddManualArchivedProduct}
+          dateRange={archiveDateRange}
+          onDateRangeChange={setArchiveDateRange}
+          lookbackDays={archiveLookbackDays}
+          onLookbackDaysChange={handleChangeArchiveLookbackDays}
         />
       ) : (
         <div className="w-full max-w-screen-2xl text-gray-900">

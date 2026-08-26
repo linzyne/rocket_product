@@ -31,7 +31,27 @@ interface ProductListPageProps {
   onClearAll: () => void;
   onUpdate: (id: string, updates: Partial<ArchivedProduct>) => void;
   onAddManual: (entry: Omit<ArchivedProduct, 'id' | 'savedAt'>) => void;
+  dateRange: { start: string; end: string };
+  onDateRangeChange: (range: { start: string; end: string }) => void;
+  lookbackDays: number;
+  onLookbackDaysChange: (days: number) => void;
 }
+
+const toLocalDateOnly = (d: Date): string => {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+};
+
+const presetDateRange = (days: number): { start: string; end: string } => {
+  const end = new Date();
+  const start = new Date();
+  start.setDate(start.getDate() - (days - 1));
+  return { start: toLocalDateOnly(start), end: toLocalDateOnly(end) };
+};
+
+const FAR_PAST_DATE = '2000-01-01';
 
 const formatWon = (value: string | number) => `₩ ${(Number(value) || 0).toLocaleString()}`;
 
@@ -41,22 +61,38 @@ const formatDate = (iso: string) => {
   return d.toLocaleString('ko-KR', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' });
 };
 
-const ProductListPage: React.FC<ProductListPageProps> = ({ entries, onBack, onDelete, onClearAll, onUpdate, onAddManual }) => {
+const ProductListPage: React.FC<ProductListPageProps> = ({
+  entries,
+  onBack,
+  onDelete,
+  onClearAll,
+  onUpdate,
+  onAddManual,
+  dateRange,
+  onDateRangeChange,
+  lookbackDays,
+  onLookbackDaysChange,
+}) => {
   const [query, setQuery] = useState('');
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [enlargedEntry, setEnlargedEntry] = useState<ArchivedProduct | null>(null);
   const [showAddForm, setShowAddForm] = useState(false);
+  const [approvedOnly, setApprovedOnly] = useState(false);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
-    const sorted = [...entries].sort((a, b) => (b.savedAt || '').localeCompare(a.savedAt || ''));
-    if (!q) return sorted;
-    return sorted.filter(e => e.productName.toLowerCase().includes(q) || e.url.toLowerCase().includes(q));
-  }, [entries, query]);
+    let list = [...entries].sort((a, b) => (b.savedAt || '').localeCompare(a.savedAt || ''));
+    if (approvedOnly) list = list.filter(e => e.approvalStatus === 'approved');
+    if (q) list = list.filter(e => e.productName.toLowerCase().includes(q) || e.url.toLowerCase().includes(q));
+    return list;
+  }, [entries, query, approvedOnly]);
+
+  const approvedCount = useMemo(() => entries.filter(e => e.approvalStatus === 'approved').length, [entries]);
 
   const handleClearAll = () => {
     if (entries.length === 0) return;
-    if (window.confirm(`저장된 상품 ${entries.length}건을 모두 삭제하시겠습니까? 되돌릴 수 없습니다.`)) {
+    const scopeNote = isFirebaseConfigured ? ' (지금 조회 중인 기간 기준입니다. 기간 밖의 데이터는 남습니다)' : '';
+    if (window.confirm(`저장된 상품 ${entries.length}건을 모두 삭제하시겠습니까?${scopeNote} 되돌릴 수 없습니다.`)) {
       onClearAll();
     }
   };
@@ -89,6 +125,15 @@ const ProductListPage: React.FC<ProductListPageProps> = ({ entries, onBack, onDe
               className="w-full pl-10 pr-3 py-1.5 bg-white border border-gray-300 text-gray-900 text-sm placeholder:text-gray-400 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors"
             />
           </div>
+          <label className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white border border-gray-300 rounded-md text-sm text-gray-700 cursor-pointer whitespace-nowrap flex-shrink-0 select-none">
+            <input
+              type="checkbox"
+              checked={approvedOnly}
+              onChange={e => setApprovedOnly(e.target.checked)}
+              className="w-3.5 h-3.5 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+            />
+            승인된 것만 ({approvedCount})
+          </label>
         </div>
         <div className="flex items-center gap-1.5 flex-wrap justify-center">
           <span
@@ -120,17 +165,74 @@ const ProductListPage: React.FC<ProductListPageProps> = ({ entries, onBack, onDe
         </div>
       </header>
 
+      {isFirebaseConfigured && (
+        <div
+          className="flex flex-wrap items-center gap-2 mb-4 bg-white border border-gray-200 rounded-md px-3 py-2"
+          title="선택한 기간만 클라우드에서 불러와 비용과 로딩 속도를 아낍니다"
+        >
+          <span className="text-xs text-gray-500 flex-shrink-0">조회 기간</span>
+          <input
+            type="date"
+            value={dateRange.start}
+            max={dateRange.end}
+            onChange={e => onDateRangeChange({ ...dateRange, start: e.target.value })}
+            className="px-2 py-1 bg-white border border-gray-300 text-gray-900 text-sm rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+          />
+          <span className="text-gray-400 text-sm">~</span>
+          <input
+            type="date"
+            value={dateRange.end}
+            min={dateRange.start}
+            onChange={e => onDateRangeChange({ ...dateRange, end: e.target.value })}
+            className="px-2 py-1 bg-white border border-gray-300 text-gray-900 text-sm rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+          />
+          <div className="flex items-center gap-1">
+            {[3, 7, 30].map(d => (
+              <button
+                key={d}
+                type="button"
+                onClick={() => onDateRangeChange(presetDateRange(d))}
+                className="px-2 py-1 text-xs bg-white border border-gray-300 text-gray-600 rounded-md hover:bg-gray-50 transition-colors"
+              >
+                최근 {d}일
+              </button>
+            ))}
+            <button
+              type="button"
+              onClick={() => onDateRangeChange({ start: FAR_PAST_DATE, end: toLocalDateOnly(new Date()) })}
+              className="px-2 py-1 text-xs bg-white border border-gray-300 text-gray-600 rounded-md hover:bg-gray-50 transition-colors"
+            >
+              전체
+            </button>
+          </div>
+          <span className="flex-1" />
+          <label className="inline-flex items-center gap-1.5 text-xs text-gray-500 whitespace-nowrap">
+            앱 실행 시 기본으로
+            <input
+              type="number"
+              min={1}
+              value={lookbackDays}
+              onChange={e => onLookbackDaysChange(Number(e.target.value))}
+              className="w-14 px-1.5 py-1 bg-white border border-gray-300 text-gray-900 text-sm rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+            일치 불러오기
+          </label>
+        </div>
+      )}
+
       <p className="text-sm text-gray-500 mb-4">
         상품 행의 별 버튼을 누르거나 상품을 삭제/초기화하면 URL·상품명·공급가·판매가·바코드·대표이미지 썸네일이 여기 남습니다. 원본 이미지·엑셀 파일은 저장되지 않습니다.
       </p>
 
       {entries.length === 0 ? (
         <div className="text-center py-20 bg-white border-2 border-dashed border-gray-200 rounded-xl">
-          <p className="text-gray-400">아직 저장된 상품이 없습니다.</p>
+          <p className="text-gray-400">
+            {isFirebaseConfigured ? '이 조회 기간에 저장된 상품이 없습니다. 기간을 넓혀보세요.' : '아직 저장된 상품이 없습니다.'}
+          </p>
         </div>
       ) : filtered.length === 0 ? (
         <div className="text-center py-20 bg-white border-2 border-dashed border-gray-200 rounded-xl">
-          <p className="text-gray-400">검색 결과가 없습니다.</p>
+          <p className="text-gray-400">{approvedOnly ? '승인된 상품이 없습니다.' : '검색 결과가 없습니다.'}</p>
         </div>
       ) : (
         <div className="space-y-3">
@@ -211,6 +313,7 @@ const emptyManualEntry = () => ({
   importer: '',
   manufacturer: '',
   thumbnailDataUrl: '',
+  approvalStatus: 'pending' as const,
 });
 
 const AddManualEntryModal: React.FC<AddManualEntryModalProps> = ({ onCancel, onSave }) => {
@@ -394,6 +497,28 @@ const ProductListRow: React.FC<ProductListRowProps> = ({ entry, isExpanded, onTo
 
   const [editingField, setEditingField] = useState<EditableAmountField | null>(null);
   const [draftValue, setDraftValue] = useState('');
+  const [thumbLoading, setThumbLoading] = useState(false);
+
+  const handleThumbnailUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+    setThumbLoading(true);
+    try {
+      const dataUrl = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result as string);
+        reader.onerror = () => reject(reader.error);
+        reader.readAsDataURL(file);
+      });
+      const resized = await resizeImageDataUrl(dataUrl);
+      onUpdate({ thumbnailDataUrl: resized });
+    } catch {
+      alert('이미지를 불러오지 못했습니다.');
+    } finally {
+      setThumbLoading(false);
+    }
+  };
 
   const amountValues: Record<EditableAmountField, number> = {
     supplyPrice,
@@ -465,7 +590,12 @@ const ProductListRow: React.FC<ProductListRowProps> = ({ entry, isExpanded, onTo
           {isExpanded ? <ChevronUpIcon /> : <ChevronDownIcon />}
         </span>
 
-        <div className="w-9 h-9 flex-shrink-0 bg-gray-50 rounded-md overflow-hidden border border-gray-200">
+        <label
+          className="relative w-9 h-9 flex-shrink-0 bg-gray-50 rounded-md overflow-hidden border border-gray-200 cursor-pointer group"
+          onClick={e => e.stopPropagation()}
+          title="클릭해서 이미지 업로드"
+        >
+          <input type="file" accept="image/*" className="hidden" onChange={handleThumbnailUpload} />
           {entry.thumbnailDataUrl ? (
             <img src={entry.thumbnailDataUrl} alt={entry.productName} className="w-full h-full object-cover" />
           ) : (
@@ -473,7 +603,14 @@ const ProductListRow: React.FC<ProductListRowProps> = ({ entry, isExpanded, onTo
               <span className="text-[9px] text-gray-300 px-1 text-center leading-tight">이미지<br />없음</span>
             </div>
           )}
-        </div>
+          <div className="absolute inset-0 bg-black/0 group-hover:bg-black/40 flex items-center justify-center transition-colors">
+            {thumbLoading ? (
+              <span className="text-[8px] text-white">로딩중</span>
+            ) : (
+              <span className="text-[8px] text-white opacity-0 group-hover:opacity-100 transition-opacity">변경</span>
+            )}
+          </div>
+        </label>
 
         <div className="w-14 h-9 flex-shrink-0 bg-gray-50 rounded-md flex items-center justify-center overflow-hidden border border-gray-200">
           {entry.barcode ? (
@@ -501,6 +638,23 @@ const ProductListRow: React.FC<ProductListRowProps> = ({ entry, isExpanded, onTo
           {renderAmount('margin', '마진', 'text-amber-700', 'hidden sm:inline-flex')}
         </div>
 
+        <label
+          className={`flex-shrink-0 inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs font-medium whitespace-nowrap cursor-pointer select-none transition-colors ${
+            entry.approvalStatus === 'approved'
+              ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+              : 'bg-gray-50 text-gray-500 border border-gray-200'
+          }`}
+          onClick={e => e.stopPropagation()}
+        >
+          <input
+            type="checkbox"
+            checked={entry.approvalStatus === 'approved'}
+            onChange={e => onUpdate({ approvalStatus: e.target.checked ? 'approved' : 'pending' })}
+            className="w-3.5 h-3.5 rounded border-gray-300 text-emerald-600 focus:ring-emerald-500"
+          />
+          <span className="hidden sm:inline">승인</span>
+        </label>
+
         <button
           type="button"
           onClick={e => { e.stopPropagation(); onDelete(); }}
@@ -514,15 +668,30 @@ const ProductListRow: React.FC<ProductListRowProps> = ({ entry, isExpanded, onTo
 
       {isExpanded && (
         <div className="px-4 pb-4 pt-1 border-t border-gray-100 space-y-3">
-          {entry.thumbnailDataUrl && (
-            <div className="pt-3">
-              <img
-                src={entry.thumbnailDataUrl}
-                alt={entry.productName}
-                className="w-24 h-24 object-cover rounded-md border border-gray-200"
-              />
-            </div>
-          )}
+          <div className="pt-3">
+            <label
+              className="relative w-24 h-24 inline-flex items-center justify-center bg-gray-50 rounded-md border border-gray-200 overflow-hidden cursor-pointer group"
+              title="클릭해서 이미지 업로드"
+            >
+              <input type="file" accept="image/*" className="hidden" onChange={handleThumbnailUpload} />
+              {entry.thumbnailDataUrl ? (
+                <img
+                  src={entry.thumbnailDataUrl}
+                  alt={entry.productName}
+                  className="w-full h-full object-cover"
+                />
+              ) : (
+                <span className="text-[10px] text-gray-300 px-1 text-center leading-tight">이미지<br />없음</span>
+              )}
+              <div className="absolute inset-0 bg-black/0 group-hover:bg-black/40 flex items-center justify-center transition-colors">
+                {thumbLoading ? (
+                  <span className="text-[10px] text-white">로딩중...</span>
+                ) : (
+                  <span className="text-[10px] text-white opacity-0 group-hover:opacity-100 transition-opacity">이미지 변경</span>
+                )}
+              </div>
+            </label>
+          </div>
 
           <div className="flex items-center gap-2 pt-3">
             <span className="text-xs text-gray-400 flex-shrink-0 w-16">URL</span>

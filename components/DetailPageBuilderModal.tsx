@@ -226,15 +226,11 @@ const DetailPageBuilderModal: React.FC<DetailPageBuilderModalProps> = ({ isOpen,
   const [drawObjects, setDrawObjects] = useState<DrawObject[]>([]);
   const eyedropperSupported = typeof window !== 'undefined' && 'EyeDropper' in window;
 
-  // Photos queued for cropping — a single click on one photo queues just that one; the toolbar's
-  // "선택한 사진 크롭" button queues every checked photo instead. The modal steps through the queue
-  // one photo at a time; nothing is written back to `photos` until the *last* one is applied, so
-  // "적용하기" on a multi-photo batch commits every crop in the batch at once (see handleApplyCrop).
-  // Cancelling at any point discards the whole in-progress batch, not just the current photo.
-  const [cropQueue, setCropQueue] = useState<PhotoItem[]>([]);
-  const [cropQueueIndex, setCropQueueIndex] = useState(0);
-  const cropResultsRef = useRef<Record<string, string>>({});
-  const cropTarget = cropQueue[cropQueueIndex] ?? null;
+  // Photos being cropped — a single click on one photo opens just that one; the toolbar's
+  // "선택한 사진 크롭" button opens every checked photo instead. The modal shows them all at once;
+  // one "자르기 적용" click crops the whole batch and writes every result back to `photos` together
+  // (see handleApplyCrop). Cancelling discards the whole batch.
+  const [cropTargets, setCropTargets] = useState<PhotoItem[]>([]);
 
   // Photos checked via the selection checkbox overlay in the preview, for batch-cropping together.
   const [selectedPhotoIds, setSelectedPhotoIds] = useState<Set<string>>(new Set());
@@ -574,26 +570,16 @@ const DetailPageBuilderModal: React.FC<DetailPageBuilderModalProps> = ({ isOpen,
 
   const startCropQueue = (targets: PhotoItem[]) => {
     if (targets.length === 0) return;
-    cropResultsRef.current = {};
-    setCropQueueIndex(0);
-    setCropQueue(targets);
+    setCropTargets(targets);
   };
 
   const cancelCropQueue = () => {
-    cropResultsRef.current = {};
-    setCropQueue([]);
-    setCropQueueIndex(0);
+    setCropTargets([]);
   };
 
-  const handleApplyCrop = (croppedDataUrl: string) => {
-    if (!cropTarget) return;
-    cropResultsRef.current[cropTarget.id] = croppedDataUrl;
-    if (cropQueueIndex < cropQueue.length - 1) {
-      setCropQueueIndex(i => i + 1);
-      return;
-    }
-    // Last (or only) photo in the batch — commit every queued crop to `photos` in one update.
-    const results = cropResultsRef.current;
+  const handleApplyCrop = (results: Record<string, string>) => {
+    // Commit every crop in the batch to `photos` in one update; photos left untouched in the modal
+    // simply won't appear in `results`.
     setPhotos(prev => prev.map(p => (results[p.id] ? { ...p, dataUrl: results[p.id] } : p)));
     setSelectedPhotoIds(new Set());
     cancelCropQueue();
@@ -1731,6 +1717,34 @@ const DetailPageBuilderModal: React.FC<DetailPageBuilderModalProps> = ({ isOpen,
             </div>
 
             <div className="space-y-2 pt-2 border-t border-slate-700">
+              <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">문구 직접 붙여넣기</p>
+              <p className="text-xs text-slate-500 leading-relaxed">
+                "제품명 / 후킹 문구 / &lt;사진&gt; / 특별한점 01~{String(highlightCount).padStart(2, '0')} / 01~{String(featureBlockCount).padStart(2, '0')} / 마무리 문구" 형식으로 직접 작성했거나 ChatGPT/Gemini 등에서 받은 문구를 아래에 붙여넣으면 그대로 배치돼요. 프롬프트를 복사해서 AI 채팅에 먼저 물어봐도 되고(무료, API 호출 없음), 직접 타이핑해도 돼요.
+              </p>
+              <button
+                onClick={handleCopyPrompt}
+                disabled={photos.length === 0}
+                className="w-full flex items-center justify-center gap-2 px-3 py-2 text-sm bg-slate-700 text-slate-100 font-semibold rounded-lg hover:bg-slate-600 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                {promptCopyStatus === 'copied' ? '복사됨!' : 'AI용 프롬프트 복사하기'}
+              </button>
+              <textarea
+                value={pastedText}
+                onChange={e => setPastedText(e.target.value)}
+                placeholder="여기에 문구를 붙여넣거나 직접 입력하세요"
+                rows={14}
+                className="w-full px-2.5 py-2 bg-slate-800 border border-slate-600 rounded-md text-sm text-slate-100 placeholder:text-slate-500 resize-none"
+              />
+              <button
+                onClick={handleApplyPasted}
+                disabled={!pastedText.trim()}
+                className="w-full px-3 py-2 text-sm bg-emerald-700 text-white font-semibold rounded-lg hover:bg-emerald-600 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                붙여넣은 문구 적용
+              </button>
+            </div>
+
+            <div className="space-y-2 pt-2 border-t border-slate-700">
               <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">문구생성하기 (AI 자동 생성)</p>
               <p className="text-xs text-slate-500 leading-relaxed">
                 소구점을 적어두면 더 정확한 문구가 나와요. 스타일 지침은 이름을 붙여 저장해두고 다음에도 골라서 바로 쓸 수 있어요.
@@ -1792,34 +1806,6 @@ const DetailPageBuilderModal: React.FC<DetailPageBuilderModalProps> = ({ isOpen,
               <p className="text-xs text-slate-500 leading-relaxed">
                 현재 설정된 특별한점 {highlightCount}개, 특징 {featureBlockCount}개에 맞춰 생성되고, 생성된 문구는 기존 내용을 덮어써요.
               </p>
-            </div>
-
-            <div className="space-y-2 pt-2 border-t border-slate-700">
-              <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">문구 직접 붙여넣기</p>
-              <p className="text-xs text-slate-500 leading-relaxed">
-                "제품명 / 후킹 문구 / &lt;사진&gt; / 특별한점 01~{String(highlightCount).padStart(2, '0')} / 01~{String(featureBlockCount).padStart(2, '0')} / 마무리 문구" 형식으로 직접 작성했거나 ChatGPT/Gemini 등에서 받은 문구를 아래에 붙여넣으면 그대로 배치돼요. 프롬프트를 복사해서 AI 채팅에 먼저 물어봐도 되고(무료, API 호출 없음), 직접 타이핑해도 돼요.
-              </p>
-              <button
-                onClick={handleCopyPrompt}
-                disabled={photos.length === 0}
-                className="w-full flex items-center justify-center gap-2 px-3 py-2 text-sm bg-slate-700 text-slate-100 font-semibold rounded-lg hover:bg-slate-600 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-              >
-                {promptCopyStatus === 'copied' ? '복사됨!' : 'AI용 프롬프트 복사하기'}
-              </button>
-              <textarea
-                value={pastedText}
-                onChange={e => setPastedText(e.target.value)}
-                placeholder="여기에 문구를 붙여넣거나 직접 입력하세요"
-                rows={14}
-                className="w-full px-2.5 py-2 bg-slate-800 border border-slate-600 rounded-md text-sm text-slate-100 placeholder:text-slate-500 resize-none"
-              />
-              <button
-                onClick={handleApplyPasted}
-                disabled={!pastedText.trim()}
-                className="w-full px-3 py-2 text-sm bg-emerald-700 text-white font-semibold rounded-lg hover:bg-emerald-600 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-              >
-                붙여넣은 문구 적용
-              </button>
             </div>
 
             <div className="space-y-2 pt-2 border-t border-slate-700">
@@ -1920,12 +1906,10 @@ const DetailPageBuilderModal: React.FC<DetailPageBuilderModalProps> = ({ isOpen,
         </div>
       </div>
       <ImageCropModal
-        isOpen={!!cropTarget}
-        imageDataUrl={cropTarget?.dataUrl ?? null}
+        isOpen={cropTargets.length > 0}
+        images={cropTargets.map(p => ({ id: p.id, dataUrl: p.dataUrl }))}
         onCancel={cancelCropQueue}
         onApply={handleApplyCrop}
-        queueIndex={cropQueueIndex}
-        queueTotal={cropQueue.length}
       />
     </div>
   );

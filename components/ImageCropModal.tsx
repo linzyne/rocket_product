@@ -1,16 +1,19 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react';
 import { CloseIcon, CropIcon } from './Icons';
+
+export interface CropSource {
+  id: string;
+  dataUrl: string;
+}
 
 interface ImageCropModalProps {
   isOpen: boolean;
-  imageDataUrl: string | null;
+  // Every photo to crop in this batch. A single-photo crop just passes a one-element array.
+  // All photos are shown at once; the user sets a crop box on each, then one "자르기 적용" click
+  // crops them all together and reports the results keyed by photo id.
+  images: CropSource[] | null;
   onCancel: () => void;
-  onApply: (croppedDataUrl: string) => void;
-  // When cropping a batch of photos (see DetailPageBuilderModal's startCropQueue), these describe
-  // this photo's position in the queue so the modal can show progress and relabel the apply button
-  // ("다음 사진" mid-batch, final apply label on the last one) — undefined/1 for a single photo.
-  queueIndex?: number;
-  queueTotal?: number;
+  onApply: (results: Record<string, string>) => void;
 }
 
 interface Rect {
@@ -84,29 +87,44 @@ const HANDLES: { mode: DragMode; className: string; cursor: string }[] = [
   { mode: 'e', className: 'right-0 top-1/2 -translate-y-1/2', cursor: 'ew-resize' },
 ];
 
-const ImageCropModal: React.FC<ImageCropModalProps> = ({ isOpen, imageDataUrl, onCancel, onApply, queueIndex = 0, queueTotal = 1 }) => {
+const isFullRect = (rect: Rect) => rect.x <= 0.1 && rect.y <= 0.1 && rect.w >= 99.9 && rect.h >= 99.9;
+
+export interface CropEditorHandle {
+  // Returns the cropped data URL, or null when nothing was cropped (box left covering the whole
+  // image, or the image never loaded) so the caller can leave that photo untouched.
+  getResult: () => Promise<{ id: string; dataUrl: string } | null>;
+}
+
+interface CropEditorProps {
+  source: CropSource;
+  aspect: number | null;
+  // Bumped by the parent's "초기화" button; each bump resets this editor's crop box to full frame.
+  resetNonce: number;
+  // true when several photos share the grid, so the editor renders at a smaller height.
+  compact: boolean;
+}
+
+const CropEditor = forwardRef<CropEditorHandle, CropEditorProps>(({ source, aspect, resetNonce, compact }, ref) => {
   const [naturalSize, setNaturalSize] = useState({ width: 0, height: 0 });
   const [rect, setRect] = useState<Rect>({ x: 0, y: 0, w: 100, h: 100 });
-  const [aspect, setAspect] = useState<number | null>(null);
-  const [isApplying, setIsApplying] = useState(false);
 
   const wrapperRef = useRef<HTMLDivElement>(null);
   const dragRef = useRef<{ mode: DragMode; anchor: { x: number; y: number }; start: { x: number; y: number } } | null>(null);
 
-  // Resets the crop box whenever a new photo is shown (either a fresh open, or — for a batch —
-  // stepping to the next photo in the queue while the modal stays open). This runs during render
-  // (the "adjusting state during render" pattern) rather than in a useEffect: a useEffect fires
-  // *after* commit, but a cached/already-decoded data URL can fire the <img>'s load event
-  // synchronously during that same commit, so an effect-based reset would race it and could clobber
-  // the real naturalSize with stale zeros depending on timing.
-  const [prevKey, setPrevKey] = useState({ isOpen, imageDataUrl });
-  if (prevKey.isOpen !== isOpen || prevKey.imageDataUrl !== imageDataUrl) {
-    setPrevKey({ isOpen, imageDataUrl });
-    if (isOpen) {
-      setNaturalSize({ width: 0, height: 0 });
-      setRect({ x: 0, y: 0, w: 100, h: 100 });
-      setAspect(null);
+  // Refit the box when the shared aspect ratio changes (runs during render — see the note in the
+  // parent — so a synchronously-decoded image can't race an effect-based refit).
+  const [prevAspect, setPrevAspect] = useState<number | null>(aspect);
+  if (prevAspect !== aspect) {
+    setPrevAspect(aspect);
+    if (aspect !== null && naturalSize.width && naturalSize.height) {
+      setRect(prev => fitRectToAspect(prev, aspect, naturalSize));
     }
+  }
+
+  const [prevReset, setPrevReset] = useState(resetNonce);
+  if (prevReset !== resetNonce) {
+    setPrevReset(resetNonce);
+    setRect({ x: 0, y: 0, w: 100, h: 100 });
   }
 
   const handleImgLoad = (e: React.SyntheticEvent<HTMLImageElement>) => {
@@ -122,13 +140,6 @@ const ImageCropModal: React.FC<ImageCropModalProps> = ({ isOpen, imageDataUrl, o
       x: clamp(((clientX - r.left) / r.width) * 100, 0, 100),
       y: clamp(((clientY - r.top) / r.height) * 100, 0, 100),
     };
-  };
-
-  const applyAspect = (next: number | null) => {
-    setAspect(next);
-    if (next !== null && naturalSize.width && naturalSize.height) {
-      setRect(prev => fitRectToAspect(prev, next, naturalSize));
-    }
   };
 
   const beginDrag = (mode: DragMode) => (e: React.PointerEvent) => {
@@ -219,28 +230,118 @@ const ImageCropModal: React.FC<ImageCropModalProps> = ({ isOpen, imageDataUrl, o
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [aspect, naturalSize, rect.w, rect.h]);
 
-  const handleReset = () => {
-    setAspect(null);
-    setRect({ x: 0, y: 0, w: 100, h: 100 });
-  };
+  useImperativeHandle(
+    ref,
+    () => ({
+      getResult: async () => {
+        if (!naturalSize.width || !naturalSize.height || isFullRect(rect)) return null;
+        const img = await loadImage(source.dataUrl);
+        const sx = Math.round((rect.x / 100) * naturalSize.width);
+        const sy = Math.round((rect.y / 100) * naturalSize.height);
+        const sw = Math.max(1, Math.round((rect.w / 100) * naturalSize.width));
+        const sh = Math.max(1, Math.round((rect.h / 100) * naturalSize.height));
+        const canvas = document.createElement('canvas');
+        canvas.width = sw;
+        canvas.height = sh;
+        const ctx = canvas.getContext('2d')!;
+        ctx.drawImage(img, sx, sy, sw, sh, 0, 0, sw, sh);
+        const isJpeg = source.dataUrl.startsWith('data:image/jpeg') || source.dataUrl.startsWith('data:image/jpg');
+        const croppedDataUrl = isJpeg ? canvas.toDataURL('image/jpeg', 0.92) : canvas.toDataURL('image/png');
+        return { id: source.id, dataUrl: croppedDataUrl };
+      },
+    }),
+    [naturalSize, rect, source],
+  );
+
+  const imgClass = compact ? 'max-w-full max-h-[280px]' : 'max-w-full max-h-[55vh]';
+
+  return (
+    <div
+      className={`bg-slate-950/60 rounded-xl border border-slate-700 flex items-center justify-center p-3 overflow-auto ${
+        compact ? 'min-h-[200px]' : 'min-h-[280px] flex-1'
+      }`}
+    >
+      <div ref={wrapperRef} className="relative inline-block max-w-full select-none touch-none">
+        <img
+          src={source.dataUrl}
+          onLoad={handleImgLoad}
+          alt="자를 이미지"
+          className={`block object-contain rounded-md pointer-events-none ${imgClass}`}
+          draggable={false}
+        />
+        {naturalSize.width > 0 && (
+          <>
+            {/* Dim everything outside the crop rect */}
+            <div
+              className="absolute inset-0 bg-black/55 pointer-events-none"
+              style={{
+                clipPath: `polygon(0% 0%, 0% 100%, ${rect.x}% 100%, ${rect.x}% ${rect.y}%, ${rect.x + rect.w}% ${rect.y}%, ${rect.x + rect.w}% ${rect.y + rect.h}%, ${rect.x}% ${rect.y + rect.h}%, ${rect.x}% 100%, 100% 100%, 100% 0%)`,
+              }}
+            />
+            <div
+              onPointerDown={beginDrag('move')}
+              className="absolute border-2 border-purple-400 cursor-move"
+              style={{
+                left: `${rect.x}%`,
+                top: `${rect.y}%`,
+                width: `${rect.w}%`,
+                height: `${rect.h}%`,
+                boxShadow: '0 0 0 9999px transparent',
+              }}
+            >
+              {/* Rule-of-thirds guide lines */}
+              <div className="absolute inset-0 pointer-events-none opacity-60">
+                <div className="absolute left-1/3 top-0 bottom-0 w-px bg-white/50" />
+                <div className="absolute left-2/3 top-0 bottom-0 w-px bg-white/50" />
+                <div className="absolute top-1/3 left-0 right-0 h-px bg-white/50" />
+                <div className="absolute top-2/3 left-0 right-0 h-px bg-white/50" />
+              </div>
+              {HANDLES.map(h => (
+                <div
+                  key={h.mode}
+                  onPointerDown={beginDrag(h.mode)}
+                  className={`absolute w-3.5 h-3.5 bg-purple-400 border-2 border-white rounded-full -m-1.5 ${h.className}`}
+                  style={{ cursor: h.cursor }}
+                />
+              ))}
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  );
+});
+
+CropEditor.displayName = 'CropEditor';
+
+const ImageCropModal: React.FC<ImageCropModalProps> = ({ isOpen, images, onCancel, onApply }) => {
+  const [aspect, setAspect] = useState<number | null>(null);
+  const [resetNonce, setResetNonce] = useState(0);
+  const [isApplying, setIsApplying] = useState(false);
+  const editorsRef = useRef<Record<string, CropEditorHandle | null>>({});
+
+  const list = useMemo(() => images ?? [], [images]);
+
+  // Reset the shared controls each time the modal opens (see ImageCropModal in the single-photo
+  // days — the crop box reset lives per-editor now, keyed off `resetNonce`).
+  const [prevOpen, setPrevOpen] = useState(isOpen);
+  if (prevOpen !== isOpen) {
+    setPrevOpen(isOpen);
+    if (isOpen) {
+      setAspect(null);
+      setResetNonce(n => n + 1);
+    }
+  }
 
   const handleApply = async () => {
-    if (!imageDataUrl || !naturalSize.width || !naturalSize.height) return;
     setIsApplying(true);
     try {
-      const img = await loadImage(imageDataUrl);
-      const sx = Math.round((rect.x / 100) * naturalSize.width);
-      const sy = Math.round((rect.y / 100) * naturalSize.height);
-      const sw = Math.max(1, Math.round((rect.w / 100) * naturalSize.width));
-      const sh = Math.max(1, Math.round((rect.h / 100) * naturalSize.height));
-      const canvas = document.createElement('canvas');
-      canvas.width = sw;
-      canvas.height = sh;
-      const ctx = canvas.getContext('2d')!;
-      ctx.drawImage(img, sx, sy, sw, sh, 0, 0, sw, sh);
-      const isJpeg = imageDataUrl.startsWith('data:image/jpeg') || imageDataUrl.startsWith('data:image/jpg');
-      const croppedDataUrl = isJpeg ? canvas.toDataURL('image/jpeg', 0.92) : canvas.toDataURL('image/png');
-      onApply(croppedDataUrl);
+      const results: Record<string, string> = {};
+      for (const item of list) {
+        const r = await editorsRef.current[item.id]?.getResult();
+        if (r) results[r.id] = r.dataUrl;
+      }
+      onApply(results);
     } catch (err) {
       console.error('이미지 자르기 실패:', err);
       alert('이미지를 자르는 중 오류가 발생했습니다.');
@@ -249,9 +350,9 @@ const ImageCropModal: React.FC<ImageCropModalProps> = ({ isOpen, imageDataUrl, o
     }
   };
 
-  const isFullRect = useMemo(() => rect.x <= 0.1 && rect.y <= 0.1 && rect.w >= 99.9 && rect.h >= 99.9, [rect]);
+  if (!isOpen || list.length === 0) return null;
 
-  if (!isOpen || !imageDataUrl) return null;
+  const multi = list.length > 1;
 
   return (
     <div
@@ -264,18 +365,16 @@ const ImageCropModal: React.FC<ImageCropModalProps> = ({ isOpen, imageDataUrl, o
       }}
     >
       <div
-        className="bg-slate-900 rounded-2xl shadow-2xl max-w-3xl w-full flex flex-col max-h-[95vh] overflow-hidden"
+        className={`bg-slate-900 rounded-2xl shadow-2xl w-full flex flex-col max-h-[95vh] overflow-hidden ${
+          multi ? 'max-w-5xl' : 'max-w-3xl'
+        }`}
         onClick={e => e.stopPropagation()}
       >
         <div className="flex items-center justify-between px-6 pt-5">
           <h2 className="text-lg font-bold text-slate-100 flex items-center gap-2">
             <CropIcon className="text-purple-400 w-5 h-5" />
             사진 자르기
-            {queueTotal > 1 && (
-              <span className="text-sm font-normal text-purple-400 tabular-nums">
-                ({queueIndex + 1}/{queueTotal})
-              </span>
-            )}
+            {multi && <span className="text-sm font-normal text-purple-400 tabular-nums">({list.length}장)</span>}
           </h2>
           <button onClick={onCancel} className="text-slate-400 hover:text-slate-200 transition-colors" aria-label="Close modal">
             <CloseIcon />
@@ -283,62 +382,33 @@ const ImageCropModal: React.FC<ImageCropModalProps> = ({ isOpen, imageDataUrl, o
         </div>
 
         <div className="flex-1 overflow-auto px-6 py-5 flex flex-col gap-4 min-h-0">
-          <div className="flex-1 min-h-[280px] max-h-[60vh] bg-slate-950/60 rounded-xl border border-slate-700 flex items-center justify-center p-4 overflow-auto">
-            <div ref={wrapperRef} className="relative inline-block max-w-full max-h-[55vh] select-none touch-none">
-              <img
-                src={imageDataUrl}
-                onLoad={handleImgLoad}
-                alt="자를 이미지"
-                className="block max-w-full max-h-[55vh] object-contain rounded-md pointer-events-none"
-                draggable={false}
+          {multi && (
+            <p className="text-xs text-slate-400">
+              각 사진에서 자를 영역을 지정한 뒤 아래 <span className="text-slate-200 font-semibold">자르기 적용</span>을
+              한 번 누르면 모든 사진이 한꺼번에 잘립니다. 영역을 건드리지 않은 사진은 그대로 유지됩니다.
+            </p>
+          )}
+          <div className={multi ? 'grid grid-cols-1 md:grid-cols-2 gap-4' : 'flex flex-col flex-1 min-h-0'}>
+            {list.map(item => (
+              <CropEditor
+                key={item.id}
+                ref={el => {
+                  editorsRef.current[item.id] = el;
+                }}
+                source={item}
+                aspect={aspect}
+                resetNonce={resetNonce}
+                compact={multi}
               />
-              {naturalSize.width > 0 && (
-                <>
-                  {/* Dim everything outside the crop rect */}
-                  <div
-                    className="absolute inset-0 bg-black/55 pointer-events-none"
-                    style={{
-                      clipPath: `polygon(0% 0%, 0% 100%, ${rect.x}% 100%, ${rect.x}% ${rect.y}%, ${rect.x + rect.w}% ${rect.y}%, ${rect.x + rect.w}% ${rect.y + rect.h}%, ${rect.x}% ${rect.y + rect.h}%, ${rect.x}% 100%, 100% 100%, 100% 0%)`,
-                    }}
-                  />
-                  <div
-                    onPointerDown={beginDrag('move')}
-                    className="absolute border-2 border-purple-400 cursor-move"
-                    style={{
-                      left: `${rect.x}%`,
-                      top: `${rect.y}%`,
-                      width: `${rect.w}%`,
-                      height: `${rect.h}%`,
-                      boxShadow: '0 0 0 9999px transparent',
-                    }}
-                  >
-                    {/* Rule-of-thirds guide lines */}
-                    <div className="absolute inset-0 pointer-events-none opacity-60">
-                      <div className="absolute left-1/3 top-0 bottom-0 w-px bg-white/50" />
-                      <div className="absolute left-2/3 top-0 bottom-0 w-px bg-white/50" />
-                      <div className="absolute top-1/3 left-0 right-0 h-px bg-white/50" />
-                      <div className="absolute top-2/3 left-0 right-0 h-px bg-white/50" />
-                    </div>
-                    {HANDLES.map(h => (
-                      <div
-                        key={h.mode}
-                        onPointerDown={beginDrag(h.mode)}
-                        className={`absolute w-3.5 h-3.5 bg-purple-400 border-2 border-white rounded-full -m-1.5 ${h.className}`}
-                        style={{ cursor: h.cursor }}
-                      />
-                    ))}
-                  </div>
-                </>
-              )}
-            </div>
+            ))}
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
-            <span className="text-xs text-slate-400 flex-shrink-0">비율</span>
+            <span className="text-xs text-slate-400 flex-shrink-0">비율{multi ? ' (전체 적용)' : ''}</span>
             {ASPECT_OPTIONS.map(opt => (
               <button
                 key={opt.label}
-                onClick={() => applyAspect(opt.value)}
+                onClick={() => setAspect(opt.value)}
                 className={`px-3 py-1.5 text-xs rounded-md border transition-colors ${
                   aspect === opt.value
                     ? 'bg-purple-600 border-purple-500 text-white'
@@ -349,26 +419,28 @@ const ImageCropModal: React.FC<ImageCropModalProps> = ({ isOpen, imageDataUrl, o
               </button>
             ))}
             <button
-              onClick={handleReset}
-              disabled={isFullRect && aspect === null}
-              className="ml-auto px-3 py-1.5 text-xs bg-slate-700 text-slate-200 rounded-md hover:bg-slate-600 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+              onClick={() => {
+                setAspect(null);
+                setResetNonce(n => n + 1);
+              }}
+              className="ml-auto px-3 py-1.5 text-xs bg-slate-700 text-slate-200 rounded-md hover:bg-slate-600 transition-colors"
             >
-              초기화
+              전체 초기화
             </button>
           </div>
         </div>
 
         <div className="flex items-center justify-end gap-2 px-6 py-4 border-t border-slate-700">
           <button onClick={onCancel} className="px-4 py-2 text-sm bg-slate-700 text-slate-300 font-semibold rounded-lg hover:bg-slate-600 transition-colors">
-            {queueTotal > 1 ? '전체 취소' : '취소'}
+            취소
           </button>
           <button
             onClick={handleApply}
-            disabled={!naturalSize.width || isApplying}
+            disabled={isApplying}
             className="flex items-center gap-1.5 px-4 py-2 text-sm bg-purple-600 text-white font-semibold rounded-lg hover:bg-purple-500 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
           >
             <CropIcon className="h-4 w-4" />
-            {queueTotal > 1 ? (queueIndex < queueTotal - 1 ? '다음 사진 →' : '모두 적용') : '자르기 적용'}
+            {isApplying ? '적용 중…' : multi ? `${list.length}장 자르기 적용` : '자르기 적용'}
           </button>
         </div>
       </div>

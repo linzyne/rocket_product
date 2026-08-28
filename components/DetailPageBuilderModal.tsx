@@ -67,9 +67,10 @@ const SECTION_GAP = 70;
 // Numbered feature blocks (01~0N) that share the uploaded photos left over after the fixed
 // hero/closing slots — see distributePhotos below. Count is user-adjustable (see featureBlockCount).
 
-// Fonts already loaded in index.html (Pretendard/Paperlogy via jsdelivr, the rest via Google Fonts).
+// Fonts already loaded in index.html (Pretendard/Paperlogy/NanumSquareRound via jsdelivr, the rest via Google Fonts).
 const FONT_OPTIONS = [
   { label: 'Paperlogy (기본)', value: 'Paperlogy' },
+  { label: '나눔스퀘어라운드', value: 'Nanum Square Round' },
   { label: 'Pretendard', value: 'Pretendard' },
   { label: 'Noto Sans KR', value: 'Noto Sans KR' },
   { label: 'Black Han Sans', value: 'Black Han Sans' },
@@ -779,8 +780,8 @@ const DetailPageBuilderModal: React.FC<DetailPageBuilderModalProps> = ({ isOpen,
         await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
       }
       await Promise.all([
-        document.fonts.load('700 89px "Paperlogy"').catch(() => undefined),
-        document.fonts.load('400 46px "Paperlogy"').catch(() => undefined),
+        document.fonts.load(`700 89px "${templateStyle.fontFamily}"`).catch(() => undefined),
+        document.fonts.load(`400 46px "${templateStyle.fontFamily}"`).catch(() => undefined),
       ]);
       // previewRef sits inside a scrollable panel; without explicit width/height html2canvas
       // only captures the currently-scrolled-into-view slice instead of the full page.

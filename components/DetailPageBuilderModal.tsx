@@ -1709,19 +1709,10 @@ const DetailPageBuilderModal: React.FC<DetailPageBuilderModalProps> = ({ isOpen,
                     );
                   })}
               </div>
-              <p className="text-xs text-slate-500 leading-relaxed">
-                썸네일이나 미리보기 안에서 사진을 드래그하면 순서를 바꿀 수 있어요. 첫 번째 사진은 히어로, 마지막 사진은 마무리 문구 위에 고정되고, 그 사이 사진들은 특징 01~03 자리에 최대한 고르게 나뉘어 들어가요. + 타일을 클릭한 뒤 Ctrl+V(⌘V)로 복사한 이미지를 바로 붙여넣을 수도 있어요. {groupProducts.length > 1
-                  ? '별 아이콘을 누르면 그 사진을 어느 옵션의 대표이미지로 쓸지 고를 수 있어요(옵션마다 다른 사진을 지정할 수 있어요).'
-                  : `별 아이콘을 누르면 그 사진이 대표이미지(${product?.thumbnailFile || '순번s.png'})로 저장돼요.`}
-                {' '}상세페이지는 저장하면 이 상품의 옵션 {groupProducts.length}개 모두에 똑같이 적용돼요.
-              </p>
             </div>
 
             <div className="space-y-2 pt-2 border-t border-slate-700">
               <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">문구 직접 붙여넣기</p>
-              <p className="text-xs text-slate-500 leading-relaxed">
-                "제품명 / 후킹 문구 / &lt;사진&gt; / 특별한점 01~{String(highlightCount).padStart(2, '0')} / 01~{String(featureBlockCount).padStart(2, '0')} / 마무리 문구" 형식으로 직접 작성했거나 ChatGPT/Gemini 등에서 받은 문구를 아래에 붙여넣으면 그대로 배치돼요. 프롬프트를 복사해서 AI 채팅에 먼저 물어봐도 되고(무료, API 호출 없음), 직접 타이핑해도 돼요.
-              </p>
               <button
                 onClick={handleCopyPrompt}
                 disabled={photos.length === 0}
@@ -1743,70 +1734,6 @@ const DetailPageBuilderModal: React.FC<DetailPageBuilderModalProps> = ({ isOpen,
               >
                 붙여넣은 문구 적용
               </button>
-            </div>
-
-            <div className="space-y-2 pt-2 border-t border-slate-700">
-              <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">문구생성하기 (AI 자동 생성)</p>
-              <p className="text-xs text-slate-500 leading-relaxed">
-                소구점을 적어두면 더 정확한 문구가 나와요. 스타일 지침은 이름을 붙여 저장해두고 다음에도 골라서 바로 쓸 수 있어요.
-              </p>
-              <textarea
-                value={sellingPoints}
-                onChange={e => setSellingPoints(e.target.value)}
-                placeholder="소구점 메모 (예: 방수, 초경량, 3중 스티칭 등 쉼표로 구분)"
-                rows={2}
-                className="w-full px-2.5 py-2 bg-slate-800 border border-slate-600 rounded-md text-sm text-slate-100 placeholder:text-slate-500 resize-none"
-              />
-              <div className="flex items-center gap-2">
-                <select
-                  value={selectedPromptId}
-                  onChange={e => handleSelectPrompt(e.target.value)}
-                  className="flex-1 px-2 py-1.5 bg-slate-800 border border-slate-600 rounded-md text-sm text-slate-100"
-                >
-                  <option value="">직접 입력 (저장 안 함)</option>
-                  {savedPrompts.map(p => (
-                    <option key={p.id} value={p.id}>{p.name}</option>
-                  ))}
-                </select>
-                {selectedPromptId && (
-                  <button
-                    onClick={handleDeleteSelectedPrompt}
-                    title="선택한 프롬프트 삭제"
-                    className="w-8 h-8 flex-shrink-0 flex items-center justify-center rounded-md bg-slate-700 text-slate-300 hover:bg-red-600 hover:text-white transition-colors [&_svg]:h-3.5 [&_svg]:w-3.5"
-                  >
-                    <TrashIcon />
-                  </button>
-                )}
-              </div>
-              <textarea
-                value={promptInstruction}
-                onChange={e => setPromptInstruction(e.target.value)}
-                placeholder="문구 스타일/톤 지침 (예: 20대 여성 타깃, 친근하고 발랄한 말투로 작성해줘)"
-                rows={3}
-                className="w-full px-2.5 py-2 bg-slate-800 border border-slate-600 rounded-md text-sm text-slate-100 placeholder:text-slate-500 resize-none"
-              />
-              <button
-                onClick={handleSaveCurrentPrompt}
-                disabled={!promptInstruction.trim()}
-                className="w-full px-3 py-1.5 text-xs bg-slate-700 text-slate-100 font-semibold rounded-lg hover:bg-slate-600 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-              >
-                이름 지정해서 프롬프트 저장
-              </button>
-              {copyGenStatus === 'error' && (
-                <p className="text-xs text-red-400">{copyGenError}</p>
-              )}
-              <button
-                onClick={handleGenerateCopy}
-                disabled={copyGenStatus === 'loading' || !product}
-                className="w-full flex items-center justify-center gap-2 px-3 py-2 text-sm bg-indigo-600 text-white font-semibold rounded-lg hover:bg-indigo-500 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-              >
-                {copyGenStatus === 'loading'
-                  ? <><SpinnerIcon className="h-4 w-4 animate-spin" /> 생성 중...</>
-                  : <><SparklesIcon className="h-4 w-4" /> 문구생성하기</>}
-              </button>
-              <p className="text-xs text-slate-500 leading-relaxed">
-                현재 설정된 특별한점 {highlightCount}개, 특징 {featureBlockCount}개에 맞춰 생성되고, 생성된 문구는 기존 내용을 덮어써요.
-              </p>
             </div>
 
             <div className="space-y-2 pt-2 border-t border-slate-700">
@@ -1882,6 +1809,70 @@ const DetailPageBuilderModal: React.FC<DetailPageBuilderModalProps> = ({ isOpen,
                   +
                 </button>
               </div>
+            </div>
+
+            <div className="space-y-2 pt-2 border-t border-slate-700">
+              <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">문구생성하기 (AI 자동 생성)</p>
+              <p className="text-xs text-slate-500 leading-relaxed">
+                소구점을 적어두면 더 정확한 문구가 나와요. 스타일 지침은 이름을 붙여 저장해두고 다음에도 골라서 바로 쓸 수 있어요.
+              </p>
+              <textarea
+                value={sellingPoints}
+                onChange={e => setSellingPoints(e.target.value)}
+                placeholder="소구점 메모 (예: 방수, 초경량, 3중 스티칭 등 쉼표로 구분)"
+                rows={2}
+                className="w-full px-2.5 py-2 bg-slate-800 border border-slate-600 rounded-md text-sm text-slate-100 placeholder:text-slate-500 resize-none"
+              />
+              <div className="flex items-center gap-2">
+                <select
+                  value={selectedPromptId}
+                  onChange={e => handleSelectPrompt(e.target.value)}
+                  className="flex-1 px-2 py-1.5 bg-slate-800 border border-slate-600 rounded-md text-sm text-slate-100"
+                >
+                  <option value="">직접 입력 (저장 안 함)</option>
+                  {savedPrompts.map(p => (
+                    <option key={p.id} value={p.id}>{p.name}</option>
+                  ))}
+                </select>
+                {selectedPromptId && (
+                  <button
+                    onClick={handleDeleteSelectedPrompt}
+                    title="선택한 프롬프트 삭제"
+                    className="w-8 h-8 flex-shrink-0 flex items-center justify-center rounded-md bg-slate-700 text-slate-300 hover:bg-red-600 hover:text-white transition-colors [&_svg]:h-3.5 [&_svg]:w-3.5"
+                  >
+                    <TrashIcon />
+                  </button>
+                )}
+              </div>
+              <textarea
+                value={promptInstruction}
+                onChange={e => setPromptInstruction(e.target.value)}
+                placeholder="문구 스타일/톤 지침 (예: 20대 여성 타깃, 친근하고 발랄한 말투로 작성해줘)"
+                rows={3}
+                className="w-full px-2.5 py-2 bg-slate-800 border border-slate-600 rounded-md text-sm text-slate-100 placeholder:text-slate-500 resize-none"
+              />
+              <button
+                onClick={handleSaveCurrentPrompt}
+                disabled={!promptInstruction.trim()}
+                className="w-full px-3 py-1.5 text-xs bg-slate-700 text-slate-100 font-semibold rounded-lg hover:bg-slate-600 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                이름 지정해서 프롬프트 저장
+              </button>
+              {copyGenStatus === 'error' && (
+                <p className="text-xs text-red-400">{copyGenError}</p>
+              )}
+              <button
+                onClick={handleGenerateCopy}
+                disabled={copyGenStatus === 'loading' || !product}
+                className="w-full flex items-center justify-center gap-2 px-3 py-2 text-sm bg-indigo-600 text-white font-semibold rounded-lg hover:bg-indigo-500 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                {copyGenStatus === 'loading'
+                  ? <><SpinnerIcon className="h-4 w-4 animate-spin" /> 생성 중...</>
+                  : <><SparklesIcon className="h-4 w-4" /> 문구생성하기</>}
+              </button>
+              <p className="text-xs text-slate-500 leading-relaxed">
+                현재 설정된 특별한점 {highlightCount}개, 특징 {featureBlockCount}개에 맞춰 생성되고, 생성된 문구는 기존 내용을 덮어써요.
+              </p>
             </div>
           </div>
         </div>

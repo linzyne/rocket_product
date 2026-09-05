@@ -4,7 +4,7 @@ import { Product, ArchivedProduct } from './types';
 import ProductRow from './components/ProductRow';
 import ProductGroupSummary from './components/ProductGroupSummary';
 import ProductListPage from './components/ProductListPage';
-import { PlusIcon, DownloadIcon, CloseIcon, BroomIcon, SearchIcon, DocumentAddIcon, SaveIcon, CameraIcon, SettingsIcon, TagIcon, CheckIcon, ArchiveIcon } from './components/Icons';
+import { PlusIcon, DownloadIcon, CloseIcon, BroomIcon, SearchIcon, DocumentAddIcon, SaveIcon, CameraIcon, SettingsIcon, TagIcon, CheckIcon, ArchiveIcon, BrushIcon } from './components/Icons';
 import ProductLabel from './components/ProductLabel';
 import BarcodeLabel from './components/BarcodeLabel';
 import MarginCalculatorModal from './components/MarginCalculatorModal';
@@ -409,7 +409,10 @@ const App: React.FC = () => {
   const [detailPageBuilderState, setDetailPageBuilderState] = useState<{
     isOpen: boolean;
     product: Product | null;
-  }>({ isOpen: false, product: null });
+    // 헤더의 "상페작업" 버튼으로 연 경우 — 상품 목록에 없는 임시 상품이라 저장 결과를 되돌려
+    // 넣을 행이 없다. 그래서 저장은 목록 반영 대신 파일로 바로 내려받는 것으로 끝낸다.
+    standalone: boolean;
+  }>({ isOpen: false, product: null, standalone: false });
 
   const labelRef = useRef<HTMLDivElement>(null);
   const barcodeLabelRef = useRef<HTMLDivElement>(null);
@@ -2296,11 +2299,18 @@ const App: React.FC = () => {
 
   // Detail Page Builder Handlers
   const openDetailPageBuilder = useCallback((product: Product) => {
-    setDetailPageBuilderState({ isOpen: true, product });
+    setDetailPageBuilderState({ isOpen: true, product, standalone: false });
+  }, []);
+
+  // 제안서와 상관없는 제품의 상세페이지도 만들 수 있게, 상품 목록에 행을 추가하지 않고 빈 임시
+  // 상품으로 빌더만 연다. 번호를 주지 않아 파일명(001.png 등)도 비워두므로, 저장 파일명은
+  // 입력한 제품명을 따라간다(handleSaveFromDetailPageBuilder 참고).
+  const openStandaloneDetailPageBuilder = useCallback(() => {
+    setDetailPageBuilderState({ isOpen: true, product: createNewProduct(), standalone: true });
   }, []);
 
   const closeDetailPageBuilder = useCallback(() => {
-    setDetailPageBuilderState({ isOpen: false, product: null });
+    setDetailPageBuilderState({ isOpen: false, product: null, standalone: false });
   }, []);
 
   // 같은 URL을 공유하는 옵션들(=하나의 상품 그룹)을 하나의 상세페이지로 함께 관리하기 위해, 빌더를
@@ -2308,10 +2318,24 @@ const App: React.FC = () => {
   // 저장하고, 대표이미지만 옵션별로 다르게 지정할 수 있게 한다.
   const getGroupProducts = useCallback((product: Product) => {
     const key = getProductGroupKey(product);
-    return products.filter(p => getProductGroupKey(p) === key);
+    const group = products.filter(p => getProductGroupKey(p) === key);
+    // 상품 목록에 없는 임시 상품(헤더에서 바로 연 상세페이지)은 어느 그룹에도 안 걸리므로,
+    // 빈 배열 대신 자기 자신 하나짜리 그룹으로 다룬다(빌더는 최소 한 개를 전제로 한다).
+    return group.length > 0 ? group : [product];
   }, [products]);
 
-  const handleSaveFromDetailPageBuilder = useCallback((field: 'thumbnailDataUrl' | 'detailDataUrl' | 'detailFile', value: string) => {
+  const handleSaveFromDetailPageBuilder = useCallback(async (field: 'thumbnailDataUrl' | 'detailDataUrl' | 'detailFile', value: string) => {
+    // 임시 상품이면 값을 되돌려 넣을 행이 없으므로, 저장 = 완성된 상세페이지를 파일로 내려받기.
+    if (detailPageBuilderState.standalone) {
+      if (field !== 'detailDataUrl') return;
+      const product = detailPageBuilderState.product;
+      const baseName = (product?.productName || '').trim() || 'detail_page';
+      // 용량 때문에 JPEG로 대체돼 오는 경우가 있어(빌더의 captureImage 참고) 확장자를 맞춰준다.
+      const extension = value.startsWith('data:image/jpeg') ? 'jpg' : 'png';
+      await saveDataUrlInProductFolder(value, productFolderName(product), `${baseName}.${extension}`);
+      closeDetailPageBuilder();
+      return;
+    }
     if (detailPageBuilderState.product) {
       if (field === 'detailDataUrl' || field === 'detailFile') {
         // 상세페이지(이미지/파일명)는 이 상품 하나가 아니라 같은 그룹의 옵션 전체에 동일하게 적용한다.
@@ -2330,13 +2354,22 @@ const App: React.FC = () => {
       }
     }
     if (field !== 'detailFile') closeDetailPageBuilder();
-  }, [detailPageBuilderState.product, handleProductChange, closeDetailPageBuilder, getGroupProducts]);
+  }, [detailPageBuilderState.product, detailPageBuilderState.standalone, handleProductChange, closeDetailPageBuilder, getGroupProducts]);
 
   // 사진 갤러리에서 특정 사진을 특정 옵션의 대표이미지로 지정한다(옵션마다 다른 사진을 쓸 수 있게).
   // 대표이미지 지정은 상세페이지를 계속 작업 중인 상태에서의 부수 동작이라 모달을 닫지 않는다.
   const handleSaveThumbnailFromDetailPageBuilder = useCallback((productId: string, dataUrl: string) => {
+    // 임시 상품은 products에 없으니 모달이 들고 있는 사본을 직접 갱신해야 지정 표시가 뜬다.
+    if (detailPageBuilderState.standalone) {
+      setDetailPageBuilderState(prev =>
+        prev.product && prev.product.id === productId
+          ? { ...prev, product: { ...prev.product, thumbnailDataUrl: dataUrl } }
+          : prev
+      );
+      return;
+    }
     handleProductChange(productId, 'thumbnailDataUrl', dataUrl);
-  }, [handleProductChange]);
+  }, [detailPageBuilderState.standalone, handleProductChange]);
 
   const filteredProducts = products.filter(product => {
     if (!searchQuery.trim()) return true;
@@ -2425,6 +2458,14 @@ const App: React.FC = () => {
                 >
                     <PlusIcon />
                     <span className="hidden sm:inline">상품 추가</span>
+                </button>
+                <button
+                    onClick={openStandaloneDetailPageBuilder}
+                    className="inline-flex items-center justify-center gap-1.5 px-3 py-1.5 bg-white border border-gray-300 text-gray-700 text-sm font-medium rounded-md hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-400 transition-colors [&_svg]:h-4 [&_svg]:w-4"
+                    title="상세페이지만 따로 만듭니다 (상품 목록과 무관, 완성하면 이미지 파일로 저장)"
+                >
+                    <BrushIcon />
+                    <span className="hidden sm:inline">상페작업</span>
                 </button>
                 <div className="relative flex-1 sm:max-w-xs">
                     <span className="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none">
@@ -2810,6 +2851,8 @@ const App: React.FC = () => {
         groupProducts={detailPageBuilderState.product ? getGroupProducts(detailPageBuilderState.product) : []}
         onSave={handleSaveFromDetailPageBuilder}
         onSaveThumbnail={handleSaveThumbnailFromDetailPageBuilder}
+        // 헤더의 "상페작업"으로 연 독립 상세페이지는 김치 템플릿으로, 상품등록에서 연 것은 기존 템플릿 그대로.
+        templateId={detailPageBuilderState.standalone ? 'kimchi' : 'basic'}
       />
     </div>
   );

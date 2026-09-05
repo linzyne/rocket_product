@@ -15,3 +15,10 @@ export const withTimeout = <T,>(promise: Promise<T>, ms: number, label: string):
     promise,
     new Promise<T>((_, reject) => setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms)),
   ]);
+
+// 미리보기에서는 아직 안 채운 섹션도 자리를 보여줘야 클릭해서 타이핑할 수 있다. 하지만 저장
+// 이미지에는 그 빈 자리가 들어가면 안 되므로, 캡처용 사본에서만 통째로 걷어낸다
+// (KimchiDetailSections가 data-empty-section 표시를 달아둔다).
+export const stripEmptySections = (clonedDoc: Document) => {
+  clonedDoc.querySelectorAll('[data-empty-section="true"]').forEach(el => el.remove());
+};

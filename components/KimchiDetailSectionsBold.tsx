@@ -22,6 +22,12 @@ interface BoldPreviewProps {
   accentColor: string;
 }
 
+// 이 스킨의 뼈대: 왼쪽에 라벨·번호를 세우고 오른쪽에 내용을 놓는 2단 그리드, 그리고 밝은 구간
+// 사이에 끼워 넣는 어두운 패널. 기본 스킨이 "가운데 정렬 세로 흐름"이라 색과 모서리만 바꾸면
+// 같은 뼈대로 보이기 때문에, 정렬 축과 리듬 자체를 다르게 잡았다.
+const SPLIT_LEFT_WIDTH = 210;
+const DARK_PANEL = '#221f1c';
+const ON_DARK = '#ffffff';
 const CARD_RADIUS = 30;
 const CARD_MARGIN_X = 40;
 const CARD_PADDING = 40;
@@ -72,6 +78,9 @@ export const KimchiPreviewBold: React.FC<BoldPreviewProps> = ({
       certBody: { ...base(size(F.certBody)), ...center, fontWeight: 400, lineHeight: 1.65, opacity: 0.8 } as React.CSSProperties,
       certBig: { ...base(size(F.certBig)), ...center, fontWeight: 700, lineHeight: 1.25 } as React.CSSProperties,
 
+      // 'POINT 01'에서 숫자만 뽑아 크게 세우는 자리. 문구는 그대로 두고 보여주는 방식만 바꾼다.
+      bigNumeral: { ...base(size(F.reviewIcon)), fontWeight: 700, lineHeight: 0.9, letterSpacing: '-0.04em' } as React.CSSProperties,
+      splitLabel: { ...base(size(F.sectionCaption)), fontWeight: 700, letterSpacing: '0.18em' } as React.CSSProperties,
       pointBadge: { ...base(size(F.pointBadge)), fontWeight: 700, letterSpacing: '0.08em', color: '#ffffff' } as React.CSSProperties,
       pointTitle: { ...base(size(F.pointTitle)), fontWeight: 700, lineHeight: 1.25 } as React.CSSProperties,
       pointSubtitle: { ...base(size(F.pointSubtitle)), fontWeight: 400, lineHeight: 1.55, opacity: 0.8 } as React.CSSProperties,
@@ -109,6 +118,17 @@ export const KimchiPreviewBold: React.FC<BoldPreviewProps> = ({
     </div>
   );
 
+  // 왼쪽 칸(라벨·번호) + 오른쪽 칸(내용). 이 스킨의 기본 배치다.
+  const Split: React.FC<{ left: React.ReactNode; children: React.ReactNode; padded?: boolean }> = ({ left, children, padded = true }) => (
+    <div style={{ display: 'flex', gap: 28, alignItems: 'flex-start', padding: padded ? `0 ${CARD_MARGIN_X}px` : 0 }}>
+      <div style={{ width: SPLIT_LEFT_WIDTH, flexShrink: 0 }}>{left}</div>
+      <div style={{ flex: 1, minWidth: 0 }}>{children}</div>
+    </div>
+  );
+
+  // 'POINT 01' → '01'. 숫자가 없으면 원문을 그대로 쓴다.
+  const numeralOf = (text: string) => (text.match(/\d+/) || [text.trim()])[0];
+
   const SectionHead: React.FC<{ label?: string; title?: string; accent: string; onTitleChange?: (v: string) => void }> = ({
     label, title, accent, onTitleChange,
   }) => {
@@ -140,39 +160,48 @@ export const KimchiPreviewBold: React.FC<BoldPreviewProps> = ({
       // 인트로: 옅은 색을 깐 판 위에 흰 상자를 얹어 문구를 담는다.
       case 'hero':
         return (
-          <div style={{ background: section.backgroundColor || SOFT_TINT, padding: `${SPACE.xl}px 0` }}>
-            <Card>
+          <div style={{ background: DARK_PANEL, padding: `${SPACE.xl}px 0 ${SPACE.lg}px` }}>
+            <div style={{ padding: `0 ${CARD_MARGIN_X}px` }}>
               {section.badge?.trim() && (
-                <div style={{ textAlign: 'center', marginBottom: SPACE.md }}>
+                <div style={{ marginBottom: SPACE.md }}>
                   <Pill text={section.badge} background={accent} style={styles.heroBadge} />
                 </div>
               )}
-              {section.eyebrow?.trim() && <div style={{ marginBottom: SPACE.sm }}>{edit('eyebrow', '작은 제목', styles.heroEyebrow)}</div>}
-              {section.headline?.trim() && <div style={{ marginBottom: SPACE.xs }}>{edit('headline', '큰 제목', styles.heroHeadline)}</div>}
-              {section.headlineAccent?.trim() && (
-                <div style={{ marginBottom: SPACE.lg }}>
-                  <EditableText
-                    value={section.headlineAccent}
-                    onChange={v => updateSection(section.id, { headlineAccent: v })}
-                    placeholder="큰 제목 2"
-                    style={{ ...styles.heroHeadlineAccent, color: accent }}
-                  />
+              {section.eyebrow?.trim() && (
+                <div style={{ marginBottom: SPACE.sm }}>
+                  <EditableText value={section.eyebrow} onChange={v => updateSection(section.id, { eyebrow: v })}
+                    placeholder="작은 제목" style={{ ...styles.heroEyebrow, textAlign: 'left', color: ON_DARK, opacity: 0.6 }} />
                 </div>
               )}
-              {section.subtitle?.trim() && <div style={{ marginBottom: SPACE.lg }}>{edit('subtitle', '설명', styles.heroSubtitle)}</div>}
+              {section.headline?.trim() && (
+                <div style={{ marginBottom: SPACE.xs }}>
+                  <EditableText value={section.headline} onChange={v => updateSection(section.id, { headline: v })}
+                    placeholder="큰 제목" style={{ ...styles.heroHeadline, textAlign: 'left', color: ON_DARK }} />
+                </div>
+              )}
+              {section.headlineAccent?.trim() && (
+                <div style={{ marginBottom: SPACE.lg }}>
+                  <EditableText value={section.headlineAccent} onChange={v => updateSection(section.id, { headlineAccent: v })}
+                    placeholder="큰 제목 2" style={{ ...styles.heroHeadlineAccent, textAlign: 'left', color: accent }} />
+                </div>
+              )}
+              {section.subtitle?.trim() && (
+                <div style={{ marginBottom: SPACE.lg }}>
+                  <EditableText value={section.subtitle} onChange={v => updateSection(section.id, { subtitle: v })}
+                    placeholder="설명" style={{ ...styles.heroSubtitle, textAlign: 'left', color: ON_DARK, opacity: 0.7 }} />
+                </div>
+              )}
               {section.specValue?.trim() && (
-                <div style={{ display: 'flex', justifyContent: 'center' }}>
-                  <div style={{ display: 'flex', borderRadius: 999, overflow: 'hidden' }}>
-                    <div style={{ background: '#2e2a26', padding: '16px 30px' }}>
-                      <span style={styles.heroSpec}>{section.specLabel || '제품구성'}</span>
-                    </div>
-                    <div style={{ background: accent, padding: '16px 34px' }}>
-                      {edit('specValue', '제품 구성', styles.heroSpec)}
-                    </div>
+                <div style={{ display: 'flex', borderRadius: 999, overflow: 'hidden', alignSelf: 'flex-start', width: 'fit-content' }}>
+                  <div style={{ background: ON_DARK, padding: '16px 30px' }}>
+                    <span style={{ ...styles.heroSpec, color: DARK_PANEL }}>{section.specLabel || '제품구성'}</span>
+                  </div>
+                  <div style={{ background: accent, padding: '16px 34px' }}>
+                    {edit('specValue', '제품 구성', styles.heroSpec)}
                   </div>
                 </div>
               )}
-            </Card>
+            </div>
           </div>
         );
 
@@ -189,26 +218,37 @@ export const KimchiPreviewBold: React.FC<BoldPreviewProps> = ({
           </Card>
         );
 
-      // 고지: 강조 문구를 색 채운 둥근 상자에 흰 글씨로 박고, 안내는 흰 상자로 나눈다.
+      // 고지: 왼쪽 칸에 아이콘과 라벨, 오른쪽 칸에 제목과 강조 문구를 세운다(2단 분할).
       case 'notice':
         return (
           <div style={{ background: SOFT_TINT, padding: `${SPACE.xl}px 0` }}>
-            {section.icon?.trim() && (
-              <div style={{ textAlign: 'center', fontSize: Math.round(96 * fontScale), lineHeight: 1.1, marginBottom: SPACE.sm }}>
-                {section.icon}
-              </div>
-            )}
-            {section.noticeTitle?.trim() && (
-              <div style={{ marginBottom: SPACE.xs }}>{edit('noticeTitle', '제목', styles.noticeTitle)}</div>
-            )}
-            {section.noticeSubtitle?.trim() && (
-              <div style={{ marginBottom: SPACE.lg }}>{edit('noticeSubtitle', '부제', styles.noticeSubtitle)}</div>
-            )}
-            {section.bigText?.trim() && (
-              <div style={{ margin: `0 ${CARD_MARGIN_X}px ${SPACE.lg}px`, background: accent, borderRadius: CARD_RADIUS, padding: '34px 0' }}>
-                {edit('bigText', '강조 문구', styles.noticeBig)}
-              </div>
-            )}
+            <Split
+              left={
+                <>
+                  {section.icon?.trim() && (
+                    <div style={{ fontSize: Math.round(96 * fontScale), lineHeight: 1, marginBottom: SPACE.sm }}>{section.icon}</div>
+                  )}
+                  {section.noticeSubtitle?.trim() && (
+                    <EditableText value={section.noticeSubtitle} onChange={v => updateSection(section.id, { noticeSubtitle: v })}
+                      placeholder="부제" style={{ ...styles.noticeSubtitle, textAlign: 'left' }} />
+                  )}
+                </>
+              }
+            >
+              {section.noticeTitle?.trim() && (
+                <div style={{ marginBottom: SPACE.sm }}>
+                  <EditableText value={section.noticeTitle} onChange={v => updateSection(section.id, { noticeTitle: v })}
+                    placeholder="제목" style={{ ...styles.noticeTitle, textAlign: 'left' }} />
+                </div>
+              )}
+              {section.bigText?.trim() && (
+                <div style={{ background: accent, borderRadius: CARD_RADIUS, padding: '28px 34px', display: 'inline-block' }}>
+                  <EditableText value={section.bigText} onChange={v => updateSection(section.id, { bigText: v })}
+                    placeholder="강조 문구" style={{ ...styles.noticeBig, textAlign: 'left' }} />
+                </div>
+              )}
+            </Split>
+            <div style={{ height: SPACE.lg }} />
             {(section.cards || []).map((card, idx) =>
               card.trim() ? (
                 <div key={idx} style={{ marginBottom: SPACE.md }}>
@@ -221,7 +261,7 @@ export const KimchiPreviewBold: React.FC<BoldPreviewProps> = ({
                         updateSection(section.id, { cards: next });
                       }}
                       placeholder="안내 문구"
-                      style={styles.noticeCard}
+                      style={{ ...styles.noticeCard, textAlign: 'left' }}
                     />
                   </Card>
                 </div>
@@ -296,10 +336,10 @@ export const KimchiPreviewBold: React.FC<BoldPreviewProps> = ({
           <>
             {(section.bandSmall?.trim() || section.bandBig?.trim()) && (
               <div style={{ marginBottom: photos.length ? SPACE.md : SPACE.lg }}>
-                <div style={{ margin: `0 ${CARD_MARGIN_X}px`, background: accent, borderRadius: CARD_RADIUS, padding: `${CARD_PADDING}px 0`, textAlign: 'center' }}>
+                <div style={{ background: DARK_PANEL, padding: `${CARD_PADDING}px ${CARD_MARGIN_X}px`, textAlign: 'left' }}>
                   {section.bandSmall?.trim() && (
                     <div style={{ marginBottom: SPACE.xs }}>
-                      <EditableText value={section.bandSmall} onChange={v => updateSection(section.id, { bandSmall: v })} placeholder="윗줄" style={styles.featureBandSmall} />
+                      <EditableText value={section.bandSmall} onChange={v => updateSection(section.id, { bandSmall: v })} placeholder="윗줄" style={{ ...styles.featureBandSmall, color: accent }} />
                     </div>
                   )}
                   {section.bandBig?.trim() && (
@@ -331,111 +371,106 @@ export const KimchiPreviewBold: React.FC<BoldPreviewProps> = ({
           </>
         );
 
-      // 인증: 로고를 흰 원 안에 넣고 상자 가운데에 세운다.
+      // 인증: 로고를 왼쪽 칸의 흰 원 안에 넣고, 글은 오른쪽 칸에 왼쪽 정렬로 세운다.
       case 'cert': {
         const logo = photos[0];
         return (
-          <Card background={SOFT_TINT}>
-            {logo && (
-              <div style={{ display: 'flex', justifyContent: 'center', marginBottom: SPACE.lg }}>
-                <div style={{ width: 240, height: 240, borderRadius: '50%', background: CARD_WHITE, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                  <img src={logo.dataUrl} alt="" style={{ width: 160, height: 'auto', display: 'block' }} />
+          <div style={{ background: SOFT_TINT, padding: `${SPACE.xl}px 0` }}>
+            <Split
+              left={
+                logo ? (
+                  <div style={{ width: SPLIT_LEFT_WIDTH, height: SPLIT_LEFT_WIDTH, borderRadius: '50%', background: CARD_WHITE, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    <img src={logo.dataUrl} alt="" style={{ width: 140, height: 'auto', display: 'block' }} />
+                  </div>
+                ) : null
+              }
+            >
+              {section.noticeTitle?.trim() && (
+                <div style={{ marginBottom: SPACE.md }}>
+                  <EditableText value={section.noticeTitle} onChange={v => updateSection(section.id, { noticeTitle: v })}
+                    placeholder="인증 이름" style={{ ...styles.certTitle, textAlign: 'left' }} />
                 </div>
-              </div>
-            )}
-            {section.noticeTitle?.trim() && (
-              <div style={{ marginBottom: SPACE.md }}>{edit('noticeTitle', '인증 이름', styles.certTitle)}</div>
-            )}
-            {section.body?.trim() && <div style={{ marginBottom: SPACE.md }}>{edit('body', '본문', styles.certBody)}</div>}
-            {section.bigText?.trim() && (
-              <EditableText
-                value={section.bigText}
-                onChange={v => updateSection(section.id, { bigText: v })}
-                placeholder="마무리"
-                style={{ ...styles.certBig, color: accent }}
-              />
-            )}
-          </Card>
+              )}
+              {section.body?.trim() && (
+                <div style={{ marginBottom: SPACE.md }}>
+                  <EditableText value={section.body} onChange={v => updateSection(section.id, { body: v })}
+                    placeholder="본문" style={{ ...styles.certBody, textAlign: 'left' }} />
+                </div>
+              )}
+              {section.bigText?.trim() && (
+                <EditableText value={section.bigText} onChange={v => updateSection(section.id, { bigText: v })}
+                  placeholder="마무리" style={{ ...styles.certBig, textAlign: 'left', color: accent }} />
+              )}
+            </Split>
+          </div>
         );
       }
 
-      // 소구점: 색 배지로 번호를 찍고, 문구 상자와 사진을 좌우 번갈아 배치한다.
-      case 'point': {
-        const flip = index % 2 === 1;
+      // 소구점: 'POINT 01'에서 숫자만 뽑아 왼쪽 칸에 크게 세우고, 문구는 오른쪽 칸에 붙인다.
+      case 'point':
         return (
           <>
-            <Card background={SOFT_TINT}>
-              <div style={{ textAlign: flip ? 'right' : 'left' }}>
-                {section.badge?.trim() && (
-                  <div style={{ marginBottom: SPACE.sm }}>
-                    <Pill text={section.badge} background={accent} style={styles.pointBadge} />
-                  </div>
-                )}
-                {section.noticeTitle?.trim() && (
-                  <div style={{ marginBottom: SPACE.sm }}>
-                    <EditableText
-                      value={section.noticeTitle}
-                      onChange={v => updateSection(section.id, { noticeTitle: v })}
-                      placeholder="제목"
-                      style={{ ...styles.pointTitle, textAlign: flip ? 'right' : 'left' }}
-                    />
-                  </div>
-                )}
-                {section.noticeSubtitle?.trim() && (
-                  <EditableText
-                    value={section.noticeSubtitle}
-                    onChange={v => updateSection(section.id, { noticeSubtitle: v })}
-                    placeholder="설명"
-                    style={{ ...styles.pointSubtitle, textAlign: flip ? 'right' : 'left' }}
-                  />
-                )}
-              </div>
-            </Card>
+            <Split
+              left={
+                section.badge?.trim() ? (
+                  <div style={{ ...styles.bigNumeral, color: accent }}>{numeralOf(section.badge)}</div>
+                ) : null
+              }
+            >
+              {section.noticeTitle?.trim() && (
+                <div style={{ marginBottom: SPACE.sm }}>
+                  <EditableText value={section.noticeTitle} onChange={v => updateSection(section.id, { noticeTitle: v })}
+                    placeholder="제목" style={{ ...styles.pointTitle, padding: 0 }} />
+                </div>
+              )}
+              {section.noticeSubtitle?.trim() && (
+                <EditableText value={section.noticeSubtitle} onChange={v => updateSection(section.id, { noticeSubtitle: v })}
+                  placeholder="설명" style={{ ...styles.pointSubtitle, padding: 0 }} />
+              )}
+            </Split>
             {photos.length > 0 && (
-              <div style={{ margin: `${SPACE.md}px ${CARD_MARGIN_X}px 0`, borderRadius: CARD_RADIUS, overflow: 'hidden' }}>
+              <div style={{ margin: `${SPACE.lg}px ${CARD_MARGIN_X}px 0`, borderRadius: CARD_RADIUS, overflow: 'hidden' }}>
                 {photos.map(photo => renderPhoto(photo, 0))}
               </div>
             )}
           </>
         );
-      }
 
-      // 목록: 번호를 색 원에 넣고 항목마다 흰 상자로 띄운다.
+      // 목록: 세로로 길게 늘어놓지 않고 두 칸씩 나란히 채운다.
       case 'list': {
         const items = section.items || [];
         return (
           <div style={{ background: SOFT_TINT, padding: `${SPACE.xl}px 0` }}>
             <SectionHead label={section.caption} title={section.title} accent={accent} />
-            {items.map((item, idx) =>
-              item.trim() ? (
-                <div key={idx} style={{ marginBottom: SPACE.sm }}>
-                  <Card padding={28}>
-                    <div style={{ display: 'flex', gap: 20, alignItems: 'center' }}>
-                      <div
-                        style={{
-                          width: 54, height: 54, borderRadius: '50%', background: accent,
-                          display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
-                        }}
-                      >
-                        <span style={styles.listNum}>{String(idx + 1).padStart(2, '0')}</span>
-                      </div>
-                      <div style={{ flex: 1, minWidth: 0 }}>
-                        <EditableText
-                          value={item}
-                          onChange={v => {
-                            const next = [...items];
-                            next[idx] = v;
-                            updateSection(section.id, { items: next });
-                          }}
-                          placeholder="항목"
-                          style={styles.listItem}
-                        />
-                      </div>
-                    </div>
-                  </Card>
-                </div>
-              ) : null
-            )}
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: SPACE.sm, padding: `0 ${CARD_MARGIN_X}px` }}>
+              {items.map((item, idx) =>
+                item.trim() ? (
+                  <div
+                    key={idx}
+                    style={{
+                      width: `calc(50% - ${SPACE.sm / 2}px)`,
+                      background: CARD_WHITE,
+                      border: `1px solid ${CARD_BORDER}`,
+                      borderRadius: CARD_RADIUS,
+                      padding: 28,
+                      boxSizing: 'border-box',
+                    }}
+                  >
+                    <div style={{ ...styles.listNum, color: accent, marginBottom: SPACE.xs }}>{String(idx + 1).padStart(2, '0')}</div>
+                    <EditableText
+                      value={item}
+                      onChange={v => {
+                        const next = [...items];
+                        next[idx] = v;
+                        updateSection(section.id, { items: next });
+                      }}
+                      placeholder="항목"
+                      style={styles.listItem}
+                    />
+                  </div>
+                ) : null
+              )}
+            </div>
           </div>
         );
       }

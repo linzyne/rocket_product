@@ -22,6 +22,7 @@ import EditableText from './EditableText';
 import { KimchiPreview, KimchiSectionPanel } from './KimchiDetailSections';
 import { KimchiPreviewModern } from './KimchiDetailSectionsModern';
 import { KimchiPreviewBold } from './KimchiDetailSectionsBold';
+import { KimchiPreviewSales } from './KimchiDetailSectionsSales';
 import {
   KimchiSection,
   createDefaultKimchiSections,
@@ -243,12 +244,13 @@ const DetailPageBuilderModal: React.FC<DetailPageBuilderModalProps> = ({ isOpen,
   const [kimchiSections, setKimchiSections] = useState<KimchiSection[]>(createDefaultKimchiSections);
   // 어떤 스킨으로 그릴지. 섹션 구조와 문구는 그대로 두고 그리는 방식만 바뀌므로, 같은 문구를
   // 붙여넣은 채로 왔다 갔다 하며 두 디자인을 비교할 수 있다.
-  const [kimchiSkin, setKimchiSkin] = useState<'basic' | 'modern' | 'bold'>('basic');
+  const [kimchiSkin, setKimchiSkin] = useState<'basic' | 'modern' | 'bold' | 'sales'>('basic');
   // 템플릿마다 시그니처 색을 따로 기억한다. 섹션이 자기 강조색을 지정하지 않았으면 이 색을 쓴다.
-  const [kimchiAccents, setKimchiAccents] = useState<Record<'basic' | 'modern' | 'bold', string>>({
+  const [kimchiAccents, setKimchiAccents] = useState<Record<'basic' | 'modern' | 'bold' | 'sales', string>>({
     basic: '#d4462a',
     modern: '#2f5d50',
     bold: '#c2410c',
+    sales: '#2f9e44',
   });
   const kimchiAccent = kimchiAccents[kimchiSkin];
   const [photoSectionMap, setPhotoSectionMap] = useState<Record<string, string>>({});
@@ -2263,7 +2265,10 @@ const DetailPageBuilderModal: React.FC<DetailPageBuilderModalProps> = ({ isOpen,
               >
                 {isKimchi ? (
                   React.createElement(
-                    kimchiSkin === 'modern' ? KimchiPreviewModern : kimchiSkin === 'bold' ? KimchiPreviewBold : KimchiPreview,
+                    kimchiSkin === 'modern' ? KimchiPreviewModern
+                      : kimchiSkin === 'bold' ? KimchiPreviewBold
+                      : kimchiSkin === 'sales' ? KimchiPreviewSales
+                      : KimchiPreview,
                     {
                     sections: kimchiSections,
                     updateSection: updateKimchiSection,
@@ -2528,6 +2533,7 @@ const DetailPageBuilderModal: React.FC<DetailPageBuilderModalProps> = ({ isOpen,
                     { id: 'basic' as const, label: '기본', hint: '굵고 꽉 찬 컬러 블록, 가운데 정렬' },
                     { id: 'modern' as const, label: '모던', hint: '여백 넓은 왼쪽 정렬, 얇은 선' },
                     { id: 'bold' as const, label: '컬러', hint: '둥근 색 상자, 배지, 좌우 번갈이 배치' },
+                    { id: 'sales' as const, label: '체크포인트', hint: '배지·말풍선·색 채운 인증 패널의 설득형 구성' },
                   ]).map(skin => (
                     <button
                       key={skin.id}
@@ -2550,7 +2556,7 @@ const DetailPageBuilderModal: React.FC<DetailPageBuilderModalProps> = ({ isOpen,
                     색으로 돌아온다. 섹션에서 색을 따로 지정하면 그 섹션만 예외가 된다. */}
                 <div className="flex items-center gap-1.5 pt-1">
                   <span className="text-[11px] text-slate-400 flex-shrink-0">시그니처 색</span>
-                  {['#d4462a', '#c2410c', '#b45309', '#2f5d50', '#1e3a5f', '#7c2d4a'].map(color => (
+                  {['#d4462a', '#c2410c', '#b45309', '#2f9e44', '#2f5d50', '#1e3a5f'].map(color => (
                     <button
                       key={color}
                       onClick={() => setKimchiAccents(prev => ({ ...prev, [kimchiSkin]: color }))}

@@ -21,6 +21,7 @@ import ImageCropModal from './ImageCropModal';
 import EditableText from './EditableText';
 import { KimchiPreview, KimchiSectionPanel } from './KimchiDetailSections';
 import { KimchiPreviewModern } from './KimchiDetailSectionsModern';
+import { KimchiPreviewBold } from './KimchiDetailSectionsBold';
 import {
   KimchiSection,
   createDefaultKimchiSections,
@@ -242,7 +243,7 @@ const DetailPageBuilderModal: React.FC<DetailPageBuilderModalProps> = ({ isOpen,
   const [kimchiSections, setKimchiSections] = useState<KimchiSection[]>(createDefaultKimchiSections);
   // 어떤 스킨으로 그릴지. 섹션 구조와 문구는 그대로 두고 그리는 방식만 바뀌므로, 같은 문구를
   // 붙여넣은 채로 왔다 갔다 하며 두 디자인을 비교할 수 있다.
-  const [kimchiSkin, setKimchiSkin] = useState<'basic' | 'modern'>('basic');
+  const [kimchiSkin, setKimchiSkin] = useState<'basic' | 'modern' | 'bold'>('basic');
   const [photoSectionMap, setPhotoSectionMap] = useState<Record<string, string>>({});
   const [kimchiPastedText, setKimchiPastedText] = useState('');
   // 미리보기에서 우클릭한 자리. 그 섹션의 어느 사진 앞에 넣을지까지 함께 들고 있다가,
@@ -2254,7 +2255,9 @@ const DetailPageBuilderModal: React.FC<DetailPageBuilderModalProps> = ({ isOpen,
                 style={{ width: CANVAS_WIDTH, backgroundColor: '#ffffff', position: 'relative' }}
               >
                 {isKimchi ? (
-                  React.createElement(kimchiSkin === 'modern' ? KimchiPreviewModern : KimchiPreview, {
+                  React.createElement(
+                    kimchiSkin === 'modern' ? KimchiPreviewModern : kimchiSkin === 'bold' ? KimchiPreviewBold : KimchiPreview,
+                    {
                     sections: kimchiSections,
                     updateSection: updateKimchiSection,
                     photosBySection,
@@ -2262,7 +2265,8 @@ const DetailPageBuilderModal: React.FC<DetailPageBuilderModalProps> = ({ isOpen,
                     fontFamily: templateStyle.fontFamily,
                     textColor: templateStyle.textColor,
                     fontScale: templateStyle.fontScale,
-                  })
+                    }
+                  )
                 ) : (
                   <>
                 {/* Hero */}
@@ -2515,6 +2519,7 @@ const DetailPageBuilderModal: React.FC<DetailPageBuilderModalProps> = ({ isOpen,
                   {([
                     { id: 'basic' as const, label: '기본', hint: '굵고 꽉 찬 컬러 블록, 가운데 정렬' },
                     { id: 'modern' as const, label: '모던', hint: '여백 넓은 왼쪽 정렬, 얇은 선' },
+                    { id: 'bold' as const, label: '컬러', hint: '둥근 색 상자, 배지, 좌우 번갈이 배치' },
                   ]).map(skin => (
                     <button
                       key={skin.id}

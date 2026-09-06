@@ -49,9 +49,6 @@ export const KimchiPreviewModern: React.FC<ModernPreviewProps> = ({
       sectionCaption: { ...base(size(F.sectionCaption)), ...padded, ...left, fontWeight: 700, letterSpacing: '0.2em', opacity: MUTED } as React.CSSProperties,
       sectionHeading: { ...base(size(F.sectionHeading)), ...padded, ...left, fontWeight: 700, lineHeight: 1.35 } as React.CSSProperties,
 
-      // 이모지는 이 스킨에서 장식이 아니라 작은 표식이다. 기본 스킨처럼 140~170px로 키우면
-      // 얇은 선과 여백으로 만든 화면에서 혼자 튄다.
-      inlineIcon: { fontFamily, fontSize: size(F.sectionHeading), lineHeight: 1 } as React.CSSProperties,
       noticeTitle: { ...base(size(F.noticeTitle)), ...left, fontWeight: 700, lineHeight: 1.3 } as React.CSSProperties,
       noticeSubtitle: { ...base(size(F.noticeSubtitle)), ...left, fontWeight: 400, lineHeight: 1.5, opacity: 0.75 } as React.CSSProperties,
       noticeBig: { ...base(size(F.noticeBig)), fontWeight: 700, lineHeight: 1, letterSpacing: '-0.02em' } as React.CSSProperties,
@@ -87,6 +84,27 @@ export const KimchiPreviewModern: React.FC<ModernPreviewProps> = ({
       qnaA: { ...base(size(F.qnaAnswer)), fontWeight: 400, lineHeight: 1.7, opacity: 0.8 } as React.CSSProperties,
     };
   }, [fontFamily, textColor, fontScale]);
+
+  // 이 스킨의 아이콘. 기본 스킨은 사용자가 넣은 이모지를 크게 쓰지만, 여기서는 테두리 원 안에
+  // 단색 기호를 넣은 선화로 통일한다 — 3D 이모지가 얇은 선·여백으로 만든 화면에서 혼자 튀기
+  // 때문이다. SVG 대신 테두리와 글자만 쓰는 이유는 저장 이미지(html2canvas)에서 확실히 같게
+  // 나오기 때문이다.
+  const LineMark: React.FC<{ glyph: string }> = ({ glyph }) => (
+    <div
+      style={{
+        width: 84,
+        height: 84,
+        borderRadius: '50%',
+        border: `2px solid ${textColor}`,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        flexShrink: 0,
+      }}
+    >
+      <span style={{ fontFamily, color: textColor, fontSize: Math.round(38 * fontScale), lineHeight: 1 }}>{glyph}</span>
+    </div>
+  );
 
   // 섹션 머리: 굵은 선 하나 + 작은 라벨 + 제목. 색 띠 대신 이 조합으로 구간을 나눈다.
   // onLabelChange/onTitleChange를 주면 그 줄을 미리보기에서 바로 고칠 수 있다 — 문구 필드(특별한점의
@@ -193,7 +211,9 @@ export const KimchiPreviewModern: React.FC<ModernPreviewProps> = ({
           <>
             <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: 24, padding: `0 ${PADDING_X}px`, marginBottom: SPACE.md }}>
               <div style={{ minWidth: 0 }}>
-                {section.icon?.trim() && <div style={{ ...styles.inlineIcon, marginBottom: SPACE.sm }}>{section.icon}</div>}
+                {section.icon?.trim() && (
+                  <div style={{ marginBottom: SPACE.sm }}><LineMark glyph="→" /></div>
+                )}
                 {section.noticeTitle?.trim() && (
                   <EditableText
                     value={section.noticeTitle}
@@ -254,8 +274,11 @@ export const KimchiPreviewModern: React.FC<ModernPreviewProps> = ({
         const reviews = section.reviews || [];
         return (
           <>
+            {section.icon?.trim() && (
+              <div style={{ padding: `0 ${PADDING_X}px`, marginBottom: SPACE.md }}><LineMark glyph="★" /></div>
+            )}
             <SectionHead
-              label={section.icon?.trim() ? `${section.icon}  REVIEW` : 'REVIEW'}
+              label="REVIEW"
               title={section.noticeTitle}
               labelStyle={styles.reviewLabel}
               titleStyle={styles.reviewTitle}

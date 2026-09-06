@@ -49,13 +49,15 @@ export const KimchiPreviewModern: React.FC<ModernPreviewProps> = ({
       sectionCaption: { ...base(size(F.sectionCaption)), ...padded, ...left, fontWeight: 700, letterSpacing: '0.2em', opacity: MUTED } as React.CSSProperties,
       sectionHeading: { ...base(size(F.sectionHeading)), ...padded, ...left, fontWeight: 700, lineHeight: 1.35 } as React.CSSProperties,
 
-      noticeIcon: { fontFamily, fontSize: size(F.noticeIcon), lineHeight: 1.1 } as React.CSSProperties,
+      // 이모지는 이 스킨에서 장식이 아니라 작은 표식이다. 기본 스킨처럼 140~170px로 키우면
+      // 얇은 선과 여백으로 만든 화면에서 혼자 튄다.
+      inlineIcon: { fontFamily, fontSize: size(F.sectionHeading), lineHeight: 1 } as React.CSSProperties,
       noticeTitle: { ...base(size(F.noticeTitle)), ...left, fontWeight: 700, lineHeight: 1.3 } as React.CSSProperties,
       noticeSubtitle: { ...base(size(F.noticeSubtitle)), ...left, fontWeight: 400, lineHeight: 1.5, opacity: 0.75 } as React.CSSProperties,
       noticeBig: { ...base(size(F.noticeBig)), fontWeight: 700, lineHeight: 1, letterSpacing: '-0.02em' } as React.CSSProperties,
       noticeCard: { ...base(size(F.noticeCard)), ...left, fontWeight: 400, lineHeight: 1.7 } as React.CSSProperties,
 
-      reviewIcon: { fontFamily, fontSize: size(F.reviewIcon), lineHeight: 1.1 } as React.CSSProperties,
+      reviewLabel: { ...base(size(F.sectionCaption)), ...padded, ...left, fontWeight: 700, letterSpacing: '0.2em', opacity: MUTED } as React.CSSProperties,
       reviewTitle: { ...base(size(F.reviewTitle)), ...padded, ...left, fontWeight: 700, lineHeight: 1.3 } as React.CSSProperties,
       reviewSubtitle: { ...base(size(F.reviewSubtitle)), fontWeight: 400, opacity: MUTED } as React.CSSProperties,
       reviewScore: { ...base(size(F.reviewScore)), fontWeight: 700, lineHeight: 1, letterSpacing: '-0.02em' } as React.CSSProperties,
@@ -191,7 +193,7 @@ export const KimchiPreviewModern: React.FC<ModernPreviewProps> = ({
           <>
             <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: 24, padding: `0 ${PADDING_X}px`, marginBottom: SPACE.md }}>
               <div style={{ minWidth: 0 }}>
-                {section.icon?.trim() && <div style={{ ...styles.noticeIcon, marginBottom: SPACE.xs }}>{section.icon}</div>}
+                {section.icon?.trim() && <div style={{ ...styles.inlineIcon, marginBottom: SPACE.sm }}>{section.icon}</div>}
                 {section.noticeTitle?.trim() && (
                   <EditableText
                     value={section.noticeTitle}
@@ -253,9 +255,9 @@ export const KimchiPreviewModern: React.FC<ModernPreviewProps> = ({
         return (
           <>
             <SectionHead
-              label={section.icon?.trim() || 'REVIEW'}
+              label={section.icon?.trim() ? `${section.icon}  REVIEW` : 'REVIEW'}
               title={section.noticeTitle}
-              labelStyle={styles.reviewIcon}
+              labelStyle={styles.reviewLabel}
               titleStyle={styles.reviewTitle}
               onTitleChange={v => updateSection(section.id, { noticeTitle: v })}
             />

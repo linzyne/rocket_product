@@ -22,6 +22,8 @@ interface KimchiPreviewProps {
   fontFamily: string;
   textColor: string;
   fontScale: number;
+  // 템플릿 전체의 시그니처 색. 섹션이 자기 accentColor를 갖고 있으면 그쪽이 우선한다.
+  accentColor: string;
 }
 
 // 860px 기준 기본 글자 크기(fontScale이 곱해진다 — 기본 템플릿의 BASE_FONT_SIZE와 같은 방식).
@@ -113,7 +115,7 @@ const POINT_BADGE_PADDING = '14px 40px';
 const bandLeading = (fontSize: number) => ((FEATURE_BAND_LINE_HEIGHT - 1) / 2) * fontSize;
 
 export const KimchiPreview: React.FC<KimchiPreviewProps> = ({
-  sections, updateSection, photosBySection, renderPhoto, fontFamily, textColor, fontScale,
+  sections, updateSection, photosBySection, renderPhoto, fontFamily, textColor, fontScale, accentColor: templateAccent,
 }) => {
   const styles = useMemo(() => {
     const size = (px: number) => Math.round(px * fontScale);
@@ -184,7 +186,7 @@ export const KimchiPreview: React.FC<KimchiPreviewProps> = ({
   const renderBody = (section: KimchiSection, sectionPhotos: KimchiPhoto[]) => {
     switch (section.kind) {
       case 'hero': {
-        const accent = section.accentColor || '#e02020';
+        const accent = section.accentColor || templateAccent;
         // 배지·큰 제목·제품구성 칩만 강조색을 쓰고, 나머지는 템플릿 글씨색을 그대로 따른다.
         const accented = (style: React.CSSProperties) => ({ ...style, color: accent });
         return (
@@ -401,7 +403,7 @@ export const KimchiPreview: React.FC<KimchiPreviewProps> = ({
       }
 
       case 'point': {
-        const accent = section.accentColor || '#c9342a';
+        const accent = section.accentColor || templateAccent;
         return (
           <>
             {section.badge?.trim() && (
@@ -497,7 +499,7 @@ export const KimchiPreview: React.FC<KimchiPreviewProps> = ({
       }
 
       case 'feature': {
-        const accent = section.accentColor || '#c4441f';
+        const accent = section.accentColor || templateAccent;
         const hasBand = !!(section.bandSmall?.trim() || section.bandBig?.trim());
         // 띠에서 실제로 맨 위/맨 아래에 오는 줄의 글자 크기 (한 줄만 쓸 수도 있다).
         const scaled = (px: number) => Math.round(px * fontScale);
@@ -565,7 +567,7 @@ export const KimchiPreview: React.FC<KimchiPreviewProps> = ({
 
       case 'review': {
         const reviews = section.reviews || [];
-        const accent = section.accentColor || '#c9342a';
+        const accent = section.accentColor || templateAccent;
         const updateReview = (idx: number, patch: Partial<{ text: string; author: string; stars: string }>) => {
           const next = reviews.map((r, i) => (i === idx ? { ...r, ...patch } : r));
           updateSection(section.id, { reviews: next });
@@ -694,7 +696,7 @@ export const KimchiPreview: React.FC<KimchiPreviewProps> = ({
         const rows = section.rows || [];
         const visible = rows.filter(r => r.value.trim() || r.label.trim());
         const isTable = section.pairsStyle === 'table';
-        const accentColor = section.accentColor || '#c9342a';
+        const accentColor = section.accentColor || templateAccent;
 
         // 자주 묻는 질문: 라벨을 질문(Q), 값을 답변(A)으로 그리고 줄 사이를 옅은 선으로 나눈다.
         if (section.pairsStyle === 'qna') {
@@ -838,6 +840,8 @@ interface KimchiSectionPanelProps {
   removeSection: (id: string) => void;
   addSection: (kind: KimchiSection['kind']) => void;
   duplicateSection: (id: string) => void;
+  // 템플릿 시그니처 색. 섹션이 자기 색을 안 가졌을 때 색상 칸에 이 값이 비쳐 보인다.
+  templateAccent: string;
   // 사진을 끌어다 놓았을 때. beforePhotoId가 있으면 그 사진 앞에, 없으면 그 섹션 맨 뒤에 놓는다.
   movePhoto: (photoId: string, sectionId: string, beforePhotoId?: string) => void;
   onAddFiles: (sectionId: string, files: File[]) => void;
@@ -852,7 +856,7 @@ const KIND_BADGE: Record<KimchiSection['kind'], string> = {
 
 export const KimchiSectionPanel: React.FC<KimchiSectionPanelProps> = ({
   sections, photosBySection, updateSection, moveSection, removeSection, addSection,
-  duplicateSection, movePhoto, onAddFiles, onRemovePhoto, onPhotoClick,
+  duplicateSection, templateAccent, movePhoto, onAddFiles, onRemovePhoto, onPhotoClick,
 }) => {
   // 끌고 있는 사진 id와, 지금 올라가 있는 드롭 지점. 드롭 지점은 사진 위(그 앞에 끼워 넣기)이거나
   // 섹션의 빈 자리(맨 뒤로 보내기)다.
@@ -986,16 +990,25 @@ export const KimchiSectionPanel: React.FC<KimchiSectionPanelProps> = ({
                   없앰
                 </button>
               )}
-              {(section.kind === 'hero' || section.kind === 'review' || section.kind === 'feature') && (
+              {['hero', 'review', 'feature', 'point'].includes(section.kind) && (
                 <label className="flex items-center gap-1.5 text-[11px] text-slate-400">
                   강조색
                   <input
                     type="color"
-                    value={section.accentColor || '#d4462a'}
+                    value={section.accentColor || templateAccent}
                     onChange={e => updateSection(section.id, { accentColor: e.target.value })}
                     className="w-7 h-6 rounded border border-slate-600 bg-slate-800 cursor-pointer"
                   />
                 </label>
+              )}
+              {section.accentColor && (
+                <button
+                  onClick={() => updateSection(section.id, { accentColor: undefined })}
+                  title="이 섹션만 지정한 색을 지우고 템플릿 색을 따릅니다"
+                  className="px-1.5 h-6 rounded bg-slate-700 text-slate-400 hover:bg-slate-600 transition-colors text-[11px]"
+                >
+                  템플릿색
+                </button>
               )}
               {section.kind === 'feature' && (
                 <label className="flex items-center gap-1.5 text-[11px] text-slate-400">

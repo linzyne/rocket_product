@@ -63,7 +63,8 @@ export interface KimchiSection {
   subtitle?: string;         // 회색 설명 (여러 줄)
   specLabel?: string;        // 제품구성 바 왼쪽 (어두운 칩)
   specValue?: string;        // 제품구성 바 오른쪽 (강조색 칩)
-  accentColor?: string;      // 배지·큰 제목·제품구성 칩에 쓰는 강조색 (인트로 전용)
+  // 이 섹션만 다른 강조색을 쓰고 싶을 때. 비워두면 템플릿 전체의 시그니처 색을 따른다.
+  accentColor?: string;
 
   // ── notice(고지) ──
   // 아이콘 → 제목 → 부제 → 큰 강조 문구 → 어두운 안내 카드 순서로 쌓인다. 배송 마감시각처럼
@@ -137,25 +138,24 @@ export function createKimchiSection(kind: KimchiSectionKind, overrides: Partial<
     kind === 'hero' ? {
       badge: '', eyebrow: '', headline: '', headlineAccent: '', subtitle: '',
       specLabel: '제품구성', specValue: '',
-      accentColor: '#d4462a', backgroundColor: '#ffffff',
+      backgroundColor: '#ffffff',
     }
     : kind === 'text' ? { body: '', align: 'left' }
     : kind === 'list' ? { items: ['', '', '', ''], listStyle: 'card' }
     : kind === 'pairs' ? { rows: [{ label: '', value: '' }], pairsStyle: 'inline' }
     : kind === 'point' ? {
-        badge: '', noticeTitle: '', noticeSubtitle: '', accentColor: '#c9342a',
+        badge: '', noticeTitle: '', noticeSubtitle: '',
       }
     : kind === 'cert' ? {
         noticeTitle: '', body: '', bigText: '', backgroundColor: '#f6f6f6',
       }
     : kind === 'feature' ? {
         bandSmall: '', bandBig: '', heading: '', body: '',
-        accentColor: '#c4441f', bottomColor: '#ddd9d5',
+        bottomColor: '#ddd9d5',
       }
     : kind === 'notice' ? { icon: '', noticeTitle: '', noticeSubtitle: '', bigText: '', cards: ['', ''] }
     : {
         icon: '', badge: '★★★★★', noticeTitle: '', noticeSubtitle: '', bigText: '', scoreSuffix: '/5',
-        accentColor: '#c9342a',
         reviews: [
           { text: '', author: '', stars: '★★★★★' },
           { text: '', author: '', stars: '★★★★★' },

@@ -244,6 +244,13 @@ const DetailPageBuilderModal: React.FC<DetailPageBuilderModalProps> = ({ isOpen,
   // 어떤 스킨으로 그릴지. 섹션 구조와 문구는 그대로 두고 그리는 방식만 바뀌므로, 같은 문구를
   // 붙여넣은 채로 왔다 갔다 하며 두 디자인을 비교할 수 있다.
   const [kimchiSkin, setKimchiSkin] = useState<'basic' | 'modern' | 'bold'>('basic');
+  // 템플릿마다 시그니처 색을 따로 기억한다. 섹션이 자기 강조색을 지정하지 않았으면 이 색을 쓴다.
+  const [kimchiAccents, setKimchiAccents] = useState<Record<'basic' | 'modern' | 'bold', string>>({
+    basic: '#d4462a',
+    modern: '#2f5d50',
+    bold: '#c2410c',
+  });
+  const kimchiAccent = kimchiAccents[kimchiSkin];
   const [photoSectionMap, setPhotoSectionMap] = useState<Record<string, string>>({});
   const [kimchiPastedText, setKimchiPastedText] = useState('');
   // 미리보기에서 우클릭한 자리. 그 섹션의 어느 사진 앞에 넣을지까지 함께 들고 있다가,
@@ -2265,6 +2272,7 @@ const DetailPageBuilderModal: React.FC<DetailPageBuilderModalProps> = ({ isOpen,
                     fontFamily: templateStyle.fontFamily,
                     textColor: templateStyle.textColor,
                     fontScale: templateStyle.fontScale,
+                    accentColor: kimchiAccent,
                     }
                   )
                 ) : (
@@ -2538,6 +2546,33 @@ const DetailPageBuilderModal: React.FC<DetailPageBuilderModalProps> = ({ isOpen,
                 <p className="text-xs text-slate-500 leading-relaxed">
                   문구와 사진은 그대로 두고 디자인만 바뀝니다. 붙여넣기 라벨도 같아요.
                 </p>
+                {/* 시그니처 색은 템플릿마다 따로 기억한다 — 디자인을 바꾸면 그 템플릿에서 고른
+                    색으로 돌아온다. 섹션에서 색을 따로 지정하면 그 섹션만 예외가 된다. */}
+                <div className="flex items-center gap-1.5 pt-1">
+                  <span className="text-[11px] text-slate-400 flex-shrink-0">시그니처 색</span>
+                  {['#d4462a', '#c2410c', '#b45309', '#2f5d50', '#1e3a5f', '#7c2d4a'].map(color => (
+                    <button
+                      key={color}
+                      onClick={() => setKimchiAccents(prev => ({ ...prev, [kimchiSkin]: color }))}
+                      title={color}
+                      className={`w-5 h-5 rounded-full flex-shrink-0 transition-transform ${
+                        kimchiAccent === color ? 'ring-2 ring-white scale-110' : 'border border-slate-600'
+                      }`}
+                      style={{ background: color }}
+                    />
+                  ))}
+                  <label
+                    title="색 직접 고르기"
+                    className="w-5 h-5 rounded-full flex-shrink-0 cursor-pointer border border-slate-600 bg-gradient-to-br from-pink-400 via-yellow-300 to-sky-400"
+                  >
+                    <input
+                      type="color"
+                      value={kimchiAccent}
+                      className="sr-only"
+                      onChange={e => setKimchiAccents(prev => ({ ...prev, [kimchiSkin]: e.target.value }))}
+                    />
+                  </label>
+                </div>
               </div>
               <KimchiSectionPanel
                 sections={kimchiSections}
@@ -2547,6 +2582,7 @@ const DetailPageBuilderModal: React.FC<DetailPageBuilderModalProps> = ({ isOpen,
                 removeSection={removeKimchiSectionById}
                 addSection={addKimchiSection}
                 duplicateSection={duplicateKimchiSectionById}
+                templateAccent={kimchiAccent}
                 movePhoto={movePhotoToSection}
                 onAddFiles={(sectionId, files) => addPhotoFiles(files, sectionId)}
                 onRemovePhoto={removePhoto}

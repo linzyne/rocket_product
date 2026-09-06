@@ -18,6 +18,8 @@ interface ModernPreviewProps {
   fontFamily: string;
   textColor: string;
   fontScale: number;
+  // 템플릿 전체의 시그니처 색. 섹션이 자기 accentColor를 갖고 있으면 그쪽이 우선한다.
+  accentColor: string;
 }
 
 const HAIRLINE = '#e2e2e2';
@@ -27,7 +29,7 @@ const MUTED = 0.55;
 const MODERN_SECTION_GAP = 130;
 
 export const KimchiPreviewModern: React.FC<ModernPreviewProps> = ({
-  sections, updateSection, photosBySection, renderPhoto, fontFamily, textColor, fontScale,
+  sections, updateSection, photosBySection, renderPhoto, fontFamily, textColor, fontScale, accentColor: templateAccent,
 }) => {
   // 글자 크기는 기본 스킨과 똑같은 표(KIMCHI_FONT_SIZE)를 쓴다. 달라지는 건 정렬·굵기·여백·선뿐이라,
   // 스킨을 바꿔도 문구가 차지하는 분량이 그대로다.
@@ -144,7 +146,7 @@ export const KimchiPreviewModern: React.FC<ModernPreviewProps> = ({
   );
 
   const renderBody = (section: KimchiSection, photos: KimchiPhoto[]) => {
-    const accent = section.accentColor || '#111111';
+    const accent = section.accentColor || templateAccent;
     const edit = (field: keyof KimchiSection, placeholder: string, style: React.CSSProperties) => (
       <EditableText
         value={(section[field] as string) || ''}

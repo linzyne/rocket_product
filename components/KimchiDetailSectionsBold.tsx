@@ -18,6 +18,8 @@ interface BoldPreviewProps {
   fontFamily: string;
   textColor: string;
   fontScale: number;
+  // 템플릿 전체의 시그니처 색. 섹션이 자기 accentColor를 갖고 있으면 그쪽이 우선한다.
+  accentColor: string;
 }
 
 const CARD_RADIUS = 30;
@@ -27,10 +29,9 @@ const BOLD_SECTION_GAP = 96;
 const SOFT_TINT = '#f4f1ec';
 const CARD_WHITE = '#ffffff';
 const CARD_BORDER = '#e6e1d9';
-const DEFAULT_ACCENT = '#c9342a';
 
 export const KimchiPreviewBold: React.FC<BoldPreviewProps> = ({
-  sections, updateSection, photosBySection, renderPhoto, fontFamily, textColor, fontScale,
+  sections, updateSection, photosBySection, renderPhoto, fontFamily, textColor, fontScale, accentColor: templateAccent,
 }) => {
   // 글자 크기는 다른 스킨과 같은 표를 쓴다 — 디자인을 바꿔도 문구 분량이 그대로여야 한다.
   const styles = useMemo(() => {
@@ -125,7 +126,7 @@ export const KimchiPreviewBold: React.FC<BoldPreviewProps> = ({
   };
 
   const renderBody = (section: KimchiSection, photos: KimchiPhoto[], index: number) => {
-    const accent = section.accentColor || DEFAULT_ACCENT;
+    const accent = section.accentColor || templateAccent;
     const edit = (field: keyof KimchiSection, placeholder: string, style: React.CSSProperties) => (
       <EditableText
         value={(section[field] as string) || ''}

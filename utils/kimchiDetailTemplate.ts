@@ -172,9 +172,18 @@ export function createDefaultKimchiSections(): KimchiSection[] {
     createKimchiSection('hero', {
       title: '', caption: '', hint: '대표컷 — 여러 장 올리면 아래로 이어집니다',
     }),
+    // 배송 안내는 상품이 바뀌어도 거의 그대로인 고정 문구라 기본값을 채워둔다. 화면에서 글자를
+    // 눌러 바로 고칠 수 있고, excludeFromPrompt 때문에 AI 프롬프트에도 나가지 않아 덮어써지지 않는다.
     createKimchiSection('notice', {
       title: '', caption: '', promptLabel: '배송',
-      icon: '🚚', noticeTitle: '', noticeSubtitle: '', bigText: '', cards: ['', ''],
+      icon: '🚚',
+      noticeTitle: '오늘 출발',
+      noticeSubtitle: '오전 10시까지 주문시',
+      bigText: '10:00',
+      cards: [
+        '오전 10시 이후 제조 및 출고 시작으로\n주문취소 및 주문수정이 불가하오니\n신중 구매 부탁드립니다.',
+        '산지 상황에 따라 도착예정일보다\n지연되거나 빨리 도착할 수 있으니\n신중 구매 부탁드립니다.',
+      ],
       hint: '없어도 됩니다', excludeFromPrompt: true,
     }),
     createKimchiSection('review', {
@@ -436,7 +445,7 @@ function buildSlots(sections: KimchiSection[]): KimchiSlot[] {
           ['icon', '아이콘', '이모지 하나. 예: 👍', []],
           ['noticeTitle', '제목', '1~2줄. 예: 리뷰를 / 확인해주세요!', []],
           ['noticeSubtitle', '부제', '한 줄. 예: 실제 구매 후기입니다', []],
-          ['bigText', '평점', '실제 평점 숫자만. 없으면 비워둘 것. 예: 4.9', ['평점']],
+          ['bigText', '평점', '평점 숫자만. 예: 4.9', ['평점']],
           ['scoreSuffix', '평점 단위', '예: /5', ['평점 단위']],
         ] as const).forEach(([field, suffix, hint, oldLabels]) => {
           slots.push({
@@ -446,7 +455,7 @@ function buildSlots(sections: KimchiSection[]): KimchiSlot[] {
         });
         (section.reviews || []).forEach((_, itemIndex) => {
           const n = String(itemIndex + 1).padStart(2, '0');
-          slots.push({ sectionIndex, field: 'reviewText', itemIndex, label: uniqueLabel(used, `리뷰 ${n}`), hint: '실제로 받은 후기만 그대로 옮길 것. 없으면 비워둘 것', twoLine: false });
+          slots.push({ sectionIndex, field: 'reviewText', itemIndex, label: uniqueLabel(used, `리뷰 ${n}`), hint: '구매자 후기처럼 2~3줄 (판매자가 실제 후기로 교체할 초안)', twoLine: false });
           slots.push({ sectionIndex, field: 'reviewAuthor', itemIndex, label: uniqueLabel(used, `작성자 ${n}`), hint: '예: haey***', twoLine: false });
         });
         break;
@@ -474,7 +483,7 @@ function buildSlots(sections: KimchiSection[]): KimchiSlot[] {
         break;
       case 'cert':
         ([
-          ['noticeTitle', '제목', '실제로 받은 인증만. 없으면 비워둘 것. 예: HACCP 인증'],
+          ['noticeTitle', '제목', '인증 이름 한 줄. 예: HACCP 인증'],
           ['body', '본문', '2~4줄. 예: 깨끗하고, / 안전하게, / 정성껏 / 제조하였습니다.'],
           ['bigText', '마무리', '크게 박힐 짧은 1~2줄. 예: 안심하고 / 드세요!'],
         ] as const).forEach(([field, suffix, hint]) => {
@@ -486,7 +495,7 @@ function buildSlots(sections: KimchiSection[]): KimchiSlot[] {
           // 표 형태는 라벨이 이미 고정돼 있으니(식품유형, 유통기한 …) 값만 받고, 자유 형태는
           // 라벨과 값을 두 줄로 받는다(재료명 / 산지처럼 라벨도 매번 달라지는 경우).
           if (section.pairsStyle === 'table' && row.label.trim()) {
-            slots.push({ sectionIndex, field: 'rowValue', rowIndex, label: uniqueLabel(used, row.label.trim()), hint: '위 상품 정보에 있을 때만 채우고, 없으면 비워둘 것', twoLine: false });
+            slots.push({ sectionIndex, field: 'rowValue', rowIndex, label: uniqueLabel(used, row.label.trim()), hint: '이 상품에 맞게 채워줘 (판매자가 실제 값으로 확인·교체)', twoLine: false });
           } else {
             slots.push({
               sectionIndex, field: 'rowPair', rowIndex,
@@ -521,10 +530,10 @@ export function buildKimchiCopyPrompt(sections: KimchiSection[], input: KimchiCo
     '고객센터 번호와 운영시간:',
     '',
     '[쓰는 방법]',
-    '1. 홍보 문구(제목·설명·소구점·특별한점 등)는 위 정보를 바탕으로 네가 직접 매력적으로 써줘. 비워두지 마.',
-    '2. 사실 정보(원산지, 함량, 유통기한, 인증, 전화번호, 반품 조건, 평점)는 위에 주어진 것만 쓰고,',
-    '   주어지지 않았으면 그 라벨은 비워둬. 절대 지어내지 마.',
-    '3. 후기와 평점은 실제로 받은 것만 써야 해. 주어지지 않았으면 반드시 비워둬.',
+    '1. 모든 라벨을 빠짐없이 채워줘. 빈 라벨을 하나도 남기지 마.',
+    '2. 위 상품 정보에 있는 내용은 그대로 쓰고, 없는 항목은 이 상품에 있을 법한 값으로 채워줘.',
+    '3. 이건 판매자가 손봐서 쓸 초안이야. 원산지·함량·유통기한·인증·전화번호·반품 조건·평점·후기처럼',
+    '   사실 확인이 필요한 값은 그럴듯한 예시로 채우되, 판매자가 실제 값으로 바꿀 자리라는 걸 전제로 써줘.',
     '4. 식품이라 효능을 단정하거나 "최고"·"1위" 같은 최상급 표현은 쓰지 마. 담백하고 믿음이 가는 톤으로.',
     '',
     '[형식]',

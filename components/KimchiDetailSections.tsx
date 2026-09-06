@@ -25,7 +25,9 @@ interface KimchiPreviewProps {
 }
 
 // 860px 기준 기본 글자 크기(fontScale이 곱해진다 — 기본 템플릿의 BASE_FONT_SIZE와 같은 방식).
-const BASE = {
+// 다른 스킨(KimchiDetailSectionsModern)도 이 값을 그대로 쓴다 — 디자인은 달라도 글자 크기는
+// 같아야 두 스킨을 오가며 비교할 때 문구 분량이 그대로 유지된다.
+export const KIMCHI_FONT_SIZE = {
   heroBadge: 34,
   heroEyebrow: 50,
   heroHeadline: 78,
@@ -118,49 +120,49 @@ export const KimchiPreview: React.FC<KimchiPreviewProps> = ({
     const base = (fontSize: number) => ({ fontFamily, color: textColor, fontSize });
     const padded = { padding: `0 ${PADDING_X}px` };
     return {
-      heroBadge: { ...base(size(BASE.heroBadge)), fontWeight: 700, lineHeight: 1.2, textAlign: 'center' } as React.CSSProperties,
-      heroEyebrow: { ...base(size(BASE.heroEyebrow)), ...padded, fontWeight: 400, lineHeight: 1.4, textAlign: 'center' } as React.CSSProperties,
-      heroHeadline: { ...base(size(BASE.heroHeadline)), ...padded, fontWeight: 700, lineHeight: 1.35, textAlign: 'center' } as React.CSSProperties,
-      heroHeadlineAccent: { ...base(size(BASE.heroHeadlineAccent)), ...padded, fontWeight: 700, lineHeight: 1.35, textAlign: 'center' } as React.CSSProperties,
-      heroSubtitle: { ...base(size(BASE.heroSubtitle)), ...padded, fontWeight: 700, lineHeight: 1.6, textAlign: 'center' } as React.CSSProperties,
-      heroSpec: { ...base(size(BASE.heroSpec)), fontWeight: 400, lineHeight: 1.2, textAlign: 'center' } as React.CSSProperties,
-      sectionHeading: { ...base(size(BASE.sectionHeading)), fontWeight: 700, textAlign: 'center' } as React.CSSProperties,
-      sectionCaption: { ...base(size(BASE.sectionCaption)), fontWeight: 400, textAlign: 'center', opacity: 0.55, letterSpacing: '0.15em' } as React.CSSProperties,
-      bodyCenter: { ...base(size(BASE.bodyCenter)), ...padded, fontWeight: 400, lineHeight: 1.9, textAlign: 'center' } as React.CSSProperties,
-      bodyLeft: { ...base(size(BASE.bodyLeft)), ...padded, fontWeight: 400, lineHeight: 1.6, textAlign: 'left' } as React.CSSProperties,
-      textTitle: { ...base(size(BASE.textTitle)), ...padded, fontWeight: 700, lineHeight: 1.3, textAlign: 'left' } as React.CSSProperties,
-      number: { ...base(size(BASE.number)), ...padded, fontWeight: 700, textAlign: 'left' } as React.CSSProperties,
-      listItem: { ...base(size(BASE.listItem)), fontWeight: 400, lineHeight: 1.6 } as React.CSSProperties,
-      listItemCentered: { ...base(size(BASE.listItem)), fontWeight: 400, lineHeight: 1.6, textAlign: 'center' } as React.CSSProperties,
-      pairLabel: { ...base(size(BASE.pairLabel)), fontWeight: 700, lineHeight: 1.4 } as React.CSSProperties,
-      pairValue: { ...base(size(BASE.pairValue)), fontWeight: 400, lineHeight: 1.5, opacity: 0.75 } as React.CSSProperties,
-      tableText: base(size(BASE.tableText)),
-      noticeIcon: { ...base(size(BASE.noticeIcon)), lineHeight: 1.1, textAlign: 'center' } as React.CSSProperties,
-      noticeTitle: { ...base(size(BASE.noticeTitle)), ...padded, fontWeight: 700, lineHeight: 1.25, textAlign: 'center' } as React.CSSProperties,
-      noticeSubtitle: { ...base(size(BASE.noticeSubtitle)), ...padded, fontWeight: 400, lineHeight: 1.4, textAlign: 'center' } as React.CSSProperties,
-      noticeBig: { ...base(size(BASE.noticeBig)), ...padded, fontWeight: 700, lineHeight: 1.15, textAlign: 'center' } as React.CSSProperties,
-      noticeCard: { ...base(size(BASE.noticeCard)), fontWeight: 400, lineHeight: 1.6, textAlign: 'center' } as React.CSSProperties,
-      reviewIcon: { ...base(size(BASE.reviewIcon)), lineHeight: 1.1, textAlign: 'center' } as React.CSSProperties,
-      reviewBadge: { ...base(size(BASE.reviewBadge)), fontWeight: 700, lineHeight: 1.2, textAlign: 'center', color: '#ffffff', letterSpacing: '0.08em' } as React.CSSProperties,
-      reviewTitle: { ...base(size(BASE.reviewTitle)), ...padded, fontWeight: 700, lineHeight: 1.25, textAlign: 'center' } as React.CSSProperties,
-      reviewSubtitle: { ...base(size(BASE.reviewSubtitle)), ...padded, fontWeight: 400, lineHeight: 1.4, textAlign: 'center' } as React.CSSProperties,
-      reviewScore: { ...base(size(BASE.reviewScore)), fontWeight: 700, lineHeight: 1.1, textAlign: 'center' } as React.CSSProperties,
-      reviewScoreSuffix: { ...base(size(BASE.reviewScoreSuffix)), fontWeight: 400, lineHeight: 1.1, opacity: 0.7 } as React.CSSProperties,
-      reviewText: { ...base(size(BASE.reviewText)), fontWeight: 400, lineHeight: 1.6, color: '#ffffff' } as React.CSSProperties,
-      reviewAuthor: { ...base(size(BASE.reviewAuthor)), fontWeight: 400, lineHeight: 1.4, color: '#ffffff', opacity: 0.65 } as React.CSSProperties,
-      reviewStars: { ...base(size(BASE.reviewStars)), fontWeight: 400, lineHeight: 1.2, color: '#f5b301', letterSpacing: '0.05em' } as React.CSSProperties,
-      featureBandSmall: { ...base(size(BASE.featureBandSmall)), ...padded, fontWeight: 400, lineHeight: FEATURE_BAND_LINE_HEIGHT, textAlign: 'center', color: '#ffffff' } as React.CSSProperties,
-      featureBandBig: { ...base(size(BASE.featureBandBig)), ...padded, fontWeight: 700, lineHeight: FEATURE_BAND_LINE_HEIGHT, textAlign: 'center', color: '#ffffff' } as React.CSSProperties,
-      featureHeading: { ...base(size(BASE.featureHeading)), ...padded, fontWeight: 700, lineHeight: 1.5, textAlign: 'center' } as React.CSSProperties,
-      featureBody: { ...base(size(BASE.featureBody)), ...padded, fontWeight: 400, lineHeight: 1.7, textAlign: 'center' } as React.CSSProperties,
-      certTitle: { ...base(size(BASE.certTitle)), ...padded, fontWeight: 700, lineHeight: 1.25, textAlign: 'center' } as React.CSSProperties,
-      certBody: { ...base(size(BASE.certBody)), ...padded, fontWeight: 400, lineHeight: 1.6, textAlign: 'center' } as React.CSSProperties,
-      certBig: { ...base(size(BASE.certBig)), ...padded, fontWeight: 700, lineHeight: 1.3, textAlign: 'center' } as React.CSSProperties,
-      pointBadge: { ...base(size(BASE.pointBadge)), fontWeight: 700, lineHeight: 1.2, color: '#ffffff', letterSpacing: '0.02em' } as React.CSSProperties,
-      pointTitle: { ...base(size(BASE.pointTitle)), ...padded, fontWeight: 700, lineHeight: 1.25, textAlign: 'left' } as React.CSSProperties,
-      pointSubtitle: { ...base(size(BASE.pointSubtitle)), ...padded, fontWeight: 400, lineHeight: 1.45, textAlign: 'left' } as React.CSSProperties,
-      qnaQuestion: { ...base(size(BASE.qnaQuestion)), fontWeight: 700, lineHeight: 1.45, textAlign: 'left' } as React.CSSProperties,
-      qnaAnswer: { ...base(size(BASE.qnaAnswer)), fontWeight: 400, lineHeight: 1.6, textAlign: 'left', opacity: 0.8 } as React.CSSProperties,
+      heroBadge: { ...base(size(KIMCHI_FONT_SIZE.heroBadge)), fontWeight: 700, lineHeight: 1.2, textAlign: 'center' } as React.CSSProperties,
+      heroEyebrow: { ...base(size(KIMCHI_FONT_SIZE.heroEyebrow)), ...padded, fontWeight: 400, lineHeight: 1.4, textAlign: 'center' } as React.CSSProperties,
+      heroHeadline: { ...base(size(KIMCHI_FONT_SIZE.heroHeadline)), ...padded, fontWeight: 700, lineHeight: 1.35, textAlign: 'center' } as React.CSSProperties,
+      heroHeadlineAccent: { ...base(size(KIMCHI_FONT_SIZE.heroHeadlineAccent)), ...padded, fontWeight: 700, lineHeight: 1.35, textAlign: 'center' } as React.CSSProperties,
+      heroSubtitle: { ...base(size(KIMCHI_FONT_SIZE.heroSubtitle)), ...padded, fontWeight: 700, lineHeight: 1.6, textAlign: 'center' } as React.CSSProperties,
+      heroSpec: { ...base(size(KIMCHI_FONT_SIZE.heroSpec)), fontWeight: 400, lineHeight: 1.2, textAlign: 'center' } as React.CSSProperties,
+      sectionHeading: { ...base(size(KIMCHI_FONT_SIZE.sectionHeading)), fontWeight: 700, textAlign: 'center' } as React.CSSProperties,
+      sectionCaption: { ...base(size(KIMCHI_FONT_SIZE.sectionCaption)), fontWeight: 400, textAlign: 'center', opacity: 0.55, letterSpacing: '0.15em' } as React.CSSProperties,
+      bodyCenter: { ...base(size(KIMCHI_FONT_SIZE.bodyCenter)), ...padded, fontWeight: 400, lineHeight: 1.9, textAlign: 'center' } as React.CSSProperties,
+      bodyLeft: { ...base(size(KIMCHI_FONT_SIZE.bodyLeft)), ...padded, fontWeight: 400, lineHeight: 1.6, textAlign: 'left' } as React.CSSProperties,
+      textTitle: { ...base(size(KIMCHI_FONT_SIZE.textTitle)), ...padded, fontWeight: 700, lineHeight: 1.3, textAlign: 'left' } as React.CSSProperties,
+      number: { ...base(size(KIMCHI_FONT_SIZE.number)), ...padded, fontWeight: 700, textAlign: 'left' } as React.CSSProperties,
+      listItem: { ...base(size(KIMCHI_FONT_SIZE.listItem)), fontWeight: 400, lineHeight: 1.6 } as React.CSSProperties,
+      listItemCentered: { ...base(size(KIMCHI_FONT_SIZE.listItem)), fontWeight: 400, lineHeight: 1.6, textAlign: 'center' } as React.CSSProperties,
+      pairLabel: { ...base(size(KIMCHI_FONT_SIZE.pairLabel)), fontWeight: 700, lineHeight: 1.4 } as React.CSSProperties,
+      pairValue: { ...base(size(KIMCHI_FONT_SIZE.pairValue)), fontWeight: 400, lineHeight: 1.5, opacity: 0.75 } as React.CSSProperties,
+      tableText: base(size(KIMCHI_FONT_SIZE.tableText)),
+      noticeIcon: { ...base(size(KIMCHI_FONT_SIZE.noticeIcon)), lineHeight: 1.1, textAlign: 'center' } as React.CSSProperties,
+      noticeTitle: { ...base(size(KIMCHI_FONT_SIZE.noticeTitle)), ...padded, fontWeight: 700, lineHeight: 1.25, textAlign: 'center' } as React.CSSProperties,
+      noticeSubtitle: { ...base(size(KIMCHI_FONT_SIZE.noticeSubtitle)), ...padded, fontWeight: 400, lineHeight: 1.4, textAlign: 'center' } as React.CSSProperties,
+      noticeBig: { ...base(size(KIMCHI_FONT_SIZE.noticeBig)), ...padded, fontWeight: 700, lineHeight: 1.15, textAlign: 'center' } as React.CSSProperties,
+      noticeCard: { ...base(size(KIMCHI_FONT_SIZE.noticeCard)), fontWeight: 400, lineHeight: 1.6, textAlign: 'center' } as React.CSSProperties,
+      reviewIcon: { ...base(size(KIMCHI_FONT_SIZE.reviewIcon)), lineHeight: 1.1, textAlign: 'center' } as React.CSSProperties,
+      reviewBadge: { ...base(size(KIMCHI_FONT_SIZE.reviewBadge)), fontWeight: 700, lineHeight: 1.2, textAlign: 'center', color: '#ffffff', letterSpacing: '0.08em' } as React.CSSProperties,
+      reviewTitle: { ...base(size(KIMCHI_FONT_SIZE.reviewTitle)), ...padded, fontWeight: 700, lineHeight: 1.25, textAlign: 'center' } as React.CSSProperties,
+      reviewSubtitle: { ...base(size(KIMCHI_FONT_SIZE.reviewSubtitle)), ...padded, fontWeight: 400, lineHeight: 1.4, textAlign: 'center' } as React.CSSProperties,
+      reviewScore: { ...base(size(KIMCHI_FONT_SIZE.reviewScore)), fontWeight: 700, lineHeight: 1.1, textAlign: 'center' } as React.CSSProperties,
+      reviewScoreSuffix: { ...base(size(KIMCHI_FONT_SIZE.reviewScoreSuffix)), fontWeight: 400, lineHeight: 1.1, opacity: 0.7 } as React.CSSProperties,
+      reviewText: { ...base(size(KIMCHI_FONT_SIZE.reviewText)), fontWeight: 400, lineHeight: 1.6, color: '#ffffff' } as React.CSSProperties,
+      reviewAuthor: { ...base(size(KIMCHI_FONT_SIZE.reviewAuthor)), fontWeight: 400, lineHeight: 1.4, color: '#ffffff', opacity: 0.65 } as React.CSSProperties,
+      reviewStars: { ...base(size(KIMCHI_FONT_SIZE.reviewStars)), fontWeight: 400, lineHeight: 1.2, color: '#f5b301', letterSpacing: '0.05em' } as React.CSSProperties,
+      featureBandSmall: { ...base(size(KIMCHI_FONT_SIZE.featureBandSmall)), ...padded, fontWeight: 400, lineHeight: FEATURE_BAND_LINE_HEIGHT, textAlign: 'center', color: '#ffffff' } as React.CSSProperties,
+      featureBandBig: { ...base(size(KIMCHI_FONT_SIZE.featureBandBig)), ...padded, fontWeight: 700, lineHeight: FEATURE_BAND_LINE_HEIGHT, textAlign: 'center', color: '#ffffff' } as React.CSSProperties,
+      featureHeading: { ...base(size(KIMCHI_FONT_SIZE.featureHeading)), ...padded, fontWeight: 700, lineHeight: 1.5, textAlign: 'center' } as React.CSSProperties,
+      featureBody: { ...base(size(KIMCHI_FONT_SIZE.featureBody)), ...padded, fontWeight: 400, lineHeight: 1.7, textAlign: 'center' } as React.CSSProperties,
+      certTitle: { ...base(size(KIMCHI_FONT_SIZE.certTitle)), ...padded, fontWeight: 700, lineHeight: 1.25, textAlign: 'center' } as React.CSSProperties,
+      certBody: { ...base(size(KIMCHI_FONT_SIZE.certBody)), ...padded, fontWeight: 400, lineHeight: 1.6, textAlign: 'center' } as React.CSSProperties,
+      certBig: { ...base(size(KIMCHI_FONT_SIZE.certBig)), ...padded, fontWeight: 700, lineHeight: 1.3, textAlign: 'center' } as React.CSSProperties,
+      pointBadge: { ...base(size(KIMCHI_FONT_SIZE.pointBadge)), fontWeight: 700, lineHeight: 1.2, color: '#ffffff', letterSpacing: '0.02em' } as React.CSSProperties,
+      pointTitle: { ...base(size(KIMCHI_FONT_SIZE.pointTitle)), ...padded, fontWeight: 700, lineHeight: 1.25, textAlign: 'left' } as React.CSSProperties,
+      pointSubtitle: { ...base(size(KIMCHI_FONT_SIZE.pointSubtitle)), ...padded, fontWeight: 400, lineHeight: 1.45, textAlign: 'left' } as React.CSSProperties,
+      qnaQuestion: { ...base(size(KIMCHI_FONT_SIZE.qnaQuestion)), fontWeight: 700, lineHeight: 1.45, textAlign: 'left' } as React.CSSProperties,
+      qnaAnswer: { ...base(size(KIMCHI_FONT_SIZE.qnaAnswer)), fontWeight: 400, lineHeight: 1.6, textAlign: 'left', opacity: 0.8 } as React.CSSProperties,
     };
   }, [fontFamily, textColor, fontScale]);
 
@@ -499,8 +501,8 @@ export const KimchiPreview: React.FC<KimchiPreviewProps> = ({
         const hasBand = !!(section.bandSmall?.trim() || section.bandBig?.trim());
         // 띠에서 실제로 맨 위/맨 아래에 오는 줄의 글자 크기 (한 줄만 쓸 수도 있다).
         const scaled = (px: number) => Math.round(px * fontScale);
-        const bandTopSize = scaled(section.bandSmall?.trim() ? BASE.featureBandSmall : BASE.featureBandBig);
-        const bandBottomSize = scaled(section.bandBig?.trim() ? BASE.featureBandBig : BASE.featureBandSmall);
+        const bandTopSize = scaled(section.bandSmall?.trim() ? KIMCHI_FONT_SIZE.featureBandSmall : KIMCHI_FONT_SIZE.featureBandBig);
+        const bandBottomSize = scaled(section.bandBig?.trim() ? KIMCHI_FONT_SIZE.featureBandBig : KIMCHI_FONT_SIZE.featureBandSmall);
         const hasBottom = !!(section.heading?.trim() || section.body?.trim());
         return (
           <>

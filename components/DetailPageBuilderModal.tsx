@@ -20,6 +20,7 @@ import { withTimeout, stripClonedScripts, stripEmptySections } from '../utils/ht
 import ImageCropModal from './ImageCropModal';
 import EditableText from './EditableText';
 import { KimchiPreview, KimchiSectionPanel } from './KimchiDetailSections';
+import { KimchiPreviewModern } from './KimchiDetailSectionsModern';
 import {
   KimchiSection,
   createDefaultKimchiSections,
@@ -239,6 +240,9 @@ const DetailPageBuilderModal: React.FC<DetailPageBuilderModalProps> = ({ isOpen,
   // 스포이드 등 기존 기능이 전부 살아 있고, 여기에 "이 사진이 어느 섹션 것인지"만 따로 기억한다
   // (photoSectionMap: photoId → 섹션 id). 그래서 업로드 순서가 자리에 영향을 주지 않는다.
   const [kimchiSections, setKimchiSections] = useState<KimchiSection[]>(createDefaultKimchiSections);
+  // 어떤 스킨으로 그릴지. 섹션 구조와 문구는 그대로 두고 그리는 방식만 바뀌므로, 같은 문구를
+  // 붙여넣은 채로 왔다 갔다 하며 두 디자인을 비교할 수 있다.
+  const [kimchiSkin, setKimchiSkin] = useState<'basic' | 'modern'>('basic');
   const [photoSectionMap, setPhotoSectionMap] = useState<Record<string, string>>({});
   const [kimchiPastedText, setKimchiPastedText] = useState('');
   // 미리보기에서 우클릭한 자리. 그 섹션의 어느 사진 앞에 넣을지까지 함께 들고 있다가,
@@ -2250,15 +2254,15 @@ const DetailPageBuilderModal: React.FC<DetailPageBuilderModalProps> = ({ isOpen,
                 style={{ width: CANVAS_WIDTH, backgroundColor: '#ffffff', position: 'relative' }}
               >
                 {isKimchi ? (
-                  <KimchiPreview
-                    sections={kimchiSections}
-                    updateSection={updateKimchiSection}
-                    photosBySection={photosBySection}
-                    renderPhoto={renderPhoto}
-                    fontFamily={templateStyle.fontFamily}
-                    textColor={templateStyle.textColor}
-                    fontScale={templateStyle.fontScale}
-                  />
+                  React.createElement(kimchiSkin === 'modern' ? KimchiPreviewModern : KimchiPreview, {
+                    sections: kimchiSections,
+                    updateSection: updateKimchiSection,
+                    photosBySection,
+                    renderPhoto,
+                    fontFamily: templateStyle.fontFamily,
+                    textColor: templateStyle.textColor,
+                    fontScale: templateStyle.fontScale,
+                  })
                 ) : (
                   <>
                 {/* Hero */}
@@ -2504,6 +2508,32 @@ const DetailPageBuilderModal: React.FC<DetailPageBuilderModalProps> = ({ isOpen,
           {/* Side panel: inputs only — everything else is edited directly in the preview */}
           <div className="lg:w-80 flex-shrink-0 flex flex-col gap-4 overflow-y-auto pr-1">
             {isKimchi ? (
+              <>
+              <div className="space-y-2">
+                <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">디자인</p>
+                <div className="flex gap-1.5">
+                  {([
+                    { id: 'basic' as const, label: '기본', hint: '굵고 꽉 찬 컬러 블록, 가운데 정렬' },
+                    { id: 'modern' as const, label: '모던', hint: '여백 넓은 왼쪽 정렬, 얇은 선' },
+                  ]).map(skin => (
+                    <button
+                      key={skin.id}
+                      onClick={() => setKimchiSkin(skin.id)}
+                      title={skin.hint}
+                      className={`flex-1 px-2 py-1.5 text-xs font-semibold rounded-md border transition-colors ${
+                        kimchiSkin === skin.id
+                          ? 'bg-blue-600 border-blue-500 text-white'
+                          : 'bg-slate-800 border-slate-600 text-slate-300 hover:bg-slate-700'
+                      }`}
+                    >
+                      {skin.label}
+                    </button>
+                  ))}
+                </div>
+                <p className="text-xs text-slate-500 leading-relaxed">
+                  문구와 사진은 그대로 두고 디자인만 바뀝니다. 붙여넣기 라벨도 같아요.
+                </p>
+              </div>
               <KimchiSectionPanel
                 sections={kimchiSections}
                 photosBySection={photosBySection}
@@ -2517,6 +2547,7 @@ const DetailPageBuilderModal: React.FC<DetailPageBuilderModalProps> = ({ isOpen,
                 onRemovePhoto={removePhoto}
                 onPhotoClick={photo => startCropQueue([photo])}
               />
+              </>
             ) : (
               <div className="space-y-2">
                 <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">사진 업로드 (순서: 히어로 → 특징01~{String(featureBlockCount).padStart(2, '0')} → 마무리)</p>

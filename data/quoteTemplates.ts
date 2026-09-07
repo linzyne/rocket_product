@@ -204,25 +204,22 @@ export const normalizeHeader = (s: string | null | undefined): string =>
 
 // 항목 이름만으로 값을 자동으로 정할 수 있는 경우(예: 출시 연도는 항상 올해)를 위한 기본값.
 // 자동으로 정할 수 없는 항목은 빈 문자열을 돌려주고, 사용자가 직접 입력하도록 둡니다.
+// 노출속성은 숫자만 적으면 반려되므로, 자동으로 채우는 값에도 단위("년")를 붙입니다.
 export const getAutoCustomFieldValue = (name: string): string => {
   const key = normalizeHeader(name);
   if (key === normalizeHeader('출시 연도') || key === normalizeHeader('출시년도')) {
-    return String(new Date().getFullYear());
+    return `${new Date().getFullYear()}년`;
   }
   return '';
 };
 
 // 견적서의 노출속성 값은 "30"처럼 숫자만 적으면 반려되고 "30cm"처럼 단위까지 있어야 통과합니다.
-// 다만 출시 연도처럼 단위 없이 숫자만 적는 게 맞는 항목도 있어서, 그런 항목은 검사에서 뺍니다.
-const UNITLESS_CUSTOM_FIELD_NAMES = ['출시 연도', '출시년도', '연도', '년도'];
-
-export const customFieldNeedsUnit = (name: string, value: string): boolean => {
+// 예외는 두지 않습니다 — 연도도 "2026"이 아니라 "2026년"으로 적어야 합니다.
+export const customFieldNeedsUnit = (value: string): boolean => {
   const trimmed = value.trim();
   if (!trimmed) return false;
   // 숫자와 소수점/자릿수 쉼표만으로 이루어져 있으면 단위가 빠진 값입니다.
-  if (!/^[0-9]+([.,][0-9]+)*$/.test(trimmed)) return false;
-  const key = normalizeHeader(name);
-  return !UNITLESS_CUSTOM_FIELD_NAMES.some(n => key.includes(normalizeHeader(n)));
+  return /^[0-9]+([.,][0-9]+)*$/.test(trimmed);
 };
 
 declare var JSZip: any;

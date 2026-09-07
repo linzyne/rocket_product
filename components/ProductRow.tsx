@@ -294,7 +294,7 @@ const ProductRow: React.FC<ProductRowProps> = ({
             // 숫자만 적으면 등록이 반려된다. 그래서 항목 이름은 늘 빨간색으로 두고, 아직
             // 못 채웠거나 단위가 빠진 칸은 칸 자체와 안내문까지 빨갛게 해서 눈에 띄게 한다.
             const isEmpty = value.trim() === '';
-            const needsUnit = customFieldNeedsUnit(name, value);
+            const needsUnit = customFieldNeedsUnit(value);
             const hasProblem = isEmpty || needsUnit;
             return (
               <Field

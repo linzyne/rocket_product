@@ -42,12 +42,15 @@ const APP_URLS = ['http://localhost:3000/', 'https://rocket-product.vercel.app/'
 // 상세페이지 에디터 창과, 그 창을 연 1688 탭.
 let detailEditor = null;
 
-// 이미 열려 있는 앱 탭이 있으면 그 주소를 그대로 쓴다(로컬/배포를 자동으로 가려낸다).
+// 앱 주소는 개발 서버(localhost:3000)가 떠 있으면 그쪽, 아니면 배포본을 쓴다.
+// 열려 있는 탭을 따라가면 어느 쪽이 열렸는지 사람이 알 수 없어 헷갈리므로 직접 확인한다.
 const resolveAppUrl = async () => {
-  const tabs = await chrome.tabs.query({ url: ['http://localhost/*', 'https://rocket-product.vercel.app/*'] });
-  const open = tabs.find((tab) => tab.url);
-  if (open) return new URL(open.url).origin + '/';
-  return APP_URLS[0];
+  try {
+    await fetch(APP_URLS[0], { method: 'HEAD', cache: 'no-store', signal: AbortSignal.timeout(1200) });
+    return APP_URLS[0];
+  } catch (err) {
+    return APP_URLS[1];
+  }
 };
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
@@ -175,6 +178,12 @@ chrome.downloads.onCreated.addListener((item) => {
   if (!/supplier\.coupang\.com/.test(url)) return;
   const filename = (item.filename || '').split(/[\\/]/).pop();
   chrome.tabs.sendMessage(job.hubTabId, { type: 'FETCH_DOWNLOAD', url, filename }).catch(() => {});
+  // 파일 내용은 위에서 따로 받아 앱으로 넘기므로, PC에는 남기지 않는다.
+  // (앱에 "견적서 받기" 버튼이 있어 필요할 때 직접 저장할 수 있다.)
+  chrome.downloads.cancel(item.id).then(
+    () => chrome.downloads.erase({ id: item.id }),
+    () => {},
+  );
 });
 
 chrome.windows.onRemoved.addListener((windowId) => {

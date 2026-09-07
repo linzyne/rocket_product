@@ -361,6 +361,8 @@ const App: React.FC = () => {
   const [categoryFinderProductId, setCategoryFinderProductId] = useState<string | null>(null);
   // 아래에서 정의되는 applyImportPayload를, 그보다 위에 있는 effect에서 쓰기 위한 통로.
   const applyImportPayloadRef = useRef<((productId: string, payload: any) => Promise<void>) | null>(null);
+  // 확장이 상세페이지 에디터를 열면서 보내준 값. 새로 만든 행이 목록에 들어온 뒤에 채운다.
+  const [pendingDetailImport, setPendingDetailImport] = useState<{ productId: string; payload: any } | null>(null);
 
   // 견적서 선택/관리 화면에 보여줄 목록. 카테고리 견적서 찾기로 받아온 임시 양식(hidden)은
   // 그 상품에서만 쓰이므로 목록에는 넣지 않는다.
@@ -2484,13 +2486,18 @@ const App: React.FC = () => {
         return;
       }
 
-      // 빈 행을 하나 만들고, 그 행에 확장 값을 그대로 채운 뒤 에디터를 연다.
-      const target = createNewProduct();
-      setProducts(prev => [...prev, target]);
-      applyImportPayloadRef.current?.(target.id, payload).finally(() => {
-        setDetailPageBuilderState(prev => (prev.isOpen ? prev : { isOpen: true, product: target, standalone: false }));
+      // 빈 행을 하나 만들고, 그 행에 확장 값을 채운 뒤 에디터를 연다.
+      // 값 채우기(applyImportPayload)는 그 행이 실제로 목록에 들어간 뒤에야 동작하므로
+      // (안에서 products에서 상품을 찾는다), 여기서는 예약만 하고 아래 effect가 실행한다.
+      setProducts(prev => {
+        // 앱을 처음 열면 빈 행이 하나 있다. 그 행을 두고 새로 만들면 빈 1번 + 값이 든 2번이
+        // 되므로, 비어 있으면 그 행을 그대로 쓴다.
+        const last = prev[prev.length - 1];
+        const reusable = last && !last.productName && !last.url;
+        const target = reusable ? last : createNewProduct();
+        setPendingDetailImport({ productId: target.id, payload });
+        return reusable ? prev : [...prev, target];
       });
-      setDetailPageBuilderState({ isOpen: true, product: target, standalone: false });
     };
     window.addEventListener('message', onMessage);
 
@@ -2509,6 +2516,30 @@ const App: React.FC = () => {
       openBlank();
     }, 1500);
   }, []);
+
+  // 새 행이 목록에 들어오면 확장 값을 채우고, 다 채워진 그 행으로 에디터를 연다.
+  useEffect(() => {
+    if (!pendingDetailImport) return;
+    const { productId, payload } = pendingDetailImport;
+    if (!products.some(p => p.id === productId)) return;
+    setPendingDetailImport(null);
+
+    const openEditor = () => {
+      // 값이 채워진 최신 상품으로 열어야 문구·상품명이 에디터에 반영된다.
+      setProducts(current => {
+        const filled = current.find(p => p.id === productId);
+        if (filled) setDetailPageBuilderState({ isOpen: true, product: filled, standalone: false });
+        return current;
+      });
+    };
+
+    const run = applyImportPayloadRef.current;
+    if (!run) {
+      openEditor();
+      return;
+    }
+    run(productId, payload).then(openEditor, openEditor);
+  }, [pendingDetailImport, products]);
 
   // 제안서와 상관없는 제품의 상세페이지도 만들 수 있게, 상품 목록에 행을 추가하지 않고 빈 임시
   // 상품으로 빌더만 연다. 번호를 주지 않아 파일명(001.png 등)도 비워두므로, 저장 파일명은
@@ -2775,6 +2806,7 @@ const App: React.FC = () => {
                     onImportFrom1688={handleImportFrom1688}
                     isImportingFrom1688={importing1688ProductIds.has(group.products[0].id)}
                     onOpenCategoryFinder={setCategoryFinderProductId}
+                    onGenerateQuote={handleGenerateProductQuote}
                     onOpenDetailPageBuilder={openDetailPageBuilder}
                     isDetailPageDone={detailPageDoneId === group.products[0].id}
                     onIntegratedDownload={handleIntegratedDownload}
@@ -3062,7 +3094,7 @@ const App: React.FC = () => {
       <DetailPageBuilderModal
         isOpen={detailPageBuilderState.isOpen}
         onClose={closeDetailPageBuilder}
-        product={detailPageBuilderState.product}
+        product={products.find(p => p.id === detailPageBuilderState.product?.id) ?? detailPageBuilderState.product}
         groupProducts={detailPageBuilderState.product ? getGroupProducts(detailPageBuilderState.product) : []}
         onSave={handleSaveFromDetailPageBuilder}
         onSaveThumbnail={handleSaveThumbnailFromDetailPageBuilder}

@@ -1,7 +1,7 @@
 
 import React, { useState, useRef, useEffect } from 'react';
 import { Product } from '../types';
-import { ImageIcon, ChevronDownIcon, ChevronUpIcon, ExternalLinkIcon, ClipboardIcon, DocumentAddIcon, SaveIcon, StarIcon, CheckIcon, SpinnerIcon, SearchIcon } from './Icons';
+import { ImageIcon, ChevronDownIcon, ChevronUpIcon, ExternalLinkIcon, ClipboardIcon, DocumentAddIcon, SaveIcon, StarIcon, CheckIcon, SpinnerIcon, SearchIcon, DownloadIcon } from './Icons';
 
 interface ProductGroupSummaryProps {
   groupIndex: number;
@@ -12,6 +12,8 @@ interface ProductGroupSummaryProps {
   onImportFrom1688: (id: string) => void;
   /** 상품명 키워드로 쿠팡 카테고리 견적서를 찾아 등록하는 모달을 엽니다. */
   onOpenCategoryFinder: (id: string) => void;
+  /** 이 그룹의 견적서를 값이 채워진 엑셀로 내려받습니다. */
+  onGenerateQuote: (id: string) => void;
   isImportingFrom1688: boolean;
   onOpenDetailPageBuilder: (product: Product) => void;
   isDetailPageDone: boolean;
@@ -77,6 +79,7 @@ const ProductGroupSummary: React.FC<ProductGroupSummaryProps> = ({
   onProductChange,
   onImportFrom1688,
   onOpenCategoryFinder,
+  onGenerateQuote,
   isImportingFrom1688,
   onOpenDetailPageBuilder,
   isDetailPageDone,
@@ -221,6 +224,19 @@ const ProductGroupSummary: React.FC<ProductGroupSummaryProps> = ({
             title="라벨·이미지·견적서를 상품명 폴더에 저장하고, 이어서 쿠팡에 제안합니다"
           />
         </div>
+
+        {/* 견적서는 통합다운에 이미 들어가지만, 양식만 따로 확인하고 싶을 때가 있어 따로 둔다. */}
+        {lead.quoteTemplateId && (
+          <button
+            type="button"
+            onClick={() => onGenerateQuote(lead.id)}
+            className="flex-shrink-0 text-gray-400 hover:text-sky-600 transition-colors duration-200 p-1 rounded-md hover:bg-sky-400/10"
+            aria-label="견적서 내려받기"
+            title="이 상품 그룹의 견적서를 엑셀로 내려받기 (옵션마다 한 행씩 채워집니다)"
+          >
+            <DownloadIcon />
+          </button>
+        )}
 
         <button
           type="button"

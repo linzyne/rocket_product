@@ -744,6 +744,15 @@ const DetailPageBuilderModal: React.FC<DetailPageBuilderModalProps> = ({ isOpen,
     return () => document.removeEventListener('selectionchange', handleSelectionChange);
   }, []);
 
+  // 상세페이지의 제품명은 AI가 지어낸 이름이 아니라 상품에 입력된 상품명을 따른다.
+  // 확장에서 값을 채우는 데 시간이 걸려 에디터가 먼저 열리는 경우가 있어, 상품명이 뒤늦게
+  // 들어와도 반영되게 상품명이 바뀔 때마다 맞춰 준다.
+  useEffect(() => {
+    const name = product?.productName;
+    if (!name) return;
+    setCopy(prev => (prev.productName === name ? prev : { ...prev, productName: name }));
+  }, [product?.productName]);
+
   if (!isOpen) return null;
 
   // sectionId를 주면 그 사진을 해당 섹션에 배정한다(김치 템플릿의 섹션별 업로드). 기본 템플릿은
@@ -2731,13 +2740,6 @@ const DetailPageBuilderModal: React.FC<DetailPageBuilderModalProps> = ({ isOpen,
                 >
                   {promptCopyStatus === 'copied' ? '복사됨!' : 'AI용 프롬프트 복사하기'}
                 </button>
-                <textarea
-                  value={kimchiPastedText}
-                  onChange={e => setKimchiPastedText(e.target.value)}
-                  placeholder="여기에 문구를 붙여넣으세요"
-                  rows={10}
-                  className="w-full px-2.5 py-2 bg-slate-800 border border-slate-600 rounded-md text-sm text-slate-100 placeholder:text-slate-500 resize-none"
-                />
                 <button
                   onClick={handleApplyKimchiPasted}
                   disabled={!kimchiPastedText.trim()}
@@ -2745,6 +2747,13 @@ const DetailPageBuilderModal: React.FC<DetailPageBuilderModalProps> = ({ isOpen,
                 >
                   붙여넣은 문구 적용
                 </button>
+                <textarea
+                  value={kimchiPastedText}
+                  onChange={e => setKimchiPastedText(e.target.value)}
+                  placeholder="여기에 문구를 붙여넣으세요"
+                  rows={10}
+                  className="w-full px-2.5 py-2 bg-slate-800 border border-slate-600 rounded-md text-sm text-slate-100 placeholder:text-slate-500 resize-none"
+                />
                 <p className="text-xs text-slate-500 leading-relaxed">
                   적용한 뒤에도 미리보기에서 글자를 직접 눌러 고칠 수 있어요. 비워둔 항목은 이미지에서 빠집니다.
                 </p>
@@ -2759,13 +2768,6 @@ const DetailPageBuilderModal: React.FC<DetailPageBuilderModalProps> = ({ isOpen,
                 >
                   {promptCopyStatus === 'copied' ? '복사됨!' : 'AI용 프롬프트 복사하기'}
                 </button>
-                <textarea
-                  value={pastedText}
-                  onChange={e => setPastedText(e.target.value)}
-                  placeholder="여기에 문구를 붙여넣거나 직접 입력하세요"
-                  rows={10}
-                  className="w-full px-2.5 py-2 bg-slate-800 border border-slate-600 rounded-md text-sm text-slate-100 placeholder:text-slate-500 resize-none"
-                />
                 <button
                   onClick={handleApplyPasted}
                   disabled={!pastedText.trim()}
@@ -2773,6 +2775,13 @@ const DetailPageBuilderModal: React.FC<DetailPageBuilderModalProps> = ({ isOpen,
                 >
                   붙여넣은 문구 적용
                 </button>
+                <textarea
+                  value={pastedText}
+                  onChange={e => setPastedText(e.target.value)}
+                  placeholder="여기에 문구를 붙여넣거나 직접 입력하세요"
+                  rows={10}
+                  className="w-full px-2.5 py-2 bg-slate-800 border border-slate-600 rounded-md text-sm text-slate-100 placeholder:text-slate-500 resize-none"
+                />
               </div>
             )}
 

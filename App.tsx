@@ -359,6 +359,8 @@ const App: React.FC = () => {
   const [integratedDownloadArchiveDoneId, setIntegratedDownloadArchiveDoneId] = useState<string | null>(null);
   // 카테고리 견적서 찾기 모달을 연 상품 id. 받아온 견적서를 이 상품에 바로 연결한다.
   const [categoryFinderProductId, setCategoryFinderProductId] = useState<string | null>(null);
+  // 아래에서 정의되는 applyImportPayload를, 그보다 위에 있는 effect에서 쓰기 위한 통로.
+  const applyImportPayloadRef = useRef<((productId: string, payload: any) => Promise<void>) | null>(null);
 
   // 견적서 선택/관리 화면에 보여줄 목록. 카테고리 견적서 찾기로 받아온 임시 양식(hidden)은
   // 그 상품에서만 쓰이므로 목록에는 넣지 않는다.
@@ -2208,26 +2210,9 @@ const App: React.FC = () => {
   // 옵션(variants)이 여러 개면 그 개수만큼 상품행을 복제해서, 공통 필드(URL/SKU/중량/상품명/
   // 제조사/검색어)는 모든 행에 동일하게, 옵션별 원가/사이즈/노출속성만 행마다 다르게 채웁니다.
   // AI(Gemini) 호출은 옵션이 몇 개든 딱 1번만 발생합니다.
-  const handleImportFrom1688 = useCallback(async (productId: string) => {
-    if (!navigator.clipboard || !navigator.clipboard.readText) {
-      alert('이 브라우저 탭에서는 클립보드 읽기를 사용할 수 없습니다.\n주소창의 URL이 http://localhost:3000 또는 https://로 시작하는지 확인해주세요. (192.168.x.x 같은 일반 HTTP 주소에서는 보안 정책상 클립보드 API가 동작하지 않습니다.)');
-      return;
-    }
-
-    let payload: any;
-    try {
-      const clipboardText = await navigator.clipboard.readText();
-      payload = JSON.parse(clipboardText);
-    } catch (error) {
-      alert('클립보드에서 1688 데이터를 찾지 못했습니다. 1688 상품 페이지에서 캡처 확장프로그램 버튼을 먼저 눌러주세요.');
-      return;
-    }
-
-    if (!payload || payload.source !== '1688-import') {
-      alert('클립보드 내용이 1688 캡처 데이터 형식이 아닙니다. 1688 페이지에서 캡처 버튼을 먼저 눌러주세요.');
-      return;
-    }
-
+  // 클립보드로 붙여넣을 때(02 복붙)와, 확장이 상세페이지 에디터를 열면서 값을 함께 보내줄 때
+  // 둘 다 같은 처리를 쓰도록 payload를 받는 부분을 따로 뺐다.
+  const applyImportPayload = useCallback(async (productId: string, payload: any) => {
     const product = products.find(p => p.id === productId);
     if (!product) return;
 
@@ -2372,6 +2357,28 @@ const App: React.FC = () => {
     }
   }, [products, quoteTemplateRegistrations, use1688AiTranslation, expandProductGroup]);
 
+  applyImportPayloadRef.current = applyImportPayload;
+
+  const handleImportFrom1688 = useCallback(async (productId: string) => {
+    if (!navigator.clipboard || !navigator.clipboard.readText) {
+      alert('이 브라우저 탭에서는 클립보드 읽기를 사용할 수 없습니다.\n주소창의 URL이 http://localhost:3000 또는 https://로 시작하는지 확인해주세요. (192.168.x.x 같은 일반 HTTP 주소에서는 보안 정책상 클립보드 API가 동작하지 않습니다.)');
+      return;
+    }
+
+    let payload: any;
+    try {
+      payload = JSON.parse(await navigator.clipboard.readText());
+    } catch (error) {
+      alert('클립보드에서 1688 데이터를 찾지 못했습니다. 1688 상품 페이지에서 캡처 확장프로그램 버튼을 먼저 눌러주세요.');
+      return;
+    }
+    if (!payload || payload.source !== '1688-import') {
+      alert('클립보드 내용이 1688 캡처 데이터 형식이 아닙니다. 1688 페이지에서 캡처 버튼을 먼저 눌러주세요.');
+      return;
+    }
+    await applyImportPayload(productId, payload);
+  }, [applyImportPayload]);
+
   // 확장프로그램의 수익 계산기 팝업이 클립보드에 복사해둔 JSON을 읽어와 해당 상품행의
   // 원가/공급가/판매가/마진 필드에 그대로 채워 넣습니다(앱 내 계산기의 "저장하고 적용하기"와 동일).
   const handleImportMarginFromClipboard = useCallback(async (productId: string) => {
@@ -2448,14 +2455,59 @@ const App: React.FC = () => {
     if (new URLSearchParams(window.location.search).get('openDetail') !== '1') return;
     openedFromUrlRef.current = true;
 
-    setProducts(prev => {
-      const last = prev[prev.length - 1];
-      // 마지막 행이 아직 비어 있으면(방금 추가한 빈 행) 그 행을 그대로 쓴다.
-      const isEmpty = last && !last.productName && !last.url;
-      const target = isEmpty ? last : createNewProduct();
+    // 확장이 값 확인 창에 입력해둔 값을 통째로 보내준다(app-bridge.js 경유). 새 행을 만들고
+    // 복붙과 똑같이 채운 뒤 그 행의 에디터를 연다 — 앱에서 다시 붙여넣지 않아도 되게.
+    const openBlank = () => {
+      setProducts(prev => {
+        const last = prev[prev.length - 1];
+        const isEmpty = last && !last.productName && !last.url;
+        const target = isEmpty ? last : createNewProduct();
+        setDetailPageBuilderState({ isOpen: true, product: target, standalone: false });
+        return isEmpty ? prev : [...prev, target];
+      });
+    };
+
+    let handled = false;
+    const onMessage = (event: MessageEvent) => {
+      if (event.source !== window) return;
+      const data = event.data;
+      if (!data || data.source !== 'rocket-proposal-extension' || data.type !== 'DETAIL_COPY') return;
+      if (handled) return;
+      handled = true;
+      window.clearTimeout(timer);
+      window.removeEventListener('message', onMessage);
+
+      const payload = data.payload;
+      console.log('[상페에디터] 확장에서 받은 값', payload);
+      if (!payload || payload.source !== '1688-import') {
+        openBlank();
+        return;
+      }
+
+      // 빈 행을 하나 만들고, 그 행에 확장 값을 그대로 채운 뒤 에디터를 연다.
+      const target = createNewProduct();
+      setProducts(prev => [...prev, target]);
+      applyImportPayloadRef.current?.(target.id, payload).finally(() => {
+        setDetailPageBuilderState(prev => (prev.isOpen ? prev : { isOpen: true, product: target, standalone: false }));
+      });
       setDetailPageBuilderState({ isOpen: true, product: target, standalone: false });
-      return isEmpty ? prev : [...prev, target];
-    });
+    };
+    window.addEventListener('message', onMessage);
+
+    // 확장에게 "보내둔 값 있으면 지금 달라"고 요청한다. 먼저 받겠다고 붙여둔 뒤에 물어야
+    // 브리지가 보낸 답을 놓치지 않는다. 브리지가 늦게 붙는 경우가 있어 몇 번 더 물어본다.
+    const ask = () => window.postMessage({ source: 'rocket-proposal-app', type: 'REQUEST_DETAIL_COPY' }, window.location.origin);
+    ask();
+    const retries = [200, 600, 1200].map(ms => window.setTimeout(() => { if (!handled) ask(); }, ms));
+
+    // 확장이 없으면 그냥 빈 상품으로 연다.
+    const timer = window.setTimeout(() => {
+      retries.forEach(window.clearTimeout);
+      if (handled) return;
+      handled = true;
+      window.removeEventListener('message', onMessage);
+      openBlank();
+    }, 1500);
   }, []);
 
   // 제안서와 상관없는 제품의 상세페이지도 만들 수 있게, 상품 목록에 행을 추가하지 않고 빈 임시

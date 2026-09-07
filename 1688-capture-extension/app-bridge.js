@@ -63,6 +63,11 @@
         return;
       }
 
+      if (data.type === 'REQUEST_DETAIL_COPY') {
+        sendPendingDetailCopy();
+        return;
+      }
+
       if (data.type === 'CATEGORY_SEARCH') {
         await ask({ type: 'CATEGORY_SEARCH', keyword: data.keyword });
         reply({ type: 'CATEGORY_SEARCH_ACK', ok: true });
@@ -87,6 +92,26 @@
       else if (data.type === 'CATEGORY_PICK') reply({ type: 'CATEGORY_PICK_ACK', ok: false, error });
     }
   });
+
+  // 1688 값 확인 창에서 "상세페이지 에디터 열기"로 열린 경우, 거기 입력해둔 값을 앱에 넘깁니다.
+  // 앱이 준비된 뒤 물어보는 방식이라야 합니다 — 먼저 보내면 앱이 리스너를 붙이기 전이라 놓칩니다.
+  const sendPendingDetailCopy = () => {
+    try {
+      chrome.storage.local.get('pendingDetailCopy', (result) => {
+        const pending = result && result.pendingDetailCopy;
+        if (chrome.runtime.lastError || !pending) {
+          reply({ type: 'DETAIL_COPY', payload: null });
+          return;
+        }
+        chrome.storage.local.remove('pendingDetailCopy');
+        // 오래된 값이 남아 엉뚱한 상품에 붙지 않도록 5분만 인정합니다.
+        const fresh = Date.now() - (pending.savedAt || 0) <= 5 * 60 * 1000;
+        reply({ type: 'DETAIL_COPY', payload: fresh ? pending.payload : null });
+      });
+    } catch (err) {
+      reply({ type: 'DETAIL_COPY', payload: null });
+    }
+  };
 
   // 앱이 "확장이 깔려 있나"를 알 수 있게 준비 신호를 한 번 보냅니다.
   reply({ type: 'BRIDGE_READY' });

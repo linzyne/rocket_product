@@ -54,6 +54,11 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message && message.type === 'OPEN_APP_DETAIL') {
     (async () => {
       try {
+        // 앱 화면에 붙는 app-bridge.js가 이 값을 읽어 앱으로 넘겨준다(한 번 쓰고 지운다).
+        await chrome.storage.local.set({
+          pendingDetailCopy: { payload: message.payload || null, savedAt: Date.now() },
+        });
+
         const base = await resolveAppUrl();
         const created = await chrome.windows.create({
           url: `${base}?openDetail=1`,

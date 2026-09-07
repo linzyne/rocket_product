@@ -434,8 +434,12 @@ const DetailPageBuilderModal: React.FC<DetailPageBuilderModalProps> = ({ isOpen,
       setSellingPoints(draft?.sellingPoints ?? product?.detailSellingPoints ?? '');
       // 1688 확장에서 문구까지 받아온 상품이면, 처음 열 때 그 문구를 바로 반영해준다
       // (사용자가 "붙여넣기 → 적용"을 다시 하지 않아도 되게).
+      // 제품명은 AI가 지어낸 이름이 아니라 확장에서 직접 입력한 상품명을 쓴다.
       const importedCopy = !draft && product?.detailCopyText
-        ? parseDetailPageCopyText(product.detailCopyText, highlightCount, featureBlockCount)
+        ? (() => {
+            const parsed = parseDetailPageCopyText(product.detailCopyText, highlightCount, featureBlockCount);
+            return { ...parsed, productName: product.productName || parsed.productName };
+          })()
         : null;
       setCopy(draft?.copy ?? importedCopy ?? EMPTY_COPY);
       setPastedText(draft?.pastedText ?? product?.detailCopyText ?? '');

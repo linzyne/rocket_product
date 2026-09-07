@@ -1224,7 +1224,14 @@
     box.querySelector('#rc-open-detail-editor').addEventListener('click', () => {
       try {
         chrome.runtime.sendMessage(
-          { type: 'OPEN_APP_DETAIL', screenWidth: window.screen.availWidth, screenHeight: window.screen.availHeight },
+          {
+            type: 'OPEN_APP_DETAIL',
+            screenWidth: window.screen.availWidth,
+            screenHeight: window.screen.availHeight,
+            // 에디터를 복붙보다 먼저 열기 때문에, 지금 입력해둔 값을 통째로 들려 보낸다.
+            // 앱은 이 값으로 상품 행을 채우고(복붙과 같은 처리) 에디터를 연다.
+            payload: buildPayload({ silent: true }),
+          },
           (response) => {
             if (chrome.runtime.lastError || !response || !response.ok) {
               showToast('앱 창을 열지 못했습니다. 확장을 새로고침해주세요.', true);
@@ -1337,16 +1344,18 @@
       renderOptionRows();
     });
 
-    box.querySelector('#rc-copy').addEventListener('click', async () => {
+    // 복사하기와 "상세페이지 에디터 열기"가 같은 값을 쓰도록, payload 만드는 부분을 함수로 둔다.
+    // silent면 옵션이 없어도 경고 없이 null을 돌려준다(에디터만 열 때는 옵션이 없을 수 있다).
+    const buildPayload = ({ silent } = {}) => {
       const num = (id) => {
         const v = box.querySelector(id).value;
         return v === '' ? null : parseFloat(v);
       };
 
       const checkedRows = rows.filter(r => r.checked);
-      if (checkedRows.length === 0) {
+      if (checkedRows.length === 0 && !silent) {
         showToast('옵션을 최소 1개는 선택해주세요.', true);
-        return;
+        return null;
       }
 
       // 1번 섹션(기본 정보)의 가로/세로/높이는 "↑ 옵션에 적용하기"를 눌러야 옵션 행에 반영되는데,
@@ -1356,7 +1365,7 @@
       const topHeight = num('#rc-margin-height');
       const topDepth = num('#rc-margin-depth');
 
-      const payload = {
+      return {
         source: '1688-import',
         url: location.href,
         titleRaw: box.querySelector('#rc-title').value.trim(),
@@ -1389,7 +1398,11 @@
           };
         }),
       };
+    };
 
+    box.querySelector('#rc-copy').addEventListener('click', async () => {
+      const payload = buildPayload();
+      if (!payload) return;
       try {
         await navigator.clipboard.writeText(JSON.stringify(payload));
         const suffix = payload.variants.length > 1 ? ` (옵션 ${payload.variants.length}개)` : '';

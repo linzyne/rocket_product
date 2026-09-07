@@ -2712,7 +2712,7 @@ const DetailPageBuilderModal: React.FC<DetailPageBuilderModalProps> = ({ isOpen,
                   value={kimchiPastedText}
                   onChange={e => setKimchiPastedText(e.target.value)}
                   placeholder="여기에 문구를 붙여넣으세요"
-                  rows={14}
+                  rows={10}
                   className="w-full px-2.5 py-2 bg-slate-800 border border-slate-600 rounded-md text-sm text-slate-100 placeholder:text-slate-500 resize-none"
                 />
                 <button
@@ -2740,7 +2740,7 @@ const DetailPageBuilderModal: React.FC<DetailPageBuilderModalProps> = ({ isOpen,
                   value={pastedText}
                   onChange={e => setPastedText(e.target.value)}
                   placeholder="여기에 문구를 붙여넣거나 직접 입력하세요"
-                  rows={14}
+                  rows={10}
                   className="w-full px-2.5 py-2 bg-slate-800 border border-slate-600 rounded-md text-sm text-slate-100 placeholder:text-slate-500 resize-none"
                 />
                 <button

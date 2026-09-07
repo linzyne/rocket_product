@@ -1,3 +1,4 @@
+import { openAppDb } from '../data/appDb';
 // Shared save-as helpers for image downloads across the app.
 //
 // saveBlobInProductFolder / saveDataUrlInProductFolder (Chrome/Edge): the user picks a base folder
@@ -44,12 +45,56 @@ export function productNameFolderName(product: { productName?: string } | null |
 // doing slow async work (image capture, zip building, xlsx generation) — the File System Access
 // API requires "user activation" that a multi-step async chain would otherwise burn through by the
 // time saveFilesInProductFolder gets around to calling this internally.
+
+// 고른 폴더(디렉터리 핸들)를 IndexedDB에 저장해 둡니다. 핸들은 새로고침해도 살아남으므로,
+// 다음부터는 폴더를 다시 고르지 않아도 되고 권한 창도 뜨지 않습니다(브라우저가 허용을 기억).
+// 브라우저를 완전히 껐다 켠 뒤에는 권한이 'prompt'로 돌아가, 클릭 직후 한 번 확인만 받으면 됩니다.
+const HANDLE_STORE = 'fileHandles';
+const HANDLE_KEY = 'integratedDownloadRoot';
+
+// DB 열기는 data/appDb.ts 한 곳에서만 한다(버전이 어긋나 열리지 않는 사고를 막는다).
+const openHandleDb = async (): Promise<IDBDatabase | null> => {
+  try {
+    return await openAppDb();
+  } catch (err) {
+    console.log('[통합다운] 폴더 기억용 DB를 열지 못했습니다:', err);
+    return null;
+  }
+};
+
+const loadSavedRootDir = async (): Promise<any | null> => {
+  const db = await openHandleDb();
+  if (!db) return null;
+  return new Promise(resolve => {
+    try {
+      const request = db.transaction(HANDLE_STORE, 'readonly').objectStore(HANDLE_STORE).get(HANDLE_KEY);
+      request.onsuccess = () => resolve(request.result || null);
+      request.onerror = () => resolve(null);
+    } catch (err) {
+      resolve(null);
+    }
+  });
+};
+
+const saveRootDir = async (handle: any): Promise<void> => {
+  const db = await openHandleDb();
+  if (!db) return;
+  try {
+    db.transaction(HANDLE_STORE, 'readwrite').objectStore(HANDLE_STORE).put(handle, HANDLE_KEY);
+  } catch (err) {
+    console.log('[통합다운] 폴더 기억 실패:', err);
+  }
+};
+
 export async function getRootDirectory(): Promise<any | null> {
   const picker = (window as any).showDirectoryPicker;
   if (typeof picker !== 'function') {
     console.log('[통합다운] showDirectoryPicker 미지원 브라우저');
     return null;
   }
+
+  // 이 세션에서 아직 고른 적이 없으면, 지난번에 기억해둔 폴더를 먼저 꺼내 씁니다.
+  if (!cachedRootDir) cachedRootDir = await loadSavedRootDir();
 
   if (cachedRootDir) {
     try {
@@ -69,6 +114,7 @@ export async function getRootDirectory(): Promise<any | null> {
   try {
     cachedRootDir = await picker({ mode: 'readwrite' });
     console.log('[통합다운] 새 폴더 선택 완료:', cachedRootDir?.name);
+    await saveRootDir(cachedRootDir);
     return cachedRootDir;
   } catch (err: any) {
     if (err?.name !== 'AbortError') console.error('폴더 선택 실패:', err);

@@ -18,6 +18,8 @@ import ImageEditorModal from './components/ImageEditorModal';
 import DetailPageBuilderModal from './components/DetailPageBuilderModal';
 import MissingFieldsModal from './components/MissingFieldsModal';
 import { saveDataUrlInProductFolder, productFolderName, productNameFolderName, buildZipBlob, saveFilesInProductFolder, getRootDirectory } from './utils/fileSave';
+import { sendProposalToSupplierHub } from './utils/rocketProposal';
+import CategoryQuoteFinderModal from './components/CategoryQuoteFinderModal';
 import { collectMissingFields } from './utils/productValidation';
 import {
   QuoteFixedValues,
@@ -355,6 +357,15 @@ const App: React.FC = () => {
   const [integratedDownloadDoneId, setIntegratedDownloadDoneId] = useState<string | null>(null);
   // 통합다운 완료 후 "상품목록에 저장할까요?" 확인을 눌러 저장했을 때, 별표를 잠깐 활성화 표시하기 위한 id.
   const [integratedDownloadArchiveDoneId, setIntegratedDownloadArchiveDoneId] = useState<string | null>(null);
+  // 카테고리 견적서 찾기 모달을 연 상품 id. 받아온 견적서를 이 상품에 바로 연결한다.
+  const [categoryFinderProductId, setCategoryFinderProductId] = useState<string | null>(null);
+
+  // 견적서 선택/관리 화면에 보여줄 목록. 카테고리 견적서 찾기로 받아온 임시 양식(hidden)은
+  // 그 상품에서만 쓰이므로 목록에는 넣지 않는다.
+  const visibleQuoteTemplateRegistrations = useMemo(
+    () => quoteTemplateRegistrations.filter(r => !r.hidden),
+    [quoteTemplateRegistrations],
+  );
   // 상세페이지 빌더에서 "상세 이미지로 저장"을 누른 직후 잠깐 체크 아이콘으로 바꿔서, 목록을 훑어볼 때
   // 이 상품은 상세페이지 작업이 끝났다는 걸 알 수 있게 한다(통합다운로드 완료 표시와 같은 패턴).
   const [detailPageDoneId, setDetailPageDoneId] = useState<string | null>(null);
@@ -1026,13 +1037,30 @@ const App: React.FC = () => {
     );
   }, []);
 
+  // 추가 항목(노출속성)은 옵션마다 똑같이 적어야 하는 값이 대부분이라(예: 높이), 그룹의 첫
+  // 옵션에 입력하면 같은 그룹의 나머지 옵션에도 같이 채워 준다. 다만 "옵션마다 달라지는 항목"
+  // (견적서에 지정된 노출속성 = optionFieldName)은 각 옵션의 고유값이므로 따라 적지 않는다.
   const handleSetProductCustomField = useCallback((productId: string, name: string, value: string) => {
-    setProducts(prev =>
-      prev.map(p =>
-        p.id === productId ? { ...p, customFields: { ...p.customFields, [name]: value } } : p
-      )
-    );
-  }, []);
+    setProducts(prev => {
+      const target = prev.find(p => p.id === productId);
+      if (!target) return prev;
+
+      const registration = quoteTemplateRegistrations.find(r => r.id === target.quoteTemplateId);
+      const optionFieldName = registration?.optionFieldName || OPTION_FIELD_COLOR;
+      const groupKey = getProductGroupKey(target);
+      const isFirstOfGroup = prev.find(p => getProductGroupKey(p) === groupKey)?.id === productId;
+      const followAlong = isFirstOfGroup && name !== optionFieldName;
+
+      return prev.map(p => {
+        if (p.id === productId) return { ...p, customFields: { ...p.customFields, [name]: value } };
+        if (!followAlong || getProductGroupKey(p) !== groupKey) return p;
+        // 이미 손으로 다르게 적어둔 옵션은 덮어쓰지 않는다.
+        const current = (p.customFields || {})[name];
+        if (current && current !== target.customFields?.[name]) return p;
+        return { ...p, customFields: { ...p.customFields, [name]: value } };
+      });
+    });
+  }, [quoteTemplateRegistrations]);
 
   const handleRemoveProductCustomField = useCallback((productId: string, name: string) => {
     setProducts(prev =>
@@ -1710,6 +1738,78 @@ const App: React.FC = () => {
     }
   }, [quoteTemplateRegistrations, quoteFixedValues, syncNewCustomFieldNamesToProducts]);
 
+  // 카테고리 견적서 찾기로 받아온 양식은 "등록"하지 않는다. 상품마다 카테고리가 달라서
+  // 목록에 쌓이기만 하고 다시 쓸 일이 없기 때문이다. 대신 이 상품 그룹에만 몰래 붙여두고
+  // (hidden), 견적서 생성/통합다운이 값을 채워 넣는 데만 쓴다.
+  const handleCategoryQuoteDownloaded = useCallback(async (category: string, file: File) => {
+    const productId = categoryFinderProductId;
+    setCategoryFinderProductId(null);
+    if (!productId) return;
+    const target = products.find(p => p.id === productId);
+    if (!target) return;
+
+    try {
+      const fileDataUrl = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onloadend = () => resolve(reader.result as string);
+        reader.onerror = () => reject(reader.error || new Error('견적서 파일을 읽지 못했습니다.'));
+        reader.readAsDataURL(file);
+      });
+
+      // 이 카테고리 견적서에만 있는 노출속성(색상/수량 외 높이 등)을 항목 이름으로 뽑아둬야
+      // 상품에 그 칸이 생기고, 값이 빠짐없이 채워진다.
+      let customFieldNames: string[] = [];
+      try {
+        const template = getQuoteTemplates(quoteFixedValues)[0];
+        if (template) customFieldNames = await computeMissingExposureAttributeLabels(fileDataUrl, [], template);
+      } catch (error) {
+        console.error('노출속성 항목 비교 실패:', error);
+      }
+
+      const registration: QuoteTemplateRegistration = {
+        id: generateId(),
+        category,
+        fileName: file.name,
+        fileDataUrl,
+        customFieldNames,
+        optionFieldName: OPTION_FIELD_COLOR,
+        createdAt: Date.now(),
+        hidden: true,
+      };
+
+      // 새로고침 후에도 통합다운이 되도록 IndexedDB에는 남기되, 클라우드/카테고리 목록에는
+      // 올리지 않는다. 같은 그룹에서 전에 받아둔 임시 양식은 정리한다.
+      const groupKey = getProductGroupKey(target);
+      const previousIds = products
+        .filter(p => getProductGroupKey(p) === groupKey && p.quoteTemplateId)
+        .map(p => p.quoteTemplateId);
+      const staleIds = quoteTemplateRegistrations
+        .filter(r => r.hidden && previousIds.includes(r.id))
+        .map(r => r.id);
+
+      await putQuoteTemplate(registration);
+      await Promise.all(staleIds.map(id => deleteQuoteTemplate(id).catch(() => undefined)));
+
+      setQuoteTemplateRegistrations(prev => [...prev.filter(r => !staleIds.includes(r.id)), registration]);
+      setProducts(prev => prev.map(p => (
+        getProductGroupKey(p) === groupKey
+          ? {
+              ...p,
+              category,
+              quoteTemplateId: registration.id,
+              customFields: {
+                ...(p.customFields || {}),
+                ...Object.fromEntries(customFieldNames.map(name => [name, (p.customFields || {})[name] || ''])),
+              },
+            }
+          : p
+      )));
+    } catch (error) {
+      console.error('카테고리 견적서 적용 실패:', error);
+      alert(`받아온 견적서를 적용하지 못했습니다.\n${error instanceof Error ? error.message : String(error)}`);
+    }
+  }, [categoryFinderProductId, products, quoteTemplateRegistrations, quoteFixedValues]);
+
   const handleUpdateQuoteTemplateCustomFieldNames = useCallback((id: string, customFieldNames: string[]) => {
     const target = quoteTemplateRegistrations.find(r => r.id === id);
     if (!target) return;
@@ -1945,6 +2045,13 @@ const App: React.FC = () => {
       console.log('[통합다운] getRootDirectory 완료', { rootDir: rootDir ? rootDir.name : null });
 
       const files: { name: string; blob: Blob }[] = [];
+      // 저장이 끝난 뒤 "로켓에 제안할까요?"에서 서플라이어허브로 넘길 파일들. 등록 화면의
+      // 01(견적서 엑셀)/02(이미지 zip)/03(제품 필수 표시사항 = 라벨)에 그대로 대응한다.
+      // 견적서 템플릿을 고르지 않았거나 생성에 실패하면 quoteFile이 null로 남고, 그때는
+      // 제안 여부를 묻지 않는다(견적서 없이는 등록이 시작되지 않으므로).
+      let quoteFile: { name: string; blob: Blob } | null = null;
+      let imagesZipFile: { name: string; blob: Blob } | null = null;
+      const labelFiles: { name: string; blob: Blob }[] = [];
 
       // 라벨: 옵션마다 하나씩 순서대로 생성한다(캡처가 숨은 DOM 노드 하나를 재사용하므로 동시에
       // 여러 개를 캡처할 수 없어 순차적으로 처리).
@@ -1952,7 +2059,9 @@ const App: React.FC = () => {
         const labelImageDataUrl = await captureLabelImage(p);
         if (labelImageDataUrl) {
           const labelBlob = await (await fetch(labelImageDataUrl)).blob();
-          files.push({ name: p.labelFile || `${p.productName || '상품'}_라벨.png`, blob: labelBlob });
+          const labelFile = { name: p.labelFile || `${p.productName || '상품'}_라벨.png`, blob: labelBlob };
+          labelFiles.push(labelFile);
+          files.push(labelFile);
         }
       }
       console.log('[통합다운] 라벨 캡처 완료', { fileCount: files.length });
@@ -1969,7 +2078,8 @@ const App: React.FC = () => {
       }
       if (imageFiles.length > 0) {
         const zipBlob = await buildZipBlob(imageFiles);
-        files.push({ name: `${product.productName || '상품'}_이미지.zip`, blob: zipBlob });
+        imagesZipFile = { name: `${product.productName || '상품'}_이미지.zip`, blob: zipBlob };
+        files.push(imagesZipFile);
       }
       console.log('[통합다운] 이미지 zip 완료', { imageFileCount: imageFiles.length });
 
@@ -1982,10 +2092,11 @@ const App: React.FC = () => {
               const arrayBuffer = dataUrlToArrayBuffer(registration.fileDataUrl);
               const buffer = await fillQuoteWorkbook(arrayBuffer, template, groupProducts);
               const quoteBlob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
-              files.push({
+              quoteFile = {
                 name: `${product.productName || '상품'}_견적서_${new Date().toISOString().slice(0, 10)}.xlsx`,
                 blob: quoteBlob,
-              });
+              };
+              files.push(quoteFile);
             }
           } catch (error) {
             console.error('견적서 생성 실패 (통합다운):', error);
@@ -2006,6 +2117,11 @@ const App: React.FC = () => {
       // 반응하지 않은 것처럼 보일 수 있다. 잠깐 체크 아이콘으로 바꿔 완료됐다는 걸 알려준다.
       setIntegratedDownloadDoneId(productId);
       setTimeout(() => setIntegratedDownloadDoneId(prev => (prev === productId ? null : prev)), 1500);
+      // 04 단계 체크는 잠깐이 아니라 계속 남아 있어야 "이 상품은 끝났다"를 알 수 있다.
+      const doneAt = Date.now();
+      setProducts(prev => prev.map(p => (
+        getProductGroupKey(p) === groupKey ? { ...p, integratedDownloadedAt: doneAt } : p
+      )));
 
       // 통합다운을 받았다는 건 이 상품을 다루고 있다는 뜻이므로, 상품목록(별표 저장)에도
       // 자동으로 남겨둘지 바로 물어본다.
@@ -2013,6 +2129,25 @@ const App: React.FC = () => {
         if (archiveProducts(groupProducts)) {
           setIntegratedDownloadArchiveDoneId(productId);
           setTimeout(() => setIntegratedDownloadArchiveDoneId(prev => (prev === productId ? null : prev)), 1500);
+        }
+      }
+
+      // 견적서를 만든 경우에만, 방금 만든 그 파일들로 로켓(서플라이어허브)에 제안할지 물어본다.
+      // 이 페이지는 서플라이어허브에 직접 접속할 수 없어서, 크롬 확장에 파일을 넘기고
+      // 확장이 대량 상품 등록 화면을 열어 01/02/03 첨부 → 해당없음 선택 → 약관 동의 →
+      // 파일 검증하기까지 대신 눌러준다.
+      if (quoteFile && window.confirm('로켓에 제안할까요?\n서플라이어허브 대량 상품 등록 화면을 열고 견적서·이미지·라벨을 첨부한 뒤 파일 검증까지 진행합니다.')) {
+        const result = await sendProposalToSupplierHub({
+          productName: product.productName,
+          quote: quoteFile,
+          imagesZip: imagesZipFile,
+          labels: labelFiles,
+        });
+        console.log('[통합다운] 로켓 제안 전달 결과', result);
+        if (result.noExtension) {
+          alert('크롬 확장(1688 상품 캡처 → 로켓제안서)이 필요합니다.\n확장을 설치·새로고침한 뒤 다시 시도해주세요.');
+        } else if (!result.ok) {
+          alert(`서플라이어허브로 파일을 넘기지 못했습니다.\n${result.error || '알 수 없는 오류'}`);
         }
       }
     } catch (error) {
@@ -2125,6 +2260,9 @@ const App: React.FC = () => {
     // 재질은 색상/사이즈처럼 상품에 내장된 고정 항목(product.material)이라, 상품등록 화면에
     // 항상 보이는 "소재" 칸에 바로 채워 넣는다(추가 항목으로 새로 생기는 게 아니라 기존 칸이 채워짐).
     if (payload.materialRaw) commonFields.material = String(payload.materialRaw).trim();
+    // 확장에서 상세페이지 문구까지 같이 넘어오면 상품에 실어둔다(상세페이지 에디터가 꺼내 쓴다).
+    if (payload.detailCopyText) commonFields.detailCopyText = String(payload.detailCopyText);
+    if (payload.sellingPoints) commonFields.detailSellingPoints = String(payload.sellingPoints);
     if (typeof payload.weightG === 'number' && payload.weightG > 0) {
       commonFields.weight = String(payload.weightG);
     }
@@ -2564,10 +2702,9 @@ const App: React.FC = () => {
                     isExpanded={isExpanded}
                     onToggle={() => toggleGroupExpanded(groupProductIds)}
                     onProductChange={handleProductChange}
-                    registeredCategories={categories}
-                    quoteTemplateRegistrations={quoteTemplateRegistrations}
                     onImportFrom1688={handleImportFrom1688}
                     isImportingFrom1688={importing1688ProductIds.has(group.products[0].id)}
+                    onOpenCategoryFinder={setCategoryFinderProductId}
                     onOpenDetailPageBuilder={openDetailPageBuilder}
                     isDetailPageDone={detailPageDoneId === group.products[0].id}
                     onIntegratedDownload={handleIntegratedDownload}
@@ -2810,11 +2947,19 @@ const App: React.FC = () => {
         />
       )}
 
+      <CategoryQuoteFinderModal
+        isOpen={!!categoryFinderProductId}
+        onClose={() => setCategoryFinderProductId(null)}
+        productName={products.find(p => p.id === categoryFinderProductId)?.productName || ''}
+        onDownloaded={handleCategoryQuoteDownloaded}
+        quoteTemplateProfile={getQuoteTemplates(quoteFixedValues)[0]}
+      />
+
       {isQuoteTemplateManagerOpen && (
         <QuoteTemplateManagerModal
           isOpen={isQuoteTemplateManagerOpen}
           onClose={() => setIsQuoteTemplateManagerOpen(false)}
-          registrations={quoteTemplateRegistrations}
+          registrations={visibleQuoteTemplateRegistrations}
           onAdd={handleAddQuoteTemplateRegistration}
           onDelete={handleDeleteQuoteTemplateRegistration}
           onCleanupDuplicates={handleCleanupDuplicateQuoteTemplates}

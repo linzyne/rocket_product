@@ -1,9 +1,7 @@
 
 import React, { useState, useRef, useEffect } from 'react';
 import { Product } from '../types';
-import { ImageIcon, ChevronDownIcon, ChevronUpIcon, ExternalLinkIcon, ClipboardIcon, DocumentAddIcon, SaveIcon, StarIcon, CheckIcon, SpinnerIcon } from './Icons';
-import { QuoteTemplateRegistration } from '../data/quoteTemplates';
-import { CATEGORY_PRESETS } from '../data/categoryPresets';
+import { ImageIcon, ChevronDownIcon, ChevronUpIcon, ExternalLinkIcon, ClipboardIcon, DocumentAddIcon, SaveIcon, StarIcon, CheckIcon, SpinnerIcon, SearchIcon } from './Icons';
 
 interface ProductGroupSummaryProps {
   groupIndex: number;
@@ -11,9 +9,9 @@ interface ProductGroupSummaryProps {
   isExpanded: boolean;
   onToggle: () => void;
   onProductChange: (id: string, field: keyof Product, value: string) => void;
-  registeredCategories: string[];
-  quoteTemplateRegistrations: QuoteTemplateRegistration[];
   onImportFrom1688: (id: string) => void;
+  /** 상품명 키워드로 쿠팡 카테고리 견적서를 찾아 등록하는 모달을 엽니다. */
+  onOpenCategoryFinder: (id: string) => void;
   isImportingFrom1688: boolean;
   onOpenDetailPageBuilder: (product: Product) => void;
   isDetailPageDone: boolean;
@@ -27,15 +25,58 @@ interface ProductGroupSummaryProps {
 
 const inputClass = "w-full px-3 py-1 bg-white border border-gray-200 rounded-md text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition duration-200";
 
+
+// 작업 순서를 그대로 보여주는 큰 버튼. 번호 + 이모지 + 이름을 함께 둬서 "지금 몇 번째인지"가
+// 한눈에 들어오게 하고, 끝난 단계는 초록 체크로 바뀐다.
+const STEP_TONES: Record<string, string> = {
+  orange: 'border-orange-200 bg-orange-50 text-orange-700 hover:bg-orange-100 hover:border-orange-300',
+  blue: 'border-sky-200 bg-sky-50 text-sky-700 hover:bg-sky-100 hover:border-sky-300',
+  violet: 'border-violet-200 bg-violet-50 text-violet-700 hover:bg-violet-100 hover:border-violet-300',
+  emerald: 'border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 hover:border-emerald-300',
+};
+
+const StepButton: React.FC<{
+  step: string;
+  label: string;
+  emoji: string;
+  tone: keyof typeof STEP_TONES;
+  onClick: () => void;
+  title: string;
+  busy?: boolean;
+  done?: boolean;
+}> = ({ step, label, emoji, tone, onClick, title, busy, done }) => (
+  <button
+    type="button"
+    onClick={onClick}
+    disabled={busy}
+    title={title}
+    aria-label={`${step} ${label}`}
+    className={`relative flex-1 min-w-[64px] flex flex-col items-center justify-center gap-0.5 py-2 rounded-2xl border-2 transition-all duration-150 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed ${
+      done ? 'border-emerald-300 bg-emerald-50 text-emerald-700' : STEP_TONES[tone]
+    }`}
+  >
+    <span className="text-[10px] font-extrabold leading-none opacity-60">{step}</span>
+    <span className="text-xl leading-none">
+      {busy ? <SpinnerIcon className="h-5 w-5 animate-spin" /> : emoji}
+    </span>
+    <span className="text-[11px] font-bold leading-none">{label}</span>
+    {/* 끝난 단계는 어떤 단계였는지도 계속 보이게, 이모지를 바꾸지 않고 체크 배지를 얹는다. */}
+    {done && !busy && (
+      <span className="absolute -top-2 -right-1.5 w-5 h-5 rounded-full bg-emerald-500 text-white text-[11px] font-bold flex items-center justify-center shadow-sm">
+        ✓
+      </span>
+    )}
+  </button>
+);
+
 const ProductGroupSummary: React.FC<ProductGroupSummaryProps> = ({
   groupIndex,
   products,
   isExpanded,
   onToggle,
   onProductChange,
-  registeredCategories,
-  quoteTemplateRegistrations,
   onImportFrom1688,
+  onOpenCategoryFinder,
   isImportingFrom1688,
   onOpenDetailPageBuilder,
   isDetailPageDone,
@@ -50,21 +91,7 @@ const ProductGroupSummary: React.FC<ProductGroupSummaryProps> = ({
   const optionCount = products.length;
   const colors = Array.from(new Set(products.map(p => p.color.trim()).filter(Boolean)));
 
-  const [showCategoryMenu, setShowCategoryMenu] = useState(false);
   const [isArchiveDone, setIsArchiveDone] = useState(false);
-  const categoryMenuRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      if (categoryMenuRef.current && !categoryMenuRef.current.contains(event.target as Node)) {
-        setShowCategoryMenu(false);
-      }
-    };
-    if (showCategoryMenu) {
-      document.addEventListener('mousedown', handleClickOutside);
-    }
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, [showCategoryMenu]);
 
   const handleFocus = (e: React.FocusEvent<HTMLInputElement>) => {
     e.target.select();
@@ -78,19 +105,6 @@ const ProductGroupSummary: React.FC<ProductGroupSummaryProps> = ({
     if (!lead.url) return;
     const href = /^https?:\/\//i.test(lead.url) ? lead.url : `https://${lead.url}`;
     window.open(href, '_blank', 'noopener,noreferrer');
-  };
-
-  const handleCategoryChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    onProductChange(lead.id, 'category', e.target.value);
-  };
-
-  const handleSelectPreset = (fullPath: string) => {
-    onProductChange(lead.id, 'category', fullPath);
-    setShowCategoryMenu(false);
-  };
-
-  const handleQuoteTemplateChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
-    onProductChange(lead.id, 'quoteTemplateId', e.target.value);
   };
 
   const handleArchiveClick = () => {
@@ -164,117 +178,48 @@ const ProductGroupSummary: React.FC<ProductGroupSummaryProps> = ({
           </button>
         </div>
 
-        <div className="relative flex-1 basis-[100px] min-w-[80px]" ref={categoryMenuRef}>
-          <div className="relative flex items-center">
-            <input
-              type="text"
-              value={lead.category}
-              onChange={handleCategoryChange}
-              onFocus={handleFocus}
-              className={`${inputClass} pr-7 overflow-hidden text-ellipsis`}
-              placeholder="카테고리"
-            />
-            <button
-              type="button"
-              onClick={() => setShowCategoryMenu(v => !v)}
-              className="absolute right-1 text-gray-400 hover:text-blue-600 p-1 transition-colors"
-              title="카테고리 프리셋"
-            >
-              <ChevronDownIcon />
-            </button>
-          </div>
-
-          {showCategoryMenu && (
-            <div className="absolute left-0 top-full mt-2 w-72 max-h-96 overflow-y-auto bg-white border border-gray-300 rounded-lg shadow-2xl z-[9999] py-2 animate-in fade-in slide-in-from-top-2 duration-200">
-              {registeredCategories.length > 0 && (
-                <>
-                  <div className="px-3 py-1.5 border-b border-gray-200 bg-gray-50 mb-1">
-                    <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">등록된 카테고리</span>
-                  </div>
-                  {registeredCategories.map(c => (
-                    <button
-                      key={c}
-                      type="button"
-                      onClick={() => handleSelectPreset(c)}
-                      className="w-full text-left px-4 py-2.5 text-sm text-gray-700 hover:bg-blue-600 hover:text-white transition-colors border-b border-gray-200 last:border-0"
-                    >
-                      <div className="font-semibold">{c}</div>
-                    </button>
-                  ))}
-                </>
-              )}
-              <div className="px-3 py-1.5 border-b border-gray-200 bg-gray-50 mb-1">
-                <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">카테고리 빠른 선택</span>
-              </div>
-              {Object.entries(CATEGORY_PRESETS).map(([name, fullPath]) => (
-                <button
-                  key={name}
-                  type="button"
-                  onClick={() => handleSelectPreset(fullPath)}
-                  className="w-full text-left px-4 py-2.5 text-sm text-gray-700 hover:bg-blue-600 hover:text-white transition-colors border-b border-gray-200 last:border-0 group"
-                >
-                  <div className="font-semibold">{name}</div>
-                  <div className="text-[10px] text-gray-500 mt-0.5 group-hover:text-blue-100 line-clamp-1">{fullPath}</div>
-                </button>
-              ))}
-            </div>
-          )}
+        {/* 작업 순서 그대로: 01 복붙 → 02 견적서 → 03 상페 → 04 등록.
+            카테고리와 견적서는 02에서 자동으로 정해지므로 입력칸을 따로 두지 않는다. */}
+        <div className="flex-1 flex items-stretch gap-2 min-w-0">
+          <StepButton
+            step="01"
+            label="복붙"
+            emoji="📋"
+            tone="orange"
+            busy={isImportingFrom1688}
+            done={!!lead.productName && !!lead.url}
+            onClick={() => onImportFrom1688(lead.id)}
+            title="1688 캡처 확장에서 복사한 값을 붙여넣기 (옵션 개수만큼 상품행이 자동으로 생깁니다)"
+          />
+          <StepButton
+            step="02"
+            label="견적서"
+            emoji="🔍"
+            tone="blue"
+            done={!!lead.quoteTemplateId}
+            onClick={() => onOpenCategoryFinder(lead.id)}
+            title="상품명 키워드로 쿠팡 카테고리를 찾아 견적서 양식을 자동으로 받아옵니다 (쿠팡 로그인 필요)"
+          />
+          <StepButton
+            step="03"
+            label="상페"
+            emoji="🎨"
+            tone="violet"
+            done={isDetailPageDone || !!lead.detailDataUrl}
+            onClick={() => onOpenDetailPageBuilder(lead)}
+            title="상세페이지 만들기 (사진 + 문구)"
+          />
+          <StepButton
+            step="04"
+            label="등록"
+            emoji="🚀"
+            tone="emerald"
+            busy={isIntegratedDownloading}
+            done={isIntegratedDownloadDone || !!lead.integratedDownloadedAt}
+            onClick={() => onIntegratedDownload(lead.id)}
+            title="라벨·이미지·견적서를 상품명 폴더에 저장하고, 이어서 쿠팡에 제안합니다"
+          />
         </div>
-
-        <div className="flex-1 basis-[100px] min-w-[80px]">
-          <select
-            value={lead.quoteTemplateId}
-            onChange={handleQuoteTemplateChange}
-            className={`${inputClass} truncate`}
-            title="이 상품 견적서 생성 시 사용할 등록된 견적서"
-          >
-            <option value="">견적서 선택 안함</option>
-            {quoteTemplateRegistrations.map(r => (
-              <option key={r.id} value={r.id}>{r.category} · {r.fileName}</option>
-            ))}
-          </select>
-        </div>
-
-        <button
-          type="button"
-          onClick={() => onImportFrom1688(lead.id)}
-          disabled={isImportingFrom1688}
-          className="flex-shrink-0 flex flex-col items-center justify-center gap-0.5 text-gray-400 hover:text-orange-700 transition-colors duration-200 px-1.5 py-0.5 rounded-md hover:bg-orange-500/10 disabled:opacity-50 disabled:cursor-not-allowed"
-          aria-label="1688에서 붙여넣기"
-          title="1688 캡처 확장프로그램으로 복사한 데이터를 붙여넣기 (옵션이 여러 개면 그 개수만큼 상품행 자동 생성 · URL/중량은 공통, 원가/사이즈/노출속성은 옵션별로 반영, 상품명/옵션명은 원문 그대로, 제조사/검색어는 AI 변환)"
-        >
-          {isImportingFrom1688 ? <SpinnerIcon className="w-5 h-5 animate-spin" /> : <ClipboardIcon className="h-5 w-5" />}
-          <span className="text-[9px] leading-none font-semibold">복붙</span>
-        </button>
-
-        <button
-          type="button"
-          onClick={() => onOpenDetailPageBuilder(lead)}
-          className="flex-shrink-0 flex flex-col items-center justify-center gap-0.5 text-gray-400 hover:text-blue-600 transition-colors duration-200 px-1.5 py-0.5 rounded-md hover:bg-blue-500/10"
-          aria-label="상세페이지 만들기"
-          title="상세페이지 만들기 (사진 + 소구점 → AI 문구 생성)"
-        >
-          {isDetailPageDone ? <CheckIcon className="h-5 w-5 text-emerald-600" /> : <DocumentAddIcon className="h-5 w-5 mr-0" />}
-          <span className="text-[9px] leading-none font-semibold">{isDetailPageDone ? '완료!' : '상세'}</span>
-        </button>
-
-        <button
-          type="button"
-          onClick={() => onIntegratedDownload(lead.id)}
-          disabled={isIntegratedDownloading}
-          className="flex-shrink-0 flex flex-col items-center justify-center gap-0.5 text-gray-400 hover:text-amber-700 transition-colors duration-200 px-1.5 py-0.5 rounded-md hover:bg-amber-500/10 disabled:opacity-30 disabled:cursor-not-allowed"
-          aria-label="통합 다운로드"
-          title="상품명 폴더에 라벨(자동생성) + 대표/상세 이미지(zip) + 견적서를 한번에 다운로드 (준비된 항목만 저장)"
-        >
-          {isIntegratedDownloading ? (
-            <SpinnerIcon className="h-5 w-5 animate-spin" />
-          ) : isIntegratedDownloadDone ? (
-            <CheckIcon className="h-5 w-5 text-emerald-600" />
-          ) : (
-            <SaveIcon />
-          )}
-          <span className="text-[9px] leading-none font-semibold">{isIntegratedDownloadDone ? '완료!' : '통합다운'}</span>
-        </button>
 
         <button
           type="button"

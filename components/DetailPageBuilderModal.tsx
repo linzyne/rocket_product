@@ -431,9 +431,14 @@ const DetailPageBuilderModal: React.FC<DetailPageBuilderModalProps> = ({ isOpen,
     if (nextId && nextId !== prevId) {
       const draft = draftsRef.current.get(nextId);
       setPhotos(draft?.photos ?? []);
-      setSellingPoints(draft?.sellingPoints ?? '');
-      setCopy(draft?.copy ?? EMPTY_COPY);
-      setPastedText(draft?.pastedText ?? '');
+      setSellingPoints(draft?.sellingPoints ?? product?.detailSellingPoints ?? '');
+      // 1688 확장에서 문구까지 받아온 상품이면, 처음 열 때 그 문구를 바로 반영해준다
+      // (사용자가 "붙여넣기 → 적용"을 다시 하지 않아도 되게).
+      const importedCopy = !draft && product?.detailCopyText
+        ? parseDetailPageCopyText(product.detailCopyText, highlightCount, featureBlockCount)
+        : null;
+      setCopy(draft?.copy ?? importedCopy ?? EMPTY_COPY);
+      setPastedText(draft?.pastedText ?? product?.detailCopyText ?? '');
       setDrawObjects(draft?.drawObjects ?? []);
       setTextBoxes(draft?.textBoxes ?? []);
       setKimchiSections(draft?.kimchiSections ?? createDefaultKimchiSections());
@@ -1855,7 +1860,21 @@ const DetailPageBuilderModal: React.FC<DetailPageBuilderModalProps> = ({ isOpen,
     await saveDataUrlInProductFolder(dataUrl, productFolderName(product), fileNameForDataUrl(dataUrl, baseName));
   };
 
+  // 사진에 별(★)을 눌러 대표이미지를 지정하지 않은 채로 저장하면, 통합다운 때 대표이미지가
+  // 빠진 채로 나간다. 저장 직전에 한 번 짚어준다.
+  const confirmIfThumbnailMissing = () => {
+    const targets = groupProducts.length > 0 ? groupProducts : (product ? [product] : []);
+    const missing = targets.filter(p => !p.thumbnailDataUrl);
+    if (missing.length === 0) return true;
+
+    const message = targets.length > 1
+      ? `대표이미지가 지정되지 않은 옵션이 ${missing.length}개 있습니다.\n(${missing.map(p => p.color || p.productName || '옵션').join(', ')})\n\n사진의 ★를 눌러 지정할 수 있습니다. 이대로 저장할까요?`
+      : '대표이미지를 지정하지 않았습니다.\n사진 위의 ★를 눌러 지정할 수 있습니다.\n\n이대로 저장할까요?';
+    return window.confirm(message);
+  };
+
   const handleSave = async () => {
+    if (!confirmIfThumbnailMissing()) return;
     if (!confirmIfCopyEmpty()) return;
     const dataUrl = await captureImage();
     if (!dataUrl) return;

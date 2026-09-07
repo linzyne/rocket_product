@@ -31,6 +31,10 @@ export interface QuoteTemplateRegistration {
   // 등록 시각(ms). 같은 카테고리로 여러 번 등록했을 때 "중복 정리"에서 가장 최근 것을
   // 가려내는 데 사용합니다. 구버전에서 등록된 항목은 이 값이 없을 수 있습니다.
   createdAt?: number;
+  // "카테고리 견적서 찾기"로 그 상품에만 쓰려고 받아온 양식이면 true. 견적서 선택 목록과
+  // 견적서 등록 화면에는 보이지 않고, 값 채우기(견적서 생성/통합다운)에만 쓰입니다.
+  // 매번 카테고리가 다른 상품을 다루므로, 받을 때마다 목록에 쌓이지 않게 하려는 것입니다.
+  hidden?: boolean;
 }
 
 // 견적서 '상품명' 컬럼과 바코드 라벨(BarcodeLabel)이 항상 같은 값을 쓰도록 공유하는 계산식.
@@ -800,4 +804,95 @@ export const parseQuoteWorkbookToProduct = (
   }
 
   return result;
+};
+
+// ---------------------------------------------------------------------------
+// 카테고리 드롭다운 옵션 읽기
+//
+// 견적서의 "카테고리" 칸은 자유 입력이 아니라 드롭다운(데이터 유효성 검사)입니다. 목록에 없는
+// 값을 넣으면 쿠팡 검증에서 걸리므로, 파일 안에 든 목록을 그대로 읽어와 그중에서 고르게 합니다.
+// 목록은 대개 숨김 시트의 셀 범위를 정의된 이름(definedName)으로 가리킵니다.
+//   <dataValidation type="list" sqref="B8:B1008"><formula1>_6584_categoryPath_1</formula1>
+//   <definedName name="_6584_categoryPath_1">HQF_38_6584!$B$2:$B$4</definedName>
+// ---------------------------------------------------------------------------
+
+const parseRangeRef = (ref: string): { sheetName: string; col: string; from: number; to: number } | null => {
+  // 예: HQF_38_6584!$B$2:$B$4  또는  '따옴표 있는 시트'!$B$2:$B$4
+  const match = /^(?:'([^']+)'|([^!]+))!\$?([A-Z]+)\$?(\d+)(?::\$?([A-Z]+)\$?(\d+))?$/.exec(ref.trim());
+  if (!match) return null;
+  const sheetName = match[1] || match[2];
+  return {
+    sheetName,
+    col: match[3],
+    from: parseInt(match[4], 10),
+    to: match[6] ? parseInt(match[6], 10) : parseInt(match[4], 10),
+  };
+};
+
+export const readCategoryDropdownOptions = async (
+  fileDataUrl: string,
+  template: QuoteTemplateProfile
+): Promise<string[]> => {
+  const zip = await JSZip.loadAsync(dataUrlToArrayBuffer(fileDataUrl));
+  const { doc, rowMap, resolveCellText } = await loadTemplateSheet(zip);
+
+  const headerRowEl = rowMap.get(template.headerRowNumber);
+  if (!headerRowEl) return [];
+  const colIndexMap = buildColIndexMap(getCellMap(headerRowEl), resolveCellText);
+  const categoryCol = colIndexMap[normalizeHeader('카테고리')];
+  if (!categoryCol) return [];
+  const categoryLetter = colLetterFromIndex(categoryCol);
+
+  // 카테고리 컬럼을 가리키는 데이터 유효성 검사 찾기
+  const validations = Array.from(doc.getElementsByTagName('dataValidation')) as any[];
+  const target = validations.find(v => {
+    const sqref = v.getAttribute('sqref') || '';
+    return sqref.split(/\s+/).some(part => part.split(':').every(ref => colLetterOf(ref) === categoryLetter));
+  });
+  if (!target) return [];
+
+  const formulaEl = target.getElementsByTagName('formula1')[0];
+  const formula = (formulaEl ? formulaEl.textContent : '').trim();
+  if (!formula) return [];
+
+  // 값을 파일 안에 그대로 적어둔 형태: "가,나,다"
+  if (formula.startsWith('"')) {
+    return formula.replace(/^"|"$/g, '').split(',').map(s => s.trim()).filter(Boolean);
+  }
+
+  const workbookXml: string = await zip.file('xl/workbook.xml').async('string');
+  const parser = new DOMParser();
+  const wbDoc = parser.parseFromString(workbookXml, 'text/xml');
+
+  // 정의된 이름이면 실제 셀 범위로 바꿉니다(아니면 범위를 직접 적은 것으로 봅니다).
+  const definedName = Array.from(wbDoc.getElementsByTagName('definedName')).find(
+    (el: any) => el.getAttribute('name') === formula
+  ) as any;
+  const range = parseRangeRef(definedName ? definedName.textContent : formula);
+  if (!range) return [];
+
+  const sheetEl = Array.from(wbDoc.getElementsByTagName('sheet')).find(
+    (el: any) => el.getAttribute('name') === range.sheetName
+  ) as any;
+  if (!sheetEl) return [];
+
+  const relsXml: string = await zip.file('xl/_rels/workbook.xml.rels').async('string');
+  const relsDoc = parser.parseFromString(relsXml, 'text/xml');
+  const rel = Array.from(relsDoc.getElementsByTagName('Relationship')).find(
+    (r: any) => r.getAttribute('Id') === sheetEl.getAttribute('r:id')
+  ) as any;
+  if (!rel) return [];
+
+  const listSheetXml: string = await zip.file(`xl/${rel.getAttribute('Target').replace(/^\.?\//, '')}`).async('string');
+  const listDoc = parser.parseFromString(listSheetXml, 'text/xml');
+
+  const options: string[] = [];
+  for (const rowEl of Array.from(listDoc.getElementsByTagName('row')) as any[]) {
+    const rowNumber = parseInt(rowEl.getAttribute('r'), 10);
+    if (rowNumber < range.from || rowNumber > range.to) continue;
+    const cellEl = getCellMap(rowEl).get(range.col);
+    const text = resolveCellText(cellEl).trim();
+    if (text) options.push(text);
+  }
+  return options;
 };

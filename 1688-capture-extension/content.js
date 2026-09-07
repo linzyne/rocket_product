@@ -23,14 +23,14 @@
     :host { all: initial; }
     * { box-sizing: border-box; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Malgun Gothic", Arial, sans-serif; }
     .rc-fab { position:fixed; bottom:24px; right:24px; z-index:2147483000; background:#f97316; color:#fff; border:none; padding:12px 16px; border-radius:9999px; font-size:14px; font-weight:600; cursor:pointer; box-shadow:0 10px 25px -5px rgba(0,0,0,0.5); }
-    .rc-overlay { position:fixed; inset:0; z-index:2147483647; display:flex; align-items:center; justify-content:center; pointer-events:none; }
-    .rc-box { pointer-events:auto; background:#ffffff; color:#1e293b; width:330px; max-width:94vw; max-height:88vh; overflow-y:auto; overflow-x:hidden; border-radius:12px; padding:14px; border:1px solid #e2e8f0; box-shadow:0 25px 50px -12px rgba(0,0,0,0.35); }
+    .rc-overlay { position:fixed; inset:0; z-index:2147483647; display:flex; align-items:flex-start; justify-content:center; padding:44px 0 20px; box-sizing:border-box; pointer-events:none; }
+    .rc-box { pointer-events:auto; background:#ffffff; color:#1e293b; width:330px; max-width:94vw; max-height:calc(100vh - 64px); display:flex; flex-direction:column; overflow:hidden; border-radius:12px; padding:14px; border:1px solid #e2e8f0; box-shadow:0 25px 50px -12px rgba(0,0,0,0.35); }
     .rc-box h2 { margin:0; font-size:15px; font-weight:700; cursor:move; user-select:none; color:#0f172a; }
     .rc-box h2::after { content:'✥ 드래그해서 옮기기'; display:block; font-size:10px; font-weight:400; color:#94a3b8; margin-top:1px; }
     .rc-hint { margin:6px 0 0; font-size:11px; color:#64748b; line-height:1.4; }
-    .rc-fields { display:flex; flex-direction:column; gap:10px; margin-top:10px; }
+    .rc-fields { display:flex; flex-direction:column; gap:12px; margin-top:12px; overflow-y:auto; overflow-x:hidden; flex:1 1 auto; min-height:0; padding:6px 3px 4px 1px; }
     .rc-section {
-      background:#e2e8f0; border:1px solid #94a3b8; border-radius:12px; padding:11px 12px;
+      background:#e2e8f0; border:1px solid #94a3b8; border-radius:12px; padding:14px 12px 12px;
     }
     .rc-section-heading {
       font-weight:700; font-size:12.5px; color:#0f172a; margin:0 0 9px; padding-bottom:8px;
@@ -83,9 +83,10 @@
     .rc-pick-option:hover { transform:translateY(-1px); box-shadow:0 8px 20px -4px rgba(249,115,22,0.65); }
     .rc-pick-option:active { transform:translateY(0); }
     .rc-pick-highlight { position:fixed; pointer-events:none; z-index:2147483646; border:2px solid #f97316; background:rgba(249,115,22,0.15); border-radius:4px; display:none; }
-    .rc-pick-bar { position:fixed; top:16px; left:50%; transform:translateX(-50%); z-index:2147483647; background:#ffffff; color:#0f172a; padding:10px 16px; border-radius:9999px; border:1px solid #e2e8f0; box-shadow:0 10px 25px -5px rgba(0,0,0,0.25); font-size:13px; display:flex; align-items:center; gap:10px; max-width:90vw; }
+    .rc-pick-bar { position:fixed; top:16px; left:50%; transform:translateX(-50%); z-index:2147483647; background:#dc2626; color:#ffffff; padding:16px 24px; border-radius:14px; border:2px solid #7f1d1d; box-shadow:0 20px 40px -10px rgba(0,0,0,0.5); font-size:17px; font-weight:700; display:flex; align-items:center; gap:16px; max-width:90vw; pointer-events:auto; }
     .rc-pick-bar span { min-width:0; }
-    .rc-pick-bar button { flex:0 0 auto; padding:5px 14px; border-radius:9999px; border:none; background:#f97316; color:#fff; font-weight:600; cursor:pointer; font-size:12px; }
+    .rc-pick-bar button { flex:0 0 auto; padding:9px 22px; border-radius:9999px; border:none; background:#f97316; color:#fff; font-weight:700; cursor:pointer; font-size:15px; }
+    .rc-pick-bar button.rc-pick-cancel { background:#ffffff; color:#b91c1c; border:1px solid #fecaca; }
     .rc-margin-result { display:grid; grid-template-columns:1fr 1fr; gap:6px; margin:8px 0 4px; }
     .rc-margin-result-item { background:#f8fafc; border:1px solid #cbd5e1; border-radius:8px; padding:8px 10px; }
     .rc-margin-result-item span { display:block; font-size:10px; color:#64748b; }
@@ -97,6 +98,8 @@
     .rc-apply-price-btn { width:100%; padding:10px 14px; border-radius:10px; border:none; background:linear-gradient(135deg,#fb923c,#f97316); color:#fff; cursor:pointer; font-size:13px; font-weight:700; margin-top:10px; box-shadow:0 6px 16px -4px rgba(249,115,22,0.55); transition:transform .12s ease, box-shadow .12s ease; }
     .rc-apply-price-btn:hover { transform:translateY(-1px); box-shadow:0 8px 20px -4px rgba(249,115,22,0.65); }
     .rc-apply-price-btn:active { transform:translateY(0); }
+    .rc-textarea { min-height:70px; resize:vertical; font-family:inherit; line-height:1.5; }
+    .rc-step-hint { margin:0 0 8px; font-size:11px; color:#94a3b8; line-height:1.5; }
     .rc-image-work-btn { width:100%; padding:10px 14px; border-radius:10px; border:none; background:linear-gradient(135deg,#60a5fa,#3b82f6); color:#fff; cursor:pointer; font-size:13px; font-weight:700; margin-top:8px; box-shadow:0 6px 16px -4px rgba(59,130,246,0.55); transition:transform .12s ease, box-shadow .12s ease; }
     .rc-image-work-btn:hover { transform:translateY(-1px); box-shadow:0 8px 20px -4px rgba(59,130,246,0.65); }
     .rc-image-work-btn:active { transform:translateY(0); }
@@ -463,6 +466,8 @@
       title: box.querySelector('#rc-title').value,
       manufacturer: box.querySelector('#rc-manufacturer').value,
       sku: box.querySelector('#rc-sku').value,
+      sellingPoints: box.querySelector('#rc-selling-points').value,
+      detailCopyText: box.querySelector('#rc-detail-copy').value,
       material: box.querySelector('#rc-material').value,
       weight: box.querySelector('#rc-weight').value,
     };
@@ -472,6 +477,8 @@
     box.querySelector('#rc-title').value = values.title ?? '';
     box.querySelector('#rc-manufacturer').value = values.manufacturer ?? '';
     box.querySelector('#rc-sku').value = values.sku ?? '';
+    box.querySelector('#rc-selling-points').value = values.sellingPoints ?? '';
+    box.querySelector('#rc-detail-copy').value = values.detailCopyText ?? '';
     box.querySelector('#rc-material').value = values.material ?? '';
     box.querySelector('#rc-weight').value = values.weight ?? '';
     // 이전에 저장된(draft) 값이 그대로 채워진 직후에는 '아직 안 건드림' 상태로 표시해서,
@@ -483,7 +490,9 @@
     return {
       title: initial.titleRaw || '',
       manufacturer: initial.manufacturerRaw || '',
-      sku: initial.sku || '',
+      sku: '',
+      sellingPoints: '',
+      detailCopyText: '',
       material: initial.materialRaw || '',
       weight: initial.weightG ?? '',
     };
@@ -529,6 +538,43 @@
   // "반복되는 짧은 텍스트"로 오인해서 잘못 잡는 경우가 많아 신뢰할 수 없다. 대신 사용자가
   // 마우스로 실제 옵션 요소를 직접 가리켜서 클릭하는 방식으로, 클릭한 요소의 텍스트만 정확히
   // 옵션으로 추가한다. onAdd(text)는 클릭할 때마다 호출되고, 완료(Esc 또는 버튼)되면 resolve된다.
+
+  // 로켓제안서 앱의 buildDetailPageCopyPrompt(utils/detailPageCopyTemplate.ts)와 같은 형식.
+  // 라벨과 줄 구성이 어긋나면 앱이 AI 답변을 알아보지 못하므로 그대로 맞춰 둔다.
+  const DETAIL_HIGHLIGHT_COUNT = 4;
+  const DETAIL_FEATURE_COUNT = 3;
+  function buildDetailPageCopyPrompt({ productName, category, material, sellingPoints }) {
+    const lines = [
+      '아래 상품 정보를 참고해서 쇼핑몰 상세페이지 문구를 작성해줘.',
+      '과장되거나 근거 없는 표현(효능 단정, 최상급 남발)은 피하고, 담백하면서도 매력적인 톤으로 써줘.',
+      '',
+      `상품명: ${productName || '(미입력)'}`,
+      `카테고리: ${category || '(미입력)'}`,
+    ];
+    if (material) lines.push(`소재: ${material}`);
+    lines.push(`소구점 메모: ${sellingPoints || '(미입력)'}`, '');
+    lines.push(
+      '아래 형식을 절대 그대로 지켜서 답변해줘 (라벨과 <사진> 표시, 줄 순서를 바꾸지 말고, 라벨 다음 줄에 내용만 채워줘):',
+      '',
+      '제품명',
+      '(제품명 한 줄)',
+      '',
+      '후킹 문구',
+      '(임팩트 있는 한 줄)',
+      '',
+      '<사진>',
+      ''
+    );
+    for (let i = 1; i <= DETAIL_HIGHLIGHT_COUNT; i++) {
+      lines.push(`특별한점 ${String(i).padStart(2, '0')}`, '(짧은 특징 한 줄)', '');
+    }
+    for (let i = 1; i <= DETAIL_FEATURE_COUNT; i++) {
+      lines.push(String(i).padStart(2, '0'), '(특징 소제목 한 줄)', '', '(특징 설명 2~3문장)', '<사진>', '');
+    }
+    lines.push('마무리 문구', '(마무리 한 줄)');
+    return lines.join('\n');
+  }
+
   function startPickMode(onAdd) {
     return new Promise((resolve) => {
       const highlight = document.createElement('div');
@@ -537,7 +583,7 @@
 
       const bar = document.createElement('div');
       bar.className = 'rc-pick-bar';
-      bar.innerHTML = `<span>옵션 요소를 클릭하세요 (<span id="rc-pick-count">0</span>개 선택됨)</span><button type="button" id="rc-pick-done">완료</button>`;
+      bar.innerHTML = `<span>옵션을 클릭하세요 · <strong id="rc-pick-count" style="color:#fde047;">0</strong>개 선택됨</span><button type="button" id="rc-pick-done">완료</button><button type="button" id="rc-pick-cancel" class="rc-pick-cancel">취소</button>`;
       root.appendChild(bar);
       const countEl = bar.querySelector('#rc-pick-count');
       let count = 0;
@@ -566,26 +612,28 @@
       };
 
       const onKeyDown = (e) => {
-        if (e.key === 'Escape') finish();
+        if (e.key === 'Escape') finish(true);
       };
 
-      const finish = () => {
+      // cancelled=true면 고른 것을 쓰지 않는다(호출한 쪽에서 되돌린다).
+      const finish = (cancelled) => {
         document.removeEventListener('mouseover', onMouseOver, true);
         document.removeEventListener('click', onClick, true);
         document.removeEventListener('keydown', onKeyDown, true);
         highlight.remove();
         bar.remove();
-        resolve();
+        resolve({ cancelled: !!cancelled });
       };
 
-      bar.querySelector('#rc-pick-done').addEventListener('click', finish);
+      bar.querySelector('#rc-pick-done').addEventListener('click', () => finish(false));
+      bar.querySelector('#rc-pick-cancel').addEventListener('click', () => finish(true));
       document.addEventListener('mouseover', onMouseOver, true);
       document.addEventListener('click', onClick, true);
       document.addEventListener('keydown', onKeyDown, true);
     });
   }
 
-  async function buildModal(initial) {
+  async function buildModal(initial, pickedLabels) {
     const overlay = document.createElement('div');
     overlay.className = 'rc-overlay';
 
@@ -602,16 +650,28 @@
       </div>
       <div class="rc-fields">
         <div class="rc-section">
-          <p class="rc-section-heading"><span class="rc-step-num">1</span>📝 기본 정보</p>
+          <p class="rc-section-heading"><span class="rc-step-num">1</span>🖼 이미지 다운받기</p>
+          <p class="rc-step-hint">상품 이미지를 먼저 받아두세요.</p>
+        </div>
+        <div class="rc-section">
+          <p class="rc-section-heading"><span class="rc-step-num">2</span>🎨 옵션 선택</p>
+          <div id="rc-option-rows" class="rc-option-rows"></div>
+          <div class="rc-option-buttons">
+            <button type="button" id="rc-pick-options" class="rc-pick-option">🎯 클릭해서 옵션 선택</button>
+            <button type="button" id="rc-add-option" class="rc-add-option">+ 직접 입력</button>
+          </div>
+        </div>
+        <div class="rc-section">
+          <p class="rc-section-heading"><span class="rc-step-num">3</span>📝 기본 정보</p>
           <div class="rc-field-group">
             <label class="rc-label">제조사/공급사(원문)
               <input id="rc-manufacturer" class="rc-input" />
             </label>
-            <label class="rc-label rc-label-red">상품명(원문)
+            <label class="rc-label rc-label-red">상품명(원문) · 수정 필수
               <input id="rc-title" class="rc-input" />
             </label>
             <label class="rc-label rc-label-red">SKU
-              <input id="rc-sku" class="rc-input" />
+              <input id="rc-sku" class="rc-input" placeholder="예) 30개 (박스에 들어가는 수량)" />
             </label>
             <label class="rc-label">재질
               <input id="rc-material" class="rc-input" />
@@ -633,15 +693,7 @@
           </div>
         </div>
         <div class="rc-section">
-          <p class="rc-section-heading"><span class="rc-step-num">2</span>🎨 옵션(색상 등)</p>
-          <div id="rc-option-rows" class="rc-option-rows"></div>
-          <div class="rc-option-buttons">
-            <button type="button" id="rc-pick-options" class="rc-pick-option">🎯 클릭해서 옵션 선택</button>
-            <button type="button" id="rc-add-option" class="rc-add-option">+ 직접 입력</button>
-          </div>
-        </div>
-        <div class="rc-section">
-          <p class="rc-section-heading"><span class="rc-step-num">3</span>💰 수익 계산기 (선택)</p>
+          <p class="rc-section-heading"><span class="rc-step-num">4</span>💰 수익 계산기 (선택)</p>
           <div class="rc-row">
             <label class="rc-label">환율
               <input id="rc-exchange-rate" class="rc-input" type="number" placeholder="210" title="환율(1위안=?원)" />
@@ -675,7 +727,17 @@
             </div>
           </div>
           <button type="button" id="rc-apply-price" class="rc-apply-price-btn">↑ 옵션에 적용하기</button>
-          <button type="button" id="rc-image-work" class="rc-image-work-btn">🖼 이미지작업하기</button>
+        </div>
+        <div class="rc-section">
+          <p class="rc-section-heading"><span class="rc-step-num">5</span>📄 상세페이지 문구 (선택)</p>
+          <p class="rc-step-hint">프롬프트를 복사해 AI에 물어보고, 받은 답을 그대로 아래에 붙여넣으세요. 로켓제안서에 붙여넣을 때 상세페이지에도 같이 들어갑니다.</p>
+          <label class="rc-label">소구점 메모 (프롬프트에 들어갈 재료)
+            <input id="rc-selling-points" class="rc-input" placeholder="예) 튼튼함, 넉넉한 수납, 선물용" />
+          </label>
+          <button type="button" id="rc-copy-prompt" class="rc-image-work-btn">🤖 AI용 프롬프트 복사하기</button>
+          <label class="rc-label" style="margin-top:8px;">AI가 준 문구 붙여넣기
+            <textarea id="rc-detail-copy" class="rc-input rc-textarea" rows="4" placeholder="AI 답변을 그대로 붙여넣으세요"></textarea>
+          </label>
         </div>
       </div>
       <div class="rc-actions">
@@ -718,7 +780,10 @@
     // 자동 스캔("선택된" 옵션 하나)으로 시작한다.
     const workDraft = await loadWorkDraft();
     let rows;
-    if (workDraft && Array.isArray(workDraft.rows) && workDraft.rows.length > 0) {
+    if (Array.isArray(pickedLabels) && pickedLabels.length > 0) {
+      // 캡처 버튼을 눌러 방금 화면에서 고른 옵션이 있으면 그것으로 시작한다(저장된 작업 내역보다 우선).
+      rows = pickedLabels.map((label) => makeRow(label, true));
+    } else if (workDraft && Array.isArray(workDraft.rows) && workDraft.rows.length > 0) {
       rows = workDraft.rows.map((r) => makeRow(r.label || '', !!r.checked, {
         width: r.width ?? '',
         height: r.height ?? '',
@@ -1137,8 +1202,19 @@
       showToast(`체크된 옵션 ${checkedRows.length}개에 적용했어요.`);
     });
 
-    box.querySelector('#rc-image-work').addEventListener('click', () => {
-      window.scrollTo({ top: 0, behavior: 'smooth' });
+    box.querySelector('#rc-copy-prompt').addEventListener('click', async () => {
+      const prompt = buildDetailPageCopyPrompt({
+        productName: box.querySelector('#rc-title').value.trim(),
+        category: '',
+        material: box.querySelector('#rc-material').value.trim(),
+        sellingPoints: box.querySelector('#rc-selling-points').value.trim(),
+      });
+      try {
+        await navigator.clipboard.writeText(prompt);
+        showToast('프롬프트를 복사했어요. AI에 붙여넣고 받은 답을 아래 칸에 넣어주세요.');
+      } catch (err) {
+        showToast('클립보드 복사에 실패했습니다: ' + err.message, true);
+      }
     });
 
     box.querySelector('#rc-add-option').addEventListener('click', () => {
@@ -1149,9 +1225,13 @@
 
     box.querySelector('#rc-pick-options').addEventListener('click', async () => {
       box.style.display = 'none';
-      await startPickMode((text) => {
-        rows.push(makeRow(text, true));
+      const added = [];
+      const { cancelled } = await startPickMode((text) => {
+        const row = makeRow(text, true);
+        added.push(row.id);
+        rows.push(row);
       });
+      if (cancelled) rows = rows.filter(r => !added.includes(r.id));
       box.style.display = '';
       renderOptionRows();
       persistWork();
@@ -1174,7 +1254,7 @@
             ...draft,
             title: guessed.title || draft.title,
             manufacturer: guessed.manufacturer || draft.manufacturer,
-            sku: guessed.sku || draft.sku,
+            sku: draft.sku,
           };
     applyValues(box, merged);
 
@@ -1249,6 +1329,9 @@
         sku: box.querySelector('#rc-sku').value.trim(),
         materialRaw: box.querySelector('#rc-material').value.trim(),
         weightG: num('#rc-weight'),
+        // 상세페이지 문구(AI 답변 원문). 앱이 이 글을 파싱해서 상세페이지 에디터에 채워 넣는다.
+        detailCopyText: box.querySelector('#rc-detail-copy').value.trim(),
+        sellingPoints: box.querySelector('#rc-selling-points').value.trim(),
         variants: checkedRows.map((r) => {
           const { exchangeRate, supplyMarginPercent, sellingMarginPercent } = getMarginInputs();
           const calc = computeMargin(r.price, exchangeRate, supplyMarginPercent, sellingMarginPercent, r.supplyPriceOverride, r.sellingPriceOverride);
@@ -1296,7 +1379,13 @@
     const btn = document.createElement('button');
     btn.className = 'rc-fab';
     btn.textContent = '📋 1688 캡처';
-    btn.addEventListener('click', () => {
+    btn.addEventListener('click', async () => {
+      // 캡처를 누르면 곧바로 옵션 고르기부터 시작한다. "완료"를 누르면 고른 옵션이 이미 채워진
+      // 상태로 입력 창이 열린다(창을 열었다 나갔다 다시 들어오는 수고를 없앤다).
+      const picked = [];
+      const { cancelled } = await startPickMode((text) => picked.push(text));
+      if (cancelled) return;
+
       const sizeWeight = guessSizeAndWeight();
       const titleRaw = guessTitle();
       const manufacturerRaw = guessManufacturer();
@@ -1309,7 +1398,7 @@
         priceCny: guessPriceCny(),
         sizeCm: { width: sizeWeight.width, height: sizeWeight.height, depth: sizeWeight.depth },
         weightG: sizeWeight.weight,
-      });
+      }, picked);
     });
     root.appendChild(btn);
   }

@@ -36,6 +36,12 @@ export interface Product {
   detailDataUrl?: string;
   labelFile: string;
   labelDataUrl?: string;
+  // 통합다운(04 등록)을 끝낸 시각(ms). 체크 표시를 계속 보여주는 데 쓴다.
+  integratedDownloadedAt?: number;
+  // 1688 확장에서 함께 받아온 상세페이지 문구(AI 답변 원문)와 소구점 메모.
+  // 상세페이지 에디터를 처음 열 때 이 값으로 문구를 채워준다.
+  detailCopyText?: string;
+  detailSellingPoints?: string;
   customFields: { [key: string]: string };
 }
 

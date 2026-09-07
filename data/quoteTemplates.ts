@@ -212,6 +212,19 @@ export const getAutoCustomFieldValue = (name: string): string => {
   return '';
 };
 
+// 견적서의 노출속성 값은 "30"처럼 숫자만 적으면 반려되고 "30cm"처럼 단위까지 있어야 통과합니다.
+// 다만 출시 연도처럼 단위 없이 숫자만 적는 게 맞는 항목도 있어서, 그런 항목은 검사에서 뺍니다.
+const UNITLESS_CUSTOM_FIELD_NAMES = ['출시 연도', '출시년도', '연도', '년도'];
+
+export const customFieldNeedsUnit = (name: string, value: string): boolean => {
+  const trimmed = value.trim();
+  if (!trimmed) return false;
+  // 숫자와 소수점/자릿수 쉼표만으로 이루어져 있으면 단위가 빠진 값입니다.
+  if (!/^[0-9]+([.,][0-9]+)*$/.test(trimmed)) return false;
+  const key = normalizeHeader(name);
+  return !UNITLESS_CUSTOM_FIELD_NAMES.some(n => key.includes(normalizeHeader(n)));
+};
+
 declare var JSZip: any;
 
 // ExcelJS로 통째로 load() → writeBuffer()를 거치면, 원본 파일에 없던 테마 파트가 누락된 채로

@@ -7,6 +7,7 @@ import BarcodeImage from './BarcodeImage';
 import { saveBlobInProductFolder, saveDataUrlsAsZipInProductFolder, productFolderName, getRootDirectory } from '../utils/fileSave';
 import { withCoLtdSuffix } from '../utils/manufacturerFormat';
 import { generateBarcodeNumber } from '../utils/barcode';
+import { customFieldNeedsUnit } from '../data/quoteTemplates';
 
 interface ProductRowProps {
   product: Product;
@@ -33,9 +34,9 @@ interface ProductRowProps {
   onImportMarginFromClipboard: (id: string) => void;
 }
 
-const Field: React.FC<{ label: string; className?: string; children: React.ReactNode }> = ({ label, className = '', children }) => (
+const Field: React.FC<{ label: string; className?: string; labelClassName?: string; children: React.ReactNode }> = ({ label, className = '', labelClassName = 'text-gray-400 font-medium', children }) => (
   <div className={`flex flex-col gap-1 min-w-0 ${className}`}>
-    <label className="text-[10px] font-medium text-gray-400 px-0.5 whitespace-nowrap overflow-hidden text-ellipsis" title={label}>{label}</label>
+    <label className={`text-[10px] px-0.5 whitespace-nowrap overflow-hidden text-ellipsis ${labelClassName}`} title={label}>{label}</label>
     {children}
   </div>
 );
@@ -190,6 +191,14 @@ const ProductRow: React.FC<ProductRowProps> = ({
   const fileInputClass = "w-full px-2 py-0.5 text-xs bg-white border border-gray-200 rounded-md text-gray-900 focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500 transition duration-200";
   const searchInputClass = inputClass.replace('text-gray-900', 'text-gray-400');
 
+  // 추가 항목은 비었거나 단위가 빠지면 등록이 반려되므로, 그 상태를 빨간 칸으로 보여준다.
+  // (inputClass에 클래스를 덧붙이면 border/focus 색이 충돌하므로 위처럼 값을 바꿔치기한다.)
+  const alertInputClass = inputClass
+    .replace('bg-white', 'bg-red-50')
+    .replace('border-gray-200', 'border-red-400')
+    .replace('focus:ring-blue-500', 'focus:ring-red-500')
+    .replace('focus:border-blue-500', 'focus:border-red-500');
+
   const formatNumber = (value: string | number) => Number(value || 0).toLocaleString();
 
   return (
@@ -280,27 +289,51 @@ const ProductRow: React.FC<ProductRowProps> = ({
               placeholder="검색어"
             />
           </Field>
-          {Object.entries(product.customFields).map(([name, value]) => (
-            <Field key={name} label={name} className="basis-[100px] flex-shrink-0">
-              <div className="relative">
-                <input
-                  type="text"
-                  value={value}
-                  onChange={e => onSetCustomField(product.id, name, e.target.value)}
-                  onFocus={handleFocus}
-                  className={`${inputClass} pr-6`}
-                />
-                <button
-                  onClick={() => onRemoveCustomField(product.id, name)}
-                  className="absolute right-1 top-1/2 -translate-y-1/2 text-gray-400 hover:text-red-500 transition-colors p-0.5 rounded-full hover:bg-red-500/10 [&_svg]:h-3.5 [&_svg]:w-3.5"
-                  aria-label={`${name} 항목 삭제`}
-                  title={`${name} 항목 삭제`}
-                >
-                  <CloseIcon />
-                </button>
-              </div>
-            </Field>
-          ))}
+          {Object.entries<string>(product.customFields).map(([name, value]) => {
+            // 이 값들은 견적서 카테고리의 필수 노출속성이라, 비워 두거나 "30"처럼 단위 없이
+            // 숫자만 적으면 등록이 반려된다. 그래서 항목 이름은 늘 빨간색으로 두고, 아직
+            // 못 채웠거나 단위가 빠진 칸은 칸 자체와 안내문까지 빨갛게 해서 눈에 띄게 한다.
+            const isEmpty = value.trim() === '';
+            const needsUnit = customFieldNeedsUnit(name, value);
+            const hasProblem = isEmpty || needsUnit;
+            return (
+              <Field
+                key={name}
+                label={`${name} *`}
+                className="basis-[100px] flex-shrink-0"
+                labelClassName={hasProblem ? 'text-red-600 font-bold' : 'text-red-500 font-semibold'}
+              >
+                <div className="relative">
+                  <input
+                    type="text"
+                    value={value}
+                    onChange={e => onSetCustomField(product.id, name, e.target.value)}
+                    onFocus={handleFocus}
+                    placeholder="예: 30cm"
+                    title={
+                      needsUnit
+                        ? `${name}: 단위가 빠졌습니다. "${value.trim()}"이 아니라 "${value.trim()}cm"처럼 숫자 뒤에 단위까지 적어주세요.`
+                        : `${name}: 필수 입력 항목입니다. 숫자만 적으면 반려되니 단위까지 함께 적어주세요 (예: 30cm, 500g, 2개).`
+                    }
+                    className={`${hasProblem ? alertInputClass : inputClass} pr-6`}
+                  />
+                  <button
+                    onClick={() => onRemoveCustomField(product.id, name)}
+                    className="absolute right-1 top-1/2 -translate-y-1/2 text-gray-400 hover:text-red-500 transition-colors p-0.5 rounded-full hover:bg-red-500/10 [&_svg]:h-3.5 [&_svg]:w-3.5"
+                    aria-label={`${name} 항목 삭제`}
+                    title={`${name} 항목 삭제`}
+                  >
+                    <CloseIcon />
+                  </button>
+                </div>
+                {hasProblem && (
+                  <p className="text-[9px] leading-tight font-bold text-red-600 px-0.5">
+                    {needsUnit ? '단위 빠짐! (예: 30cm)' : '단위까지 입력 (예: 30cm)'}
+                  </p>
+                )}
+              </Field>
+            );
+          })}
         </div>
       </div>
 

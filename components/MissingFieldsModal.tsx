@@ -29,7 +29,7 @@ const MissingFieldsModal: React.FC<MissingFieldsModalProps> = ({ isOpen, items, 
         </button>
         <h2 className="text-2xl font-bold text-slate-100 mb-2">{title ?? '입력하지 않은 항목이 있습니다'}</h2>
         <p className="text-sm text-slate-400 mb-6">
-          {description ?? '아래 상품은 견적서에 채워질 항목이 비어 있습니다. 상품등록에서 먼저 채우는 것을 권장합니다.'}
+          {description ?? '아래 상품은 견적서에 채워질 항목이 비어 있습니다. 상품등록에서 먼저 채우는 것을 권장합니다. "(단위 없음)"으로 표시된 항목은 30처럼 숫자만 적혀 있어서, 30cm처럼 단위까지 적어야 반려되지 않습니다.'}
         </p>
 
         <div className="flex-grow max-h-80 overflow-y-auto space-y-3 pr-1">

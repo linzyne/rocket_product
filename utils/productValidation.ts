@@ -1,5 +1,6 @@
 
 import { Product } from '../types';
+import { customFieldNeedsUnit } from '../data/quoteTemplates';
 
 // 견적서(carRcMapping)가 실제로 상품 데이터에서 읽어가는 항목들. 여기가 비어 있으면
 // 견적서의 해당 칸도 빈 채로 채워지므로, 생성/다운로드 전에 미리 알려줍니다.
@@ -22,8 +23,21 @@ const QUOTE_REQUIRED_FIELDS: { key: keyof Product; label: string }[] = [
   { key: 'labelFile', label: '제품 필수 표시사항' },
 ];
 
-export const getMissingFieldLabels = (product: Product): string[] =>
-  QUOTE_REQUIRED_FIELDS.filter(({ key }) => !String(product[key] ?? '').trim()).map(({ label }) => label);
+export const getMissingFieldLabels = (product: Product): string[] => {
+  const missing = QUOTE_REQUIRED_FIELDS
+    .filter(({ key }) => !String(product[key] ?? '').trim())
+    .map(({ label }) => label);
+
+  // 견적서 카테고리별 추가 항목(노출속성)도 견적서에 그대로 실리는데, 비워 두거나 "30"처럼
+  // 단위 없이 숫자만 적으면 등록이 반려됩니다. 상품 행에서 빨갛게 표시하고 있지만 지나치기
+  // 쉬우므로, 견적서를 만들기 전에 여기서 한 번 더 알려줍니다.
+  Object.entries<string>(product.customFields ?? {}).forEach(([name, value]) => {
+    if (!value.trim()) missing.push(name);
+    else if (customFieldNeedsUnit(value)) missing.push(`${name}(단위 없음)`);
+  });
+
+  return missing;
+};
 
 export interface ProductMissingFields {
   product: Product;

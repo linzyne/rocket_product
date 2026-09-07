@@ -98,6 +98,8 @@
     .rc-apply-price-btn { width:100%; padding:10px 14px; border-radius:10px; border:none; background:linear-gradient(135deg,#fb923c,#f97316); color:#fff; cursor:pointer; font-size:13px; font-weight:700; margin-top:10px; box-shadow:0 6px 16px -4px rgba(249,115,22,0.55); transition:transform .12s ease, box-shadow .12s ease; }
     .rc-apply-price-btn:hover { transform:translateY(-1px); box-shadow:0 8px 20px -4px rgba(249,115,22,0.65); }
     .rc-apply-price-btn:active { transform:translateY(0); }
+    .rc-detail-editor-btn { width:100%; margin-top:8px; padding:10px 14px; border-radius:10px; border:none; background:#7c3aed; color:#fff; cursor:pointer; font-size:13px; font-weight:700; }
+    .rc-detail-editor-btn:hover { filter:brightness(1.08); }
     .rc-textarea { min-height:70px; resize:vertical; font-family:inherit; line-height:1.5; }
     .rc-step-hint { margin:0 0 8px; font-size:11px; color:#94a3b8; line-height:1.5; }
     .rc-image-work-btn { width:100%; padding:10px 14px; border-radius:10px; border:none; background:linear-gradient(135deg,#60a5fa,#3b82f6); color:#fff; cursor:pointer; font-size:13px; font-weight:700; margin-top:8px; box-shadow:0 6px 16px -4px rgba(59,130,246,0.55); transition:transform .12s ease, box-shadow .12s ease; }
@@ -633,6 +635,20 @@
     });
   }
 
+  // 지금 열려 있는 "값 확인" 창. 상세페이지 에디터 창이 닫혔을 때 여기에 대고 복사를 묻는다.
+  let currentBox = null;
+
+  try {
+    chrome.runtime.onMessage.addListener((message) => {
+      if (!message || message.type !== 'DETAIL_EDITOR_CLOSED' || !currentBox) return;
+      const copyBtn = currentBox.querySelector('#rc-copy');
+      if (!copyBtn) return;
+      if (window.confirm('로켓제안서로 보낼 값을 복사할까요?')) copyBtn.click();
+    });
+  } catch (err) {
+    /* 확장이 새로 로드된 경우 무시 */
+  }
+
   async function buildModal(initial, pickedLabels) {
     const overlay = document.createElement('div');
     overlay.className = 'rc-overlay';
@@ -738,6 +754,7 @@
           <label class="rc-label" style="margin-top:8px;">AI가 준 문구 붙여넣기
             <textarea id="rc-detail-copy" class="rc-input rc-textarea" rows="4" placeholder="AI 답변을 그대로 붙여넣으세요"></textarea>
           </label>
+          <button type="button" id="rc-open-detail-editor" class="rc-detail-editor-btn">🎨 상세페이지 에디터 열기</button>
         </div>
       </div>
       <div class="rc-actions">
@@ -747,6 +764,7 @@
 
     overlay.appendChild(box);
     root.appendChild(overlay);
+    currentBox = box;
     makeDraggable(box, box.querySelector('h2'));
 
     // 옵션 행(색상 라벨 + 가로/세로/높이 + 가격 + 체크 여부)은 페이지마다 새로 읽어오는 값이라
@@ -1202,6 +1220,22 @@
       showToast(`체크된 옵션 ${checkedRows.length}개에 적용했어요.`);
     });
 
+    // 상세페이지 에디터는 로켓제안서 앱 화면을 창으로 띄워 그대로 쓴다(background.js가 연다).
+    box.querySelector('#rc-open-detail-editor').addEventListener('click', () => {
+      try {
+        chrome.runtime.sendMessage(
+          { type: 'OPEN_APP_DETAIL', screenWidth: window.screen.availWidth, screenHeight: window.screen.availHeight },
+          (response) => {
+            if (chrome.runtime.lastError || !response || !response.ok) {
+              showToast('앱 창을 열지 못했습니다. 확장을 새로고침해주세요.', true);
+            }
+          },
+        );
+      } catch (err) {
+        showToast('확장을 새로고침한 뒤 다시 눌러주세요.', true);
+      }
+    });
+
     box.querySelector('#rc-copy-prompt').addEventListener('click', async () => {
       const prompt = buildDetailPageCopyPrompt({
         productName: box.querySelector('#rc-title').value.trim(),
@@ -1285,6 +1319,7 @@
       persistDraft();
       persistWork();
       overlay.remove();
+      if (currentBox === box) currentBox = null;
     };
     // 배경이 더 이상 클릭을 가로채지 않아(뒤 페이지를 자유롭게 조작할 수 있게) 바깥 클릭으로는
     // 닫히지 않는다. 취소/복사하기 버튼으로만 닫는다.

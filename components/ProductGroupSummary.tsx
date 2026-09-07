@@ -32,7 +32,7 @@ const STEP_TONES: Record<string, string> = {
   orange: 'border-orange-200 bg-orange-50 text-orange-700 hover:bg-orange-100 hover:border-orange-300',
   blue: 'border-sky-200 bg-sky-50 text-sky-700 hover:bg-sky-100 hover:border-sky-300',
   violet: 'border-violet-200 bg-violet-50 text-violet-700 hover:bg-violet-100 hover:border-violet-300',
-  emerald: 'border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 hover:border-emerald-300',
+  rose: 'border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-100 hover:border-rose-300',
 };
 
 const StepButton: React.FC<{
@@ -178,11 +178,21 @@ const ProductGroupSummary: React.FC<ProductGroupSummaryProps> = ({
           </button>
         </div>
 
-        {/* 작업 순서 그대로: 01 복붙 → 02 견적서 → 03 상페 → 04 등록.
-            카테고리와 견적서는 02에서 자동으로 정해지므로 입력칸을 따로 두지 않는다. */}
+        {/* 작업 순서 그대로: 01 상페 → 02 복붙 → 03 견적서 → 04 등록.
+            상세페이지는 1688 확장에서 먼저 만들고 오는 흐름이라 맨 앞에 둔다.
+            카테고리와 견적서는 03에서 자동으로 정해지므로 입력칸을 따로 두지 않는다. */}
         <div className="flex-1 flex items-stretch gap-2 min-w-0">
           <StepButton
             step="01"
+            label="상페"
+            emoji="🎨"
+            tone="violet"
+            done={isDetailPageDone || !!lead.detailDataUrl}
+            onClick={() => onOpenDetailPageBuilder(lead)}
+            title="상세페이지 만들기 (사진 + 문구)"
+          />
+          <StepButton
+            step="02"
             label="복붙"
             emoji="📋"
             tone="orange"
@@ -192,7 +202,7 @@ const ProductGroupSummary: React.FC<ProductGroupSummaryProps> = ({
             title="1688 캡처 확장에서 복사한 값을 붙여넣기 (옵션 개수만큼 상품행이 자동으로 생깁니다)"
           />
           <StepButton
-            step="02"
+            step="03"
             label="견적서"
             emoji="🔍"
             tone="blue"
@@ -201,19 +211,10 @@ const ProductGroupSummary: React.FC<ProductGroupSummaryProps> = ({
             title="상품명 키워드로 쿠팡 카테고리를 찾아 견적서 양식을 자동으로 받아옵니다 (쿠팡 로그인 필요)"
           />
           <StepButton
-            step="03"
-            label="상페"
-            emoji="🎨"
-            tone="violet"
-            done={isDetailPageDone || !!lead.detailDataUrl}
-            onClick={() => onOpenDetailPageBuilder(lead)}
-            title="상세페이지 만들기 (사진 + 문구)"
-          />
-          <StepButton
             step="04"
             label="등록"
             emoji="🚀"
-            tone="emerald"
+            tone="rose"
             busy={isIntegratedDownloading}
             done={isIntegratedDownloadDone || !!lead.integratedDownloadedAt}
             onClick={() => onIntegratedDownload(lead.id)}

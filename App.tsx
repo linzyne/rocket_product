@@ -2123,20 +2123,18 @@ const App: React.FC = () => {
         getProductGroupKey(p) === groupKey ? { ...p, integratedDownloadedAt: doneAt } : p
       )));
 
-      // 통합다운을 받았다는 건 이 상품을 다루고 있다는 뜻이므로, 상품목록(별표 저장)에도
-      // 자동으로 남겨둘지 바로 물어본다.
-      if (window.confirm('상품목록에 자동으로 저장할까요?')) {
-        if (archiveProducts(groupProducts)) {
-          setIntegratedDownloadArchiveDoneId(productId);
-          setTimeout(() => setIntegratedDownloadArchiveDoneId(prev => (prev === productId ? null : prev)), 1500);
-        }
-      }
+      // 확인창은 하나만 띄운다. 견적서가 있으면 "제안 + 상품목록 저장"을 한 번에 묻고,
+      // 견적서가 없어 제안할 수 없을 때만 상품목록 저장을 따로 묻는다.
+      const archiveGroup = () => {
+        if (!archiveProducts(groupProducts)) return;
+        setIntegratedDownloadArchiveDoneId(productId);
+        setTimeout(() => setIntegratedDownloadArchiveDoneId(prev => (prev === productId ? null : prev)), 1500);
+      };
 
-      // 견적서를 만든 경우에만, 방금 만든 그 파일들로 로켓(서플라이어허브)에 제안할지 물어본다.
-      // 이 페이지는 서플라이어허브에 직접 접속할 수 없어서, 크롬 확장에 파일을 넘기고
-      // 확장이 대량 상품 등록 화면을 열어 01/02/03 첨부 → 해당없음 선택 → 약관 동의 →
-      // 파일 검증하기까지 대신 눌러준다.
-      if (quoteFile && window.confirm('로켓에 제안할까요?\n서플라이어허브 대량 상품 등록 화면을 열고 견적서·이미지·라벨을 첨부한 뒤 파일 검증까지 진행합니다.')) {
+      if (!quoteFile) {
+        if (window.confirm('상품목록에 저장할까요?')) archiveGroup();
+      } else if (window.confirm('로켓에 제안하고 상품목록에도 저장할까요?\n서플라이어허브 대량 상품 등록 화면을 열고 견적서·이미지·라벨을 첨부한 뒤 파일 검증까지 진행합니다.')) {
+        archiveGroup();
         const result = await sendProposalToSupplierHub({
           productName: product.productName,
           quote: quoteFile,
@@ -2438,6 +2436,26 @@ const App: React.FC = () => {
   // Detail Page Builder Handlers
   const openDetailPageBuilder = useCallback((product: Product) => {
     setDetailPageBuilderState({ isOpen: true, product, standalone: false });
+  }, []);
+
+  // 1688 확장의 "상페 에디터" 버튼은 이 앱을 ?openDetail=1 로 열어준다. 확장에서는 상세페이지를
+  // 먼저 만들고 그다음에 값을 복사해 붙여넣는 순서라, 여기서 새 상품 행을 하나 만들어 그 행의
+  // 에디터를 연다. 그러면 나중에 그 행에 01 복붙을 해도 상세페이지가 그대로 남는다.
+  // (마지막 상품을 열면 이전 상품의 상세페이지를 덮어쓰게 된다.)
+  const openedFromUrlRef = useRef(false);
+  useEffect(() => {
+    if (openedFromUrlRef.current) return;
+    if (new URLSearchParams(window.location.search).get('openDetail') !== '1') return;
+    openedFromUrlRef.current = true;
+
+    setProducts(prev => {
+      const last = prev[prev.length - 1];
+      // 마지막 행이 아직 비어 있으면(방금 추가한 빈 행) 그 행을 그대로 쓴다.
+      const isEmpty = last && !last.productName && !last.url;
+      const target = isEmpty ? last : createNewProduct();
+      setDetailPageBuilderState({ isOpen: true, product: target, standalone: false });
+      return isEmpty ? prev : [...prev, target];
+    });
   }, []);
 
   // 제안서와 상관없는 제품의 상세페이지도 만들 수 있게, 상품 목록에 행을 추가하지 않고 빈 임시

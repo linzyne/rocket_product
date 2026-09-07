@@ -34,7 +34,43 @@ const openOrReuseHubTab = async () => {
   return { id: created.id, owned: true };
 };
 
+// 상세페이지 에디터는 앱 화면을 그대로 쓰는 게 가장 확실하다(에디터가 쓰는 API 키·저장소가
+// 전부 앱 쪽에 있다). 1688 페이지 안에 iframe으로 넣으면 그 사이트의 CSP에 막힐 수 있어,
+// 창(팝업)으로 띄운다.
+const APP_URLS = ['http://localhost:3000/', 'https://rocket-product.vercel.app/'];
+
+// 상세페이지 에디터 창과, 그 창을 연 1688 탭.
+let detailEditor = null;
+
+// 이미 열려 있는 앱 탭이 있으면 그 주소를 그대로 쓴다(로컬/배포를 자동으로 가려낸다).
+const resolveAppUrl = async () => {
+  const tabs = await chrome.tabs.query({ url: ['http://localhost/*', 'https://rocket-product.vercel.app/*'] });
+  const open = tabs.find((tab) => tab.url);
+  if (open) return new URL(open.url).origin + '/';
+  return APP_URLS[0];
+};
+
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (message && message.type === 'OPEN_APP_DETAIL') {
+    (async () => {
+      try {
+        const base = await resolveAppUrl();
+        const created = await chrome.windows.create({
+          url: `${base}?openDetail=1`,
+          type: 'popup',
+          width: Math.min(1280, (message.screenWidth || 1440) - 80),
+          height: Math.min(900, (message.screenHeight || 900) - 80),
+        });
+        // 이 창을 닫으면 값 확인 창에게 알려서, 이어서 "복사할까요?"를 물어보게 한다.
+        detailEditor = { windowId: created.id, tabId: sender.tab && sender.tab.id };
+        sendResponse({ ok: true });
+      } catch (err) {
+        sendResponse({ ok: false, error: String((err && err.message) || err) });
+      }
+    })();
+    return true;
+  }
+
   if (!message || !message.type) return;
 
   // ---- 앱 -> 확장 ----
@@ -134,6 +170,13 @@ chrome.downloads.onCreated.addListener((item) => {
   if (!/supplier\.coupang\.com/.test(url)) return;
   const filename = (item.filename || '').split(/[\\/]/).pop();
   chrome.tabs.sendMessage(job.hubTabId, { type: 'FETCH_DOWNLOAD', url, filename }).catch(() => {});
+});
+
+chrome.windows.onRemoved.addListener((windowId) => {
+  if (!detailEditor || detailEditor.windowId !== windowId) return;
+  const { tabId } = detailEditor;
+  detailEditor = null;
+  if (tabId) chrome.tabs.sendMessage(tabId, { type: 'DETAIL_EDITOR_CLOSED' }).catch(() => {});
 });
 
 chrome.tabs.onRemoved.addListener((tabId) => {

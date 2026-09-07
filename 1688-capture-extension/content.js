@@ -620,13 +620,13 @@
               <input id="rc-weight" class="rc-input" type="number" step="1" />
             </label>
             <div class="rc-row">
-              <label class="rc-label rc-label-red">가로(cm)
+              <label class="rc-label rc-label-red">가로(mm)
                 <input id="rc-margin-width" class="rc-input" type="number" step="0.1" placeholder="가로" />
               </label>
-              <label class="rc-label rc-label-red">세로(cm)
+              <label class="rc-label rc-label-red">세로(mm)
                 <input id="rc-margin-height" class="rc-input" type="number" step="0.1" placeholder="세로" />
               </label>
-              <label class="rc-label rc-label-red">높이(cm)
+              <label class="rc-label rc-label-red">높이(mm)
                 <input id="rc-margin-depth" class="rc-input" type="number" step="0.1" placeholder="높이" />
               </label>
             </div>
@@ -1017,11 +1017,11 @@
           </div>
           <div class="rc-option-body"${row.collapsed ? ' hidden' : ''}>
             <div class="rc-option-size-row">
-              <input type="number" step="0.1" class="rc-input rc-option-dim" placeholder="가로" value="${numVal(row.width)}" title="가로(cm)" />
+              <input type="number" step="0.1" class="rc-input rc-option-dim" placeholder="가로" value="${numVal(row.width)}" title="가로(mm)" />
               <span class="rc-option-dim-sep">×</span>
-              <input type="number" step="0.1" class="rc-input rc-option-dim" placeholder="세로" value="${numVal(row.height)}" title="세로(cm)" />
+              <input type="number" step="0.1" class="rc-input rc-option-dim" placeholder="세로" value="${numVal(row.height)}" title="세로(mm)" />
               <span class="rc-option-dim-sep">×</span>
-              <input type="number" step="0.1" class="rc-input rc-option-dim" placeholder="높이" value="${numVal(row.depth)}" title="높이(cm)" />
+              <input type="number" step="0.1" class="rc-input rc-option-dim" placeholder="높이" value="${numVal(row.depth)}" title="높이(mm)" />
             </div>
             <div class="rc-option-price-row">
               <span class="rc-label">위안 가격</span>

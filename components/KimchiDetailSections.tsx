@@ -1,6 +1,6 @@
 import React, { useMemo } from 'react';
 import EditableText from './EditableText';
-import { PADDING_X, RULE_COLOR, CARD_COLOR, SPACE, SECTION_GAP } from '../utils/detailPageLayout';
+import { PADDING_X, RULE_COLOR, CARD_COLOR, SPACE, SECTION_GAP, DEFAULT_PHOTO_GAP, PHOTO_GAP_MAX } from '../utils/detailPageLayout';
 import { KimchiSection, kimchiSectionHasText, sectionBaseLabel } from '../utils/kimchiDetailTemplate';
 
 // 김치 상세페이지 미리보기. 페이지는 "섹션 배열"이고, 섹션 하나가 [문구 + 자기 사진] 한 세트다.
@@ -13,6 +13,18 @@ export interface KimchiPhoto {
   id: string;
   dataUrl: string;
 }
+
+// 한 섹션에 올린 사진을 세로로 이어 그리는 함수를 만든다. 스킨 네 개가 모두 이걸 쓰기 때문에
+// "사진 간격"을 한 곳에서만 해석한다.
+//   inner    — 그 스킨이 원래 사진 사이에 쓰던 간격. 섹션의 photoGap이 비어 있으면 이 값을 쓴다.
+//   trailing — 마지막 사진 아래에 남기는 여백(다음 블록과의 거리). 기본은 inner와 같다.
+// photoGap은 사진 "사이"에만 적용된다 — 마지막 사진 아래 여백까지 따라 움직이면 섹션 사이
+// 리듬이 무너져서 스킨마다 잡아둔 여백이 깨진다.
+export const makePhotoRun =
+  (renderPhoto: (photo: KimchiPhoto, marginBottom: number) => React.ReactNode) =>
+  (section: KimchiSection, photos: KimchiPhoto[], inner: number, trailing: number = inner) =>
+    photos.map((photo, idx, arr) =>
+      renderPhoto(photo, idx === arr.length - 1 ? trailing : section.photoGap ?? inner));
 
 interface KimchiPreviewProps {
   sections: KimchiSection[];
@@ -117,6 +129,8 @@ const bandLeading = (fontSize: number) => ((FEATURE_BAND_LINE_HEIGHT - 1) / 2) *
 export const KimchiPreview: React.FC<KimchiPreviewProps> = ({
   sections, updateSection, photosBySection, renderPhoto, fontFamily, textColor, fontScale, accentColor: templateAccent,
 }) => {
+  // 사진 사이 간격은 섹션의 photoGap을 따른다 — makePhotoRun 주석 참고.
+  const photoRun = makePhotoRun(renderPhoto);
   const styles = useMemo(() => {
     const size = (px: number) => Math.round(px * fontScale);
     const base = (fontSize: number) => ({ fontFamily, color: textColor, fontSize });
@@ -438,7 +452,7 @@ export const KimchiPreview: React.FC<KimchiPreviewProps> = ({
                 />
               </div>
             )}
-            {sectionPhotos.map(photo => renderPhoto(photo, 0))}
+            {photoRun(section, sectionPhotos, 0)}
           </>
         );
       }
@@ -537,7 +551,7 @@ export const KimchiPreview: React.FC<KimchiPreviewProps> = ({
               </div>
             )}
 
-            {sectionPhotos.map(photo => renderPhoto(photo, 0))}
+            {photoRun(section, sectionPhotos, 0)}
 
             {hasBottom && (
               <div style={{ background: section.bottomColor || '#ddd9d5', padding: `${FEATURE_BOTTOM_PADDING_Y}px 0` }}>
@@ -798,8 +812,7 @@ export const KimchiPreview: React.FC<KimchiPreviewProps> = ({
         // 리뷰 섹션은 올린 사진을 카드 오른쪽 썸네일로 직접 쓴다 — 전체폭 사진으로 또 그리면 안 된다.
         const photosConsumedByBody =
           ['review', 'feature', 'cert', 'point'].includes(section.kind);
-        const renderPhotos = (trailing: number) =>
-          photos.map((photo, idx, arr) => renderPhoto(photo, idx === arr.length - 1 ? trailing : SPACE.sm));
+        const renderPhotos = (trailing: number) => photoRun(section, photos, SPACE.sm, trailing);
         return (
           <div
             key={section.id}
@@ -897,6 +910,7 @@ export const KimchiSectionPanel: React.FC<KimchiSectionPanelProps> = ({
         섹션마다 사진 칸이 따로 있어요. ↑↓로 섹션 순서를, ⧉로 섹션을 복사합니다.
         사진은 끌어서 순서를 바꾸거나 다른 섹션으로 옮길 수 있고, 클릭하면 자르기가 열려요.
         미리보기에서 원하는 자리를 우클릭하면 바로 그 자리에 사진을 넣을 수 있습니다.
+        한 섹션에 사진을 두 장 이상 올리면 "사진 간격"으로 사진 사이 여백을 조절할 수 있어요.
       </p>
 
       {sections.map((section, index) => {
@@ -1096,6 +1110,36 @@ export const KimchiSectionPanel: React.FC<KimchiSectionPanelProps> = ({
                 <span className="text-[11px] text-slate-500">{section.hint}</span>
               )}
             </div>
+
+            {/* 사진 간격 — 사진 "사이"에 생기는 여백이라 두 장 이상 올린 섹션에만 뜬다.
+                리뷰(카드 오른쪽 썸네일)와 인증(가운데 로고)은 사진을 이어 붙이지 않으므로 제외한다. */}
+            {photos.length >= 2 && !['review', 'cert'].includes(section.kind) && (
+              <div className="flex items-center gap-2">
+                <span className="text-[11px] text-slate-400 flex-shrink-0">사진 간격</span>
+                <input
+                  type="range"
+                  min={0}
+                  max={PHOTO_GAP_MAX}
+                  step={2}
+                  value={section.photoGap ?? DEFAULT_PHOTO_GAP}
+                  onChange={e => updateSection(section.id, { photoGap: Number(e.target.value) })}
+                  title="이 섹션 사진들 사이에 남길 여백 (0이면 딱 붙습니다)"
+                  className="flex-1 min-w-0 accent-blue-500 cursor-pointer"
+                />
+                <span className="text-[11px] text-slate-300 tabular-nums w-8 text-right flex-shrink-0">
+                  {section.photoGap ?? DEFAULT_PHOTO_GAP}
+                </span>
+                {section.photoGap !== undefined && (
+                  <button
+                    onClick={() => updateSection(section.id, { photoGap: undefined })}
+                    title="이 섹션만 지정한 간격을 지우고 디자인 기본 간격을 따릅니다"
+                    className="px-1.5 h-6 flex-shrink-0 rounded bg-slate-700 text-slate-400 hover:bg-slate-600 transition-colors text-[11px]"
+                  >
+                    기본
+                  </button>
+                )}
+              </div>
+            )}
           </div>
         );
       })}

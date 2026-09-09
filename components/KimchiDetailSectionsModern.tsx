@@ -2,7 +2,7 @@ import React, { useMemo } from 'react';
 import EditableText from './EditableText';
 import { PADDING_X, SPACE, SECTION_GAP } from '../utils/detailPageLayout';
 import { KimchiSection, kimchiSectionHasText } from '../utils/kimchiDetailTemplate';
-import { KimchiPhoto, KIMCHI_FONT_SIZE } from './KimchiDetailSections';
+import { KimchiPhoto, KIMCHI_FONT_SIZE, makePhotoRun } from './KimchiDetailSections';
 
 // 두 번째 스킨. 섹션 구조·문구 필드·붙여넣기 라벨은 기본 스킨과 완전히 같고, 그리는 방식만
 // 다르다 — 같은 문구를 붙여넣은 채로 드롭다운만 바꿔서 두 디자인을 비교할 수 있다.
@@ -31,6 +31,8 @@ const MODERN_SECTION_GAP = 130;
 export const KimchiPreviewModern: React.FC<ModernPreviewProps> = ({
   sections, updateSection, photosBySection, renderPhoto, fontFamily, textColor, fontScale, accentColor: templateAccent,
 }) => {
+  // 사진 사이 간격은 섹션의 photoGap을 따른다 — makePhotoRun 주석 참고.
+  const photoRun = makePhotoRun(renderPhoto);
   // 글자 크기는 기본 스킨과 똑같은 표(KIMCHI_FONT_SIZE)를 쓴다. 달라지는 건 정렬·굵기·여백·선뿐이라,
   // 스킨을 바꿔도 문구가 차지하는 분량이 그대로다.
   const styles = useMemo(() => {
@@ -359,7 +361,7 @@ export const KimchiPreviewModern: React.FC<ModernPreviewProps> = ({
               onLabelChange={v => updateSection(section.id, { bandSmall: v })}
               onTitleChange={v => updateSection(section.id, { bandBig: v })}
             />
-            {photos.map(photo => renderPhoto(photo, SPACE.lg))}
+            {photoRun(section, photos, SPACE.lg)}
             {section.heading?.trim() && (
               <div style={{ marginBottom: SPACE.sm }}>
                 <EditableText
@@ -449,7 +451,7 @@ export const KimchiPreviewModern: React.FC<ModernPreviewProps> = ({
                 />
               </div>
             )}
-            {photos.map(photo => renderPhoto(photo, 0))}
+            {photoRun(section, photos, 0)}
           </>
         );
 
@@ -548,9 +550,9 @@ export const KimchiPreviewModern: React.FC<ModernPreviewProps> = ({
               ...(section.backgroundColor ? { paddingTop: SPACE.lg, paddingBottom: SPACE.lg } : {}),
             }}
           >
-            {!photosInBody && section.photoPosition === 'before' && photos.map(p => renderPhoto(p, SPACE.lg))}
+            {!photosInBody && section.photoPosition === 'before' && photoRun(section, photos, SPACE.lg)}
             {renderBody(section, photos)}
-            {!photosInBody && section.photoPosition === 'after' && photos.map(p => renderPhoto(p, SPACE.lg))}
+            {!photosInBody && section.photoPosition === 'after' && photoRun(section, photos, SPACE.lg)}
           </div>
         );
       })}

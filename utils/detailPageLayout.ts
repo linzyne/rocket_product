@@ -10,3 +10,8 @@ export const PRODUCT_INFO_LABEL_COLUMN = 180;
 export const SPACE = { xs: 10, sm: 18, md: 28, lg: 45, xl: 60 };
 // Extra breathing room between distinct sections.
 export const SECTION_GAP = 70;
+// 한 섹션에 올린 사진들 사이의 기본 간격. 섹션에서 photoGap으로 따로 조절할 수 있고(사이드
+// 패널의 "사진 간격"), 조절하지 않은 섹션은 스킨이 원래 쓰던 간격을 그대로 쓴다.
+export const DEFAULT_PHOTO_GAP = SPACE.sm;
+// 사이드 패널 슬라이더가 움직일 수 있는 범위(860px 캔버스 기준 px).
+export const PHOTO_GAP_MAX = 160;

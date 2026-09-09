@@ -2,7 +2,7 @@ import React, { useMemo } from 'react';
 import EditableText from './EditableText';
 import { PADDING_X, SPACE } from '../utils/detailPageLayout';
 import { KimchiSection, kimchiSectionHasText } from '../utils/kimchiDetailTemplate';
-import { KimchiPhoto, KIMCHI_FONT_SIZE } from './KimchiDetailSections';
+import { KimchiPhoto, KIMCHI_FONT_SIZE, makePhotoRun } from './KimchiDetailSections';
 
 // 세 번째 스킨. 섹션 구조·문구 필드·붙여넣기 라벨은 다른 스킨과 완전히 같고 그리는 방식만 다르다.
 //
@@ -39,6 +39,8 @@ const CARD_BORDER = '#e6e1d9';
 export const KimchiPreviewBold: React.FC<BoldPreviewProps> = ({
   sections, updateSection, photosBySection, renderPhoto, fontFamily, textColor, fontScale, accentColor: templateAccent,
 }) => {
+  // 사진 사이 간격은 섹션의 photoGap을 따른다 — makePhotoRun 주석 참고.
+  const photoRun = makePhotoRun(renderPhoto);
   // 글자 크기는 다른 스킨과 같은 표를 쓴다 — 디자인을 바꿔도 문구 분량이 그대로여야 한다.
   const styles = useMemo(() => {
     const size = (px: number) => Math.round(px * fontScale);
@@ -350,7 +352,7 @@ export const KimchiPreviewBold: React.FC<BoldPreviewProps> = ({
             )}
             {photos.length > 0 && (
               <div style={{ margin: `0 ${CARD_MARGIN_X}px ${SPACE.md}px`, borderRadius: CARD_RADIUS, overflow: 'hidden' }}>
-                {photos.map(photo => renderPhoto(photo, 0))}
+                {photoRun(section, photos, 0)}
               </div>
             )}
             {(section.heading?.trim() || section.body?.trim()) && (
@@ -430,7 +432,7 @@ export const KimchiPreviewBold: React.FC<BoldPreviewProps> = ({
             </Split>
             {photos.length > 0 && (
               <div style={{ margin: `${SPACE.lg}px ${CARD_MARGIN_X}px 0`, borderRadius: CARD_RADIUS, overflow: 'hidden' }}>
-                {photos.map(photo => renderPhoto(photo, 0))}
+                {photoRun(section, photos, 0)}
               </div>
             )}
           </>
@@ -537,9 +539,9 @@ export const KimchiPreviewBold: React.FC<BoldPreviewProps> = ({
             data-empty-section={isEmpty ? 'true' : undefined}
             style={{ marginBottom: BOLD_SECTION_GAP }}
           >
-            {!photosInBody && section.photoPosition === 'before' && photos.map(p => renderPhoto(p, SPACE.lg))}
+            {!photosInBody && section.photoPosition === 'before' && photoRun(section, photos, SPACE.lg)}
             {renderBody(section, photos, index)}
-            {!photosInBody && section.photoPosition === 'after' && photos.map(p => renderPhoto(p, SPACE.lg))}
+            {!photosInBody && section.photoPosition === 'after' && photoRun(section, photos, SPACE.lg)}
           </div>
         );
       })}

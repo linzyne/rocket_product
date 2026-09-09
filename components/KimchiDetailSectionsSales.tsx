@@ -2,7 +2,7 @@ import React, { useMemo } from 'react';
 import EditableText from './EditableText';
 import { PADDING_X, SPACE } from '../utils/detailPageLayout';
 import { KimchiSection, kimchiSectionHasText } from '../utils/kimchiDetailTemplate';
-import { KimchiPhoto, KIMCHI_FONT_SIZE } from './KimchiDetailSections';
+import { KimchiPhoto, KIMCHI_FONT_SIZE, makePhotoRun } from './KimchiDetailSections';
 
 // 네 번째 스킨. 국내 식품 상세페이지에서 흔한 "설득형" 구성을 옮긴 것 —
 // 체크포인트 배지, 말풍선으로 늘어놓는 공감 문구, 시그니처 색을 꽉 채운 인증 패널이 특징이다.
@@ -39,6 +39,8 @@ function tint(hex: string, alpha: number): string {
 export const KimchiPreviewSales: React.FC<SalesPreviewProps> = ({
   sections, updateSection, photosBySection, renderPhoto, fontFamily, textColor, fontScale, accentColor: templateAccent,
 }) => {
+  // 사진 사이 간격은 섹션의 photoGap을 따른다 — makePhotoRun 주석 참고.
+  const photoRun = makePhotoRun(renderPhoto);
   const styles = useMemo(() => {
     const size = (px: number) => Math.round(px * fontScale);
     const base = (fontSize: number) => ({ fontFamily, color: textColor, fontSize });
@@ -249,7 +251,7 @@ export const KimchiPreviewSales: React.FC<SalesPreviewProps> = ({
               )}
               {section.body?.trim() && edit('body', '본문', styles.featureBody)}
             </div>
-            {photos.map(photo => renderPhoto(photo, 0))}
+            {photoRun(section, photos, 0)}
           </>
         );
 
@@ -289,7 +291,7 @@ export const KimchiPreviewSales: React.FC<SalesPreviewProps> = ({
                   placeholder="설명" style={{ ...styles.pointSubtitle, padding: `0 ${PADDING_X}px` }} />
               )}
             </div>
-            {photos.map(photo => renderPhoto(photo, 0))}
+            {photoRun(section, photos, 0)}
           </>
         );
 
@@ -390,9 +392,9 @@ export const KimchiPreviewSales: React.FC<SalesPreviewProps> = ({
             data-empty-section={isEmpty ? 'true' : undefined}
             style={{ marginBottom: SALES_SECTION_GAP }}
           >
-            {!photosInBody && section.photoPosition === 'before' && photos.map(p => renderPhoto(p, 0))}
+            {!photosInBody && section.photoPosition === 'before' && photoRun(section, photos, 0)}
             {renderBody(section, photos)}
-            {!photosInBody && section.photoPosition === 'after' && photos.map(p => renderPhoto(p, 0))}
+            {!photosInBody && section.photoPosition === 'after' && photoRun(section, photos, 0)}
           </div>
         );
       })}

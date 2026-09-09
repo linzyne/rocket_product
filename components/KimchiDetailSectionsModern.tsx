@@ -2,7 +2,7 @@ import React, { useMemo } from 'react';
 import EditableText from './EditableText';
 import { PADDING_X, SPACE, SECTION_GAP } from '../utils/detailPageLayout';
 import { KimchiSection, kimchiSectionHasText } from '../utils/kimchiDetailTemplate';
-import { KimchiPhoto, KIMCHI_FONT_SIZE, makePhotoRun } from './KimchiDetailSections';
+import { KimchiPhoto, KimchiTypeScale, kimchiFontSizes, makePhotoRun } from './KimchiDetailSections';
 
 // 두 번째 스킨. 섹션 구조·문구 필드·붙여넣기 라벨은 기본 스킨과 완전히 같고, 그리는 방식만
 // 다르다 — 같은 문구를 붙여넣은 채로 드롭다운만 바꿔서 두 디자인을 비교할 수 있다.
@@ -18,6 +18,8 @@ interface ModernPreviewProps {
   fontFamily: string;
   textColor: string;
   fontScale: number;
+  // 다섯 단계 글자 크기(사이드 패널에서 조절한 값).
+  typeScale: KimchiTypeScale;
   // 템플릿 전체의 시그니처 색. 섹션이 자기 accentColor를 갖고 있으면 그쪽이 우선한다.
   accentColor: string;
 }
@@ -29,7 +31,7 @@ const MUTED = 0.55;
 const MODERN_SECTION_GAP = 130;
 
 export const KimchiPreviewModern: React.FC<ModernPreviewProps> = ({
-  sections, updateSection, photosBySection, renderPhoto, fontFamily, textColor, fontScale, accentColor: templateAccent,
+  sections, updateSection, photosBySection, renderPhoto, fontFamily, textColor, fontScale, typeScale, accentColor: templateAccent,
 }) => {
   // 사진 사이 간격은 섹션의 photoGap을 따른다 — makePhotoRun 주석 참고.
   const photoRun = makePhotoRun(renderPhoto);
@@ -40,7 +42,7 @@ export const KimchiPreviewModern: React.FC<ModernPreviewProps> = ({
     const base = (fontSize: number) => ({ fontFamily, color: textColor, fontSize });
     const padded = { padding: `0 ${PADDING_X}px` };
     const left = { textAlign: 'left' as const };
-    const F = KIMCHI_FONT_SIZE;
+    const F = kimchiFontSizes(typeScale);
     return {
       heroBadge: { ...base(size(F.heroBadge)), ...padded, ...left, fontWeight: 700, letterSpacing: '0.22em', opacity: MUTED } as React.CSSProperties,
       heroEyebrow: { ...base(size(F.heroEyebrow)), ...padded, ...left, fontWeight: 400, lineHeight: 1.5, opacity: 0.75 } as React.CSSProperties,
@@ -87,7 +89,7 @@ export const KimchiPreviewModern: React.FC<ModernPreviewProps> = ({
       qnaQ: { ...base(size(F.qnaQuestion)), fontWeight: 700, lineHeight: 1.45 } as React.CSSProperties,
       qnaA: { ...base(size(F.qnaAnswer)), fontWeight: 400, lineHeight: 1.7, opacity: 0.8 } as React.CSSProperties,
     };
-  }, [fontFamily, textColor, fontScale]);
+  }, [fontFamily, textColor, fontScale, typeScale]);
 
   // 이 스킨의 아이콘. 기본 스킨은 사용자가 넣은 이모지를 크게 쓰지만, 여기서는 테두리 원 안에
   // 단색 기호를 넣은 선화로 통일한다 — 3D 이모지가 얇은 선·여백으로 만든 화면에서 혼자 튀기
@@ -106,7 +108,7 @@ export const KimchiPreviewModern: React.FC<ModernPreviewProps> = ({
         flexShrink: 0,
       }}
     >
-      <span style={{ fontFamily, color: textColor, fontSize: Math.round(38 * fontScale), lineHeight: 1 }}>{glyph}</span>
+      <span style={{ fontFamily, color: textColor, fontSize: Math.round(typeScale.caption * fontScale), lineHeight: 1 }}>{glyph}</span>
     </div>
   );
 

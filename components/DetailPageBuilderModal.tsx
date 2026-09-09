@@ -19,7 +19,7 @@ import { generateId } from '../utils/id';
 import { withTimeout, stripClonedScripts, stripEmptySections } from '../utils/html2canvasHelpers';
 import ImageCropModal from './ImageCropModal';
 import EditableText from './EditableText';
-import { KimchiPreview, KimchiSectionPanel } from './KimchiDetailSections';
+import { KimchiPreview, KimchiSectionPanel, KIMCHI_TYPE_SCALE, KIMCHI_TYPE_STEPS, KimchiTypeScale } from './KimchiDetailSections';
 import { KimchiPreviewModern } from './KimchiDetailSectionsModern';
 import { KimchiPreviewBold } from './KimchiDetailSectionsBold';
 import { KimchiPreviewSales } from './KimchiDetailSectionsSales';
@@ -253,6 +253,10 @@ const DetailPageBuilderModal: React.FC<DetailPageBuilderModalProps> = ({ isOpen,
     sales: '#2f9e44',
   });
   const kimchiAccent = kimchiAccents[kimchiSkin];
+  // 김치 템플릿의 글자 크기는 다섯 단계뿐이고(KIMCHI_TYPE_SCALE), 그 다섯 개의 실제 px을 여기서
+  // 정한다. 역할별로 따로 만지는 게 아니라 단계를 만지는 것이라, 한 번 조절하면 그 단계를 쓰는
+  // 모든 문구가 같이 움직인다 — 페이지 안에서 크기 위계가 어긋나지 않는다.
+  const [kimchiTypeScale, setKimchiTypeScale] = useState<KimchiTypeScale>(KIMCHI_TYPE_SCALE);
   const [photoSectionMap, setPhotoSectionMap] = useState<Record<string, string>>({});
   const [kimchiPastedText, setKimchiPastedText] = useState('');
   // 미리보기에서 우클릭한 자리. 그 섹션의 어느 사진 앞에 넣을지까지 함께 들고 있다가,
@@ -2309,6 +2313,7 @@ const DetailPageBuilderModal: React.FC<DetailPageBuilderModalProps> = ({ isOpen,
                     fontFamily: templateStyle.fontFamily,
                     textColor: templateStyle.textColor,
                     fontScale: templateStyle.fontScale,
+                    typeScale: kimchiTypeScale,
                     accentColor: kimchiAccent,
                     }
                   )
@@ -2822,6 +2827,56 @@ const DetailPageBuilderModal: React.FC<DetailPageBuilderModalProps> = ({ isOpen,
                 />
                 <span className="text-xs text-slate-400 w-10 text-right tabular-nums">{Math.round(templateStyle.fontScale * 100)}%</span>
               </div>
+              {/* 글자 단계 — 김치 템플릿 전용. 위의 "글씨크기"는 페이지 전체를 한 번에 늘리고
+                  줄이는 배율이고, 이쪽은 단계끼리의 차이(대제목이 본문보다 얼마나 큰지)를 정한다. */}
+              {isKimchi && (
+                <div className="space-y-1.5 pt-1">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs text-slate-400">글자 단계</span>
+                    <button
+                      onClick={() => setKimchiTypeScale(KIMCHI_TYPE_SCALE)}
+                      disabled={KIMCHI_TYPE_STEPS.every(step => kimchiTypeScale[step.key] === KIMCHI_TYPE_SCALE[step.key])}
+                      title="다섯 단계를 기본값으로 되돌립니다"
+                      className="px-1.5 h-6 rounded bg-slate-800 border border-slate-600 text-slate-400 hover:bg-slate-700 transition-colors text-[11px] disabled:opacity-30 disabled:cursor-not-allowed"
+                    >
+                      기본값
+                    </button>
+                  </div>
+                  {KIMCHI_TYPE_STEPS.map(step => (
+                    <div key={step.key} className="flex items-center gap-2" title={`${step.label} — ${step.hint}`}>
+                      <span className="text-[11px] text-slate-500 w-12 flex-shrink-0">{step.label}</span>
+                      <input
+                        type="range"
+                        min={step.min}
+                        max={step.max}
+                        step={1}
+                        value={kimchiTypeScale[step.key]}
+                        onChange={e => setKimchiTypeScale(prev => ({ ...prev, [step.key]: Number(e.target.value) }))}
+                        className="flex-1 min-w-0 accent-blue-500 cursor-pointer"
+                      />
+                      <input
+                        type="number"
+                        min={step.min}
+                        max={step.max}
+                        value={kimchiTypeScale[step.key]}
+                        onChange={e => {
+                          const next = Number(e.target.value);
+                          if (!Number.isFinite(next)) return;
+                          setKimchiTypeScale(prev => ({
+                            ...prev,
+                            [step.key]: Math.min(step.max, Math.max(step.min, Math.round(next))),
+                          }));
+                        }}
+                        className="w-12 flex-shrink-0 px-1 py-0.5 bg-slate-800 border border-slate-600 rounded text-[11px] text-slate-200 text-right tabular-nums"
+                      />
+                    </div>
+                  ))}
+                  <p className="text-[11px] text-slate-500 leading-relaxed">
+                    이 다섯 개가 김치 상세페이지에 쓰는 글자 크기 전부입니다. 단계를 옮기면 그 단계를
+                    쓰는 문구가 모두 함께 움직여요 (마우스를 올리면 어디에 쓰이는지 보입니다).
+                  </p>
+                </div>
+              )}
               {/* 개수 조절은 기본 템플릿 전용 — 김치 템플릿은 섹션 구성이 고정이고, 비워둔 항목이
                   알아서 빠지는 방식이라 개수를 따로 정할 필요가 없다. */}
               {!isKimchi && (

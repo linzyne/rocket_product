@@ -2,7 +2,7 @@ import React, { useMemo } from 'react';
 import EditableText from './EditableText';
 import { PADDING_X, SPACE } from '../utils/detailPageLayout';
 import { KimchiSection, kimchiSectionHasText } from '../utils/kimchiDetailTemplate';
-import { KimchiPhoto, KIMCHI_FONT_SIZE, makePhotoRun } from './KimchiDetailSections';
+import { KimchiPhoto, KimchiTypeScale, kimchiFontSizes, makePhotoRun } from './KimchiDetailSections';
 
 // 세 번째 스킨. 섹션 구조·문구 필드·붙여넣기 라벨은 다른 스킨과 완전히 같고 그리는 방식만 다르다.
 //
@@ -18,6 +18,8 @@ interface BoldPreviewProps {
   fontFamily: string;
   textColor: string;
   fontScale: number;
+  // 다섯 단계 글자 크기(사이드 패널에서 조절한 값).
+  typeScale: KimchiTypeScale;
   // 템플릿 전체의 시그니처 색. 섹션이 자기 accentColor를 갖고 있으면 그쪽이 우선한다.
   accentColor: string;
 }
@@ -37,7 +39,7 @@ const CARD_WHITE = '#ffffff';
 const CARD_BORDER = '#e6e1d9';
 
 export const KimchiPreviewBold: React.FC<BoldPreviewProps> = ({
-  sections, updateSection, photosBySection, renderPhoto, fontFamily, textColor, fontScale, accentColor: templateAccent,
+  sections, updateSection, photosBySection, renderPhoto, fontFamily, textColor, fontScale, typeScale, accentColor: templateAccent,
 }) => {
   // 사진 사이 간격은 섹션의 photoGap을 따른다 — makePhotoRun 주석 참고.
   const photoRun = makePhotoRun(renderPhoto);
@@ -46,7 +48,7 @@ export const KimchiPreviewBold: React.FC<BoldPreviewProps> = ({
     const size = (px: number) => Math.round(px * fontScale);
     const base = (fontSize: number) => ({ fontFamily, color: textColor, fontSize });
     const center = { textAlign: 'center' as const };
-    const F = KIMCHI_FONT_SIZE;
+    const F = kimchiFontSizes(typeScale);
     return {
       heroBadge: { ...base(size(F.heroBadge)), fontWeight: 700, letterSpacing: '0.1em', color: '#ffffff' } as React.CSSProperties,
       heroEyebrow: { ...base(size(F.heroEyebrow)), ...center, fontWeight: 400, lineHeight: 1.4, opacity: 0.7 } as React.CSSProperties,
@@ -94,7 +96,7 @@ export const KimchiPreviewBold: React.FC<BoldPreviewProps> = ({
       qnaQ: { ...base(size(F.qnaQuestion)), fontWeight: 700, lineHeight: 1.45, color: '#ffffff' } as React.CSSProperties,
       qnaA: { ...base(size(F.qnaAnswer)), fontWeight: 400, lineHeight: 1.7, opacity: 0.85 } as React.CSSProperties,
     };
-  }, [fontFamily, textColor, fontScale]);
+  }, [fontFamily, textColor, fontScale, typeScale]);
 
   // 색을 채운 알약 배지. 섹션 라벨과 번호를 이걸로 찍는다.
   const Pill: React.FC<{ text: string; background: string; style?: React.CSSProperties }> = ({ text, background, style }) => (
@@ -228,7 +230,7 @@ export const KimchiPreviewBold: React.FC<BoldPreviewProps> = ({
               left={
                 <>
                   {section.icon?.trim() && (
-                    <div style={{ fontSize: Math.round(96 * fontScale), lineHeight: 1, marginBottom: SPACE.sm }}>{section.icon}</div>
+                    <div style={{ fontSize: Math.round(typeScale.title * fontScale), lineHeight: 1, marginBottom: SPACE.sm }}>{section.icon}</div>
                   )}
                   {section.noticeSubtitle?.trim() && (
                     <EditableText value={section.noticeSubtitle} onChange={v => updateSection(section.id, { noticeSubtitle: v })}
@@ -278,7 +280,7 @@ export const KimchiPreviewBold: React.FC<BoldPreviewProps> = ({
         return (
           <div style={{ background: SOFT_TINT, padding: `${SPACE.xl}px 0` }}>
             {section.icon?.trim() && (
-              <div style={{ textAlign: 'center', fontSize: Math.round(110 * fontScale), lineHeight: 1.1, marginBottom: SPACE.sm }}>
+              <div style={{ textAlign: 'center', fontSize: Math.round(typeScale.title * fontScale), lineHeight: 1.1, marginBottom: SPACE.sm }}>
                 {section.icon}
               </div>
             )}

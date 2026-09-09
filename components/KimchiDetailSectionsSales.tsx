@@ -2,7 +2,7 @@ import React, { useMemo } from 'react';
 import EditableText from './EditableText';
 import { PADDING_X, SPACE } from '../utils/detailPageLayout';
 import { KimchiSection, kimchiSectionHasText } from '../utils/kimchiDetailTemplate';
-import { KimchiPhoto, KIMCHI_FONT_SIZE, makePhotoRun } from './KimchiDetailSections';
+import { KimchiPhoto, KimchiTypeScale, kimchiFontSizes, makePhotoRun } from './KimchiDetailSections';
 
 // 네 번째 스킨. 국내 식품 상세페이지에서 흔한 "설득형" 구성을 옮긴 것 —
 // 체크포인트 배지, 말풍선으로 늘어놓는 공감 문구, 시그니처 색을 꽉 채운 인증 패널이 특징이다.
@@ -19,6 +19,8 @@ interface SalesPreviewProps {
   fontFamily: string;
   textColor: string;
   fontScale: number;
+  // 다섯 단계 글자 크기(사이드 패널에서 조절한 값).
+  typeScale: KimchiTypeScale;
   accentColor: string;
 }
 
@@ -37,7 +39,7 @@ function tint(hex: string, alpha: number): string {
 }
 
 export const KimchiPreviewSales: React.FC<SalesPreviewProps> = ({
-  sections, updateSection, photosBySection, renderPhoto, fontFamily, textColor, fontScale, accentColor: templateAccent,
+  sections, updateSection, photosBySection, renderPhoto, fontFamily, textColor, fontScale, typeScale, accentColor: templateAccent,
 }) => {
   // 사진 사이 간격은 섹션의 photoGap을 따른다 — makePhotoRun 주석 참고.
   const photoRun = makePhotoRun(renderPhoto);
@@ -45,7 +47,7 @@ export const KimchiPreviewSales: React.FC<SalesPreviewProps> = ({
     const size = (px: number) => Math.round(px * fontScale);
     const base = (fontSize: number) => ({ fontFamily, color: textColor, fontSize });
     const center = { textAlign: 'center' as const };
-    const F = KIMCHI_FONT_SIZE;
+    const F = kimchiFontSizes(typeScale);
     return {
       heroEyebrow: { ...base(size(F.heroEyebrow)), ...center, fontWeight: 700, lineHeight: 1.4 } as React.CSSProperties,
       heroHeadline: { ...base(size(F.heroHeadline)), ...center, fontWeight: 700, lineHeight: 1.3 } as React.CSSProperties,
@@ -86,7 +88,7 @@ export const KimchiPreviewSales: React.FC<SalesPreviewProps> = ({
       qnaQ: { ...base(size(F.qnaQuestion)), fontWeight: 700, lineHeight: 1.45 } as React.CSSProperties,
       qnaA: { ...base(size(F.qnaAnswer)), fontWeight: 400, lineHeight: 1.7, opacity: 0.8 } as React.CSSProperties,
     };
-  }, [fontFamily, textColor, fontScale]);
+  }, [fontFamily, textColor, fontScale, typeScale]);
 
   // "Check Point. 1" 처럼 섹션을 여는 작은 알약 배지 — 이 스킨의 표식이다.
   const CheckBadge: React.FC<{ text: string; accent: string }> = ({ text, accent }) => (
@@ -157,7 +159,7 @@ export const KimchiPreviewSales: React.FC<SalesPreviewProps> = ({
         return (
           <Panel background={soft}>
             {section.icon?.trim() && (
-              <div style={{ textAlign: 'center', fontSize: Math.round(110 * fontScale), lineHeight: 1.1, marginBottom: SPACE.sm }}>{section.icon}</div>
+              <div style={{ textAlign: 'center', fontSize: Math.round(typeScale.title * fontScale), lineHeight: 1.1, marginBottom: SPACE.sm }}>{section.icon}</div>
             )}
             {section.noticeSubtitle?.trim() && <div style={{ marginBottom: SPACE.xs }}>{edit('noticeSubtitle', '부제', styles.noticeSubtitle)}</div>}
             {section.noticeTitle?.trim() && <div style={{ marginBottom: SPACE.md }}>{edit('noticeTitle', '제목', styles.noticeTitle)}</div>}
@@ -193,7 +195,7 @@ export const KimchiPreviewSales: React.FC<SalesPreviewProps> = ({
         return (
           <Panel background={CREAM}>
             {section.icon?.trim() && (
-              <div style={{ textAlign: 'center', fontSize: Math.round(110 * fontScale), lineHeight: 1.1, marginBottom: SPACE.sm }}>{section.icon}</div>
+              <div style={{ textAlign: 'center', fontSize: Math.round(typeScale.title * fontScale), lineHeight: 1.1, marginBottom: SPACE.sm }}>{section.icon}</div>
             )}
             {section.noticeTitle?.trim() && <div style={{ marginBottom: SPACE.sm }}>{edit('noticeTitle', '제목', styles.reviewTitle)}</div>}
             {section.noticeSubtitle?.trim() && <div style={{ marginBottom: SPACE.md }}>{edit('noticeSubtitle', '부제', styles.reviewSubtitle)}</div>}

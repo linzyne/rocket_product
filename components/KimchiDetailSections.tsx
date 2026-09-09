@@ -236,9 +236,23 @@ export const KimchiPreview: React.FC<KimchiPreviewProps> = ({
     return (
       <div style={{ marginBottom: SPACE.md }}>
         {section.caption.trim() && (
-          <div style={{ ...styles.sectionCaption, marginBottom: SPACE.xs }}>{section.caption}</div>
+          <div style={{ marginBottom: SPACE.xs }}>
+            <EditableText
+              value={section.caption}
+              onChange={v => updateSection(section.id, { caption: v })}
+              placeholder="캡션"
+              style={styles.sectionCaption}
+            />
+          </div>
         )}
-        {section.title.trim() && <div style={styles.sectionHeading}>{section.title}</div>}
+        {section.title.trim() && (
+          <EditableText
+            value={section.title}
+            onChange={v => updateSection(section.id, { title: v })}
+            placeholder="섹션 제목"
+            style={styles.sectionHeading}
+          />
+        )}
       </div>
     );
   };
@@ -334,11 +348,23 @@ export const KimchiPreview: React.FC<KimchiPreviewProps> = ({
         return (
           <>
             {section.number?.trim() && (
-              <div style={{ ...styles.number, marginBottom: SPACE.xs }}>{section.number}</div>
+              <div style={{ marginBottom: SPACE.xs }}>
+                <EditableText
+                  value={section.number}
+                  onChange={v => updateSection(section.id, { number: v })}
+                  placeholder="번호"
+                  style={styles.number}
+                />
+              </div>
             )}
             {section.number?.trim() && section.title.trim() && (
               <div style={{ marginBottom: SPACE.sm }}>
-                <div style={styles.textTitle}>{section.title}</div>
+                <EditableText
+                  value={section.title}
+                  onChange={v => updateSection(section.id, { title: v })}
+                  placeholder="제목"
+                  style={styles.textTitle}
+                />
               </div>
             )}
             <div style={{ marginBottom: SPACE.md }}>
@@ -405,7 +431,14 @@ export const KimchiPreview: React.FC<KimchiPreviewProps> = ({
         return (
           <>
             {section.icon?.trim() && (
-              <div style={{ ...styles.noticeIcon, marginBottom: SPACE.md }}>{section.icon}</div>
+              <div style={{ marginBottom: SPACE.md }}>
+                <EditableText
+                  value={section.icon}
+                  onChange={v => updateSection(section.id, { icon: v })}
+                  placeholder="아이콘"
+                  style={styles.noticeIcon}
+                />
+              </div>
             )}
             {section.noticeTitle?.trim() && (
               <div style={{ marginBottom: SPACE.sm }}>
@@ -635,7 +668,14 @@ export const KimchiPreview: React.FC<KimchiPreviewProps> = ({
         return (
           <>
             {section.icon?.trim() && (
-              <div style={{ ...styles.reviewIcon, marginBottom: SPACE.md }}>{section.icon}</div>
+              <div style={{ marginBottom: SPACE.md }}>
+                <EditableText
+                  value={section.icon}
+                  onChange={v => updateSection(section.id, { icon: v })}
+                  placeholder="아이콘"
+                  style={styles.reviewIcon}
+                />
+              </div>
             )}
             {section.badge?.trim() && (
               <div style={{ display: 'flex', justifyContent: 'center', marginBottom: SPACE.md }}>
@@ -818,7 +858,14 @@ export const KimchiPreview: React.FC<KimchiPreviewProps> = ({
                 return (
                   <React.Fragment key={idx}>
                     <div style={{ display: 'flex', padding: `0 ${PADDING_X}px`, ...styles.tableText, marginBottom: SPACE.sm }}>
-                      <span style={{ fontWeight: 700, width: TABLE_LABEL_COLUMN, flexShrink: 0 }}>{row.label}</span>
+                      <span style={{ width: TABLE_LABEL_COLUMN, flexShrink: 0 }}>
+                        <EditableText
+                          value={row.label}
+                          onChange={v => updateRow({ label: v })}
+                          placeholder="라벨"
+                          style={{ ...styles.tableText, fontWeight: 700 }}
+                        />
+                      </span>
                       <span style={{ flex: 1, minWidth: 0, fontWeight: 400 }}>
                         <EditableText value={row.value} onChange={v => updateRow({ value: v })} placeholder="내용" style={styles.tableText} />
                       </span>

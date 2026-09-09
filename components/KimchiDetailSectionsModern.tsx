@@ -30,6 +30,44 @@ const MUTED = 0.55;
 // 왼쪽 정렬 스킨이라 섹션마다 위쪽에 얇은 선을 긋고 그 아래 작은 라벨을 붙인다.
 const MODERN_SECTION_GAP = 130;
 
+// 섹션 머리: 굵은 선 하나 + 작은 라벨 + 제목. 색 띠 대신 이 조합으로 구간을 나눈다.
+// onLabelChange/onTitleChange를 주면 그 줄을 미리보기에서 바로 고칠 수 있다 — 하드코딩한 라벨
+// ("REVIEW")만 고칠 게 없어 그냥 글자로 둔다.
+//
+// KimchiPreviewModern 안에 두면 안 된다. 렌더마다 새 함수가 되어 React가 다른 컴포넌트로 보고
+// 하위를 다시 마운트하는데, 그러면 여기 든 문구를 한 자 칠 때마다 커서가 날아간다.
+interface ModernSectionHeadProps {
+  label?: string;
+  title?: string;
+  labelStyle: React.CSSProperties;
+  titleStyle: React.CSSProperties;
+  onLabelChange?: (v: string) => void;
+  onTitleChange?: (v: string) => void;
+}
+
+const ModernSectionHead: React.FC<ModernSectionHeadProps> = ({
+  label, title, labelStyle: ls, titleStyle: ts, onLabelChange, onTitleChange,
+}) => {
+  if (!label?.trim() && !title?.trim()) return null;
+  return (
+    <div style={{ marginBottom: SPACE.lg }}>
+      <div style={{ height: 3, background: RULE, margin: `0 ${PADDING_X}px ${SPACE.md}px` }} />
+      {label?.trim() && (
+        <div style={{ marginBottom: SPACE.xs }}>
+          {onLabelChange
+            ? <EditableText value={label} onChange={onLabelChange} placeholder="윗줄" style={ls} />
+            : <div style={ls}>{label}</div>}
+        </div>
+      )}
+      {title?.trim() && (
+        onTitleChange
+          ? <EditableText value={title} onChange={onTitleChange} placeholder="제목" style={ts} />
+          : <div style={ts}>{title}</div>
+      )}
+    </div>
+  );
+};
+
 export const KimchiPreviewModern: React.FC<ModernPreviewProps> = ({
   sections, updateSection, photosBySection, renderPhoto, fontFamily, textColor, fontScale, typeScale, accentColor: templateAccent,
 }) => {
@@ -112,39 +150,6 @@ export const KimchiPreviewModern: React.FC<ModernPreviewProps> = ({
     </div>
   );
 
-  // 섹션 머리: 굵은 선 하나 + 작은 라벨 + 제목. 색 띠 대신 이 조합으로 구간을 나눈다.
-  // onLabelChange/onTitleChange를 주면 그 줄을 미리보기에서 바로 고칠 수 있다 — 문구 필드(특별한점의
-  // 윗줄·제목 등)는 반드시 편집 가능해야 하고, 섹션 제목처럼 패널에서 고치는 값은 그냥 글자로 둔다.
-  const SectionHead: React.FC<{
-    label?: string;
-    title?: string;
-    labelStyle?: React.CSSProperties;
-    titleStyle?: React.CSSProperties;
-    onLabelChange?: (v: string) => void;
-    onTitleChange?: (v: string) => void;
-  }> = ({ label, title, labelStyle, titleStyle, onLabelChange, onTitleChange }) => {
-    if (!label?.trim() && !title?.trim()) return null;
-    const ls = labelStyle || styles.sectionCaption;
-    const ts = titleStyle || styles.sectionHeading;
-    return (
-      <div style={{ marginBottom: SPACE.lg }}>
-        <div style={{ height: 3, background: RULE, margin: `0 ${PADDING_X}px ${SPACE.md}px` }} />
-        {label?.trim() && (
-          <div style={{ marginBottom: SPACE.xs }}>
-            {onLabelChange
-              ? <EditableText value={label} onChange={onLabelChange} placeholder="윗줄" style={ls} />
-              : <div style={ls}>{label}</div>}
-          </div>
-        )}
-        {title?.trim() && (
-          onTitleChange
-            ? <EditableText value={title} onChange={onTitleChange} placeholder="제목" style={ts} />
-            : <div style={ts}>{title}</div>
-        )}
-      </div>
-    );
-  };
-
   const hairline = (marginBottom: number) => (
     <div style={{ height: 1, background: HAIRLINE, margin: `0 ${PADDING_X}px ${marginBottom}px` }} />
   );
@@ -165,7 +170,9 @@ export const KimchiPreviewModern: React.FC<ModernPreviewProps> = ({
       case 'hero':
         return (
           <div style={{ paddingTop: SPACE.xl, paddingBottom: SPACE.lg }}>
-            {section.badge?.trim() && <div style={{ ...styles.heroBadge, marginBottom: SPACE.sm }}>{section.badge}</div>}
+            {section.badge?.trim() && (
+              <div style={{ marginBottom: SPACE.sm }}>{edit('badge', '배지', styles.heroBadge)}</div>
+            )}
             {section.eyebrow?.trim() && (
               <div style={{ marginBottom: SPACE.sm }}>{edit('eyebrow', '작은 제목', styles.heroEyebrow)}</div>
             )}
@@ -189,7 +196,7 @@ export const KimchiPreviewModern: React.FC<ModernPreviewProps> = ({
               <>
                 {hairline(SPACE.sm)}
                 <div style={{ display: 'flex', alignItems: 'baseline', gap: 20, padding: `0 ${PADDING_X}px` }}>
-                  <span style={{ ...styles.heroSpecLabel, flexShrink: 0 }}>{section.specLabel || '제품구성'}</span>
+                  <div style={{ flexShrink: 0 }}>{edit('specLabel', '제품구성', styles.heroSpecLabel)}</div>
                   <div style={{ flex: 1, minWidth: 0 }}>{edit('specValue', '제품 구성', styles.heroSpec)}</div>
                 </div>
                 <div style={{ height: 1, background: HAIRLINE, margin: `${SPACE.sm}px ${PADDING_X}px 0` }} />
@@ -202,10 +209,10 @@ export const KimchiPreviewModern: React.FC<ModernPreviewProps> = ({
         return (
           <>
             {section.number?.trim() && (
-              <div style={{ ...styles.sectionCaption, marginBottom: SPACE.xs }}>{section.number}</div>
+              <div style={{ marginBottom: SPACE.xs }}>{edit('number', '번호', styles.sectionCaption)}</div>
             )}
             {section.number?.trim() && section.title.trim() && (
-              <div style={{ ...styles.sectionHeading, marginBottom: SPACE.sm }}>{section.title}</div>
+              <div style={{ marginBottom: SPACE.sm }}>{edit('title', '제목', styles.sectionHeading)}</div>
             )}
             {edit('body', '본문', styles.featureBody)}
           </>
@@ -283,7 +290,7 @@ export const KimchiPreviewModern: React.FC<ModernPreviewProps> = ({
             {section.icon?.trim() && (
               <div style={{ padding: `0 ${PADDING_X}px`, marginBottom: SPACE.md }}><LineMark glyph="★" /></div>
             )}
-            <SectionHead
+            <ModernSectionHead
               label="REVIEW"
               title={section.noticeTitle}
               labelStyle={styles.reviewLabel}
@@ -299,7 +306,7 @@ export const KimchiPreviewModern: React.FC<ModernPreviewProps> = ({
                   style={{ ...styles.reviewScore, color: accent }}
                 />
               )}
-              {section.scoreSuffix?.trim() && <span style={styles.reviewScoreSuffix}>{section.scoreSuffix}</span>}
+              {section.scoreSuffix?.trim() && edit('scoreSuffix', '/5', styles.reviewScoreSuffix)}
               {section.noticeSubtitle?.trim() && (
                 <div style={{ flex: 1, minWidth: 0, textAlign: 'right' }}>
                   <EditableText
@@ -355,7 +362,7 @@ export const KimchiPreviewModern: React.FC<ModernPreviewProps> = ({
       case 'feature':
         return (
           <>
-            <SectionHead
+            <ModernSectionHead
               label={section.bandSmall}
               title={section.bandBig}
               labelStyle={styles.featureBandSmall}
@@ -463,7 +470,14 @@ export const KimchiPreviewModern: React.FC<ModernPreviewProps> = ({
         const visible = items.filter(v => v.trim());
         return (
           <>
-            <SectionHead label={section.caption} title={section.title} />
+            <ModernSectionHead
+              label={section.caption}
+              title={section.title}
+              labelStyle={styles.sectionCaption}
+              titleStyle={styles.sectionHeading}
+              onLabelChange={v => updateSection(section.id, { caption: v })}
+              onTitleChange={v => updateSection(section.id, { title: v })}
+            />
             {items.map((item, idx) => {
               if (!item.trim()) return null;
               const isLast = item === visible[visible.length - 1];
@@ -499,7 +513,14 @@ export const KimchiPreviewModern: React.FC<ModernPreviewProps> = ({
         const isQna = section.pairsStyle === 'qna';
         return (
           <>
-            <SectionHead label={section.caption} title={section.title} />
+            <ModernSectionHead
+              label={section.caption}
+              title={section.title}
+              labelStyle={styles.sectionCaption}
+              titleStyle={styles.sectionHeading}
+              onLabelChange={v => updateSection(section.id, { caption: v })}
+              onTitleChange={v => updateSection(section.id, { title: v })}
+            />
             {rows.map((row, idx) => {
               if (!row.value.trim() && !row.label.trim()) return null;
               const isLast = row === visible[visible.length - 1];
@@ -521,7 +542,9 @@ export const KimchiPreviewModern: React.FC<ModernPreviewProps> = ({
               return (
                 <React.Fragment key={idx}>
                   <div style={{ padding: `0 ${PADDING_X}px`, marginBottom: SPACE.xs }}>
-                    <div style={{ ...styles.tableLabel, marginBottom: 4 }}>{row.label}</div>
+                    <div style={{ marginBottom: 4 }}>
+                      <EditableText value={row.label} onChange={v => updateRow({ label: v })} placeholder="라벨" style={styles.tableLabel} />
+                    </div>
                     <EditableText value={row.value} onChange={v => updateRow({ value: v })} placeholder="내용" style={styles.tableValue} />
                   </div>
                   {!isLast && hairline(SPACE.sm)}

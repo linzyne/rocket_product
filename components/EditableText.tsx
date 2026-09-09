@@ -24,11 +24,19 @@ export const EditableText: React.FC<EditableTextProps> = ({ value, onChange, pla
     if (el.innerHTML !== next) el.innerHTML = next;
   }, [value]);
 
-  const commit = () => {
+  // 타이핑 중에 값을 비우면 부모가 "빈 문구는 안 그린다"며 이 블록을 통째로 지워버린다 —
+  // 백스페이스로 마지막 글자를 지우는 순간 편집하던 칸이 사라지고 커서도 같이 날아간다.
+  // 그래서 빈 값은 편집을 마칠 때(blur)만 넘긴다. 편집 중에는 DOM이 이미 비어 보이므로
+  // 화면상 손해는 없고, 다시 글자를 치면 그 값이 그대로 저장된다.
+  const commit = (final: boolean) => {
     const el = ref.current;
     if (!el) return;
     // 글자를 다 지웠을 때 contentEditable이 남기는 <br>/빈 태그는 빈 값으로 정리해서 넘긴다.
-    onChange(isRichTextBlank(el.innerHTML) ? '' : el.innerHTML);
+    if (isRichTextBlank(el.innerHTML)) {
+      if (final) onChange('');
+      return;
+    }
+    onChange(el.innerHTML);
   };
 
   return (
@@ -38,11 +46,11 @@ export const EditableText: React.FC<EditableTextProps> = ({ value, onChange, pla
         contentEditable
         suppressContentEditableWarning
         // 서식 툴바가 DOM을 직접 손본 뒤 input 이벤트를 쏘면 여기로 들어와 값이 저장된다.
-        onInput={commit}
+        onInput={() => commit(false)}
         onFocus={() => setFocused(true)}
         onBlur={() => {
           setFocused(false);
-          commit();
+          commit(true);
         }}
         style={{ ...style, outline: 'none', whiteSpace: 'pre-wrap', cursor: 'text', minHeight: '1.2em' }}
       />

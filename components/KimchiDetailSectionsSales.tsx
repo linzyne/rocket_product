@@ -38,6 +38,34 @@ function tint(hex: string, alpha: number): string {
   return `rgba(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255}, ${alpha})`;
 }
 
+// 아래 두 조각은 KimchiPreviewSales 안에 두면 안 된다. 렌더마다 새 함수가 되어 React가 다른
+// 컴포넌트로 보고 하위를 통째로 다시 마운트하는데, 그러면 판 안에서 글자를 한 자 칠 때마다
+// 편집 중이던 칸이 새로 그려지고 커서가 날아간다. 필요한 스타일은 인자로 받는다.
+
+// "Check Point. 1" 처럼 섹션을 여는 작은 알약 배지 — 이 스킨의 표식이다.
+// prefix는 고정 문구라 그대로 두고, 값만 미리보기에서 고친다.
+const CheckBadge: React.FC<{
+  prefix?: string; value: string; accent: string; placeholder: string;
+  style: React.CSSProperties; onChange: (v: string) => void;
+}> = ({ prefix, value, accent, placeholder, style, onChange }) => (
+  <div style={{ display: 'flex', justifyContent: 'center', marginBottom: SPACE.md }}>
+    <div
+      style={{
+        background: '#ffffff', border: `2px solid ${accent}`, borderRadius: BUBBLE_RADIUS,
+        padding: '12px 34px', display: 'flex', alignItems: 'baseline', gap: 6,
+      }}
+    >
+      {prefix && <span style={{ ...style, color: accent }}>{prefix}</span>}
+      <EditableText value={value} onChange={onChange} placeholder={placeholder} style={{ ...style, color: accent }} />
+    </div>
+  </div>
+);
+
+// 옅은 시그니처 색을 깐 판. 섹션을 구간으로 끊는 데 쓴다.
+const Panel: React.FC<{ children: React.ReactNode; background: string; padded?: boolean }> = ({ children, background, padded = true }) => (
+  <div style={{ background, padding: padded ? `${SPACE.xl}px 0` : 0 }}>{children}</div>
+);
+
 export const KimchiPreviewSales: React.FC<SalesPreviewProps> = ({
   sections, updateSection, photosBySection, renderPhoto, fontFamily, textColor, fontScale, typeScale, accentColor: templateAccent,
 }) => {
@@ -90,20 +118,6 @@ export const KimchiPreviewSales: React.FC<SalesPreviewProps> = ({
     };
   }, [fontFamily, textColor, fontScale, typeScale]);
 
-  // "Check Point. 1" 처럼 섹션을 여는 작은 알약 배지 — 이 스킨의 표식이다.
-  const CheckBadge: React.FC<{ text: string; accent: string }> = ({ text, accent }) => (
-    <div style={{ display: 'flex', justifyContent: 'center', marginBottom: SPACE.md }}>
-      <div style={{ background: '#ffffff', border: `2px solid ${accent}`, borderRadius: BUBBLE_RADIUS, padding: '12px 34px' }}>
-        <span style={{ ...styles.badge, color: accent }}>{text}</span>
-      </div>
-    </div>
-  );
-
-  // 옅은 시그니처 색을 깐 판. 섹션을 구간으로 끊는 데 쓴다.
-  const Panel: React.FC<{ children: React.ReactNode; background: string; padded?: boolean }> = ({ children, background, padded = true }) => (
-    <div style={{ background, padding: padded ? `${SPACE.xl}px 0` : 0 }}>{children}</div>
-  );
-
   const renderBody = (section: KimchiSection, photos: KimchiPhoto[]) => {
     const accent = section.accentColor || templateAccent;
     const soft = tint(accent, 0.08);
@@ -123,7 +137,7 @@ export const KimchiPreviewSales: React.FC<SalesPreviewProps> = ({
           <>
             <Panel background={soft}>
               {section.badge?.trim() && (
-                <div style={{ ...styles.heroEyebrow, color: accent, marginBottom: SPACE.sm }}>{section.badge}</div>
+                <div style={{ marginBottom: SPACE.sm }}>{edit('badge', '배지', { ...styles.heroEyebrow, color: accent })}</div>
               )}
               {section.eyebrow?.trim() && <div style={{ marginBottom: SPACE.sm }}>{edit('eyebrow', '작은 제목', styles.heroEyebrow)}</div>}
               {section.headline?.trim() && <div style={{ marginBottom: SPACE.xs }}>{edit('headline', '큰 제목', styles.heroHeadline)}</div>}
@@ -146,9 +160,18 @@ export const KimchiPreviewSales: React.FC<SalesPreviewProps> = ({
       case 'text':
         return (
           <Panel background={CREAM}>
-            {section.number?.trim() && <CheckBadge text={`Check Point. ${section.number}`} accent={accent} />}
+            {section.number?.trim() && (
+              <CheckBadge
+                prefix="Check Point."
+                value={section.number}
+                accent={accent}
+                placeholder="번호"
+                style={styles.badge}
+                onChange={v => updateSection(section.id, { number: v })}
+              />
+            )}
             {section.number?.trim() && section.title.trim() && (
-              <div style={{ ...styles.featureTitle, marginBottom: SPACE.md }}>{section.title}</div>
+              <div style={{ marginBottom: SPACE.md }}>{edit('title', '제목', styles.featureTitle)}</div>
             )}
             {edit('body', '본문', styles.featureBody)}
           </Panel>
@@ -159,7 +182,12 @@ export const KimchiPreviewSales: React.FC<SalesPreviewProps> = ({
         return (
           <Panel background={soft}>
             {section.icon?.trim() && (
-              <div style={{ textAlign: 'center', fontSize: Math.round(typeScale.title * fontScale), lineHeight: 1.1, marginBottom: SPACE.sm }}>{section.icon}</div>
+              <div style={{ marginBottom: SPACE.sm }}>
+                {edit('icon', '아이콘', {
+                  fontFamily, color: textColor, textAlign: 'center',
+                  fontSize: Math.round(typeScale.title * fontScale), lineHeight: 1.1,
+                })}
+              </div>
             )}
             {section.noticeSubtitle?.trim() && <div style={{ marginBottom: SPACE.xs }}>{edit('noticeSubtitle', '부제', styles.noticeSubtitle)}</div>}
             {section.noticeTitle?.trim() && <div style={{ marginBottom: SPACE.md }}>{edit('noticeTitle', '제목', styles.noticeTitle)}</div>}
@@ -195,7 +223,12 @@ export const KimchiPreviewSales: React.FC<SalesPreviewProps> = ({
         return (
           <Panel background={CREAM}>
             {section.icon?.trim() && (
-              <div style={{ textAlign: 'center', fontSize: Math.round(typeScale.title * fontScale), lineHeight: 1.1, marginBottom: SPACE.sm }}>{section.icon}</div>
+              <div style={{ marginBottom: SPACE.sm }}>
+                {edit('icon', '아이콘', {
+                  fontFamily, color: textColor, textAlign: 'center',
+                  fontSize: Math.round(typeScale.title * fontScale), lineHeight: 1.1,
+                })}
+              </div>
             )}
             {section.noticeTitle?.trim() && <div style={{ marginBottom: SPACE.sm }}>{edit('noticeTitle', '제목', styles.reviewTitle)}</div>}
             {section.noticeSubtitle?.trim() && <div style={{ marginBottom: SPACE.md }}>{edit('noticeSubtitle', '부제', styles.reviewSubtitle)}</div>}
@@ -203,7 +236,7 @@ export const KimchiPreviewSales: React.FC<SalesPreviewProps> = ({
               <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'center', gap: 8, marginBottom: SPACE.lg }}>
                 <EditableText value={section.bigText} onChange={v => updateSection(section.id, { bigText: v })}
                   placeholder="4.9" style={{ ...styles.reviewScore, color: accent }} />
-                {section.scoreSuffix?.trim() && <span style={styles.reviewScoreSuffix}>{section.scoreSuffix}</span>}
+                {section.scoreSuffix?.trim() && edit('scoreSuffix', '/5', styles.reviewScoreSuffix)}
               </div>
             )}
             {reviews.map((review, idx) => {
@@ -238,7 +271,15 @@ export const KimchiPreviewSales: React.FC<SalesPreviewProps> = ({
         return (
           <>
             <div style={{ padding: `${SPACE.xl}px 0 ${SPACE.lg}px` }}>
-              {section.bandSmall?.trim() && <CheckBadge text={section.bandSmall} accent={accent} />}
+              {section.bandSmall?.trim() && (
+                <CheckBadge
+                  value={section.bandSmall}
+                  accent={accent}
+                  placeholder="윗줄"
+                  style={styles.badge}
+                  onChange={v => updateSection(section.id, { bandSmall: v })}
+                />
+              )}
               {section.bandBig?.trim() && (
                 <div style={{ marginBottom: SPACE.xs }}>
                   <EditableText value={section.bandBig} onChange={v => updateSection(section.id, { bandBig: v })}
@@ -302,7 +343,7 @@ export const KimchiPreviewSales: React.FC<SalesPreviewProps> = ({
         const items = section.items || [];
         return (
           <Panel background={CREAM}>
-            {section.title.trim() && <div style={{ ...styles.featureTitle, marginBottom: SPACE.lg }}>{section.title}</div>}
+            {section.title.trim() && <div style={{ marginBottom: SPACE.lg }}>{edit('title', '제목', styles.featureTitle)}</div>}
             {items.map((item, idx) =>
               item.trim() ? (
                 <div key={idx} style={{ display: 'flex', justifyContent: idx % 2 === 1 ? 'flex-end' : 'flex-start', padding: `0 ${CARD_MARGIN_X}px`, marginBottom: SPACE.sm }}>
@@ -332,7 +373,7 @@ export const KimchiPreviewSales: React.FC<SalesPreviewProps> = ({
         if (isQna) {
           return (
             <Panel background={CREAM}>
-              {section.title.trim() && <div style={{ ...styles.featureTitle, marginBottom: SPACE.lg }}>{section.title}</div>}
+              {section.title.trim() && <div style={{ marginBottom: SPACE.lg }}>{edit('title', '제목', styles.featureTitle)}</div>}
               {rows.map((row, idx) => {
                 if (!row.label.trim() && !row.value.trim()) return null;
                 const updateRow = (patch: Partial<{ label: string; value: string }>) =>
@@ -357,7 +398,7 @@ export const KimchiPreviewSales: React.FC<SalesPreviewProps> = ({
         }
         return (
           <Panel background="#ffffff">
-            {section.title.trim() && <div style={{ ...styles.featureTitle, marginBottom: SPACE.lg }}>{section.title}</div>}
+            {section.title.trim() && <div style={{ marginBottom: SPACE.lg }}>{edit('title', '제목', styles.featureTitle)}</div>}
             <div style={{ margin: `0 ${CARD_MARGIN_X}px`, border: `1px solid ${tint(accent, 0.25)}` }}>
               {rows.map((row, idx) => {
                 if (!row.value.trim() && !row.label.trim()) return null;
@@ -366,7 +407,7 @@ export const KimchiPreviewSales: React.FC<SalesPreviewProps> = ({
                 return (
                   <div key={idx} style={{ display: 'flex', borderTop: idx === 0 ? 'none' : `1px solid ${tint(accent, 0.18)}` }}>
                     <div style={{ width: 250, flexShrink: 0, background: soft, padding: '22px 26px' }}>
-                      <span style={styles.tableLabel}>{row.label}</span>
+                      <EditableText value={row.label} onChange={v => updateRow({ label: v })} placeholder="라벨" style={styles.tableLabel} />
                     </div>
                     <div style={{ flex: 1, minWidth: 0, padding: '22px 26px' }}>
                       <EditableText value={row.value} onChange={v => updateRow({ value: v })} placeholder="내용" style={styles.tableValue} />

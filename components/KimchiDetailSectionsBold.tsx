@@ -38,6 +38,78 @@ const SOFT_TINT = '#f4f1ec';
 const CARD_WHITE = '#ffffff';
 const CARD_BORDER = '#e6e1d9';
 
+// 아래 세 조각은 KimchiPreviewBold 안에 두면 안 된다. 렌더마다 새 함수가 되어 React가 다른
+// 컴포넌트로 보고 하위를 통째로 다시 마운트하는데, 그러면 상자 안에서 글자를 한 자 칠 때마다
+// 편집 중이던 칸이 새로 그려지고 커서가 날아간다. 필요한 스타일은 인자로 받는다.
+
+// 색을 채운 알약 배지. 섹션 라벨과 번호를 이걸로 찍는다. 배지 글자도 미리보기에서 바로 고친다.
+const Pill: React.FC<{
+  value: string; background: string; style: React.CSSProperties; placeholder: string; onChange: (v: string) => void;
+}> = ({ value, background, style, placeholder, onChange }) => (
+  <div style={{ display: 'inline-block', background, borderRadius: 999, padding: '12px 30px' }}>
+    <EditableText value={value} onChange={onChange} placeholder={placeholder} style={style} />
+  </div>
+);
+
+// 둥근 상자. 이 스킨의 기본 그릇이라 거의 모든 섹션이 이 안에 담긴다.
+const Card: React.FC<{ children: React.ReactNode; background?: string; bordered?: boolean; padding?: number }> = ({
+  children, background = CARD_WHITE, bordered = true, padding = CARD_PADDING,
+}) => (
+  <div
+    style={{
+      margin: `0 ${CARD_MARGIN_X}px`,
+      background,
+      borderRadius: CARD_RADIUS,
+      border: bordered ? `1px solid ${CARD_BORDER}` : 'none',
+      padding,
+    }}
+  >
+    {children}
+  </div>
+);
+
+// 왼쪽 칸(라벨·번호) + 오른쪽 칸(내용). 이 스킨의 기본 배치다.
+const Split: React.FC<{ left: React.ReactNode; children: React.ReactNode; padded?: boolean }> = ({ left, children, padded = true }) => (
+  <div style={{ display: 'flex', gap: 28, alignItems: 'flex-start', padding: padded ? `0 ${CARD_MARGIN_X}px` : 0 }}>
+    <div style={{ width: SPLIT_LEFT_WIDTH, flexShrink: 0 }}>{left}</div>
+    <div style={{ flex: 1, minWidth: 0 }}>{children}</div>
+  </div>
+);
+
+// 섹션 머리말(라벨 배지 + 제목). 둘 다 미리보기에서 바로 고칠 수 있다.
+const SectionHead: React.FC<{
+  section: KimchiSection;
+  updateSection: (id: string, patch: Partial<KimchiSection>) => void;
+  accent: string;
+  pillStyle: React.CSSProperties;
+  headingStyle: React.CSSProperties;
+}> = ({ section, updateSection, accent, pillStyle, headingStyle }) => {
+  if (!section.caption?.trim() && !section.title?.trim()) return null;
+  return (
+    <div style={{ textAlign: 'center', marginBottom: SPACE.lg }}>
+      {section.caption?.trim() && (
+        <div style={{ marginBottom: SPACE.sm }}>
+          <Pill
+            value={section.caption}
+            background={accent}
+            style={pillStyle}
+            placeholder="라벨"
+            onChange={v => updateSection(section.id, { caption: v })}
+          />
+        </div>
+      )}
+      {section.title?.trim() && (
+        <EditableText
+          value={section.title}
+          onChange={v => updateSection(section.id, { title: v })}
+          placeholder="제목"
+          style={headingStyle}
+        />
+      )}
+    </div>
+  );
+};
+
 export const KimchiPreviewBold: React.FC<BoldPreviewProps> = ({
   sections, updateSection, photosBySection, renderPhoto, fontFamily, textColor, fontScale, typeScale, accentColor: templateAccent,
 }) => {
@@ -98,56 +170,8 @@ export const KimchiPreviewBold: React.FC<BoldPreviewProps> = ({
     };
   }, [fontFamily, textColor, fontScale, typeScale]);
 
-  // 색을 채운 알약 배지. 섹션 라벨과 번호를 이걸로 찍는다.
-  const Pill: React.FC<{ text: string; background: string; style?: React.CSSProperties }> = ({ text, background, style }) => (
-    <div style={{ display: 'inline-block', background, borderRadius: 999, padding: '12px 30px' }}>
-      <span style={{ ...styles.pillLabel, ...style }}>{text}</span>
-    </div>
-  );
-
-  // 둥근 상자. 이 스킨의 기본 그릇이라 거의 모든 섹션이 이 안에 담긴다.
-  const Card: React.FC<{ children: React.ReactNode; background?: string; bordered?: boolean; padding?: number }> = ({
-    children, background = CARD_WHITE, bordered = true, padding = CARD_PADDING,
-  }) => (
-    <div
-      style={{
-        margin: `0 ${CARD_MARGIN_X}px`,
-        background,
-        borderRadius: CARD_RADIUS,
-        border: bordered ? `1px solid ${CARD_BORDER}` : 'none',
-        padding,
-      }}
-    >
-      {children}
-    </div>
-  );
-
-  // 왼쪽 칸(라벨·번호) + 오른쪽 칸(내용). 이 스킨의 기본 배치다.
-  const Split: React.FC<{ left: React.ReactNode; children: React.ReactNode; padded?: boolean }> = ({ left, children, padded = true }) => (
-    <div style={{ display: 'flex', gap: 28, alignItems: 'flex-start', padding: padded ? `0 ${CARD_MARGIN_X}px` : 0 }}>
-      <div style={{ width: SPLIT_LEFT_WIDTH, flexShrink: 0 }}>{left}</div>
-      <div style={{ flex: 1, minWidth: 0 }}>{children}</div>
-    </div>
-  );
-
   // 'POINT 01' → '01'. 숫자가 없으면 원문을 그대로 쓴다.
   const numeralOf = (text: string) => (text.match(/\d+/) || [text.trim()])[0];
-
-  const SectionHead: React.FC<{ label?: string; title?: string; accent: string; onTitleChange?: (v: string) => void }> = ({
-    label, title, accent, onTitleChange,
-  }) => {
-    if (!label?.trim() && !title?.trim()) return null;
-    return (
-      <div style={{ textAlign: 'center', marginBottom: SPACE.lg }}>
-        {label?.trim() && <div style={{ marginBottom: SPACE.sm }}><Pill text={label} background={accent} /></div>}
-        {title?.trim() && (
-          onTitleChange
-            ? <EditableText value={title} onChange={onTitleChange} placeholder="제목" style={styles.sectionHeading} />
-            : <div style={styles.sectionHeading}>{title}</div>
-        )}
-      </div>
-    );
-  };
 
   const renderBody = (section: KimchiSection, photos: KimchiPhoto[], index: number) => {
     const accent = section.accentColor || templateAccent;
@@ -168,7 +192,13 @@ export const KimchiPreviewBold: React.FC<BoldPreviewProps> = ({
             <div style={{ padding: `0 ${CARD_MARGIN_X}px` }}>
               {section.badge?.trim() && (
                 <div style={{ marginBottom: SPACE.md }}>
-                  <Pill text={section.badge} background={accent} style={styles.heroBadge} />
+                  <Pill
+                    value={section.badge}
+                    background={accent}
+                    style={{ ...styles.pillLabel, ...styles.heroBadge }}
+                    placeholder="배지"
+                    onChange={v => updateSection(section.id, { badge: v })}
+                  />
                 </div>
               )}
               {section.eyebrow?.trim() && (
@@ -198,7 +228,12 @@ export const KimchiPreviewBold: React.FC<BoldPreviewProps> = ({
               {section.specValue?.trim() && (
                 <div style={{ display: 'flex', borderRadius: 999, overflow: 'hidden', alignSelf: 'flex-start', width: 'fit-content' }}>
                   <div style={{ background: ON_DARK, padding: '16px 30px' }}>
-                    <span style={{ ...styles.heroSpec, color: DARK_PANEL }}>{section.specLabel || '제품구성'}</span>
+                    <EditableText
+                      value={section.specLabel || ''}
+                      onChange={v => updateSection(section.id, { specLabel: v })}
+                      placeholder="제품구성"
+                      style={{ ...styles.heroSpec, color: DARK_PANEL }}
+                    />
                   </div>
                   <div style={{ background: accent, padding: '16px 34px' }}>
                     {edit('specValue', '제품 구성', styles.heroSpec)}
@@ -213,10 +248,18 @@ export const KimchiPreviewBold: React.FC<BoldPreviewProps> = ({
         return (
           <Card background={SOFT_TINT}>
             {section.number?.trim() && (
-              <div style={{ textAlign: 'center', marginBottom: SPACE.sm }}><Pill text={section.number} background={accent} /></div>
+              <div style={{ textAlign: 'center', marginBottom: SPACE.sm }}>
+                <Pill
+                  value={section.number}
+                  background={accent}
+                  style={styles.pillLabel}
+                  placeholder="번호"
+                  onChange={v => updateSection(section.id, { number: v })}
+                />
+              </div>
             )}
             {section.number?.trim() && section.title.trim() && (
-              <div style={{ ...styles.sectionHeading, marginBottom: SPACE.sm }}>{section.title}</div>
+              <div style={{ marginBottom: SPACE.sm }}>{edit('title', '제목', styles.sectionHeading)}</div>
             )}
             {edit('body', '본문', styles.featureBody)}
           </Card>
@@ -230,7 +273,9 @@ export const KimchiPreviewBold: React.FC<BoldPreviewProps> = ({
               left={
                 <>
                   {section.icon?.trim() && (
-                    <div style={{ fontSize: Math.round(typeScale.title * fontScale), lineHeight: 1, marginBottom: SPACE.sm }}>{section.icon}</div>
+                    <div style={{ marginBottom: SPACE.sm }}>
+                      {edit('icon', '아이콘', { fontFamily, color: textColor, fontSize: Math.round(typeScale.title * fontScale), lineHeight: 1 })}
+                    </div>
                   )}
                   {section.noticeSubtitle?.trim() && (
                     <EditableText value={section.noticeSubtitle} onChange={v => updateSection(section.id, { noticeSubtitle: v })}
@@ -280,8 +325,11 @@ export const KimchiPreviewBold: React.FC<BoldPreviewProps> = ({
         return (
           <div style={{ background: SOFT_TINT, padding: `${SPACE.xl}px 0` }}>
             {section.icon?.trim() && (
-              <div style={{ textAlign: 'center', fontSize: Math.round(typeScale.title * fontScale), lineHeight: 1.1, marginBottom: SPACE.sm }}>
-                {section.icon}
+              <div style={{ marginBottom: SPACE.sm }}>
+                {edit('icon', '아이콘', {
+                  fontFamily, color: textColor, textAlign: 'center',
+                  fontSize: Math.round(typeScale.title * fontScale), lineHeight: 1.1,
+                })}
               </div>
             )}
             {section.noticeTitle?.trim() && (
@@ -299,7 +347,7 @@ export const KimchiPreviewBold: React.FC<BoldPreviewProps> = ({
                   }}
                 >
                   {edit('bigText', '4.9', styles.reviewScore)}
-                  {section.scoreSuffix?.trim() && <span style={styles.reviewScoreSuffix}>{section.scoreSuffix}</span>}
+                  {section.scoreSuffix?.trim() && edit('scoreSuffix', '/5', styles.reviewScoreSuffix)}
                 </div>
               </div>
             )}
@@ -445,7 +493,13 @@ export const KimchiPreviewBold: React.FC<BoldPreviewProps> = ({
         const items = section.items || [];
         return (
           <div style={{ background: SOFT_TINT, padding: `${SPACE.xl}px 0` }}>
-            <SectionHead label={section.caption} title={section.title} accent={accent} />
+            <SectionHead
+              section={section}
+              updateSection={updateSection}
+              accent={accent}
+              pillStyle={styles.pillLabel}
+              headingStyle={styles.sectionHeading}
+            />
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: SPACE.sm, padding: `0 ${CARD_MARGIN_X}px` }}>
               {items.map((item, idx) =>
                 item.trim() ? (
@@ -485,7 +539,13 @@ export const KimchiPreviewBold: React.FC<BoldPreviewProps> = ({
         const isQna = section.pairsStyle === 'qna';
         return (
           <div style={{ background: SOFT_TINT, padding: `${SPACE.xl}px 0` }}>
-            <SectionHead label={section.caption} title={section.title} accent={accent} />
+            <SectionHead
+              section={section}
+              updateSection={updateSection}
+              accent={accent}
+              pillStyle={styles.pillLabel}
+              headingStyle={styles.sectionHeading}
+            />
             {isQna
               ? rows.map((row, idx) => {
                   if (!row.label.trim() && !row.value.trim()) return null;
@@ -513,7 +573,9 @@ export const KimchiPreviewBold: React.FC<BoldPreviewProps> = ({
                         key={idx}
                         style={{ display: 'flex', gap: 20, padding: '24px 32px', background: idx % 2 === 1 ? SOFT_TINT : 'transparent' }}
                       >
-                        <span style={{ ...styles.tableLabel, width: 240, flexShrink: 0 }}>{row.label}</span>
+                        <div style={{ width: 240, flexShrink: 0 }}>
+                          <EditableText value={row.label} onChange={v => updateRow({ label: v })} placeholder="라벨" style={styles.tableLabel} />
+                        </div>
                         <div style={{ flex: 1, minWidth: 0 }}>
                           <EditableText value={row.value} onChange={v => updateRow({ value: v })} placeholder="내용" style={styles.tableValue} />
                         </div>

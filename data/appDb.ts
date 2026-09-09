@@ -6,12 +6,13 @@
 // 스토어를 새로 추가할 때: STORES에 이름을 넣고 DB_VERSION을 1 올리면 됩니다.
 
 const DB_NAME = 'rocket-proposal-db';
-const DB_VERSION = 2;
+const DB_VERSION = 3;
 
 // [스토어 이름, keyPath] — keyPath가 없으면 키를 직접 넘기는(out-of-line) 스토어.
 const STORES: Array<[string, string | null]> = [
   ['quoteTemplates', 'id'],
   ['fileHandles', null],
+  ['detailPageDrafts', 'id'],
 ];
 
 let dbPromise: Promise<IDBDatabase> | null = null;

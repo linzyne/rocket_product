@@ -15,7 +15,7 @@ import MemoModal from './components/MemoModal';
 import NotepadSidebar from './components/NotepadSidebar';
 import ImageRenamer from './components/ImageRenamer';
 import ImageEditorModal from './components/ImageEditorModal';
-import DetailPageBuilderModal from './components/DetailPageBuilderModal';
+import DetailPageBuilderModal, { STANDALONE_DRAFT_ID } from './components/DetailPageBuilderModal';
 import MissingFieldsModal from './components/MissingFieldsModal';
 import { saveDataUrlInProductFolder, productFolderName, productNameFolderName, buildZipBlob, saveFilesInProductFolder, getRootDirectory, detailSliceFileNames } from './utils/fileSave';
 import { sendProposalToSupplierHub } from './utils/rocketProposal';
@@ -2558,8 +2558,15 @@ const App: React.FC = () => {
   // 제안서와 상관없는 제품의 상세페이지도 만들 수 있게, 상품 목록에 행을 추가하지 않고 빈 임시
   // 상품으로 빌더만 연다. 번호를 주지 않아 파일명(001.png 등)도 비워두므로, 저장 파일명은
   // 입력한 제품명을 따라간다(handleSaveFromDetailPageBuilder 참고).
+  //
+  // 임시 상품이지만 id는 매번 새로 만들지 않고 고정해서 쓴다. 빌더는 id가 바뀌면 "다른 상품을
+  // 열었다"고 보고 화면을 비우는데, 그러면 닫았다 다시 열 때마다 작업이 날아간다.
   const openStandaloneDetailPageBuilder = useCallback(() => {
-    setDetailPageBuilderState({ isOpen: true, product: createNewProduct(), standalone: true });
+    setDetailPageBuilderState({
+      isOpen: true,
+      product: { ...createNewProduct(), id: STANDALONE_DRAFT_ID },
+      standalone: true,
+    });
   }, []);
 
   const closeDetailPageBuilder = useCallback(() => {

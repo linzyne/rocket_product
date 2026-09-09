@@ -16,6 +16,7 @@ import { editImageWithGemini, BRUSH_ERASE_PROMPT } from '../utils/geminiImageEdi
 import { generateDetailPageCopyWithGemini } from '../utils/detailPageCopyGemini';
 import { saveFilesInProductFolder, productFolderName, detailSliceFileNames } from '../utils/fileSave';
 import { generateId } from '../utils/id';
+import { saveDetailPageDraft, loadDetailPageDraft, deleteDetailPageDraft } from '../data/detailPageDrafts';
 import { withTimeout, stripClonedScripts, stripEmptySections } from '../utils/html2canvasHelpers';
 import ImageCropModal from './ImageCropModal';
 import EditableText from './EditableText';
@@ -164,6 +165,13 @@ const MAX_SLICE_HEIGHT = 3000;
 // 올려도 앱이 무거워지는데, 여기까지 줄이면 700KB 정도가 되고 눈에 보이는 차이는 없다.
 const MAX_PHOTO_WIDTH = CANVAS_WIDTH * 2;
 const PHOTO_JPEG_QUALITY = 0.85;
+
+// 헤더 "상페작업"으로 여는 상세페이지는 상품 목록에 행이 없어서, 작업 내용을 되돌려 넣을 곳도
+// 없다. 그래서 만들다 만 상태를 이 컴퓨터(IndexedDB)에 통째로 넣어두고 다시 열 때 되살린다.
+// 상품등록에서 여는 쪽은 완성본이 상품 행에 붙으므로 여기 대상이 아니다.
+export const STANDALONE_DRAFT_ID = 'standalone-kimchi';
+// 마지막 입력에서 이만큼 쉬면 한 번 저장한다. 글자마다 쓰면 사진까지 통째로 다시 굽게 된다.
+const DRAFT_SAVE_DELAY_MS = 1200;
 // Numbered feature blocks (01~0N) that share the uploaded photos left over after the fixed
 // hero/closing slots — see distributePhotos below. Count is user-adjustable (see featureBlockCount).
 
@@ -248,6 +256,25 @@ const BASE_FONT_SIZE = {
   productInfo: 46,
 };
 
+type KimchiSkin = 'basic' | 'modern' | 'bold' | 'sales';
+
+// 이 컴퓨터에 저장해두는 "만들다 만 상세페이지". 사진은 이미 화면에서 쓰는 해상도까지 줄여
+// 들고 있으므로(MAX_PHOTO_WIDTH) 그대로 담는다 — 사진을 빼면 섹션 배정·순서·자른 모양이
+// 전부 날아가서 이어서 작업한다는 말이 무의미해진다.
+interface KimchiDraft {
+  photos: PhotoItem[];
+  photoSectionMap: Record<string, string>;
+  kimchiSections: KimchiSection[];
+  kimchiPastedText: string;
+  textBoxes: DetailTextBox[];
+  drawObjects: DrawObject[];
+  sellingPoints: string;
+  kimchiSkin: KimchiSkin;
+  kimchiAccents: Record<KimchiSkin, string>;
+  kimchiTypeScale: KimchiTypeScale;
+  templateStyle: TemplateStyleSettings;
+}
+
 const DetailPageBuilderModal: React.FC<DetailPageBuilderModalProps> = ({ isOpen, onClose, product, groupProducts, onSave, onSaveThumbnail, templateId = 'basic' }) => {
   const [photos, setPhotos] = useState<PhotoItem[]>([]);
   const isKimchi = templateId === 'kimchi';
@@ -257,9 +284,9 @@ const DetailPageBuilderModal: React.FC<DetailPageBuilderModalProps> = ({ isOpen,
   const [kimchiSections, setKimchiSections] = useState<KimchiSection[]>(createDefaultKimchiSections);
   // 어떤 스킨으로 그릴지. 섹션 구조와 문구는 그대로 두고 그리는 방식만 바뀌므로, 같은 문구를
   // 붙여넣은 채로 왔다 갔다 하며 두 디자인을 비교할 수 있다.
-  const [kimchiSkin, setKimchiSkin] = useState<'basic' | 'modern' | 'bold' | 'sales'>('basic');
+  const [kimchiSkin, setKimchiSkin] = useState<KimchiSkin>('basic');
   // 템플릿마다 시그니처 색을 따로 기억한다. 섹션이 자기 강조색을 지정하지 않았으면 이 색을 쓴다.
-  const [kimchiAccents, setKimchiAccents] = useState<Record<'basic' | 'modern' | 'bold' | 'sales', string>>({
+  const [kimchiAccents, setKimchiAccents] = useState<Record<KimchiSkin, string>>({
     basic: '#d4462a',
     modern: '#2f5d50',
     bold: '#c2410c',
@@ -438,6 +465,92 @@ const DetailPageBuilderModal: React.FC<DetailPageBuilderModalProps> = ({ isOpen,
   // so switching products doesn't leak one product's photos/copy into another's.
   const draftsRef = useRef<Map<string, { photos: PhotoItem[]; sellingPoints: string; copy: DetailPageCopy; pastedText: string; drawObjects: DrawObject[]; textBoxes: DetailTextBox[]; kimchiSections: KimchiSection[]; photoSectionMap: Record<string, string>; kimchiPastedText: string }>>(new Map());
   const activeProductIdRef = useRef<string | null>(null);
+
+  // 만들다 만 상세페이지를 이 컴퓨터(IndexedDB)에 통째로 넣어두고, 다시 열면 되살린다.
+  // 마지막으로 저장한 시각은 화면 아래에 보여줘서 "앱을 닫아도 남아 있다"는 걸 알 수 있게 한다.
+  const [draftSavedAt, setDraftSavedAt] = useState<number | null>(null);
+  // 되살리기를 시도하기 전까지는 자동 저장을 하지 않는다. 먼저 저장해버리면 아직 못 읽은
+  // 예전 작업을 빈 화면으로 덮어쓰게 된다.
+  const [draftReady, setDraftReady] = useState(false);
+  const draftRestoreStartedRef = useRef(false);
+  // 되살리기 직전에 "지금 화면에 이미 만들어둔 게 있는지" 보려고 최신 값을 들고 있는다.
+  const liveRef = useRef({ photos, textBoxes, drawObjects });
+  liveRef.current = { photos, textBoxes, drawObjects };
+
+  const collectKimchiDraft = (): KimchiDraft => ({
+    photos, photoSectionMap, kimchiSections, kimchiPastedText, textBoxes, drawObjects, sellingPoints,
+    kimchiSkin, kimchiAccents, kimchiTypeScale, templateStyle,
+  });
+
+  // 상페작업 창을 처음 열 때 한 번 읽어 온다.
+  useEffect(() => {
+    if (!isOpen || !isKimchi || draftRestoreStartedRef.current) return;
+    draftRestoreStartedRef.current = true;
+    let cancelled = false;
+    void (async () => {
+      const saved = await loadDetailPageDraft<KimchiDraft>(STANDALONE_DRAFT_ID);
+      if (cancelled) return;
+      const live = liveRef.current;
+      // 읽는 사이에 사용자가 벌써 뭔가 올렸다면 그쪽이 최신이다 — 덮지 않는다.
+      const untouched = live.photos.length === 0 && live.textBoxes.length === 0 && live.drawObjects.length === 0;
+      if (saved && untouched) {
+        const d = saved.data;
+        setPhotos(d.photos ?? []);
+        setPhotoSectionMap(d.photoSectionMap ?? {});
+        setKimchiSections(d.kimchiSections ?? createDefaultKimchiSections());
+        setKimchiPastedText(d.kimchiPastedText ?? '');
+        setTextBoxes(d.textBoxes ?? []);
+        setDrawObjects(d.drawObjects ?? []);
+        setSellingPoints(d.sellingPoints ?? '');
+        if (d.kimchiSkin) setKimchiSkin(d.kimchiSkin);
+        if (d.kimchiAccents) setKimchiAccents(d.kimchiAccents);
+        if (d.kimchiTypeScale) setKimchiTypeScale(d.kimchiTypeScale);
+        if (d.templateStyle) setTemplateStyle(d.templateStyle);
+        setDraftSavedAt(saved.savedAt);
+      }
+      setDraftReady(true);
+    })();
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOpen, isKimchi]);
+
+  // 바뀔 때마다 자동 저장. 창이 닫혀 있어도 저장한다 — 닫기만 누르고 앱을 끄는 게 보통이라.
+  useEffect(() => {
+    if (!isKimchi || !draftReady) return;
+    const timer = setTimeout(() => {
+      void saveDetailPageDraft(STANDALONE_DRAFT_ID, collectKimchiDraft()).then(() => setDraftSavedAt(Date.now()));
+    }, DRAFT_SAVE_DELAY_MS);
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isKimchi, draftReady, photos, photoSectionMap, kimchiSections, kimchiPastedText, textBoxes,
+      drawObjects, sellingPoints, kimchiSkin, kimchiAccents, kimchiTypeScale, templateStyle]);
+
+  // 창을 닫는 순간에도 한 번 저장한다. 자동 저장은 잠깐 쉴 때 걸리므로, 마지막 몇 글자를
+  // 치자마자 닫으면 그 타이머가 취소돼 빠질 수 있다.
+  const kimchiWasOpenRef = useRef(false);
+  useEffect(() => {
+    const openNow = isOpen && isKimchi;
+    if (kimchiWasOpenRef.current && !openNow && draftReady) {
+      void saveDetailPageDraft(STANDALONE_DRAFT_ID, collectKimchiDraft()).then(() => setDraftSavedAt(Date.now()));
+    }
+    kimchiWasOpenRef.current = openNow;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOpen, isKimchi]);
+
+  // 저장해둔 작업을 버리고 빈 화면에서 다시 시작한다. 자동 저장이라 지우는 길이 따로 있어야 한다.
+  const handleResetKimchiDraft = async () => {
+    if (!window.confirm('지금 작업 중인 상세페이지를 지우고 새로 시작할까요?\n이 컴퓨터에 저장해둔 내용도 함께 지워집니다.')) return;
+    await deleteDetailPageDraft(STANDALONE_DRAFT_ID);
+    draftsRef.current.delete(STANDALONE_DRAFT_ID);
+    setPhotos([]);
+    setPhotoSectionMap({});
+    setKimchiSections(createDefaultKimchiSections());
+    setKimchiPastedText('');
+    setTextBoxes([]);
+    setDrawObjects([]);
+    setSellingPoints('');
+    setDraftSavedAt(null);
+  };
 
   useEffect(() => {
     const nextId = product?.id ?? null;
@@ -3086,6 +3199,21 @@ const DetailPageBuilderModal: React.FC<DetailPageBuilderModalProps> = ({ isOpen,
         </div>
 
         <div className="flex flex-wrap items-center justify-end gap-2 px-6 py-4 border-t border-slate-700">
+          {isKimchi && (
+            <>
+              <span className="mr-auto text-xs text-slate-500">
+                {draftSavedAt
+                  ? `작업 내용이 이 컴퓨터에 저장됨 · ${new Date(draftSavedAt).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' })}`
+                  : '작업 내용은 이 컴퓨터에 자동 저장됩니다'}
+              </span>
+              <button
+                onClick={handleResetKimchiDraft}
+                className="px-3 py-2 text-sm bg-slate-800 border border-slate-600 rounded-lg text-slate-400 hover:bg-slate-700 hover:text-slate-200 transition-colors"
+              >
+                새로 시작
+              </button>
+            </>
+          )}
           <button onClick={onClose} className="px-4 py-2 text-sm bg-slate-700 text-slate-300 font-semibold rounded-lg hover:bg-slate-600 transition-colors">
             닫기
           </button>

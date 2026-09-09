@@ -1917,7 +1917,10 @@ const DetailPageBuilderModal: React.FC<DetailPageBuilderModalProps> = ({ isOpen,
       if (!canvas) return null;
       // 1x 아래로는 내리지 않는다 — 화면에 보이는 해상도보다 흐려지는 일은 없게.
       const minScale = CANVAS_WIDTH / canvas.width;
-      const dataUrls = encodeSlices(sliceCanvasVertically(canvas, MAX_SLICE_HEIGHT), minScale);
+      // 자르는 건 헤더 "상페작업"으로 여는 독립 상세페이지(김치)뿐이다. 상품등록에서 여는 쪽은
+      // 제안서·통합다운이 상세이미지 한 장을 전제로 돌아가므로 예전처럼 한 장으로 낸다.
+      const sliceHeight = isKimchi ? MAX_SLICE_HEIGHT : canvas.height;
+      const dataUrls = encodeSlices(sliceCanvasVertically(canvas, sliceHeight), minScale);
 
       const tooBig = dataUrls.filter(url => dataUrlByteSize(url) > MAX_DETAIL_IMAGE_BYTES).length;
       if (tooBig > 0) {

@@ -2601,9 +2601,12 @@ const App: React.FC = () => {
         // 상세페이지(이미지/파일명)는 이 상품 하나가 아니라 같은 그룹의 옵션 전체에 동일하게 적용한다.
         const groupIds = new Set(getGroupProducts(detailPageBuilderState.product).map(p => p.id));
         // 잘린 전체를 detailDataUrls에 두고, 목록 미리보기가 보는 detailDataUrl에는 첫 장을 넣는다.
+        // 상품등록에서 연 상세페이지는 늘 한 장이라 예전처럼 detailDataUrl만 채운다. 배열은
+        // 실제로 잘렸을 때만 둔다 — 한 장뿐인데 배열까지 함께 두면 같은 이미지를 두 벌 저장하게 된다.
+        const dataUrls = value as string[];
         const patch: Partial<Product> = field === 'detailFile'
           ? { detailFile: value as string }
-          : { detailDataUrls: value as string[], detailDataUrl: (value as string[])[0] };
+          : { detailDataUrl: dataUrls[0], detailDataUrls: dataUrls.length > 1 ? dataUrls : undefined };
         setProducts(prev => prev.map(p => (groupIds.has(p.id) ? { ...p, ...patch } : p)));
       } else {
         handleProductChange(detailPageBuilderState.product.id, field, value as string);

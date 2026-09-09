@@ -17,7 +17,7 @@ import ImageRenamer from './components/ImageRenamer';
 import ImageEditorModal from './components/ImageEditorModal';
 import DetailPageBuilderModal from './components/DetailPageBuilderModal';
 import MissingFieldsModal from './components/MissingFieldsModal';
-import { saveDataUrlInProductFolder, productFolderName, productNameFolderName, buildZipBlob, saveFilesInProductFolder, getRootDirectory } from './utils/fileSave';
+import { saveDataUrlInProductFolder, productFolderName, productNameFolderName, buildZipBlob, saveFilesInProductFolder, getRootDirectory, detailSliceFileNames } from './utils/fileSave';
 import { sendProposalToSupplierHub } from './utils/rocketProposal';
 import CategoryQuoteFinderModal from './components/CategoryQuoteFinderModal';
 import { collectMissingFields } from './utils/productValidation';
@@ -935,6 +935,7 @@ const App: React.FC = () => {
               ...product,
               detailFile: match.file.name,
               detailDataUrl: match.dataUrl,
+              detailDataUrls: undefined,
             };
           }
           return product;
@@ -1109,6 +1110,7 @@ const App: React.FC = () => {
                     quantity: sourceProduct.quantity,
                     detailFile: sourceProduct.detailFile,
                     detailDataUrl: sourceProduct.detailDataUrl,
+                    detailDataUrls: sourceProduct.detailDataUrls,
                     material: sourceProduct.material,
                     countryOfOrigin: sourceProduct.countryOfOrigin,
                     importer: sourceProduct.importer,
@@ -2077,8 +2079,15 @@ const App: React.FC = () => {
           imageFiles.push({ name: p.thumbnailFile || `${p.productName || '대표'}.png`, blob: await (await fetch(p.thumbnailDataUrl)).blob() });
         }
       }
-      if (product.detailDataUrl) {
-        imageFiles.push({ name: product.detailFile || '상세.png', blob: await (await fetch(product.detailDataUrl)).blob() });
+      // 상세이미지는 길면 여러 장으로 잘려 저장돼 있다(detailDataUrls). 예전에 한 장으로 저장한
+      // 상품은 detailDataUrl만 갖고 있으므로 그것도 그대로 받아준다.
+      const detailDataUrls = product.detailDataUrls?.length ? product.detailDataUrls
+        : product.detailDataUrl ? [product.detailDataUrl] : [];
+      if (detailDataUrls.length > 0) {
+        const detailNames = detailSliceFileNames(product.detailFile || '상세.png', detailDataUrls);
+        for (const [idx, url] of detailDataUrls.entries()) {
+          imageFiles.push({ name: detailNames[idx], blob: await (await fetch(url)).blob() });
+        }
       }
       if (imageFiles.length > 0) {
         const zipBlob = await buildZipBlob(imageFiles);
@@ -2437,6 +2446,11 @@ const App: React.FC = () => {
   const handleSaveFromImageEditor = useCallback((field: 'thumbnailDataUrl' | 'detailDataUrl', dataUrl: string) => {
     if (imageEditorState.product) {
       handleProductChange(imageEditorState.product.id, field, dataUrl);
+      // 상세이미지를 한 장으로 갈아끼웠으니, 잘려 있던 나머지 장은 더 이상 이 이미지와 짝이 아니다.
+      if (field === 'detailDataUrl') {
+        const editedId = imageEditorState.product.id;
+        setProducts(prev => prev.map(p => (p.id === editedId ? { ...p, detailDataUrls: undefined } : p)));
+      }
       alert('편집한 이미지로 교체되었습니다.');
     }
     closeImageEditor();
@@ -2563,30 +2577,44 @@ const App: React.FC = () => {
     return group.length > 0 ? group : [product];
   }, [products]);
 
-  const handleSaveFromDetailPageBuilder = useCallback(async (field: 'thumbnailDataUrl' | 'detailDataUrl' | 'detailFile', value: string) => {
+  // 상세페이지는 길면 여러 장으로 잘려 오므로(빌더의 captureSlices) 이미지는 항상 배열로 받는다.
+  const handleSaveFromDetailPageBuilder = useCallback(async (
+    field: 'thumbnailDataUrl' | 'detailFile' | 'detailDataUrls',
+    value: string | string[],
+  ) => {
     // 임시 상품이면 값을 되돌려 넣을 행이 없으므로, 저장 = 완성된 상세페이지를 파일로 내려받기.
     if (detailPageBuilderState.standalone) {
-      if (field !== 'detailDataUrl') return;
+      if (field !== 'detailDataUrls') return;
+      const dataUrls = value as string[];
       const product = detailPageBuilderState.product;
       const baseName = (product?.productName || '').trim() || 'detail_page';
-      // 용량 때문에 JPEG로 대체돼 오는 경우가 있어(빌더의 captureImage 참고) 확장자를 맞춰준다.
-      const extension = value.startsWith('data:image/jpeg') ? 'jpg' : 'png';
-      await saveDataUrlInProductFolder(value, productFolderName(product), `${baseName}.${extension}`);
+      const names = detailSliceFileNames(`${baseName}.png`, dataUrls);
+      const files = await Promise.all(
+        dataUrls.map(async (url, idx) => ({ name: names[idx], blob: await (await fetch(url)).blob() }))
+      );
+      await saveFilesInProductFolder(productFolderName(product), files);
       closeDetailPageBuilder();
       return;
     }
     if (detailPageBuilderState.product) {
-      if (field === 'detailDataUrl' || field === 'detailFile') {
+      if (field === 'detailDataUrls' || field === 'detailFile') {
         // 상세페이지(이미지/파일명)는 이 상품 하나가 아니라 같은 그룹의 옵션 전체에 동일하게 적용한다.
         const groupIds = new Set(getGroupProducts(detailPageBuilderState.product).map(p => p.id));
-        setProducts(prev => prev.map(p => (groupIds.has(p.id) ? { ...p, [field]: value } : p)));
+        // 잘린 전체를 detailDataUrls에 두고, 목록 미리보기가 보는 detailDataUrl에는 첫 장을 넣는다.
+        const patch: Partial<Product> = field === 'detailFile'
+          ? { detailFile: value as string }
+          : { detailDataUrls: value as string[], detailDataUrl: (value as string[])[0] };
+        setProducts(prev => prev.map(p => (groupIds.has(p.id) ? { ...p, ...patch } : p)));
       } else {
-        handleProductChange(detailPageBuilderState.product.id, field, value);
+        handleProductChange(detailPageBuilderState.product.id, field, value as string);
       }
-      // detailFile은 용량 때문에 JPEG로 대체될 때 detailDataUrl 저장 직전에 확장자만 맞추려고
-      // 함께 오는 부수 업데이트라 여기서 완료 알림/모달 닫기를 트리거하지 않는다.
-      if (field === 'detailDataUrl') {
-        alert('상세페이지 이미지로 저장되었습니다.');
+      // detailFile은 용량 때문에 JPEG로 대체될 때 이미지 저장 직전에 확장자만 맞추려고 함께 오는
+      // 부수 업데이트라 여기서 완료 알림/모달 닫기를 트리거하지 않는다.
+      if (field === 'detailDataUrls') {
+        const count = (value as string[]).length;
+        alert(count > 1
+          ? `상세페이지가 ${count}장으로 나뉘어 저장되었습니다.`
+          : '상세페이지 이미지로 저장되었습니다.');
         const productId = detailPageBuilderState.product.id;
         setDetailPageDoneId(productId);
         setTimeout(() => setDetailPageDoneId(prev => (prev === productId ? null : prev)), 1500);

@@ -14,7 +14,7 @@ import {
 import { CloseIcon, SpinnerIcon, SaveIcon, DownloadIcon, SparklesIcon, UploadIcon, TrashIcon, ChevronUpIcon, ChevronDownIcon, BrushIcon, PlusIcon, StarIcon, CropIcon, CheckIcon, EyedropperIcon, UndoIcon, LineIcon, SquareIcon, CircleIcon, ArrowIcon, TextToolIcon } from './Icons';
 import { editImageWithGemini, BRUSH_ERASE_PROMPT } from '../utils/geminiImageEdit';
 import { generateDetailPageCopyWithGemini } from '../utils/detailPageCopyGemini';
-import { saveDataUrlInProductFolder, productFolderName } from '../utils/fileSave';
+import { saveFilesInProductFolder, productFolderName, detailSliceFileNames } from '../utils/fileSave';
 import { generateId } from '../utils/id';
 import { withTimeout, stripClonedScripts, stripEmptySections } from '../utils/html2canvasHelpers';
 import ImageCropModal from './ImageCropModal';
@@ -54,7 +54,12 @@ interface DetailPageBuilderModalProps {
   // product 하나만 담는다. 상세페이지는 이 그룹 전체에 동일하게 저장되고, 대표이미지만
   // 옵션(=배열의 각 항목)별로 다르게 지정할 수 있다.
   groupProducts: Product[];
-  onSave: (field: 'thumbnailDataUrl' | 'detailDataUrl' | 'detailFile', value: string) => void;
+  // 'detailDataUrls'는 완성된 상세페이지 이미지 전체다 — 페이지가 길면 MAX_SLICE_HEIGHT마다
+  // 잘려 여러 장으로 오고, 짧으면 한 장짜리 배열로 온다.
+  onSave: {
+    (field: 'thumbnailDataUrl' | 'detailFile', value: string): void;
+    (field: 'detailDataUrls', value: string[]): void;
+  };
   // 업로드한 사진 중 하나를 특정 옵션(productId)의 대표이미지(thumbnailFile, 자동 이름
   // "{순번}s.png")로 지정한다. 모달을 닫지 않는다 — 대표이미지 지정은 상세페이지를 계속
   // 조립하는 중에 곁들여 하는 부수 동작이라, 전체를 마무리짓는 onSave('detailDataUrl', ...)
@@ -151,6 +156,14 @@ const TEXT_BOX_FONT_SIZE_MAX = 160;
 // 저장 파일 용량 제한(거래처 업로드 기준) — 초과 시 captureImage가 2x 오버샘플링 해상도를
 // 실제 표시 배율(1x, CANVAS_WIDTH) 선까지만 단계적으로 낮춰서 화질 저하 없이 용량을 줄인다.
 const MAX_DETAIL_IMAGE_BYTES = 10 * 1024 * 1024;
+// 저장 이미지 한 장의 세로 한계. 마켓에 올릴 때 너무 긴 이미지를 받지 않는 곳이 있어서,
+// 페이지가 이보다 길면 위에서부터 이 높이로 잘라 여러 장으로 나눠 저장한다.
+const MAX_SLICE_HEIGHT = 3000;
+// 올린 사진을 들고 있을 최대 가로 픽셀. 미리보기 폭이 CANVAS_WIDTH(860)이고 저장할 때 2배로
+// 찍으므로 그 위쪽은 어차피 버려지는 화소다. 원본 그대로 두면 폰 사진 한 장이 4MB라 몇 장만
+// 올려도 앱이 무거워지는데, 여기까지 줄이면 700KB 정도가 되고 눈에 보이는 차이는 없다.
+const MAX_PHOTO_WIDTH = CANVAS_WIDTH * 2;
+const PHOTO_JPEG_QUALITY = 0.85;
 // Numbered feature blocks (01~0N) that share the uploaded photos left over after the fixed
 // hero/closing slots — see distributePhotos below. Count is user-adjustable (see featureBlockCount).
 
@@ -764,21 +777,23 @@ const DetailPageBuilderModal: React.FC<DetailPageBuilderModalProps> = ({ isOpen,
   // sectionId를 주면 그 섹션에 배정하고, beforePhotoId를 주면 그 사진 바로 앞에 끼워 넣는다
   // (미리보기에서 우클릭한 자리에 넣을 때 쓴다). 둘 다 없으면 예전처럼 맨 뒤에 붙는다.
   const addPhotoFiles = (files: File[], sectionId?: string, beforePhotoId?: string) => {
-    files.forEach((file: File) => {
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        if (!reader.result) return;
+    // 원본을 그대로 들고 있지 않고 화면에서 쓰는 해상도까지 줄여 넣는다(shrinkPhotoDataUrl).
+    // 여러 장을 한 번에 골라도 고른 순서가 뒤섞이지 않도록 한 장씩 차례로 처리한다.
+    void (async () => {
+      for (const file of files) {
+        const raw = await readFileAsDataUrl(file);
+        if (!raw) continue;
+        const dataUrl = await shrinkPhotoDataUrl(raw);
         const id = generateId();
-        const photo = { id, dataUrl: reader.result as string };
+        const photo = { id, dataUrl };
         setPhotos(prev => {
           if (!beforePhotoId) return [...prev, photo];
           const idx = prev.findIndex(p => p.id === beforePhotoId);
           return idx === -1 ? [...prev, photo] : [...prev.slice(0, idx), photo, ...prev.slice(idx)];
         });
         if (sectionId) setPhotoSectionMap(prev => ({ ...prev, [id]: sectionId }));
-      };
-      reader.readAsDataURL(file);
-    });
+      }
+    })();
   };
 
   const handleFilesSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -1273,6 +1288,39 @@ const DetailPageBuilderModal: React.FC<DetailPageBuilderModalProps> = ({ isOpen,
       img.onerror = () => reject(new Error('이미지를 불러오지 못했습니다.'));
       img.src = src;
     });
+
+  const readFileAsDataUrl = (file: File): Promise<string | null> =>
+    new Promise(resolve => {
+      const reader = new FileReader();
+      reader.onloadend = () => resolve(typeof reader.result === 'string' ? reader.result : null);
+      reader.onerror = () => resolve(null);
+      reader.readAsDataURL(file);
+    });
+
+  // 사진을 MAX_PHOTO_WIDTH까지 줄인다. 이미 그보다 작으면 원본을 그대로 둔다(괜히 다시 구워서
+  // 화질만 깎을 이유가 없다). JPEG로 굽기 전에 흰색을 깔아두는 건, 투명한 PNG(캡처 이미지 등)를
+  // 그냥 JPEG로 바꾸면 투명한 자리가 검게 나오기 때문이다 — 페이지 바탕이 흰색이라 흰색이 맞다.
+  const shrinkPhotoDataUrl = async (dataUrl: string): Promise<string> => {
+    try {
+      const img = await loadImage(dataUrl);
+      if (!img.naturalWidth || img.naturalWidth <= MAX_PHOTO_WIDTH) return dataUrl;
+      const scale = MAX_PHOTO_WIDTH / img.naturalWidth;
+      const canvas = document.createElement('canvas');
+      canvas.width = MAX_PHOTO_WIDTH;
+      canvas.height = Math.max(1, Math.round(img.naturalHeight * scale));
+      const ctx = canvas.getContext('2d');
+      if (!ctx) return dataUrl;
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.imageSmoothingEnabled = true;
+      ctx.imageSmoothingQuality = 'high';
+      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+      return canvas.toDataURL('image/jpeg', PHOTO_JPEG_QUALITY);
+    } catch {
+      // 줄이지 못했다고 사진을 못 올리게 할 이유는 없다 — 원본 그대로 넣는다.
+      return dataUrl;
+    }
+  };
 
   // Sends only the individual photo(s) the brush touched through Gemini — never the whole flattened
   // page. Each affected photo goes through at its own original resolution (normal aspect ratio, not
@@ -1800,48 +1848,85 @@ const DetailPageBuilderModal: React.FC<DetailPageBuilderModalProps> = ({ isOpen,
     });
   };
 
-  const captureImage = async (): Promise<string | null> => {
+  // 세로로 긴 캔버스를 sliceHeight 높이로 잘라 여러 장으로 만든다. 자르는 기준은 "저장되는
+  // 이미지의 세로 픽셀"이라, 잘린 파일 한 장은 항상 sliceHeight 이하가 된다.
+  const sliceCanvasVertically = (source: HTMLCanvasElement, sliceHeight: number): HTMLCanvasElement[] => {
+    if (source.height <= sliceHeight) return [source];
+    const slices: HTMLCanvasElement[] = [];
+    for (let top = 0; top < source.height; top += sliceHeight) {
+      const height = Math.min(sliceHeight, source.height - top);
+      const target = document.createElement('canvas');
+      target.width = source.width;
+      target.height = height;
+      const ctx = target.getContext('2d');
+      if (ctx) {
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(0, 0, target.width, target.height);
+        ctx.drawImage(source, 0, top, source.width, height, 0, 0, source.width, height);
+      }
+      slices.push(target);
+    }
+    return slices;
+  };
+
+  // 조각들을 이미지로 굽는다. 배율과 품질은 조각마다 따로 정하지 않고 전부 같은 값을 쓴다 —
+  // 조각마다 다르게 구우면 가로 폭이 어긋나서 위아래로 이어 붙였을 때 단이 진다.
+  // 어떤 값을 쓸지는 가장 무거운 조각 하나로 정하고(모든 조각을 매번 다시 굽지 않으려고),
+  // 정해진 값을 전 조각에 똑같이 적용한다. 용량 한도는 파일 한 장 기준이라, 잘라서 저장하면
+  // 한 장으로 저장할 때보다 화질을 덜 깎아도 된다.
+  const encodeSlices = (slices: HTMLCanvasElement[], minScale: number): string[] => {
+    const fits = (url: string) => dataUrlByteSize(url) <= MAX_DETAIL_IMAGE_BYTES;
+    const qualitySteps = [0.95, 0.9, 0.85, 0.8, 0.75, 0.7, 0.6];
+
+    const pngs = slices.map(c => c.toDataURL('image/png'));
+    if (pngs.every(fits)) return pngs;
+
+    const probe = slices[pngs.reduce((worst, url, i) => (dataUrlByteSize(url) > dataUrlByteSize(pngs[worst]) ? i : worst), 0)];
+
+    // 1) 무손실(PNG)인 채로 실제 표시 배율(1x)까지만 10%씩 줄여본다.
+    let scale = 1;
+    while (scale > minScale) {
+      scale = Math.max(minScale, scale * 0.9);
+      if (fits(downscaleCanvas(probe, scale).toDataURL('image/png'))) {
+        return slices.map(c => downscaleCanvas(c, scale).toDataURL('image/png'));
+      }
+    }
+
+    // 2) 그래도 안 들어가면 JPEG로 바꿔 품질을 단계적으로 낮춘다.
+    let jpegScale = minScale;
+    while (true) {
+      const scaledProbe = downscaleCanvas(probe, jpegScale);
+      for (const quality of qualitySteps) {
+        if (fits(scaledProbe.toDataURL('image/jpeg', quality))) {
+          return slices.map(c => downscaleCanvas(c, jpegScale).toDataURL('image/jpeg', quality));
+        }
+      }
+      if (jpegScale <= 0.15) {
+        return slices.map(c => downscaleCanvas(c, jpegScale).toDataURL('image/jpeg', qualitySteps[qualitySteps.length - 1]));
+      }
+      jpegScale *= 0.85;
+    }
+  };
+
+  // 완성된 페이지를 저장용 이미지로 만든다. 페이지가 MAX_SLICE_HEIGHT보다 길면 여러 장으로
+  // 잘려 나오고, 짧으면 한 장짜리 배열이 나온다.
+  const captureSlices = async (): Promise<string[] | null> => {
     setIsExporting(true);
     try {
       const canvas = await captureCanvas();
       if (!canvas) return null;
-
-      let dataUrl = canvas.toDataURL('image/png');
-      // 1) 2x로 캡처된 원본에서 시작해, 용량 제한을 넘으면 실제 표시 배율(1x)까지만 10%씩
-      // 다운스케일한다(PNG, 무손실). 1x 밑으로는 내리지 않으므로 화면에 보이는 해상도보다
-      // 흐려지는 일은 없다.
+      // 1x 아래로는 내리지 않는다 — 화면에 보이는 해상도보다 흐려지는 일은 없게.
       const minScale = CANVAS_WIDTH / canvas.width;
-      let scale = 1;
-      while (dataUrlByteSize(dataUrl) > MAX_DETAIL_IMAGE_BYTES && scale > minScale) {
-        scale = Math.max(minScale, scale * 0.9);
-        dataUrl = downscaleCanvas(canvas, scale).toDataURL('image/png');
-      }
+      const dataUrls = encodeSlices(sliceCanvasVertically(canvas, MAX_SLICE_HEIGHT), minScale);
 
-      // 2) 사진이 많아 1x PNG로도 용량을 못 맞추면 JPEG로 전환해 품질을 단계적으로 낮춘다.
-      // 0.95~0.6 구간은 육안상 차이가 거의 없으면서 PNG보다 훨씬 작아, 여기서 대부분 해결된다.
-      // 그래도 못 맞추면 최저 품질을 유지한 채 해상도를 추가로 낮춰가며 재시도한다.
-      if (dataUrlByteSize(dataUrl) > MAX_DETAIL_IMAGE_BYTES) {
-        const qualitySteps = [0.95, 0.9, 0.85, 0.8, 0.75, 0.7, 0.6];
-        let jpegScale = minScale;
-        findFit: while (true) {
-          const scaledCanvas = downscaleCanvas(canvas, jpegScale);
-          for (const quality of qualitySteps) {
-            dataUrl = scaledCanvas.toDataURL('image/jpeg', quality);
-            if (dataUrlByteSize(dataUrl) <= MAX_DETAIL_IMAGE_BYTES) break findFit;
-          }
-          if (jpegScale <= 0.15) break;
-          jpegScale *= 0.85;
-        }
-      }
-
-      if (dataUrlByteSize(dataUrl) > MAX_DETAIL_IMAGE_BYTES) {
+      const tooBig = dataUrls.filter(url => dataUrlByteSize(url) > MAX_DETAIL_IMAGE_BYTES).length;
+      if (tooBig > 0) {
         const limitMb = Math.round(MAX_DETAIL_IMAGE_BYTES / (1024 * 1024));
-        alert(`사진 수가 많아 이미지 용량을 ${limitMb}MB 이하로 줄이지 못했습니다. 사진 수를 줄이거나 나눠서 저장해주세요.`);
+        alert(`사진 수가 많아 ${tooBig}장을 ${limitMb}MB 이하로 줄이지 못했습니다. 사진 수를 줄이거나 나눠서 저장해주세요.`);
       }
-
-      return dataUrl;
-    } catch (err) {
-      console.error('상세페이지 캡처 실패:', err);
+      return dataUrls;
+    } catch (error) {
+      console.error(error);
       alert('상세페이지 이미지를 만드는 중 오류가 발생했습니다.');
       return null;
     } finally {
@@ -1849,10 +1934,6 @@ const DetailPageBuilderModal: React.FC<DetailPageBuilderModalProps> = ({ isOpen,
     }
   };
 
-  // 용량 때문에 JPEG로 대체된 경우(captureImage 참고) 파일명 확장자도 맞춰준다 — 내용은 JPEG인데
-  // 이름만 .png로 남으면 마켓 업로드 시 문제가 될 수 있다.
-  const fileNameForDataUrl = (dataUrl: string, fallbackName: string): string =>
-    dataUrl.startsWith('data:image/jpeg') ? fallbackName.replace(/\.png$/i, '.jpg') : fallbackName;
 
   // 붙여넣기 파싱이 실패했거나(라벨 형식이 조금 달라서) 문구를 하나도 입력하지 않은 채로 그대로
   // 저장/다운로드해버리는 걸 막는 마지막 안전장치 — 문구가 전부 빈칸이면 저장 직전에 한 번 확인한다.
@@ -1871,10 +1952,15 @@ const DetailPageBuilderModal: React.FC<DetailPageBuilderModalProps> = ({ isOpen,
 
   const handleDownload = async () => {
     if (!confirmIfCopyEmpty()) return;
-    const dataUrl = await captureImage();
-    if (!dataUrl) return;
+    const dataUrls = await captureSlices();
+    if (!dataUrls || dataUrls.length === 0) return;
     const baseName = product?.detailFile || `${product?.productName || 'detail_page'}.png`;
-    await saveDataUrlInProductFolder(dataUrl, productFolderName(product), fileNameForDataUrl(dataUrl, baseName));
+    const names = detailSliceFileNames(baseName, dataUrls);
+    // 여러 장이어도 폴더 선택은 한 번만 받도록 한꺼번에 넘긴다.
+    const files = await Promise.all(
+      dataUrls.map(async (url, idx) => ({ name: names[idx], blob: await (await fetch(url)).blob() }))
+    );
+    await saveFilesInProductFolder(productFolderName(product), files);
   };
 
   // 사진에 별(★)을 눌러 대표이미지를 지정하지 않은 채로 저장하면, 통합다운 때 대표이미지가
@@ -1893,13 +1979,17 @@ const DetailPageBuilderModal: React.FC<DetailPageBuilderModalProps> = ({ isOpen,
   const handleSave = async () => {
     if (!confirmIfThumbnailMissing()) return;
     if (!confirmIfCopyEmpty()) return;
-    const dataUrl = await captureImage();
-    if (!dataUrl) return;
+    const dataUrls = await captureSlices();
+    if (!dataUrls || dataUrls.length === 0) return;
+    // 여러 장으로 잘렸을 때 실제 파일명은 저장할 때 번호를 붙여 만든다(detailSliceFileNames).
+    // 여기 detailFile에는 번호 없는 이름 하나만 두되, 용량 때문에 JPEG로 바뀌었으면 확장자는 맞춘다.
     if (product?.detailFile) {
-      const fileName = fileNameForDataUrl(dataUrl, product.detailFile);
+      const fileName = dataUrls[0].startsWith('data:image/jpeg')
+        ? product.detailFile.replace(/\.png$/i, '.jpg')
+        : product.detailFile;
       if (fileName !== product.detailFile) onSave('detailFile', fileName);
     }
-    onSave('detailDataUrl', dataUrl);
+    onSave('detailDataUrls', dataUrls);
   };
 
   return (

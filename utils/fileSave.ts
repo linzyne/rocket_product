@@ -35,6 +35,17 @@ export function productFolderName(product: { detailFile?: string; productName?: 
   return sanitizeFolderName(product?.detailFile || product?.productName || 'product');
 }
 
+// 상세페이지가 여러 장으로 잘려 저장될 때의 파일명. 한 장이면 기존 이름을 그대로 쓰고, 여러
+// 장이면 뒤에 _01, _02… 를 붙인다. 확장자는 실제 데이터에 맞춘다 — 용량 때문에 JPEG로 대체됐는데
+// 이름만 .png로 남으면 마켓 업로드에서 문제가 될 수 있다.
+export function detailSliceFileNames(baseName: string, dataUrls: string[]): string[] {
+  const dotIdx = baseName.lastIndexOf('.');
+  const stem = dotIdx > 0 ? baseName.slice(0, dotIdx) : baseName;
+  const extension = dataUrls[0]?.startsWith('data:image/jpeg') ? '.jpg' : '.png';
+  if (dataUrls.length <= 1) return [`${stem}${extension}`];
+  return dataUrls.map((_, idx) => `${stem}_${String(idx + 1).padStart(2, '0')}${extension}`);
+}
+
 // Always uses the product name itself as the folder name (no detailFile fallback-first), for
 // features like 통합다운 where the folder must match the product name exactly.
 export function productNameFolderName(product: { productName?: string } | null | undefined): string {

@@ -33,7 +33,10 @@ export interface Product {
   thumbnailFile: string;
   thumbnailDataUrl?: string;
   detailFile: string;
+  // 상세페이지 이미지. 페이지가 길면 여러 장으로 잘려 저장되므로 detailDataUrls가 원본이고,
+  // detailDataUrl은 그 첫 장이다(목록 미리보기와 예전 데이터 호환용).
   detailDataUrl?: string;
+  detailDataUrls?: string[];
   labelFile: string;
   labelDataUrl?: string;
   // 통합다운(04 등록)을 끝낸 시각(ms). 체크 표시를 계속 보여주는 데 쓴다.

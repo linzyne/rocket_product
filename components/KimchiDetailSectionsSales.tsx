@@ -1,6 +1,6 @@
 import React, { useMemo } from 'react';
 import EditableText from './EditableText';
-import { PADDING_X, SPACE } from '../utils/detailPageLayout';
+import { PADDING_X, SPACE, KIMCHI_SKIN_SECTION_GAP } from '../utils/detailPageLayout';
 import { KimchiSection, kimchiSectionHasText } from '../utils/kimchiDetailTemplate';
 import { KimchiPhoto, KimchiTypeScale, SummaryCardBody, kimchiFontSizes, makePhotoRun } from './KimchiDetailSections';
 
@@ -27,7 +27,6 @@ interface SalesPreviewProps {
 const CREAM = '#f7f1e6';
 const PANEL_RADIUS = 24;
 const BUBBLE_RADIUS = 999;
-const SALES_SECTION_GAP = 0;
 const CARD_MARGIN_X = 46;
 
 // #rrggbb → rgba(). 시그니처 색에서 옅은 배경과 테두리를 만들어 쓴다.
@@ -251,7 +250,7 @@ export const KimchiPreviewSales: React.FC<SalesPreviewProps> = ({
               return (
                 <div key={idx} style={{ display: 'flex', justifyContent: flip ? 'flex-end' : 'flex-start', padding: `0 ${CARD_MARGIN_X}px`, marginBottom: SPACE.sm }}>
                   <div style={{ maxWidth: '84%', background: '#ffffff', border: `2px solid ${accent}`, borderRadius: 30, padding: '26px 30px', display: 'flex', gap: 20, alignItems: 'center' }}>
-                    {thumb && <img src={thumb.dataUrl} alt="" style={{ width: 120, height: 120, borderRadius: 18, objectFit: 'cover', flexShrink: 0, display: 'block' }} />}
+                    {thumb && <img data-photo-id={thumb.id} src={thumb.dataUrl} alt="" style={{ width: 120, height: 120, borderRadius: 18, objectFit: 'cover', flexShrink: 0, display: 'block' }} />}
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div style={{ marginBottom: SPACE.xs }}>
                         <EditableText value={review.text} onChange={v => updateReview({ text: v })} placeholder="리뷰 내용" style={styles.reviewText} />
@@ -350,7 +349,7 @@ export const KimchiPreviewSales: React.FC<SalesPreviewProps> = ({
             {logo && (
               <div style={{ display: 'flex', justifyContent: 'center', marginBottom: SPACE.md }}>
                 <div style={{ width: 210, height: 210, borderRadius: '50%', background: '#ffffff', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                  <img src={logo.dataUrl} alt="" style={{ width: 140, height: 'auto', display: 'block' }} />
+                  <img data-photo-id={logo.id} src={logo.dataUrl} alt="" style={{ width: 140, height: 'auto', display: 'block' }} />
                 </div>
               </div>
             )}
@@ -362,33 +361,38 @@ export const KimchiPreviewSales: React.FC<SalesPreviewProps> = ({
       }
 
       // 소구점: 체크포인트 배지로 열고 제목·설명을 가운데, 사진은 전체폭으로.
-      case 'point':
+      case 'point': {
+        // 아직 아무것도 안 채운 소구점은 문구 칸을 전부 감추면 높이가 0이 되어 미리보기에서
+        // 사라진다 — 클릭해서 타이핑할 자리도, 우클릭해서 사진을 넣을 자리도 없어진다. 빈
+        // 섹션일 때는 빈 칸을 그대로 보여준다(저장 이미지에서는 stripEmptySections가 걷어낸다).
+        const blank = !kimchiSectionHasText(section);
         return (
           <>
             <div style={{ padding: `${SPACE.xl}px 0 ${SPACE.lg}px` }}>
-              {section.badge?.trim() && (
+              {(section.badge?.trim() || blank) && (
                 <CheckBadge
-                  value={section.badge}
+                  value={section.badge || ''}
                   accent={accent}
                   placeholder="POINT 01"
                   style={styles.badge}
                   onChange={v => updateSection(section.id, { badge: v })}
                 />
               )}
-              {section.noticeTitle?.trim() && (
+              {(section.noticeTitle?.trim() || blank) && (
                 <div style={{ marginBottom: SPACE.sm }}>
-                  <EditableText value={section.noticeTitle} onChange={v => updateSection(section.id, { noticeTitle: v })}
+                  <EditableText value={section.noticeTitle || ''} onChange={v => updateSection(section.id, { noticeTitle: v })}
                     placeholder="제목" style={{ ...styles.pointTitle, padding: `0 ${PADDING_X}px` }} />
                 </div>
               )}
-              {section.noticeSubtitle?.trim() && (
-                <EditableText value={section.noticeSubtitle} onChange={v => updateSection(section.id, { noticeSubtitle: v })}
+              {(section.noticeSubtitle?.trim() || blank) && (
+                <EditableText value={section.noticeSubtitle || ''} onChange={v => updateSection(section.id, { noticeSubtitle: v })}
                   placeholder="설명" style={{ ...styles.pointSubtitle, padding: `0 ${PADDING_X}px` }} />
               )}
             </div>
             {photoRun(section, photos, 0)}
           </>
         );
+      }
 
       // 목록: 공감 문구를 말풍선으로 좌우 번갈아 늘어놓는다 — 이 구성의 핵심 장치.
       case 'list': {
@@ -485,7 +489,7 @@ export const KimchiPreviewSales: React.FC<SalesPreviewProps> = ({
             key={section.id}
             data-section-id={section.id}
             data-empty-section={isEmpty ? 'true' : undefined}
-            style={{ marginBottom: SALES_SECTION_GAP }}
+            style={{ marginBottom: section.sectionGap ?? KIMCHI_SKIN_SECTION_GAP.sales }}
           >
             {!photosInBody && section.photoPosition === 'before' && photoRun(section, photos, 0)}
             {renderBody(section, photos)}

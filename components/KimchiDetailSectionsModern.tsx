@@ -1,6 +1,6 @@
 import React, { useMemo } from 'react';
 import EditableText from './EditableText';
-import { PADDING_X, SPACE, SECTION_GAP } from '../utils/detailPageLayout';
+import { PADDING_X, SPACE, SECTION_GAP, KIMCHI_SKIN_SECTION_GAP } from '../utils/detailPageLayout';
 import { KimchiSection, kimchiSectionHasText } from '../utils/kimchiDetailTemplate';
 import { KimchiPhoto, KimchiTypeScale, SummaryCardBody, kimchiFontSizes, makePhotoRun } from './KimchiDetailSections';
 
@@ -28,7 +28,6 @@ const HAIRLINE = '#e2e2e2';
 const RULE = '#111111';
 const MUTED = 0.55;
 // 왼쪽 정렬 스킨이라 섹션마다 위쪽에 얇은 선을 긋고 그 아래 작은 라벨을 붙인다.
-const MODERN_SECTION_GAP = 130;
 // 고지 섹션에서 강조 문구를 제목 옆에 나란히 세울 수 있는 글자 수. 이 스킨은 강조 문구를
 // 제목과 좌우로 마주 놓는데, 그 자리에 남는 폭은 캔버스의 절반도 안 된다. 배송 마감시각
 // ("10:00")은 들어가지만 고객센터 번호("1588-0000")처럼 길어지면 캔버스를 뚫고 나간다 —
@@ -352,6 +351,7 @@ export const KimchiPreviewModern: React.FC<ModernPreviewProps> = ({
                 >
                   {thumb && (
                     <img
+                      data-photo-id={thumb.id}
                       src={thumb.dataUrl}
                       alt=""
                       style={{ width: 110, height: 110, borderRadius: '50%', objectFit: 'cover', flexShrink: 0, display: 'block' }}
@@ -446,7 +446,7 @@ export const KimchiPreviewModern: React.FC<ModernPreviewProps> = ({
         const logo = photos[0];
         return (
           <div style={{ display: 'flex', gap: 34, alignItems: 'flex-start', padding: `0 ${PADDING_X}px` }}>
-            {logo && <img src={logo.dataUrl} alt="" style={{ width: 170, height: 'auto', flexShrink: 0, display: 'block' }} />}
+            {logo && <img data-photo-id={logo.id} src={logo.dataUrl} alt="" style={{ width: 170, height: 'auto', flexShrink: 0, display: 'block' }} />}
             <div style={{ flex: 1, minWidth: 0 }}>
               {section.noticeTitle?.trim() && (
                 <div style={{ marginBottom: SPACE.sm }}>
@@ -482,13 +482,17 @@ export const KimchiPreviewModern: React.FC<ModernPreviewProps> = ({
       }
 
       // 소구점: 알약 배지 대신 큰 번호와 얇은 선으로 구간을 연다.
-      case 'point':
+      case 'point': {
+        // 아직 아무것도 안 채운 소구점은 문구 칸을 전부 감추면 높이가 0이 되어 미리보기에서
+        // 사라진다 — 클릭해서 타이핑할 자리도, 우클릭해서 사진을 넣을 자리도 없어진다. 빈
+        // 섹션일 때는 빈 칸을 그대로 보여준다(저장 이미지에서는 stripEmptySections가 걷어낸다).
+        const blank = !kimchiSectionHasText(section);
         return (
           <>
             <div style={{ display: 'flex', alignItems: 'baseline', gap: 22, padding: `0 ${PADDING_X}px`, marginBottom: SPACE.sm }}>
-              {section.badge?.trim() && (
+              {(section.badge?.trim() || blank) && (
                 <EditableText
-                  value={section.badge}
+                  value={section.badge || ''}
                   onChange={v => updateSection(section.id, { badge: v })}
                   placeholder="POINT 01"
                   style={{ ...styles.pointBadge, color: accent }}
@@ -496,20 +500,20 @@ export const KimchiPreviewModern: React.FC<ModernPreviewProps> = ({
               )}
               <div style={{ flex: 1, height: 1, background: HAIRLINE }} />
             </div>
-            {section.noticeTitle?.trim() && (
+            {(section.noticeTitle?.trim() || blank) && (
               <div style={{ marginBottom: SPACE.sm }}>
                 <EditableText
-                  value={section.noticeTitle}
+                  value={section.noticeTitle || ''}
                   onChange={v => updateSection(section.id, { noticeTitle: v })}
                   placeholder="제목"
                   style={styles.pointTitle}
                 />
               </div>
             )}
-            {section.noticeSubtitle?.trim() && (
+            {(section.noticeSubtitle?.trim() || blank) && (
               <div style={{ marginBottom: SPACE.lg }}>
                 <EditableText
-                  value={section.noticeSubtitle}
+                  value={section.noticeSubtitle || ''}
                   onChange={v => updateSection(section.id, { noticeSubtitle: v })}
                   placeholder="설명"
                   style={styles.pointSubtitle}
@@ -519,6 +523,7 @@ export const KimchiPreviewModern: React.FC<ModernPreviewProps> = ({
             {photoRun(section, photos, 0)}
           </>
         );
+      }
 
       // 목록: 카드 없이 번호 + 얇은 구분선.
       case 'list': {
@@ -626,7 +631,7 @@ export const KimchiPreviewModern: React.FC<ModernPreviewProps> = ({
             data-section-id={section.id}
             data-empty-section={isEmpty ? 'true' : undefined}
             style={{
-              marginBottom: MODERN_SECTION_GAP,
+              marginBottom: section.sectionGap ?? KIMCHI_SKIN_SECTION_GAP.modern,
               background: section.backgroundColor || undefined,
               ...(section.backgroundColor ? { paddingTop: SPACE.lg, paddingBottom: SPACE.lg } : {}),
             }}

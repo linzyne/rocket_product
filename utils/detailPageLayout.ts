@@ -15,3 +15,16 @@ export const SECTION_GAP = 70;
 export const DEFAULT_PHOTO_GAP = SPACE.sm;
 // 사이드 패널 슬라이더가 움직일 수 있는 범위(860px 캔버스 기준 px).
 export const PHOTO_GAP_MAX = 160;
+
+// 스킨별 "섹션과 섹션 사이" 기본 간격. 섹션에서 sectionGap으로 따로 조절할 수 있고(사이드
+// 패널의 "섹션 간격"), 조절하지 않은 섹션은 여기 값을 그대로 쓴다 — 그래서 예전에 만든
+// 상세페이지 모양은 바뀌지 않는다. 네 스킨이 각자 상수를 들고 있으면 패널이 "지금 기본값이
+// 얼마인지"를 알 수 없어서, 한 곳에 모아두고 스킨과 패널이 같은 값을 본다.
+export const KIMCHI_SKIN_SECTION_GAP: Record<'basic' | 'modern' | 'bold' | 'sales', number> = {
+  basic: 120,
+  modern: 130,
+  bold: 96,
+  sales: 0,
+};
+// 섹션 간격 슬라이더가 움직일 수 있는 범위(860px 캔버스 기준 px).
+export const SECTION_GAP_MAX = 320;

@@ -1,6 +1,6 @@
 import React, { useMemo } from 'react';
 import EditableText from './EditableText';
-import { PADDING_X, SPACE } from '../utils/detailPageLayout';
+import { PADDING_X, SPACE, KIMCHI_SKIN_SECTION_GAP } from '../utils/detailPageLayout';
 import { KimchiSection, kimchiSectionHasText } from '../utils/kimchiDetailTemplate';
 import { KimchiPhoto, KimchiTypeScale, SummaryCardBody, kimchiFontSizes, kimchiTint, makePhotoRun } from './KimchiDetailSections';
 
@@ -33,7 +33,6 @@ const ON_DARK = '#ffffff';
 const CARD_RADIUS = 30;
 const CARD_MARGIN_X = 40;
 const CARD_PADDING = 40;
-const BOLD_SECTION_GAP = 96;
 const SOFT_TINT = '#f4f1ec';
 const CARD_WHITE = '#ffffff';
 const CARD_BORDER = '#e6e1d9';
@@ -365,7 +364,7 @@ export const KimchiPreviewBold: React.FC<BoldPreviewProps> = ({
                   <Card>
                     <div style={{ display: 'flex', gap: 26, alignItems: 'flex-start', flexDirection: flip ? 'row-reverse' : 'row' }}>
                       {thumb && (
-                        <img src={thumb.dataUrl} alt="" style={{ width: 160, height: 160, objectFit: 'cover', borderRadius: 20, flexShrink: 0, display: 'block' }} />
+                        <img data-photo-id={thumb.id} src={thumb.dataUrl} alt="" style={{ width: 160, height: 160, objectFit: 'cover', borderRadius: 20, flexShrink: 0, display: 'block' }} />
                       )}
                       <div style={{ flex: 1, minWidth: 0 }}>
                         <div style={{ marginBottom: SPACE.sm }}>
@@ -480,7 +479,7 @@ export const KimchiPreviewBold: React.FC<BoldPreviewProps> = ({
               left={
                 logo ? (
                   <div style={{ width: SPLIT_LEFT_WIDTH, height: SPLIT_LEFT_WIDTH, borderRadius: '50%', background: CARD_WHITE, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                    <img src={logo.dataUrl} alt="" style={{ width: 140, height: 'auto', display: 'block' }} />
+                    <img data-photo-id={logo.id} src={logo.dataUrl} alt="" style={{ width: 140, height: 'auto', display: 'block' }} />
                   </div>
                 ) : null
               }
@@ -507,7 +506,11 @@ export const KimchiPreviewBold: React.FC<BoldPreviewProps> = ({
       }
 
       // 소구점: 'POINT 01'에서 숫자만 뽑아 왼쪽 칸에 크게 세우고, 문구는 오른쪽 칸에 붙인다.
-      case 'point':
+      case 'point': {
+        // 아직 아무것도 안 채운 소구점은 문구 칸을 전부 감추면 높이가 0이 되어 미리보기에서
+        // 사라진다 — 클릭해서 타이핑할 자리도, 우클릭해서 사진을 넣을 자리도 없어진다. 빈
+        // 섹션일 때는 빈 칸을 그대로 보여준다(저장 이미지에서는 stripEmptySections가 걷어낸다).
+        const blank = !kimchiSectionHasText(section);
         return (
           <>
             <Split
@@ -517,14 +520,14 @@ export const KimchiPreviewBold: React.FC<BoldPreviewProps> = ({
                 ) : null
               }
             >
-              {section.noticeTitle?.trim() && (
+              {(section.noticeTitle?.trim() || blank) && (
                 <div style={{ marginBottom: SPACE.sm }}>
-                  <EditableText value={section.noticeTitle} onChange={v => updateSection(section.id, { noticeTitle: v })}
+                  <EditableText value={section.noticeTitle || ''} onChange={v => updateSection(section.id, { noticeTitle: v })}
                     placeholder="제목" style={{ ...styles.pointTitle, padding: 0 }} />
                 </div>
               )}
-              {section.noticeSubtitle?.trim() && (
-                <EditableText value={section.noticeSubtitle} onChange={v => updateSection(section.id, { noticeSubtitle: v })}
+              {(section.noticeSubtitle?.trim() || blank) && (
+                <EditableText value={section.noticeSubtitle || ''} onChange={v => updateSection(section.id, { noticeSubtitle: v })}
                   placeholder="설명" style={{ ...styles.pointSubtitle, padding: 0 }} />
               )}
             </Split>
@@ -535,6 +538,7 @@ export const KimchiPreviewBold: React.FC<BoldPreviewProps> = ({
             )}
           </>
         );
+      }
 
       // 목록: 세로로 길게 늘어놓지 않고 두 칸씩 나란히 채운다.
       case 'list': {
@@ -649,7 +653,7 @@ export const KimchiPreviewBold: React.FC<BoldPreviewProps> = ({
             key={section.id}
             data-section-id={section.id}
             data-empty-section={isEmpty ? 'true' : undefined}
-            style={{ marginBottom: BOLD_SECTION_GAP }}
+            style={{ marginBottom: section.sectionGap ?? KIMCHI_SKIN_SECTION_GAP.bold }}
           >
             {!photosInBody && section.photoPosition === 'before' && photoRun(section, photos, SPACE.lg)}
             {renderBody(section, photos, index)}

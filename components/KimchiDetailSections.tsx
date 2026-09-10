@@ -1,6 +1,6 @@
 import React, { useMemo } from 'react';
 import EditableText from './EditableText';
-import { PADDING_X, RULE_COLOR, CARD_COLOR, SPACE, SECTION_GAP, DEFAULT_PHOTO_GAP, PHOTO_GAP_MAX } from '../utils/detailPageLayout';
+import { PADDING_X, RULE_COLOR, CARD_COLOR, SPACE, SECTION_GAP, DEFAULT_PHOTO_GAP, PHOTO_GAP_MAX, KIMCHI_SKIN_SECTION_GAP, SECTION_GAP_MAX } from '../utils/detailPageLayout';
 import { KimchiHighlight, KimchiSection, kimchiSectionHasText, sectionBaseLabel } from '../utils/kimchiDetailTemplate';
 
 // 김치 상세페이지 미리보기. 페이지는 "섹션 배열"이고, 섹션 하나가 [문구 + 자기 사진] 한 세트다.
@@ -207,9 +207,9 @@ export const kimchiFontSizes = (scale: KimchiTypeScale) => ({
 });
 
 const TABLE_LABEL_COLUMN = 260;
-// 섹션과 섹션 사이 간격. 공용 SECTION_GAP(기본 템플릿도 쓴다)과 따로 두어, 김치 템플릿만 넉넉하게
+// 섹션과 섹션 사이 기본 간격은 KIMCHI_SKIN_SECTION_GAP(utils/detailPageLayout.ts)에 스킨별로 모여
+// 있다. 공용 SECTION_GAP(기본 템플릿도 쓴다)과 따로 두어, 김치 템플릿만 넉넉하게
 // 띄운다 — 색 띠와 사진이 연달아 붙는 구성이라 좁으면 답답해 보인다.
-const KIMCHI_SECTION_GAP = 120;
 // 인트로에서 큰 제목 덩어리끼리, 그리고 설명과 벌어지는 간격.
 const HERO_BLOCK_GAP = 96;
 // 리뷰 카드: 좌우 여백, 카드 안쪽 여백, 오른쪽 썸네일 한 변.
@@ -578,13 +578,17 @@ export const KimchiPreview: React.FC<KimchiPreviewProps> = ({
 
       case 'point': {
         const accent = section.accentColor || templateAccent;
+        // 아직 아무것도 안 채운 소구점은 문구 칸을 전부 감추면 높이가 0이 되어 미리보기에서
+        // 사라진다 — 클릭해서 타이핑할 자리도, 우클릭해서 사진을 넣을 자리도 없어진다. 빈
+        // 섹션일 때는 빈 칸을 그대로 보여준다(저장 이미지에서는 stripEmptySections가 걷어낸다).
+        const blank = !kimchiSectionHasText(section);
         return (
           <>
-            {section.badge?.trim() && (
+            {(section.badge?.trim() || blank) && (
               <div style={{ display: 'flex', padding: `0 ${PADDING_X}px`, marginBottom: SPACE.md }}>
                 <div style={{ background: accent, borderRadius: 999, padding: POINT_BADGE_PADDING }}>
                   <EditableText
-                    value={section.badge}
+                    value={section.badge || ''}
                     onChange={v => updateSection(section.id, { badge: v })}
                     placeholder="POINT 01"
                     style={styles.pointBadge}
@@ -592,20 +596,20 @@ export const KimchiPreview: React.FC<KimchiPreviewProps> = ({
                 </div>
               </div>
             )}
-            {section.noticeTitle?.trim() && (
+            {(section.noticeTitle?.trim() || blank) && (
               <div style={{ marginBottom: SPACE.sm }}>
                 <EditableText
-                  value={section.noticeTitle}
+                  value={section.noticeTitle || ''}
                   onChange={v => updateSection(section.id, { noticeTitle: v })}
                   placeholder="제목"
                   style={styles.pointTitle}
                 />
               </div>
             )}
-            {section.noticeSubtitle?.trim() && (
+            {(section.noticeSubtitle?.trim() || blank) && (
               <div style={{ marginBottom: SPACE.lg }}>
                 <EditableText
-                  value={section.noticeSubtitle}
+                  value={section.noticeSubtitle || ''}
                   onChange={v => updateSection(section.id, { noticeSubtitle: v })}
                   placeholder="설명"
                   style={styles.pointSubtitle}
@@ -628,6 +632,7 @@ export const KimchiPreview: React.FC<KimchiPreviewProps> = ({
             <div style={{ display: 'flex', justifyContent: 'center', marginBottom: SPACE.lg }}>
               {logo ? (
                 <img
+                  data-photo-id={logo.id}
                   src={logo.dataUrl}
                   alt=""
                   style={{ width: section.logoWidth || CERT_LOGO_WIDTH, height: 'auto', display: 'block' }}
@@ -877,6 +882,7 @@ export const KimchiPreview: React.FC<KimchiPreviewProps> = ({
                     </div>
                     {thumb ? (
                       <img
+                        data-photo-id={thumb.id}
                         src={thumb.dataUrl}
                         alt=""
                         style={{
@@ -1035,7 +1041,7 @@ export const KimchiPreview: React.FC<KimchiPreviewProps> = ({
             data-section-id={section.id}
             data-empty-section={isEmpty ? 'true' : undefined}
             style={{
-              marginBottom: KIMCHI_SECTION_GAP,
+              marginBottom: section.sectionGap ?? KIMCHI_SKIN_SECTION_GAP.basic,
               background: section.backgroundColor || undefined,
               // 색을 칠한 섹션은 글자가 색 가장자리에 딱 붙지 않도록 위아래 여백을 준다.
               // 인트로는 자기 안쪽에서 이미 여백을 잡고 있어서 제외한다.
@@ -1075,6 +1081,12 @@ interface KimchiSectionPanelProps {
   onAddFiles: (sectionId: string, files: File[]) => void;
   onRemovePhoto: (photoId: string) => void;
   onPhotoClick: (photo: KimchiPhoto) => void;
+  // 지금 고른 스킨이 섹션 사이에 쓰는 기본 간격. 섹션이 자기 sectionGap을 안 가졌을 때
+  // 슬라이더에 이 값이 비쳐 보인다.
+  defaultSectionGap: number;
+  // 슬라이더 옆 "전체" 버튼 — 지금 값을 모든 섹션에 한 번에 먹인다. 섹션이 열 개 넘는
+  // 페이지에서 하나씩 끌지 않아도 되게.
+  setAllSectionGaps: (gap: number) => void;
 }
 
 const KIND_BADGE: Record<KimchiSection['kind'], string> = {
@@ -1085,6 +1097,7 @@ const KIND_BADGE: Record<KimchiSection['kind'], string> = {
 export const KimchiSectionPanel: React.FC<KimchiSectionPanelProps> = ({
   sections, photosBySection, updateSection, moveSection, removeSection, addSection,
   duplicateSection, templateAccent, movePhoto, onAddFiles, onRemovePhoto, onPhotoClick,
+  defaultSectionGap, setAllSectionGaps,
 }) => {
   // 끌고 있는 사진 id와, 지금 올라가 있는 드롭 지점. 드롭 지점은 사진 위(그 앞에 끼워 넣기)이거나
   // 섹션의 빈 자리(맨 뒤로 보내기)다.
@@ -1370,6 +1383,43 @@ export const KimchiSectionPanel: React.FC<KimchiSectionPanelProps> = ({
                 {section.photoGap !== undefined && (
                   <button
                     onClick={() => updateSection(section.id, { photoGap: undefined })}
+                    title="이 섹션만 지정한 간격을 지우고 디자인 기본 간격을 따릅니다"
+                    className="px-1.5 h-6 flex-shrink-0 rounded bg-slate-700 text-slate-400 hover:bg-slate-600 transition-colors text-[11px]"
+                  >
+                    기본
+                  </button>
+                )}
+              </div>
+            )}
+
+            {/* 섹션 간격 — 이 섹션과 "다음" 섹션 사이에 남길 여백. 마지막 섹션 뒤는 페이지 끝이라
+                조절할 게 없으므로 뺀다. "전체"는 지금 값을 모든 섹션에 한 번에 먹인다. */}
+            {index < sections.length - 1 && (
+              <div className="flex items-center gap-2">
+                <span className="text-[11px] text-slate-400 flex-shrink-0">섹션 간격</span>
+                <input
+                  type="range"
+                  min={0}
+                  max={SECTION_GAP_MAX}
+                  step={4}
+                  value={section.sectionGap ?? defaultSectionGap}
+                  onChange={e => updateSection(section.id, { sectionGap: Number(e.target.value) })}
+                  title="이 섹션과 다음 섹션 사이에 남길 여백 (0이면 딱 붙습니다)"
+                  className="flex-1 min-w-0 accent-emerald-500 cursor-pointer"
+                />
+                <span className="text-[11px] text-slate-300 tabular-nums w-8 text-right flex-shrink-0">
+                  {section.sectionGap ?? defaultSectionGap}
+                </span>
+                <button
+                  onClick={() => setAllSectionGaps(section.sectionGap ?? defaultSectionGap)}
+                  title="이 값을 모든 섹션 사이 간격에 똑같이 적용합니다"
+                  className="px-1.5 h-6 flex-shrink-0 rounded bg-slate-700 text-slate-400 hover:bg-slate-600 transition-colors text-[11px]"
+                >
+                  전체
+                </button>
+                {section.sectionGap !== undefined && (
+                  <button
+                    onClick={() => updateSection(section.id, { sectionGap: undefined })}
                     title="이 섹션만 지정한 간격을 지우고 디자인 기본 간격을 따릅니다"
                     className="px-1.5 h-6 flex-shrink-0 rounded bg-slate-700 text-slate-400 hover:bg-slate-600 transition-colors text-[11px]"
                   >

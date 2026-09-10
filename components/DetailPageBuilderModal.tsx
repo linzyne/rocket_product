@@ -44,6 +44,7 @@ import {
   PRODUCT_INFO_LABEL_COLUMN,
   SPACE,
   SECTION_GAP,
+  KIMCHI_SKIN_SECTION_GAP,
 } from '../utils/detailPageLayout';
 
 declare var html2canvas: any;
@@ -166,6 +167,31 @@ const MAX_SLICE_HEIGHT = 3000;
 // 올려도 앱이 무거워지는데, 여기까지 줄이면 700KB 정도가 되고 눈에 보이는 차이는 없다.
 const MAX_PHOTO_WIDTH = CANVAS_WIDTH * 2;
 const PHOTO_JPEG_QUALITY = 0.85;
+
+// ── 캔버스 크기 한계 ──────────────────────────────────────────────────────────
+// 브라우저가 만들 수 있는 캔버스에는 한 변 길이와 총 픽셀 수 두 가지 한계가 있다. 넘겨도
+// 예외가 나지 않고 픽셀 할당만 조용히 실패하기 때문에, 넘긴 걸 알아챌 방법이 "저장된 이미지가
+// 전부 하얗다"밖에 없다. 실제 한계(크롬 65535 / 사파리는 훨씬 낮다)보다 넉넉히 낮춰 잡는다.
+const MAX_CANVAS_SIDE = 16384;
+const MAX_CANVAS_PIXELS = 128 * 1024 * 1024;
+// 저장 이미지를 찍을 때 쓰는 오버샘플링 배율(글자가 또렷하게 나오도록 2배로 찍는다).
+const CAPTURE_SCALE = 2;
+
+// 가로가 한계를 넘지 않는 선에서 쓸 수 있는 가장 큰 배율. CANVAS_WIDTH(860)에서는 늘 2가 나오고,
+// 혹시 폭을 크게 바꾸더라도 저절로 낮아진다.
+const captureScaleFor = (fullWidth: number): number =>
+  Math.min(CAPTURE_SCALE, Math.max(1, MAX_CANVAS_SIDE / Math.max(1, fullWidth)));
+
+// 한 번에 찍어도 안전한 세로 길이(CSS px). 세로 한계와 총 픽셀 한계 중 빡빡한 쪽을 따르고,
+// 김치 템플릿이 어차피 MAX_SLICE_HEIGHT로 자르므로 그 배수로 떨어뜨려 띠 경계와 자르는 경계가
+// 어긋나지 않게 한다.
+const captureBandHeight = (fullWidth: number, scale: number): number => {
+  const bySide = MAX_CANVAS_SIDE / scale;
+  const byPixels = MAX_CANVAS_PIXELS / Math.max(1, fullWidth * scale * scale);
+  const limit = Math.floor(Math.min(bySide, byPixels));
+  const sliceCss = MAX_SLICE_HEIGHT / scale;
+  return Math.max(sliceCss, Math.floor(limit / sliceCss) * sliceCss);
+};
 
 // 헤더 "상페작업"으로 여는 상세페이지는 상품 목록에 행이 없어서, 작업 내용을 되돌려 넣을 곳도
 // 없다. 그래서 만들다 만 상태를 이 컴퓨터(IndexedDB)에 통째로 넣어두고 다시 열 때 되살린다.
@@ -303,7 +329,7 @@ const DetailPageBuilderModal: React.FC<DetailPageBuilderModalProps> = ({ isOpen,
   // 미리보기에서 우클릭한 자리. 그 섹션의 어느 사진 앞에 넣을지까지 함께 들고 있다가,
   // 파일을 고르거나 붙여넣으면 정확히 그 자리에 사진을 끼워 넣는다.
   const [photoInsertTarget, setPhotoInsertTarget] = useState<
-    { sectionId: string; beforePhotoId?: string; left: number; top: number } | null
+    { sectionId?: string; beforePhotoId?: string; left: number; top: number } | null
   >(null);
   // 미리보기에서 글자를 드래그로 고르면 뜨는 서식 툴바(색/크기/굵게). 고른 범위에만 적용된다.
   // savedRangeRef: 색상 선택기처럼 포커스를 가져가는 UI를 거치면 선택이 풀리므로, 툴바가 뜬
@@ -1329,8 +1355,13 @@ const DetailPageBuilderModal: React.FC<DetailPageBuilderModalProps> = ({ isOpen,
 
   // Shared by both the download/save path and the erase path: reset zoom to 100% (html2canvas can
   // pick up the CSS zoom transform otherwise), wait for the font + layout to settle, then flatten the
-  // whole live preview (photos + all text) into one canvas via html2canvas.
-  const captureCanvas = async (): Promise<HTMLCanvasElement | null> => {
+  // live preview (photos + all text) into canvases via html2canvas.
+  //
+  // 한 장으로 다 담지 않고 "띠"로 나눠 찍는 이유: 상세페이지가 길어지면 (사진 스무 장이 넘으면
+  // 금방) 2배로 찍은 캔버스의 세로가 브라우저 한계를 넘는다. 한계를 넘으면 예외가 나는 게 아니라
+  // 픽셀 할당만 조용히 실패해서 **전부 흰 이미지**가 저장된다. 그래서 처음부터 안전한 높이로
+  // 잘라 여러 번 찍는다. 짧은 페이지는 예전처럼 딱 한 번만 찍는다.
+  const captureBands = async (): Promise<HTMLCanvasElement[] | null> => {
     if (!previewRef.current || !hasRenderableContent) return null;
     const previousZoom = zoom;
     try {
@@ -1351,24 +1382,37 @@ const DetailPageBuilderModal: React.FC<DetailPageBuilderModalProps> = ({ isOpen,
       // only captures the currently-scrolled-into-view slice instead of the full page.
       const fullWidth = previewRef.current.scrollWidth;
       const fullHeight = previewRef.current.scrollHeight;
-      return await withTimeout(
-        html2canvas(previewRef.current, {
-          backgroundColor: '#ffffff',
-          scale: 2,
-          useCORS: true,
-          width: fullWidth,
-          height: fullHeight,
-          windowWidth: fullWidth,
-          windowHeight: fullHeight,
-          ignoreElements: (el: Element) => el.hasAttribute('data-html2canvas-ignore'),
-          onclone: (clonedDoc: Document) => {
-            stripClonedScripts(clonedDoc);
-            stripEmptySections(clonedDoc);
-          },
-        }),
-        20000,
-        '상세페이지 캡처'
-      );
+      const scale = captureScaleFor(fullWidth);
+      const bandHeight = captureBandHeight(fullWidth, scale);
+
+      // html2canvas의 x/y는 "찍을 요소의 왼쪽 위"에서 잰 값이라, y만 옮기면 그 아래 띠가 나온다.
+      // width/height를 준 만큼만 캔버스로 나오므로 띠 하나가 곧 캔버스 하나다.
+      const bands: HTMLCanvasElement[] = [];
+      for (let top = 0; top < fullHeight; top += bandHeight) {
+        const height = Math.min(bandHeight, fullHeight - top);
+        const canvas: HTMLCanvasElement = await withTimeout(
+          html2canvas(previewRef.current, {
+            backgroundColor: '#ffffff',
+            scale,
+            useCORS: true,
+            x: 0,
+            y: top,
+            width: fullWidth,
+            height,
+            windowWidth: fullWidth,
+            windowHeight: fullHeight,
+            ignoreElements: (el: Element) => el.hasAttribute('data-html2canvas-ignore'),
+            onclone: (clonedDoc: Document) => {
+              stripClonedScripts(clonedDoc);
+              stripEmptySections(clonedDoc);
+            },
+          }),
+          20000,
+          '상세페이지 캡처'
+        );
+        bands.push(canvas);
+      }
+      return bands;
     } finally {
       if (previousZoom !== 1) setZoom(previousZoom);
     }
@@ -1645,25 +1689,43 @@ const DetailPageBuilderModal: React.FC<DetailPageBuilderModalProps> = ({ isOpen,
     setFormatBar(null);
   };
 
-  // 미리보기 우클릭: 커서가 놓인 섹션과, 그 섹션 안에서 몇 번째 자리인지 알아낸다.
-  // 사진 위쪽 절반이면 그 사진 앞에, 아래쪽 절반이면 다음 사진 앞에(=바로 뒤에) 넣는다.
+  // 우클릭한 높이가 어느 섹션인지 찾는다. 커서가 섹션 안이면 그 섹션이고, 섹션과 섹션 사이의
+  // 빈 여백이면 그 아래에 오는 섹션이다(맨 아래 여백이면 마지막 섹션). 여백에서 우클릭했다고
+  // 메뉴가 안 뜨면 "여기 넣고 싶다"는 자리가 오히려 많이 빠진다.
+  const sectionIdAtPoint = (target: HTMLElement, clientY: number): string | undefined => {
+    const inside = target.closest<HTMLElement>('[data-section-id]')?.dataset.sectionId;
+    if (inside) return inside;
+    const els: HTMLElement[] = Array.from(previewRef.current?.querySelectorAll<HTMLElement>('[data-section-id]') ?? []);
+    const below = els.find(el => clientY <= el.getBoundingClientRect().bottom);
+    return (below ?? els[els.length - 1])?.dataset.sectionId;
+  };
+
+  // 미리보기 우클릭: 커서가 놓인 자리를 "몇 번째 사진 앞"으로 옮긴다. 사진 위쪽 절반이면 그 사진
+  // 앞에, 아래쪽 절반이면 그다음 사진 앞에(=바로 뒤에) 넣는다. 사진이 아니라 문구나 빈 여백을
+  // 눌렀어도, 커서보다 아래에 있는 첫 사진 앞에 끼워 넣어 "지금 보고 있는 자리"에 들어가게 한다.
+  //
+  // 김치 템플릿은 사진을 섹션별로 나눠 담으므로 섹션 id까지 함께 정하고, 기본 템플릿은 사진
+  // 순서 하나뿐이라 섹션 없이 순서만 정한다.
   const handlePreviewContextMenu = (e: React.MouseEvent) => {
-    if (!isKimchi || brushMode || drawMode || textMode) return;
+    if (brushMode || drawMode || textMode) return;
     const target = e.target as HTMLElement;
-    const sectionEl = target.closest<HTMLElement>('[data-section-id]');
-    const sectionId = sectionEl?.dataset.sectionId;
-    if (!sectionId) return;
+    const sectionId = isKimchi ? sectionIdAtPoint(target, e.clientY) : undefined;
+    if (isKimchi && !sectionId) return;
     e.preventDefault();
 
-    const photoEl = target.closest<HTMLElement>('[data-photo-id]');
-    let beforePhotoId: string | undefined;
-    if (photoEl?.dataset.photoId) {
-      const hoveredId = photoEl.dataset.photoId;
-      const rect = photoEl.getBoundingClientRect();
-      const inTopHalf = e.clientY < rect.top + rect.height / 2;
-      const sectionPhotos = photosBySection[sectionId] || [];
-      const index = sectionPhotos.findIndex(p => p.id === hoveredId);
-      beforePhotoId = inTopHalf ? hoveredId : sectionPhotos[index + 1]?.id;
+    // 순서를 정할 때 보는 사진 목록. 김치는 그 섹션 것만, 기본 템플릿은 미리보기 전체.
+    const scope = (sectionId && previewRef.current?.querySelector<HTMLElement>(`[data-section-id="${sectionId}"]`))
+      || previewRef.current;
+    const photoEls: HTMLElement[] = Array.from(scope?.querySelectorAll<HTMLElement>('[data-photo-id]') ?? []);
+    const beforeEl = photoEls.find(el => {
+      const rect = el.getBoundingClientRect();
+      return e.clientY < rect.top + rect.height / 2;
+    });
+    let beforePhotoId = beforeEl?.dataset.photoId;
+    // 인증 섹션은 올린 사진 중 첫 장만 가운데 로고로 쓴다. 뒤에 붙이면 어디에도 안 보이므로
+    // 늘 맨 앞에 넣어, 우클릭해서 고른 사진이 곧바로 로고가 되게 한다.
+    if (sectionId && kimchiSections.find(sec => sec.id === sectionId)?.kind === 'cert') {
+      beforePhotoId = photosBySection[sectionId]?.[0]?.id;
     }
     setPhotoInsertTarget({ sectionId, beforePhotoId, left: e.clientX, top: e.clientY });
   };
@@ -2022,19 +2084,80 @@ const DetailPageBuilderModal: React.FC<DetailPageBuilderModalProps> = ({ isOpen,
     }
   };
 
+  // 캡처가 통째로 비었는지(= 전부 흰색) 본다. 캔버스를 작게 줄여 찍어보고 흰색이 아닌 화소가
+  // 하나라도 있으면 내용이 있는 것으로 친다. 흰 이미지가 조용히 저장돼 나가는 일만은 막는다.
+  const isCanvasBlank = (canvas: HTMLCanvasElement): boolean => {
+    const probe = document.createElement('canvas');
+    probe.width = 64;
+    probe.height = 64;
+    const ctx = probe.getContext('2d', { willReadFrequently: true });
+    if (!ctx) return false;
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, probe.width, probe.height);
+    try {
+      ctx.drawImage(canvas, 0, 0, probe.width, probe.height);
+      const { data } = ctx.getImageData(0, 0, probe.width, probe.height);
+      for (let i = 0; i < data.length; i += 4) {
+        if (data[i] < 250 || data[i + 1] < 250 || data[i + 2] < 250) return false;
+      }
+      return true;
+    } catch {
+      // 화소를 읽지 못했으면(외부 이미지로 오염된 캔버스 등) 비었다고 단정하지 않는다.
+      return false;
+    }
+  };
+
+  // 띠 여러 장을 한 캔버스로 이어 붙인다. 상품등록에서 여는 상세페이지는 제안서·통합다운이
+  // "상세이미지 한 장"을 전제로 돌아가서 자를 수가 없다. 이어 붙인 크기가 한계를 넘으면 넘지
+  // 않는 선까지 배율을 낮춘다 — 조금 흐려질지언정 흰 이미지가 나가지는 않는다.
+  const mergeBands = (bands: HTMLCanvasElement[]): HTMLCanvasElement => {
+    if (bands.length === 1) return bands[0];
+    const width = bands[0].width;
+    const height = bands.reduce((sum, b) => sum + b.height, 0);
+    const fit = Math.min(
+      1,
+      MAX_CANVAS_SIDE / height,
+      MAX_CANVAS_SIDE / width,
+      Math.sqrt(MAX_CANVAS_PIXELS / (width * height)),
+    );
+    const target = document.createElement('canvas');
+    target.width = Math.max(1, Math.round(width * fit));
+    target.height = Math.max(1, Math.round(height * fit));
+    const ctx = target.getContext('2d');
+    if (ctx) {
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(0, 0, target.width, target.height);
+      ctx.imageSmoothingEnabled = true;
+      ctx.imageSmoothingQuality = 'high';
+      // 위치를 반올림하면 띠 사이에 1px 흰 줄이 생기므로 소수점 그대로 그린다.
+      let top = 0;
+      for (const band of bands) {
+        ctx.drawImage(band, 0, top * fit, target.width, band.height * fit);
+        top += band.height;
+      }
+    }
+    return target;
+  };
+
   // 완성된 페이지를 저장용 이미지로 만든다. 페이지가 MAX_SLICE_HEIGHT보다 길면 여러 장으로
   // 잘려 나오고, 짧으면 한 장짜리 배열이 나온다.
   const captureSlices = async (): Promise<string[] | null> => {
     setIsExporting(true);
     try {
-      const canvas = await captureCanvas();
-      if (!canvas) return null;
-      // 1x 아래로는 내리지 않는다 — 화면에 보이는 해상도보다 흐려지는 일은 없게.
-      const minScale = CANVAS_WIDTH / canvas.width;
+      const bands = await captureBands();
+      if (!bands || bands.length === 0) return null;
+      if (bands.every(isCanvasBlank)) {
+        alert('상세페이지를 찍었는데 내용이 비어 있습니다. 사진이 다 뜬 뒤에 다시 저장해주세요.');
+        return null;
+      }
       // 자르는 건 헤더 "상페작업"으로 여는 독립 상세페이지(김치)뿐이다. 상품등록에서 여는 쪽은
       // 제안서·통합다운이 상세이미지 한 장을 전제로 돌아가므로 예전처럼 한 장으로 낸다.
-      const sliceHeight = isKimchi ? MAX_SLICE_HEIGHT : canvas.height;
-      const dataUrls = encodeSlices(sliceCanvasVertically(canvas, sliceHeight), minScale);
+      const slices = isKimchi
+        ? bands.flatMap(band => sliceCanvasVertically(band, MAX_SLICE_HEIGHT))
+        : [mergeBands(bands)];
+      // 1x 아래로는 내리지 않는다 — 화면에 보이는 해상도보다 흐려지는 일은 없게.
+      const minScale = Math.min(1, CANVAS_WIDTH / slices[0].width);
+      const dataUrls = encodeSlices(slices, minScale);
 
       const tooBig = dataUrls.filter(url => dataUrlByteSize(url) > MAX_DETAIL_IMAGE_BYTES).length;
       if (tooBig > 0) {
@@ -2837,6 +2960,8 @@ const DetailPageBuilderModal: React.FC<DetailPageBuilderModalProps> = ({ isOpen,
                 onAddFiles={(sectionId, files) => addPhotoFiles(files, sectionId)}
                 onRemovePhoto={removePhoto}
                 onPhotoClick={photo => startCropQueue([photo])}
+                defaultSectionGap={KIMCHI_SKIN_SECTION_GAP[kimchiSkin]}
+                setAllSectionGaps={gap => setKimchiSections(prev => prev.map(sec => ({ ...sec, sectionGap: gap })))}
               />
               </>
             ) : (
@@ -3243,7 +3368,11 @@ const DetailPageBuilderModal: React.FC<DetailPageBuilderModalProps> = ({ isOpen,
             data-html2canvas-ignore="true"
             onClick={e => e.stopPropagation()}
             className="fixed z-[89] rounded-lg bg-slate-900 border border-slate-600 shadow-xl p-2 space-y-1.5"
-            style={{ left: Math.min(photoInsertTarget.left, window.innerWidth - 220), top: photoInsertTarget.top }}
+            style={{
+              left: Math.min(photoInsertTarget.left, window.innerWidth - 220),
+              // 미리보기 아래쪽에서 우클릭하면 메뉴가 화면 밖으로 밀려나므로 위로 끌어올린다.
+              top: Math.max(8, Math.min(photoInsertTarget.top, window.innerHeight - 130)),
+            }}
           >
             <label
               tabIndex={0}

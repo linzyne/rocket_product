@@ -120,6 +120,9 @@ export interface KimchiSection {
   // 비워두면 스킨이 원래 쓰던 간격을 그대로 쓴다 — 그래서 예전에 만든 상세페이지 모양은
   // 바뀌지 않는다. 사이드 패널의 "사진 간격" 슬라이더로 조절한다.
   photoGap?: number;
+  // 이 섹션과 다음 섹션 사이에 남길 간격(860px 캔버스 기준 px). 0이면 다음 섹션이 딱 붙는다.
+  // 비워두면 스킨이 원래 쓰던 간격(KIMCHI_SKIN_SECTION_GAP)을 그대로 쓴다.
+  sectionGap?: number;
   body?: string;                     // text
   align?: KimchiAlign;               // text
   number?: string;                   // text — 왼쪽 큰 번호 (예: '01')

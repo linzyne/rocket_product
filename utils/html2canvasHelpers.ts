@@ -19,6 +19,13 @@ export const withTimeout = <T,>(promise: Promise<T>, ms: number, label: string):
 // 미리보기에서는 아직 안 채운 섹션도 자리를 보여줘야 클릭해서 타이핑할 수 있다. 하지만 저장
 // 이미지에는 그 빈 자리가 들어가면 안 되므로, 캡처용 사본에서만 통째로 걷어낸다
 // (KimchiDetailSections가 data-empty-section 표시를 달아둔다).
+//
+// 단, 섹션이 하나도 남지 않게 되는 경우에는 걷어내지 않는다 — 그러면 캡처가 통째로 백지가 되어
+// 흰 이미지가 저장돼 나간다. 아직 아무것도 안 채운 페이지라면 채운 그대로(=빈 자리 표시까지)
+// 나오는 편이 "왜 흰색이지" 하는 것보다 낫다.
 export const stripEmptySections = (clonedDoc: Document) => {
-  clonedDoc.querySelectorAll('[data-empty-section="true"]').forEach(el => el.remove());
+  const all = clonedDoc.querySelectorAll('[data-section-id]');
+  const empty = clonedDoc.querySelectorAll('[data-empty-section="true"]');
+  if (all.length > 0 && empty.length >= all.length) return;
+  empty.forEach(el => el.remove());
 };

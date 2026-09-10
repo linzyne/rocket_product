@@ -2,7 +2,7 @@ import React, { useMemo } from 'react';
 import EditableText from './EditableText';
 import { PADDING_X, SPACE, SECTION_GAP } from '../utils/detailPageLayout';
 import { KimchiSection, kimchiSectionHasText } from '../utils/kimchiDetailTemplate';
-import { KimchiPhoto, KimchiTypeScale, kimchiFontSizes, makePhotoRun } from './KimchiDetailSections';
+import { KimchiPhoto, KimchiTypeScale, SummaryCardBody, kimchiFontSizes, makePhotoRun } from './KimchiDetailSections';
 
 // 두 번째 스킨. 섹션 구조·문구 필드·붙여넣기 라벨은 기본 스킨과 완전히 같고, 그리는 방식만
 // 다르다 — 같은 문구를 붙여넣은 채로 드롭다운만 바꿔서 두 디자인을 비교할 수 있다.
@@ -29,6 +29,11 @@ const RULE = '#111111';
 const MUTED = 0.55;
 // 왼쪽 정렬 스킨이라 섹션마다 위쪽에 얇은 선을 긋고 그 아래 작은 라벨을 붙인다.
 const MODERN_SECTION_GAP = 130;
+// 고지 섹션에서 강조 문구를 제목 옆에 나란히 세울 수 있는 글자 수. 이 스킨은 강조 문구를
+// 제목과 좌우로 마주 놓는데, 그 자리에 남는 폭은 캔버스의 절반도 안 된다. 배송 마감시각
+// ("10:00")은 들어가지만 고객센터 번호("1588-0000")처럼 길어지면 캔버스를 뚫고 나간다 —
+// 아주큰 단계라 한 글자가 넓기 때문이다. 그래서 짧을 때만 옆에 세우고, 길면 아랫줄로 내린다.
+const MODERN_NOTICE_INLINE_MAX = 6;
 
 // 섹션 머리: 굵은 선 하나 + 작은 라벨 + 제목. 색 띠 대신 이 조합으로 구간을 나눈다.
 // onLabelChange/onTitleChange를 주면 그 줄을 미리보기에서 바로 고칠 수 있다 — 하드코딩한 라벨
@@ -116,6 +121,9 @@ export const KimchiPreviewModern: React.FC<ModernPreviewProps> = ({
       certBody: { ...base(size(F.certBody)), ...left, fontWeight: 400, lineHeight: 1.65, opacity: 0.8 } as React.CSSProperties,
       certBig: { ...base(size(F.certBig)), ...left, fontWeight: 700, lineHeight: 1.25 } as React.CSSProperties,
 
+      summaryIcon: { ...base(size(F.summaryIcon)), lineHeight: 1, textAlign: 'center' } as React.CSSProperties,
+      summaryTitle: { ...base(size(F.summaryTitle)), ...left, fontWeight: 700, lineHeight: 1.3 } as React.CSSProperties,
+      summaryDesc: { ...base(size(F.summaryDesc)), ...left, fontWeight: 400, lineHeight: 1.6, opacity: MUTED } as React.CSSProperties,
       pointBadge: { ...base(size(F.pointBadge)), fontWeight: 700, letterSpacing: '0.16em' } as React.CSSProperties,
       pointTitle: { ...base(size(F.pointTitle)), ...padded, ...left, fontWeight: 700, lineHeight: 1.25, letterSpacing: '-0.01em' } as React.CSSProperties,
       pointSubtitle: { ...base(size(F.pointSubtitle)), ...padded, ...left, fontWeight: 400, lineHeight: 1.55, opacity: 0.8 } as React.CSSProperties,
@@ -219,11 +227,22 @@ export const KimchiPreviewModern: React.FC<ModernPreviewProps> = ({
         );
 
       // 고지: 큰 숫자를 가운데 박는 대신 제목과 강조 문구를 좌우로 마주 놓고, 안내는 얇은 테두리 상자.
-      case 'notice':
+      case 'notice': {
+        const bigText = section.bigText?.trim() || '';
+        // 옆에 세울지 아랫줄로 내릴지 — MODERN_NOTICE_INLINE_MAX 주석 참고.
+        const bigInline = !!bigText && bigText.length <= MODERN_NOTICE_INLINE_MAX && !bigText.includes('\n');
+        const bigEdit = (
+          <EditableText
+            value={section.bigText || ''}
+            onChange={v => updateSection(section.id, { bigText: v })}
+            placeholder="강조 문구"
+            style={{ ...styles.noticeBig, color: accent }}
+          />
+        );
         return (
           <>
             <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: 24, padding: `0 ${PADDING_X}px`, marginBottom: SPACE.md }}>
-              <div style={{ minWidth: 0 }}>
+              <div style={{ flex: 1, minWidth: 0 }}>
                 {section.icon?.trim() && (
                   <div style={{ marginBottom: SPACE.sm }}><LineMark glyph="→" /></div>
                 )}
@@ -244,17 +263,12 @@ export const KimchiPreviewModern: React.FC<ModernPreviewProps> = ({
                   />
                 )}
               </div>
-              {section.bigText?.trim() && (
-                <div style={{ flexShrink: 0 }}>
-                  <EditableText
-                    value={section.bigText}
-                    onChange={v => updateSection(section.id, { bigText: v })}
-                    placeholder="강조 문구"
-                    style={{ ...styles.noticeBig, color: accent }}
-                  />
-                </div>
-              )}
+              {bigInline && <div style={{ flexShrink: 0 }}>{bigEdit}</div>}
             </div>
+            {/* 긴 강조 문구는 전체 폭을 혼자 쓴다 — 제목 옆 좁은 칸에서는 잘려 나간다. */}
+            {bigText && !bigInline && (
+              <div style={{ padding: `0 ${PADDING_X}px`, marginBottom: SPACE.md }}>{bigEdit}</div>
+            )}
             {(section.cards || []).map((card, idx) =>
               card.trim() ? (
                 <div
@@ -281,6 +295,7 @@ export const KimchiPreviewModern: React.FC<ModernPreviewProps> = ({
             )}
           </>
         );
+      }
 
       // 리뷰: 색으로 채운 카드 대신 흰 카드에 얇은 테두리, 사진은 원형으로 작게.
       case 'review': {
@@ -352,6 +367,47 @@ export const KimchiPreviewModern: React.FC<ModernPreviewProps> = ({
                     </div>
                   </div>
                 </div>
+              );
+            })}
+          </>
+        );
+      }
+
+      // 예고: 상자를 두르지 않고 얇은 선으로만 칸을 나눈다. 아이콘도 테두리 원 안에 넣어
+      // 이 스킨의 선화 어법(LineMark)에 맞춘다. 자세한 설명은 뒤 소구점이 맡으므로 여기선 한 줄.
+      case 'summary': {
+        const highlights = section.highlights || [];
+        const updateHighlight = (idx: number, patch: Partial<{ icon: string; title: string; desc: string }>) =>
+          updateSection(section.id, { highlights: highlights.map((h, i) => (i === idx ? { ...h, ...patch } : h)) });
+        return (
+          <>
+            <ModernSectionHead
+              label={section.caption}
+              title={section.title}
+              labelStyle={styles.sectionCaption}
+              titleStyle={styles.sectionHeading}
+              onLabelChange={v => updateSection(section.id, { caption: v })}
+              onTitleChange={v => updateSection(section.id, { title: v })}
+            />
+            {highlights.map((highlight, idx) => {
+              // 빈 칸도 그린다(눌러서 채워야 하니까). 저장 이미지에서만 뺀다 — 기본 스킨 주석 참고.
+              const blank = !highlight.icon.trim() && !highlight.title.trim() && !highlight.desc.trim();
+              const isLast = idx === highlights.length - 1;
+              return (
+                <React.Fragment key={idx}>
+                  <div data-html2canvas-ignore={blank ? 'true' : undefined} style={{ padding: `0 ${PADDING_X}px`, marginBottom: SPACE.md }}>
+                    <SummaryCardBody
+                      highlight={highlight}
+                      index={idx}
+                      onChange={patch => updateHighlight(idx, patch)}
+                      titleStyle={styles.summaryTitle}
+                      descStyle={styles.summaryDesc}
+                      iconStyle={styles.summaryIcon}
+                      iconFrame={{ width: 108, height: 108, borderRadius: '50%', border: `2px solid ${accent}` }}
+                    />
+                  </div>
+                  {!isLast && !blank && hairline(SPACE.md)}
+                </React.Fragment>
               );
             })}
           </>

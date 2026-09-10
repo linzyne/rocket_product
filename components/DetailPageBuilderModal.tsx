@@ -27,6 +27,7 @@ import { KimchiPreviewSales } from './KimchiDetailSectionsSales';
 import {
   KimchiSection,
   createDefaultKimchiSections,
+  ensureKimchiSummarySection,
   moveKimchiSection,
   removeKimchiSection,
   duplicateKimchiSection,
@@ -497,7 +498,7 @@ const DetailPageBuilderModal: React.FC<DetailPageBuilderModalProps> = ({ isOpen,
         const d = saved.data;
         setPhotos(d.photos ?? []);
         setPhotoSectionMap(d.photoSectionMap ?? {});
-        setKimchiSections(d.kimchiSections ?? createDefaultKimchiSections());
+        setKimchiSections(d.kimchiSections ? ensureKimchiSummarySection(d.kimchiSections) : createDefaultKimchiSections());
         setKimchiPastedText(d.kimchiPastedText ?? '');
         setTextBoxes(d.textBoxes ?? []);
         setDrawObjects(d.drawObjects ?? []);
@@ -575,7 +576,7 @@ const DetailPageBuilderModal: React.FC<DetailPageBuilderModalProps> = ({ isOpen,
       setPastedText(draft?.pastedText ?? product?.detailCopyText ?? '');
       setDrawObjects(draft?.drawObjects ?? []);
       setTextBoxes(draft?.textBoxes ?? []);
-      setKimchiSections(draft?.kimchiSections ?? createDefaultKimchiSections());
+      setKimchiSections(draft?.kimchiSections ? ensureKimchiSummarySection(draft.kimchiSections) : createDefaultKimchiSections());
       setPhotoSectionMap(draft?.photoSectionMap ?? {});
       setKimchiPastedText(draft?.kimchiPastedText ?? '');
     }

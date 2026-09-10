@@ -1,7 +1,7 @@
 import React, { useMemo } from 'react';
 import EditableText from './EditableText';
 import { PADDING_X, RULE_COLOR, CARD_COLOR, SPACE, SECTION_GAP, DEFAULT_PHOTO_GAP, PHOTO_GAP_MAX } from '../utils/detailPageLayout';
-import { KimchiSection, kimchiSectionHasText, sectionBaseLabel } from '../utils/kimchiDetailTemplate';
+import { KimchiHighlight, KimchiSection, kimchiSectionHasText, sectionBaseLabel } from '../utils/kimchiDetailTemplate';
 
 // 김치 상세페이지 미리보기. 페이지는 "섹션 배열"이고, 섹션 하나가 [문구 + 자기 사진] 한 세트다.
 // 사진은 섹션 id로 묶여 있어서(photosBySection) 업로드 순서가 배치에 영향을 주지 않는다.
@@ -25,6 +25,73 @@ export const makePhotoRun =
   (section: KimchiSection, photos: KimchiPhoto[], inner: number, trailing: number = inner) =>
     photos.map((photo, idx, arr) =>
       renderPhoto(photo, idx === arr.length - 1 ? trailing : section.photoGap ?? inner));
+
+// 예고 카드에 붙는 번호. 카드 순서에서 자동으로 나오므로 문구로 받지 않는다 — 카드를 지우거나
+// 순서를 바꿨을 때 번호가 어긋나는 일이 없어야 한다. 스무 개를 넘으면 그냥 숫자로 쓴다.
+// #rrggbb → rgba(). 강조색에서 옅은 배경을 만들어 쓴다. 아이콘 원을 강조색으로 꽉 채우면
+// 이모지가 색을 못 바꿔 원 위에서 묻히기 때문에, 원은 옅게 깔고 이모지를 그대로 얹는다.
+export const kimchiTint = (hex: string, alpha: number): string => {
+  const m = /^#?([0-9a-f]{6})$/i.exec(hex.trim());
+  if (!m) return `rgba(0, 0, 0, ${alpha})`;
+  const n = parseInt(m[1], 16);
+  return `rgba(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255}, ${alpha})`;
+};
+
+const SUMMARY_NUMERALS = '①②③④⑤⑥⑦⑧⑨⑩⑪⑫⑬⑭⑮⑯⑰⑱⑲⑳';
+export const summaryNumeral = (index: number) =>
+  index < SUMMARY_NUMERALS.length ? SUMMARY_NUMERALS[index] : `${index + 1}.`;
+
+// 예고 카드 한 칸의 속: 왼쪽에 [번호 + 제목] / [설명], 오른쪽에 아이콘 원. 스킨마다 다른 건
+// 이걸 감싸는 상자(색·테두리·모서리)뿐이라 배치는 여기 한 번만 둔다.
+//
+// KimchiPreview 안에 두면 안 된다 — 렌더마다 새 함수가 되어 React가 다른 컴포넌트로 보고
+// 하위를 다시 마운트하는데, 그러면 카드 안에서 글자를 한 자 칠 때마다 커서가 날아간다.
+export const SummaryCardBody: React.FC<{
+  highlight: KimchiHighlight;
+  index: number;
+  onChange: (patch: Partial<KimchiHighlight>) => void;
+  titleStyle: React.CSSProperties;
+  descStyle: React.CSSProperties;
+  iconStyle: React.CSSProperties;
+  // 아이콘을 담는 틀. 모양(원/둥근 사각)·채움·테두리·크기를 스킨이 통째로 정한다 — 네 스킨이
+  // 같은 원을 쓰면 예고 섹션만 봐서는 어느 디자인인지 구분이 안 된다.
+  iconFrame: React.CSSProperties;
+}> = ({ highlight, index, onChange, titleStyle, descStyle, iconStyle, iconFrame }) => (
+  <div style={{ display: 'flex', alignItems: 'center', gap: SPACE.md }}>
+    <div style={{ flex: 1, minWidth: 0 }}>
+      <div style={{ display: 'flex', alignItems: 'baseline', gap: 12, marginBottom: SPACE.xs }}>
+        <span style={{ ...titleStyle, flexShrink: 0 }}>{summaryNumeral(index)}</span>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <EditableText
+            value={highlight.title}
+            onChange={v => onChange({ title: v })}
+            placeholder="제목"
+            style={titleStyle}
+          />
+        </div>
+      </div>
+      <EditableText
+        value={highlight.desc}
+        onChange={v => onChange({ desc: v })}
+        placeholder="설명"
+        style={descStyle}
+      />
+    </div>
+    <div
+      style={{
+        flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center',
+        boxSizing: 'border-box', ...iconFrame,
+      }}
+    >
+      <EditableText
+        value={highlight.icon}
+        onChange={v => onChange({ icon: v })}
+        placeholder="🌿"
+        style={iconStyle}
+      />
+    </div>
+  </div>
+);
 
 interface KimchiPreviewProps {
   sections: KimchiSection[];
@@ -62,9 +129,9 @@ export const KIMCHI_TYPE_STEPS: {
 }[] = [
   { key: 'display', label: '아주큰', hint: '고지 큰 문구·아이콘, 리뷰 평점, 인트로 강조 제목, 인증 제목', min: 60, max: 200 },
   { key: 'title', label: '대제목', hint: '인트로 큰 제목, 글 섹션 번호, 고지·리뷰 제목, 특별한점 띠 큰줄, 인증 마무리, 소구점 제목', min: 50, max: 170 },
-  { key: 'heading', label: '소제목', hint: '섹션 제목, 글 섹션 제목, 특별한점 띠 작은줄·소제목', min: 36, max: 130 },
+  { key: 'heading', label: '소제목', hint: '섹션 제목, 글 섹션 제목, 특별한점 띠 작은줄·소제목, 예고 카드 제목·아이콘', min: 36, max: 130 },
   { key: 'body', label: '본문', hint: '본문, 인트로·고지·리뷰·소구점 설명, 두 열 라벨, 질문(Q), 인증 본문', min: 26, max: 100 },
-  { key: 'caption', label: '작은글씨', hint: '목록 항목, 두 열 값, 표, 답변(A), 안내 카드, 리뷰 카드, 배지, 영문 캡션', min: 18, max: 80 },
+  { key: 'caption', label: '작은글씨', hint: '목록 항목, 두 열 값, 표, 답변(A), 안내 카드, 리뷰 카드, 배지, 예고 카드 설명, 영문 캡션', min: 18, max: 80 },
 ];
 
 // 역할 → 다섯 단계 중 하나. 한 섹션 안에서 "이게 저것보다 크다"는 관계는 그대로 지킨다
@@ -127,6 +194,12 @@ export const kimchiFontSizes = (scale: KimchiTypeScale) => ({
   certBody: scale.body,
   certBig: scale.title,
 
+  // 예고 — 카드가 여러 칸 반복되므로 제목을 소제목 단계까지만 올린다. 소구점(대제목)보다
+  // 한 단계 작아야 "예고 → 자세히" 순서가 크기로도 읽힌다.
+  summaryIcon: scale.heading,
+  summaryTitle: scale.heading,
+  summaryDesc: scale.caption,
+
   // 소구점 — 섹션이 여러 번 반복되므로 제목에 display를 쓰지 않는다.
   pointBadge: scale.body,
   pointTitle: scale.title,
@@ -164,6 +237,11 @@ const PhotoSlotPlaceholder: React.FC<{ label: string; width: number | string; he
     {label}
   </div>
 );
+// 예고: 아이콘 카드의 좌우 여백·안쪽 여백·모서리, 그리고 왼쪽 아이콘 원의 지름.
+const SUMMARY_CARD_MARGIN_X = 40;
+const SUMMARY_CARD_PADDING = '32px 36px';
+const SUMMARY_CARD_RADIUS = 20;
+const SUMMARY_ICON_SIZE = 130;
 // 소구점: 배지 알약의 안쪽 여백.
 const POINT_BADGE_PADDING = '14px 40px';
 // line-height가 글자 위아래로 만드는 빈 공간. 윗줄(작은 글씨)과 아랫줄(큰 글씨)의 크기가 다르면
@@ -220,6 +298,9 @@ export const KimchiPreview: React.FC<KimchiPreviewProps> = ({
       certTitle: { ...base(size(fontSizes.certTitle)), ...padded, fontWeight: 700, lineHeight: 1.25, textAlign: 'center' } as React.CSSProperties,
       certBody: { ...base(size(fontSizes.certBody)), ...padded, fontWeight: 400, lineHeight: 1.6, textAlign: 'center' } as React.CSSProperties,
       certBig: { ...base(size(fontSizes.certBig)), ...padded, fontWeight: 700, lineHeight: 1.3, textAlign: 'center' } as React.CSSProperties,
+      summaryIcon: { ...base(size(fontSizes.summaryIcon)), lineHeight: 1, textAlign: 'center' } as React.CSSProperties,
+      summaryTitle: { ...base(size(fontSizes.summaryTitle)), fontWeight: 700, lineHeight: 1.3, textAlign: 'left' } as React.CSSProperties,
+      summaryDesc: { ...base(size(fontSizes.summaryDesc)), fontWeight: 400, lineHeight: 1.5, textAlign: 'left', opacity: 0.75 } as React.CSSProperties,
       pointBadge: { ...base(size(fontSizes.pointBadge)), fontWeight: 700, lineHeight: 1.2, color: '#ffffff', letterSpacing: '0.02em' } as React.CSSProperties,
       pointTitle: { ...base(size(fontSizes.pointTitle)), ...padded, fontWeight: 700, lineHeight: 1.25, textAlign: 'left' } as React.CSSProperties,
       pointSubtitle: { ...base(size(fontSizes.pointSubtitle)), ...padded, fontWeight: 400, lineHeight: 1.45, textAlign: 'left' } as React.CSSProperties,
@@ -591,6 +672,47 @@ export const KimchiPreview: React.FC<KimchiPreviewProps> = ({
         );
       }
 
+      // 예고: 특별한점을 아이콘 카드로 한 줄씩만 미리 보여준다. 여기서 길게 쓰지 않는 게 핵심 —
+      // 자세한 내용은 뒤따르는 소구점 섹션이 사진과 함께 맡는다.
+      case 'summary': {
+        const accent = section.accentColor || templateAccent;
+        const highlights = section.highlights || [];
+        const updateHighlight = (idx: number, patch: Partial<KimchiHighlight>) =>
+          updateSection(section.id, { highlights: highlights.map((h, i) => (i === idx ? { ...h, ...patch } : h)) });
+        return (
+          <>
+            {highlights.map((highlight, idx) => {
+              // 아직 안 채운 칸도 미리보기에는 그린다 — 안 그리면 눌러서 채울 자리 자체가 없다.
+              // 대신 표시를 달아 저장 이미지에서는 빠진다(PhotoSlotPlaceholder와 같은 방식).
+              const blank = !highlight.icon.trim() && !highlight.title.trim() && !highlight.desc.trim();
+              return (
+                <div
+                  key={idx}
+                  data-html2canvas-ignore={blank ? 'true' : undefined}
+                  style={{
+                    margin: `0 ${SUMMARY_CARD_MARGIN_X}px ${idx === highlights.length - 1 ? 0 : SPACE.sm}px`,
+                    background: '#ffffff', borderRadius: SUMMARY_CARD_RADIUS, padding: SUMMARY_CARD_PADDING,
+                  }}
+                >
+                  <SummaryCardBody
+                    highlight={highlight}
+                    index={idx}
+                    onChange={patch => updateHighlight(idx, patch)}
+                    titleStyle={{ ...styles.summaryTitle, color: accent }}
+                    descStyle={styles.summaryDesc}
+                    iconStyle={styles.summaryIcon}
+                    iconFrame={{
+                      width: SUMMARY_ICON_SIZE, height: SUMMARY_ICON_SIZE,
+                      borderRadius: '50%', background: accent,
+                    }}
+                  />
+                </div>
+              );
+            })}
+          </>
+        );
+      }
+
       case 'feature': {
         const accent = section.accentColor || templateAccent;
         const hasBand = !!(section.bandSmall?.trim() || section.bandBig?.trim());
@@ -957,7 +1079,7 @@ interface KimchiSectionPanelProps {
 
 const KIND_BADGE: Record<KimchiSection['kind'], string> = {
   hero: '인트로', text: '글', list: '목록', pairs: '두 열', notice: '고지', review: '리뷰',
-  feature: '특별한점', cert: '인증', point: '소구점',
+  feature: '특별한점', cert: '인증', point: '소구점', summary: '예고',
 };
 
 export const KimchiSectionPanel: React.FC<KimchiSectionPanelProps> = ({
@@ -1097,7 +1219,7 @@ export const KimchiSectionPanel: React.FC<KimchiSectionPanelProps> = ({
                   없앰
                 </button>
               )}
-              {['hero', 'review', 'feature', 'point'].includes(section.kind) && (
+              {['hero', 'review', 'feature', 'point', 'summary'].includes(section.kind) && (
                 <label className="flex items-center gap-1.5 text-[11px] text-slate-400">
                   강조색
                   <input
@@ -1116,6 +1238,29 @@ export const KimchiSectionPanel: React.FC<KimchiSectionPanelProps> = ({
                 >
                   템플릿색
                 </button>
+              )}
+              {/* 예고 카드 수 — 특별한점 개수가 상품마다 달라서 여기서 늘리고 줄인다. 줄일 때는
+                  뒤에서부터 빼므로, 남기고 싶은 칸은 앞쪽에 두면 된다. */}
+              {section.kind === 'summary' && (
+                <div className="flex items-center gap-1 text-[11px] text-slate-400">
+                  카드
+                  <button
+                    onClick={() => updateSection(section.id, { highlights: (section.highlights || []).slice(0, -1) })}
+                    disabled={(section.highlights || []).length <= 1}
+                    title="맨 뒤 카드 빼기"
+                    className="w-5 h-5 flex items-center justify-center rounded bg-slate-700 text-slate-200 hover:bg-slate-600 transition-colors disabled:opacity-25 disabled:cursor-not-allowed"
+                  >
+                    −
+                  </button>
+                  <span className="tabular-nums w-3 text-center text-slate-300">{(section.highlights || []).length}</span>
+                  <button
+                    onClick={() => updateSection(section.id, { highlights: [...(section.highlights || []), { icon: '', title: '', desc: '' }] })}
+                    title="카드 더하기"
+                    className="w-5 h-5 flex items-center justify-center rounded bg-slate-700 text-slate-200 hover:bg-slate-600 transition-colors"
+                  >
+                    +
+                  </button>
+                </div>
               )}
               {section.kind === 'feature' && (
                 <label className="flex items-center gap-1.5 text-[11px] text-slate-400">

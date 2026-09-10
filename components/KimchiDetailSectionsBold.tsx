@@ -2,7 +2,7 @@ import React, { useMemo } from 'react';
 import EditableText from './EditableText';
 import { PADDING_X, SPACE } from '../utils/detailPageLayout';
 import { KimchiSection, kimchiSectionHasText } from '../utils/kimchiDetailTemplate';
-import { KimchiPhoto, KimchiTypeScale, kimchiFontSizes, makePhotoRun } from './KimchiDetailSections';
+import { KimchiPhoto, KimchiTypeScale, SummaryCardBody, kimchiFontSizes, kimchiTint, makePhotoRun } from './KimchiDetailSections';
 
 // 세 번째 스킨. 섹션 구조·문구 필드·붙여넣기 라벨은 다른 스킨과 완전히 같고 그리는 방식만 다르다.
 //
@@ -157,6 +157,9 @@ export const KimchiPreviewBold: React.FC<BoldPreviewProps> = ({
       // 'POINT 01'에서 숫자만 뽑아 크게 세우는 자리. 문구는 그대로 두고 보여주는 방식만 바꾼다.
       bigNumeral: { ...base(size(F.reviewIcon)), fontWeight: 700, lineHeight: 0.9, letterSpacing: '-0.04em' } as React.CSSProperties,
       splitLabel: { ...base(size(F.sectionCaption)), fontWeight: 700, letterSpacing: '0.18em' } as React.CSSProperties,
+      summaryIcon: { ...base(size(F.summaryIcon)), lineHeight: 1, textAlign: 'center' } as React.CSSProperties,
+      summaryTitle: { ...base(size(F.summaryTitle)), fontWeight: 700, lineHeight: 1.3 } as React.CSSProperties,
+      summaryDesc: { ...base(size(F.summaryDesc)), fontWeight: 400, lineHeight: 1.55, opacity: 0.75 } as React.CSSProperties,
       pointBadge: { ...base(size(F.pointBadge)), fontWeight: 700, letterSpacing: '0.08em', color: '#ffffff' } as React.CSSProperties,
       pointTitle: { ...base(size(F.pointTitle)), fontWeight: 700, lineHeight: 1.25 } as React.CSSProperties,
       pointSubtitle: { ...base(size(F.pointSubtitle)), fontWeight: 400, lineHeight: 1.55, opacity: 0.8 } as React.CSSProperties,
@@ -374,6 +377,51 @@ export const KimchiPreviewBold: React.FC<BoldPreviewProps> = ({
                         </div>
                       </div>
                     </div>
+                  </Card>
+                </div>
+              );
+            })}
+          </div>
+        );
+      }
+
+      // 예고: 이 스킨의 그릇인 둥근 상자를 한 칸씩 쌓고, 아이콘은 색을 채운 원에 담는다.
+      // 한 줄씩만 예고하는 자리라 상자 안에 제목·설명 두 줄만 넣는다.
+      case 'summary': {
+        const highlights = section.highlights || [];
+        const updateHighlight = (idx: number, patch: Partial<{ icon: string; title: string; desc: string }>) =>
+          updateSection(section.id, { highlights: highlights.map((h, i) => (i === idx ? { ...h, ...patch } : h)) });
+        return (
+          <div style={{ background: SOFT_TINT, padding: `${SPACE.xl}px 0` }}>
+            <SectionHead
+              section={section}
+              updateSection={updateSection}
+              accent={accent}
+              pillStyle={styles.pillLabel}
+              headingStyle={styles.sectionHeading}
+            />
+            {highlights.map((highlight, idx) => {
+              // 빈 칸도 그린다(눌러서 채워야 하니까). 저장 이미지에서만 뺀다 — 기본 스킨 주석 참고.
+              const blank = !highlight.icon.trim() && !highlight.title.trim() && !highlight.desc.trim();
+              return (
+                <div
+                  key={idx}
+                  data-html2canvas-ignore={blank ? 'true' : undefined}
+                  style={{ marginBottom: idx === highlights.length - 1 ? 0 : SPACE.sm }}
+                >
+                  <Card padding={34}>
+                    <SummaryCardBody
+                      highlight={highlight}
+                      index={idx}
+                      onChange={patch => updateHighlight(idx, patch)}
+                      titleStyle={{ ...styles.summaryTitle, color: accent }}
+                      descStyle={styles.summaryDesc}
+                      iconStyle={styles.summaryIcon}
+                      iconFrame={{
+                        width: 124, height: 124, borderRadius: 30,
+                        background: kimchiTint(accent, 0.14), border: `2px solid ${kimchiTint(accent, 0.35)}`,
+                      }}
+                    />
                   </Card>
                 </div>
               );

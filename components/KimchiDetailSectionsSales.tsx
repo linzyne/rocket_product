@@ -2,7 +2,7 @@ import React, { useMemo } from 'react';
 import EditableText from './EditableText';
 import { PADDING_X, SPACE } from '../utils/detailPageLayout';
 import { KimchiSection, kimchiSectionHasText } from '../utils/kimchiDetailTemplate';
-import { KimchiPhoto, KimchiTypeScale, kimchiFontSizes, makePhotoRun } from './KimchiDetailSections';
+import { KimchiPhoto, KimchiTypeScale, SummaryCardBody, kimchiFontSizes, makePhotoRun } from './KimchiDetailSections';
 
 // 네 번째 스킨. 국내 식품 상세페이지에서 흔한 "설득형" 구성을 옮긴 것 —
 // 체크포인트 배지, 말풍선으로 늘어놓는 공감 문구, 시그니처 색을 꽉 채운 인증 패널이 특징이다.
@@ -106,6 +106,9 @@ export const KimchiPreviewSales: React.FC<SalesPreviewProps> = ({
       certBody: { ...base(size(F.certBody)), ...center, fontWeight: 400, lineHeight: 1.65, color: '#ffffff', opacity: 0.85 } as React.CSSProperties,
       certBig: { ...base(size(F.certBig)), ...center, fontWeight: 700, lineHeight: 1.25, color: '#ffffff' } as React.CSSProperties,
 
+      summaryIcon: { ...base(size(F.summaryIcon)), lineHeight: 1, textAlign: 'center' } as React.CSSProperties,
+      summaryTitle: { ...base(size(F.summaryTitle)), fontWeight: 700, lineHeight: 1.3 } as React.CSSProperties,
+      summaryDesc: { ...base(size(F.summaryDesc)), fontWeight: 400, lineHeight: 1.55, opacity: 0.75 } as React.CSSProperties,
       pointTitle: { ...base(size(F.pointTitle)), ...center, fontWeight: 700, lineHeight: 1.25 } as React.CSSProperties,
       pointSubtitle: { ...base(size(F.pointSubtitle)), ...center, fontWeight: 400, lineHeight: 1.55, opacity: 0.75 } as React.CSSProperties,
 
@@ -266,6 +269,47 @@ export const KimchiPreviewSales: React.FC<SalesPreviewProps> = ({
         );
       }
 
+      // 예고: 옅은 배경 판 위에 흰 카드를 쌓는다. 아이콘은 시그니처 색을 채운 원에 담아
+      // 체크포인트 배지와 같은 어법으로 맞춘다. 자세한 설명은 뒤 소구점이 맡는다.
+      case 'summary': {
+        const highlights = section.highlights || [];
+        const updateHighlight = (idx: number, patch: Partial<{ icon: string; title: string; desc: string }>) =>
+          updateSection(section.id, { highlights: highlights.map((h, i) => (i === idx ? { ...h, ...patch } : h)) });
+        return (
+          <Panel background={soft}>
+            {section.title.trim() && <div style={{ marginBottom: SPACE.lg }}>{edit('title', '제목', styles.featureTitle)}</div>}
+            {highlights.map((highlight, idx) => {
+              // 빈 칸도 그린다(눌러서 채워야 하니까). 저장 이미지에서만 뺀다 — 기본 스킨 주석 참고.
+              const blank = !highlight.icon.trim() && !highlight.title.trim() && !highlight.desc.trim();
+              return (
+                <div
+                  key={idx}
+                  data-html2canvas-ignore={blank ? 'true' : undefined}
+                  style={{
+                    margin: `0 ${CARD_MARGIN_X}px ${idx === highlights.length - 1 ? 0 : SPACE.sm}px`,
+                    background: '#ffffff', border: `2px solid ${tint(accent, 0.3)}`, borderRadius: PANEL_RADIUS,
+                    padding: '32px 36px',
+                  }}
+                >
+                  <SummaryCardBody
+                    highlight={highlight}
+                    index={idx}
+                    onChange={patch => updateHighlight(idx, patch)}
+                    titleStyle={{ ...styles.summaryTitle, color: accent }}
+                    descStyle={styles.summaryDesc}
+                    iconStyle={styles.summaryIcon}
+                    iconFrame={{
+                      width: 118, height: 118, borderRadius: '50%',
+                      background: '#ffffff', border: `3px solid ${accent}`,
+                    }}
+                  />
+                </div>
+              );
+            })}
+          </Panel>
+        );
+      }
+
       // 특별한점: 체크포인트 배지 + 두 줄 제목(아래 줄은 시그니처 색) + 설명 + 전체폭 사진.
       case 'feature':
         return (
@@ -322,7 +366,15 @@ export const KimchiPreviewSales: React.FC<SalesPreviewProps> = ({
         return (
           <>
             <div style={{ padding: `${SPACE.xl}px 0 ${SPACE.lg}px` }}>
-              {section.badge?.trim() && <CheckBadge text={`Check Point. ${(section.badge.match(/\d+/) || ['1'])[0]}`} accent={accent} />}
+              {section.badge?.trim() && (
+                <CheckBadge
+                  value={section.badge}
+                  accent={accent}
+                  placeholder="POINT 01"
+                  style={styles.badge}
+                  onChange={v => updateSection(section.id, { badge: v })}
+                />
+              )}
               {section.noticeTitle?.trim() && (
                 <div style={{ marginBottom: SPACE.sm }}>
                   <EditableText value={section.noticeTitle} onChange={v => updateSection(section.id, { noticeTitle: v })}

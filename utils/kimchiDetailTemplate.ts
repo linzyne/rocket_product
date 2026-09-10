@@ -19,12 +19,21 @@ export type KimchiSectionKind =
   | 'review'   // 아이콘 + 평점 + 리뷰 카드들. 카드마다 오른쪽에 작은 사진이 붙는다
   | 'feature'  // 강조색 띠 + 사진 + 아래 설명 블록 (특별한점 소개용)
   | 'cert'     // 가운데 로고 + 가로줄 사이 제목 + 설명 + 큰 마무리 (인증 마크 소개용)
-  | 'point';   // 알약 배지 + 왼쪽 정렬 제목/설명 + 전체폭 사진 (소구점 하나를 소개)
+  | 'point'    // 알약 배지 + 왼쪽 정렬 제목/설명 + 전체폭 사진 (소구점 하나를 소개)
+  | 'summary'; // 아이콘 카드 여러 칸 (특별한점을 도형으로 예고 — 자세한 설명은 소구점이 맡는다)
 
 export type KimchiListStyle = 'card' | 'check' | 'number' | 'dot';
 // 'qna'는 라벨을 질문(Q), 값을 답변(A)으로 그린다 — 자주 묻는 질문 섹션용.
 export type KimchiPairsStyle = 'inline' | 'table' | 'qna';
 export type KimchiAlign = 'left' | 'center';
+
+// 예고(summary) 카드 한 칸. 아이콘 + 짧은 제목 + 한 줄 설명이 전부다 — 여기서 길게 쓰면
+// 아래 소구점과 같은 말이 두 번 나온다.
+export interface KimchiHighlight {
+  icon: string;
+  title: string;
+  desc: string;
+}
 
 export interface KimchiPairRow {
   label: string;
@@ -95,6 +104,11 @@ export interface KimchiSection {
   // 그 아래 설명(body)과 큰 마무리 문구(bigText)가 이어진다 — 세 필드 모두 다른 kind와 공유한다.
   logoWidth?: number;   // 로고로 그릴 사진의 가로 크기(px). 비우면 기본값
 
+  // ── summary(예고) ──
+  // 아이콘 카드를 세로로 쌓아 특별한점을 한눈에 보여준다. 사진은 쓰지 않는 게 기본이고,
+  // 올리면 카드 아래에 붙는다.
+  highlights?: KimchiHighlight[];
+
   // ── point(소구점) ──
   // badge(알약 배지) + noticeTitle(큰 제목) + noticeSubtitle(설명)을 왼쪽 정렬로 쌓고 사진이 따른다.
   // 개수가 상품마다 달라서 기본은 하나만 두고, 필요하면 섹션 복사(⧉)로 늘린다.
@@ -126,6 +140,7 @@ export const KIMCHI_SECTION_KIND_OPTIONS: { kind: KimchiSectionKind; label: stri
   { kind: 'feature', label: '특별한점', description: '강조색 띠 + 사진 + 설명 블록' },
   { kind: 'cert', label: '인증', description: '가운데 로고 + 가로줄 제목 + 설명' },
   { kind: 'point', label: '소구점', description: '배지 + 왼쪽 제목/설명 + 사진' },
+  { kind: 'summary', label: '예고', description: '아이콘 카드 — 특별한점을 짧게 예고' },
 ];
 
 export function createKimchiSection(kind: KimchiSectionKind, overrides: Partial<KimchiSection> = {}): KimchiSection {
@@ -147,6 +162,16 @@ export function createKimchiSection(kind: KimchiSectionKind, overrides: Partial<
     : kind === 'text' ? { body: '', align: 'left' }
     : kind === 'list' ? { items: ['', '', '', ''], listStyle: 'card' }
     : kind === 'pairs' ? { rows: [{ label: '', value: '' }], pairsStyle: 'inline' }
+    : kind === 'summary' ? {
+        highlights: [
+          { icon: '', title: '', desc: '' },
+          { icon: '', title: '', desc: '' },
+          { icon: '', title: '', desc: '' },
+        ],
+        // 카드가 흰색이라 바탕이 흰색이면 카드 경계가 안 보인다. 옅은 바탕을 기본으로 깔아둔다.
+        backgroundColor: '#faf7f2',
+        multiplePhotos: false,
+      }
     : kind === 'point' ? {
         badge: '', noticeTitle: '', noticeSubtitle: '',
       }
@@ -194,20 +219,23 @@ export function createDefaultKimchiSections(): KimchiSection[] {
       title: '', caption: '', promptLabel: '리뷰',
       hint: '리뷰 카드마다 오른쪽에 한 장씩 들어갑니다',
     }),
-    ...['01', '02', '03'].map(n =>
-      createKimchiSection('feature', {
-        title: '', caption: '', promptLabel: `특별한점 ${n}`,
-        hint: '띠와 설명 사이에 들어갑니다',
-      })
-    ),
+    // 특별한점은 여기서 "예고"만 한다 — 아이콘 카드로 핵심만 한 줄씩. 그 내용을 사진과 함께
+    // 길게 푸는 건 아래 소구점이 맡는다. 둘 다 설명을 늘어놓으면 같은 말이 두 번 나온다.
+    createKimchiSection('summary', {
+      title: '이 김치의 특별한 점', caption: 'POINT', promptLabel: '예고',
+      hint: '없어도 됩니다',
+    }),
     createKimchiSection('cert', {
       title: '', caption: '', promptLabel: '인증',
       hint: '인증 마크 이미지 (가운데 작게 들어갑니다)', multiplePhotos: false,
     }),
-    createKimchiSection('point', {
-      title: '', caption: '', promptLabel: '소구점 01',
-      hint: '이 소구점을 보여주는 사진',
-    }),
+    // 예고 카드와 같은 순서·같은 개수로 둔다 — 카드에서 예고한 것을 하나씩 펼쳐 보여주는 자리다.
+    ...['01', '02', '03'].map(n =>
+      createKimchiSection('point', {
+        title: '', caption: '', promptLabel: `소구점 ${n}`,
+        hint: '이 소구점을 보여주는 사진',
+      })
+    ),
     createKimchiSection('pairs', {
       title: '자주 묻는 질문', caption: 'Q&A', promptLabel: 'QA', pairsStyle: 'qna',
       rows: [{ label: '', value: '' }, { label: '', value: '' }, { label: '', value: '' }, { label: '', value: '' }],
@@ -241,6 +269,24 @@ export function createDefaultKimchiSections(): KimchiSection[] {
   ];
 }
 
+// 이 컴퓨터에 저장해둔 상세페이지는 예고 섹션이 생기기 전에 만든 것이라 그 자리가 아예 없다.
+// 열 때마다 "바뀐 게 없다"로 보이므로, 없으면 빈 예고 섹션을 한 칸 끼워 넣는다. 기존 문구는
+// 하나도 건드리지 않고, 빈 섹션은 저장 이미지에서 빠지므로(kimchiSectionHasText) 그냥 두어도
+// 결과물이 달라지지 않는다. 필요 없으면 사이드 패널에서 ×로 지우면 된다.
+export function ensureKimchiSummarySection(sections: KimchiSection[]): KimchiSection[] {
+  if (sections.some(s => s.kind === 'summary')) return sections;
+  const section = createKimchiSection('summary', {
+    title: '이 김치의 특별한 점', caption: 'POINT', promptLabel: '예고',
+    hint: '없어도 됩니다',
+  });
+  // 특별한점을 예고로 갈음하는 자리라 그 앞에 놓는다. 특별한점이 없으면 소구점 앞, 그것도
+  // 없으면 맨 뒤.
+  const anchor = sections.findIndex(s => s.kind === 'feature');
+  const fallback = sections.findIndex(s => s.kind === 'point');
+  const at = anchor !== -1 ? anchor : fallback !== -1 ? fallback : sections.length;
+  return [...sections.slice(0, at), section, ...sections.slice(at)];
+}
+
 // ── 섹션 목록 조작 ──────────────────────────────────────────────────────────────
 
 export function moveKimchiSection(sections: KimchiSection[], id: string, direction: -1 | 1): KimchiSection[] {
@@ -263,6 +309,23 @@ function bumpTrailingNumber(label: string): string {
   return m[1] + String(Number(m[2]) + 1).padStart(m[2].length, '0');
 }
 
+// 페이지에서 종류들이 놓이는 차례. 기본 구성(createDefaultKimchiSections)의 흐름을 그대로 옮긴
+// 것으로, 같은 종류가 하나도 없을 때 "어디에 넣을지"를 정하는 데만 쓴다.
+//
+// 고지·두 열처럼 위아래에 두 번 나오는 종류가 있어서 "이 차례보다 앞선 마지막 섹션 뒤"로 찾으면
+// 안 된다 — 맨 밑 CS 고지가 걸려서 결국 페이지 끝으로 간다. 그래서 반대로 "이 차례보다 뒤에
+// 오는 첫 섹션" 앞에 넣는다.
+const KIND_FLOW: KimchiSectionKind[] = [
+  'hero', 'notice', 'review', 'summary', 'feature', 'cert', 'point', 'text', 'list', 'pairs',
+];
+
+function kindFlowInsertIndex(sections: KimchiSection[], kind: KimchiSectionKind): number {
+  const rank = (k: KimchiSectionKind) => KIND_FLOW.indexOf(k);
+  const mine = rank(kind);
+  const at = sections.findIndex(s => rank(s.kind) > mine);
+  return at === -1 ? sections.length : at;
+}
+
 // 새 섹션을 더한다. 같은 종류가 이미 있으면 그 마지막 섹션 바로 뒤에 끼워 넣고(소구점을 더하면
 // 소구점 01 밑에 붙는다), 이름에도 번호를 붙인다 — 이름이 곧 붙여넣기 라벨이라
 // (sectionBaseLabel) 둘 다 '소구점'이면 어느 쪽에 넣을지 알 수 없고, '소구점 02 제목' 같은
@@ -280,13 +343,18 @@ export function appendKimchiSection(sections: KimchiSection[], kind: KimchiSecti
     while (taken.has(name)) name = `${fallback} ${String(++n).padStart(2, '0')}`;
     section.promptLabel = name;
   }
-  // 같은 종류의 마지막 섹션 바로 뒤에 넣는다(없으면 맨 뒤).
+  // 같은 종류의 마지막 섹션 바로 뒤에 넣는다.
   let insertAfter = -1;
   sections.forEach((s, i) => {
     if (s.kind === kind) insertAfter = i;
   });
-  if (insertAfter === -1) return [...sections, section];
-  return [...sections.slice(0, insertAfter + 1), section, ...sections.slice(insertAfter + 1)];
+  if (insertAfter !== -1) {
+    return [...sections.slice(0, insertAfter + 1), section, ...sections.slice(insertAfter + 1)];
+  }
+  // 같은 종류가 하나도 없으면 그 종류가 원래 놓이는 자리를 찾아 끼워 넣는다 — 맨 뒤로 보내면
+  // 특별한점을 더했는데 반품 안내 밑에 붙는 식이 된다(기본 구성에서 빠진 종류일수록 그렇다).
+  const at = kindFlowInsertIndex(sections, kind);
+  return [...sections.slice(0, at), section, ...sections.slice(at)];
 }
 
 // 섹션을 통째로 복제해서 바로 아래에 끼워 넣는다. 사진은 따라오지 않는다 — 복사는 보통 "같은
@@ -312,6 +380,7 @@ export function duplicateKimchiSection(sections: KimchiSection[], id: string): K
     items: source.items ? [...source.items] : undefined,
     rows: source.rows ? source.rows.map(r => ({ ...r })) : undefined,
     cards: source.cards ? [...source.cards] : undefined,
+    highlights: source.highlights ? source.highlights.map(h => ({ ...h })) : undefined,
     reviews: source.reviews ? source.reviews.map(r => ({ ...r })) : undefined,
   };
   return [...sections.slice(0, index + 1), copy, ...sections.slice(index + 1)];
@@ -339,6 +408,8 @@ export function kimchiSectionHasText(section: KimchiSection): boolean {
       return [section.noticeTitle, section.body, section.bigText].some(filled);
     case 'point':
       return [section.badge, section.noticeTitle, section.noticeSubtitle].some(filled);
+    case 'summary':
+      return (section.highlights || []).some(h => filled(h.icon) || filled(h.title) || filled(h.desc));
   }
 }
 
@@ -371,7 +442,7 @@ function claimAlias(used: Set<string>, name: string): string[] {
 
 const KIND_FALLBACK_LABEL: Record<KimchiSectionKind, string> = {
   hero: '인트로', text: '본문', list: '목록', pairs: '항목', notice: '고지', review: '리뷰',
-  feature: '특별한점', cert: '인증', point: '소구점',
+  feature: '특별한점', cert: '인증', point: '소구점', summary: '예고',
 };
 
 // 섹션 하나가 문구를 받는 자리들. field는 파싱 결과를 어디에 꽂을지 가리킨다.
@@ -383,7 +454,7 @@ type FeatureField = 'bandSmall' | 'bandBig' | 'heading';
 // — 이름만 바꾸고 옛 이름을 버리면, 그 줄이 라벨로 안 잡혀서 앞 항목 내용에 딸려 들어간다.
 type KimchiSlot =
   | { sectionIndex: number; field: HeroField | NoticeField | FeatureField | 'body'; label: string; aliases?: string[]; hint: string; twoLine: false }
-  | { sectionIndex: number; field: 'item' | 'card' | 'reviewText' | 'reviewAuthor'; itemIndex: number; label: string; aliases?: string[]; hint: string; twoLine: false }
+  | { sectionIndex: number; field: 'item' | 'card' | 'reviewText' | 'reviewAuthor' | 'highlightIcon' | 'highlightTitle' | 'highlightDesc'; itemIndex: number; label: string; aliases?: string[]; hint: string; twoLine: false }
   | { sectionIndex: number; field: 'rowValue'; rowIndex: number; label: string; aliases?: string[]; hint: string; twoLine: false }
   | { sectionIndex: number; field: 'rowPair'; rowIndex: number; label: string; aliases?: string[]; hint: string; twoLine: true };
 
@@ -459,7 +530,7 @@ function buildSlots(sections: KimchiSection[]): KimchiSlot[] {
         });
         (section.reviews || []).forEach((_, itemIndex) => {
           const n = String(itemIndex + 1).padStart(2, '0');
-          slots.push({ sectionIndex, field: 'reviewText', itemIndex, label: uniqueLabel(used, `리뷰 ${n}`), hint: '구매자 후기처럼 2~3줄 (판매자가 실제 후기로 교체할 초안)', twoLine: false });
+          slots.push({ sectionIndex, field: 'reviewText', itemIndex, label: uniqueLabel(used, `리뷰 ${n}`), hint: '구매자 후기처럼 2~3줄', twoLine: false });
           slots.push({ sectionIndex, field: 'reviewAuthor', itemIndex, label: uniqueLabel(used, `작성자 ${n}`), hint: '예: haey***', twoLine: false });
         });
         break;
@@ -476,11 +547,28 @@ function buildSlots(sections: KimchiSection[]): KimchiSlot[] {
           });
         });
         break;
+      // 예고 카드. 카드 하나에 아이콘·제목·설명 세 자리가 있고, 셋 다 짧아야 한다 —
+      // 자세한 설명은 뒤따르는 소구점이 맡는다(아래 hint에도 그렇게 적어둔다).
+      case 'summary':
+        (section.highlights || []).forEach((_, itemIndex) => {
+          const n = String(itemIndex + 1).padStart(2, '0');
+          ([
+            ['highlightIcon', '아이콘', '이모지 하나. 예: 🌿'],
+            ['highlightTitle', '제목', '핵심만 한마디, 10자 안팎. 예: 화학조미료 0%'],
+            ['highlightDesc', '설명', '2~3줄까지만. 자세한 건 소구점에서 쓰니까 여기서 늘리지 마. 예: 양념부터 젓갈까지 / MSG를 넣지 않았습니다'],
+          ] as const).forEach(([field, suffix, hint]) => {
+            slots.push({
+              sectionIndex, field, itemIndex,
+              label: uniqueLabel(used, `${base} ${n} ${suffix}`), hint, twoLine: false,
+            });
+          });
+        });
+        break;
       case 'point':
         ([
           ['badge', '배지', '예: POINT 01'],
-          ['noticeTitle', '제목', '핵심을 짚는 1~2줄. 예: 3년간 간수뺀 / 신안 천일염'],
-          ['noticeSubtitle', '설명', '풀어서 1~2줄. 예: 전남 신안군 신의면에서 3년간 / 간수를 뺀 재래식 천일염만 사용'],
+          ['noticeTitle', '제목', '앞 예고에서 같은 번호로 예고한 그 내용. 1~2줄. 예: 3년간 간수뺀 / 신안 천일염'],
+          ['noticeSubtitle', '설명', '예고에서 한 줄로만 말한 걸 여기서 풀어 쓴다. 3~5줄. 예: 전남 신안군 신의면에서 3년간 / 간수를 뺀 재래식 천일염만 사용'],
         ] as const).forEach(([field, suffix, hint]) => {
           slots.push({ sectionIndex, field, label: uniqueLabel(used, `${base} ${suffix}`), hint, twoLine: false });
         });
@@ -499,7 +587,7 @@ function buildSlots(sections: KimchiSection[]): KimchiSlot[] {
           // 표 형태는 라벨이 이미 고정돼 있으니(식품유형, 유통기한 …) 값만 받고, 자유 형태는
           // 라벨과 값을 두 줄로 받는다(재료명 / 산지처럼 라벨도 매번 달라지는 경우).
           if (section.pairsStyle === 'table' && row.label.trim()) {
-            slots.push({ sectionIndex, field: 'rowValue', rowIndex, label: uniqueLabel(used, row.label.trim()), hint: '이 상품에 맞게 채워줘 (판매자가 실제 값으로 확인·교체)', twoLine: false });
+            slots.push({ sectionIndex, field: 'rowValue', rowIndex, label: uniqueLabel(used, row.label.trim()), hint: '이 상품에 맞게 채워줘', twoLine: false });
           } else {
             slots.push({
               sectionIndex, field: 'rowPair', rowIndex,
@@ -536,9 +624,15 @@ export function buildKimchiCopyPrompt(sections: KimchiSection[], input: KimchiCo
     '[쓰는 방법]',
     '1. 모든 라벨을 빠짐없이 채워줘. 빈 라벨을 하나도 남기지 마.',
     '2. 위 상품 정보에 있는 내용은 그대로 쓰고, 없는 항목은 이 상품에 있을 법한 값으로 채워줘.',
-    '3. 이건 판매자가 손봐서 쓸 초안이야. 원산지·함량·유통기한·인증·전화번호·반품 조건·평점·후기처럼',
-    '   사실 확인이 필요한 값은 그럴듯한 예시로 채우되, 판매자가 실제 값으로 바꿀 자리라는 걸 전제로 써줘.',
+    '3. 원산지·함량·유통기한·인증·전화번호·반품 조건·평점·후기처럼 사실 확인이 필요한 값도',
+    '   그냥 이 상품에 있을 법한 값으로 자연스럽게 써줘.',
+    '   "판매자가 실제 값으로 교체", "실제 정책 확인 필요", "예시입니다", "초안" 같은 말은 절대 쓰지 마.',
+    '   괄호를 붙여 덧붙이는 주석·안내도 쓰지 마 — 쓴 글이 그대로 상세페이지 이미지에 찍힌다.',
+    '   그대로 인쇄해서 손님에게 보여줄 완성된 문구만 써줘.',
     '4. 식품이라 효능을 단정하거나 "최고"·"1위" 같은 최상급 표현은 쓰지 마. 담백하고 믿음이 가는 톤으로.',
+    '5. 예고와 소구점은 짝이야. 예고 01/02/03은 특별한점을 한 줄씩 미리 보여주는 자리라 아주 짧게 쓰고,',
+    '   소구점 01/02/03은 같은 번호의 예고를 사진과 함께 자세히 풀어 쓰는 자리야.',
+    '   번호가 같으면 같은 주제로 맞추고, 예고에 쓴 문장을 소구점에 그대로 다시 쓰지 마.',
     '',
     '[형식]',
     '라벨은 한 글자도 바꾸지 말고, 순서도 그대로 두고, 라벨 다음 줄부터 내용만 채워줘.',
@@ -709,6 +803,7 @@ export function parseKimchiCopyText(text: string, sections: KimchiSection[]): Ki
     rows: s.rows ? s.rows.map(r => ({ ...r })) : undefined,
     cards: s.cards ? [...s.cards] : undefined,
     reviews: s.reviews ? s.reviews.map(r => ({ ...r })) : undefined,
+    highlights: s.highlights ? s.highlights.map(h => ({ ...h })) : undefined,
   }));
   let filledCount = 0;
 
@@ -736,6 +831,15 @@ export function parseKimchiCopyText(text: string, sections: KimchiSection[]): Ki
       case 'bandSmall': section.bandSmall = content; break;
       case 'bandBig': section.bandBig = content; break;
       case 'heading': section.heading = content; break;
+      case 'highlightIcon':
+        if (section.highlights) section.highlights[slot.itemIndex] = { ...section.highlights[slot.itemIndex], icon: content };
+        break;
+      case 'highlightTitle':
+        if (section.highlights) section.highlights[slot.itemIndex] = { ...section.highlights[slot.itemIndex], title: content };
+        break;
+      case 'highlightDesc':
+        if (section.highlights) section.highlights[slot.itemIndex] = { ...section.highlights[slot.itemIndex], desc: content };
+        break;
       case 'reviewText':
         if (section.reviews) section.reviews[slot.itemIndex] = { ...section.reviews[slot.itemIndex], text: content };
         break;

@@ -1072,7 +1072,6 @@ interface KimchiSectionPanelProps {
   updateSection: (id: string, patch: Partial<KimchiSection>) => void;
   moveSection: (id: string, direction: -1 | 1) => void;
   removeSection: (id: string) => void;
-  addSection: (kind: KimchiSection['kind']) => void;
   duplicateSection: (id: string) => void;
   // 템플릿 시그니처 색. 섹션이 자기 색을 안 가졌을 때 색상 칸에 이 값이 비쳐 보인다.
   templateAccent: string;
@@ -1095,7 +1094,7 @@ const KIND_BADGE: Record<KimchiSection['kind'], string> = {
 };
 
 export const KimchiSectionPanel: React.FC<KimchiSectionPanelProps> = ({
-  sections, photosBySection, updateSection, moveSection, removeSection, addSection,
+  sections, photosBySection, updateSection, moveSection, removeSection,
   duplicateSection, templateAccent, movePhoto, onAddFiles, onRemovePhoto, onPhotoClick,
   defaultSectionGap, setAllSectionGaps,
 }) => {
@@ -1432,18 +1431,23 @@ export const KimchiSectionPanel: React.FC<KimchiSectionPanelProps> = ({
         );
       })}
 
-      <div className="flex flex-wrap gap-1.5 pt-1">
-        <span className="text-[11px] text-slate-500 w-full">섹션 추가</span>
-        {(Object.keys(KIND_BADGE) as KimchiSection['kind'][]).map(kind => (
-          <button
-            key={kind}
-            onClick={() => addSection(kind)}
-            className="px-2 py-1 text-xs bg-slate-700 text-slate-200 rounded hover:bg-slate-600 transition-colors"
-          >
-            + {KIND_BADGE[kind]}
-          </button>
-        ))}
-      </div>
     </div>
   );
 };
+
+// 섹션 추가 버튼은 섹션 목록과 떨어져 사이드 패널 맨 위에 놓는다 — 목록 아래에 있으면 섹션이
+// 많아질수록 버튼이 멀어지고, 문구를 붙여넣기 전에 섹션부터 갖춰야 라벨이 맞기 때문이다.
+export const KimchiSectionAddBar: React.FC<{ addSection: (kind: KimchiSection['kind']) => void }> = ({ addSection }) => (
+  <div className="flex flex-wrap gap-1.5">
+    <p className="text-xs font-bold text-slate-400 uppercase tracking-wider w-full">섹션 추가</p>
+    {(Object.keys(KIND_BADGE) as KimchiSection['kind'][]).map(kind => (
+      <button
+        key={kind}
+        onClick={() => addSection(kind)}
+        className="px-2 py-1 text-xs bg-slate-700 text-slate-200 rounded hover:bg-slate-600 transition-colors"
+      >
+        + {KIND_BADGE[kind]}
+      </button>
+    ))}
+  </div>
+);

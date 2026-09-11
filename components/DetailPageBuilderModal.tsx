@@ -20,7 +20,7 @@ import { saveDetailPageDraft, loadDetailPageDraft, deleteDetailPageDraft } from 
 import { withTimeout, stripClonedScripts, stripEmptySections, withInlineImageMetrics } from '../utils/html2canvasHelpers';
 import ImageCropModal from './ImageCropModal';
 import EditableText from './EditableText';
-import { KimchiPreview, KimchiSectionPanel, KIMCHI_TYPE_SCALE, KIMCHI_TYPE_STEPS, KimchiTypeScale } from './KimchiDetailSections';
+import { KimchiPreview, KimchiSectionPanel, KimchiSectionAddBar, KIMCHI_TYPE_SCALE, KIMCHI_TYPE_STEPS, KimchiTypeScale } from './KimchiDetailSections';
 import { KimchiPreviewModern } from './KimchiDetailSectionsModern';
 import { KimchiPreviewBold } from './KimchiDetailSectionsBold';
 import { KimchiPreviewSales } from './KimchiDetailSectionsSales';
@@ -2915,8 +2915,10 @@ const DetailPageBuilderModal: React.FC<DetailPageBuilderModalProps> = ({ isOpen,
 
           {/* Side panel: inputs only — everything else is edited directly in the preview */}
           <div className="lg:w-80 flex-shrink-0 flex flex-col gap-4 overflow-y-auto pr-1">
+            {isKimchi && <KimchiSectionAddBar addSection={addKimchiSection} />}
+
             {isKimchi ? (
-              <div className="space-y-2">
+              <div className="space-y-2 pt-2 border-t border-slate-700">
                 <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">문구 붙여넣기</p>
                 <p className="text-xs text-slate-500 leading-relaxed">
                   프롬프트를 복사해 ChatGPT 등에 넣고, 받은 답변을 통째로 아래에 붙여넣으면 섹션별로 채워져요.
@@ -3165,7 +3167,6 @@ const DetailPageBuilderModal: React.FC<DetailPageBuilderModalProps> = ({ isOpen,
                 updateSection={updateKimchiSection}
                 moveSection={moveKimchiSectionBy}
                 removeSection={removeKimchiSectionById}
-                addSection={addKimchiSection}
                 duplicateSection={duplicateKimchiSectionById}
                 templateAccent={kimchiAccent}
                 movePhoto={movePhotoToSection}

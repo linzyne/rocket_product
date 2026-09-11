@@ -2914,181 +2914,7 @@ const DetailPageBuilderModal: React.FC<DetailPageBuilderModalProps> = ({ isOpen,
           {/* Side panel: inputs only — everything else is edited directly in the preview */}
           <div className="lg:w-80 flex-shrink-0 flex flex-col gap-4 overflow-y-auto pr-1">
             {isKimchi ? (
-              <>
               <div className="space-y-2">
-                <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">디자인</p>
-                <div className="flex gap-1.5">
-                  {([
-                    { id: 'basic' as const, label: '기본', hint: '굵고 꽉 찬 컬러 블록, 가운데 정렬' },
-                    { id: 'modern' as const, label: '모던', hint: '여백 넓은 왼쪽 정렬, 얇은 선' },
-                    { id: 'bold' as const, label: '컬러', hint: '둥근 색 상자, 배지, 좌우 번갈이 배치' },
-                    { id: 'sales' as const, label: '체크포인트', hint: '배지·말풍선·색 채운 인증 패널의 설득형 구성' },
-                  ]).map(skin => (
-                    <button
-                      key={skin.id}
-                      onClick={() => setKimchiSkin(skin.id)}
-                      title={skin.hint}
-                      className={`flex-1 px-2 py-1.5 text-xs font-semibold rounded-md border transition-colors ${
-                        kimchiSkin === skin.id
-                          ? 'bg-blue-600 border-blue-500 text-white'
-                          : 'bg-slate-800 border-slate-600 text-slate-300 hover:bg-slate-700'
-                      }`}
-                    >
-                      {skin.label}
-                    </button>
-                  ))}
-                </div>
-                <p className="text-xs text-slate-500 leading-relaxed">
-                  문구와 사진은 그대로 두고 디자인만 바뀝니다. 붙여넣기 라벨도 같아요.
-                </p>
-                {/* 시그니처 색은 템플릿마다 따로 기억한다 — 디자인을 바꾸면 그 템플릿에서 고른
-                    색으로 돌아온다. 섹션에서 색을 따로 지정하면 그 섹션만 예외가 된다. */}
-                <div className="flex items-center gap-1.5 pt-1">
-                  <span className="text-[11px] text-slate-400 flex-shrink-0">시그니처 색</span>
-                  {['#d4462a', '#c2410c', '#b45309', '#2f9e44', '#2f5d50', '#1e3a5f'].map(color => (
-                    <button
-                      key={color}
-                      onClick={() => setKimchiAccents(prev => ({ ...prev, [kimchiSkin]: color }))}
-                      title={color}
-                      className={`w-5 h-5 rounded-full flex-shrink-0 transition-transform ${
-                        kimchiAccent === color ? 'ring-2 ring-white scale-110' : 'border border-slate-600'
-                      }`}
-                      style={{ background: color }}
-                    />
-                  ))}
-                  <label
-                    title="색 직접 고르기"
-                    className="w-5 h-5 rounded-full flex-shrink-0 cursor-pointer border border-slate-600 bg-gradient-to-br from-pink-400 via-yellow-300 to-sky-400"
-                  >
-                    <input
-                      type="color"
-                      value={kimchiAccent}
-                      className="sr-only"
-                      onChange={e => setKimchiAccents(prev => ({ ...prev, [kimchiSkin]: e.target.value }))}
-                    />
-                  </label>
-                </div>
-              </div>
-              <KimchiSectionPanel
-                sections={kimchiSections}
-                photosBySection={photosBySection}
-                updateSection={updateKimchiSection}
-                moveSection={moveKimchiSectionBy}
-                removeSection={removeKimchiSectionById}
-                addSection={addKimchiSection}
-                duplicateSection={duplicateKimchiSectionById}
-                templateAccent={kimchiAccent}
-                movePhoto={movePhotoToSection}
-                onAddFiles={(sectionId, files) => addPhotoFiles(files, sectionId)}
-                onRemovePhoto={removePhoto}
-                onPhotoClick={photo => startCropQueue([photo])}
-                defaultSectionGap={KIMCHI_SKIN_SECTION_GAP[kimchiSkin]}
-                setAllSectionGaps={gap => setKimchiSections(prev => prev.map(sec => ({ ...sec, sectionGap: gap })))}
-              />
-              </>
-            ) : (
-              <div className="space-y-2">
-                <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">사진 업로드 (순서: 히어로 → 특징01~{String(featureBlockCount).padStart(2, '0')} → 마무리)</p>
-                <label className="text-xs px-2 py-1.5 bg-blue-600 rounded-md text-white hover:bg-blue-500 cursor-pointer inline-flex items-center gap-1">
-                  <UploadIcon className="h-3.5 w-3.5" /> 파일 업로드
-                  <input type="file" accept="image/*" multiple className="sr-only" onChange={handleFilesSelect} />
-                </label>
-                <div className="flex flex-wrap gap-2">
-                  <div
-                    tabIndex={0}
-                    onPaste={handlePastePhoto}
-                    title="클릭한 뒤 Ctrl+V(⌘V)로 복사한 이미지를 붙여넣으세요"
-                    className="w-16 h-16 flex items-center justify-center rounded-md border-2 border-dashed border-slate-600 text-slate-500 hover:border-blue-500 hover:text-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 cursor-pointer transition-colors"
-                  >
-                    <PlusIcon />
-                  </div>
-                  {photos.map((photo, idx) => {
-                      const role = idx === 0 ? '히어로' : idx === photos.length - 1 && photos.length >= 2 ? '마무리' : '특징';
-                      const assignedOptions = groupProducts.filter(p => !!p.thumbnailDataUrl && p.thumbnailDataUrl === photo.dataUrl);
-                      const isThumbnail = assignedOptions.length > 0;
-                      const hasMultipleOptions = groupProducts.length > 1;
-                      const starTitle = !isThumbnail
-                        ? '대표이미지로 저장'
-                        : hasMultipleOptions
-                          ? `대표이미지로 지정됨: ${assignedOptions.map((p, i) => `옵션${groupProducts.indexOf(p) + 1}${p.color ? ` · ${p.color}` : ''}`).join(', ')}`
-                          : '대표이미지로 지정됨';
-                      return (
-                        <div
-                          key={photo.id}
-                          data-photo-id={photo.id}
-                          onPointerDown={handlePhotoPointerDown(photo.id)}
-                          onPointerMove={handlePhotoPointerMove}
-                          onPointerUp={handlePhotoPointerUp}
-                          onPointerCancel={handlePhotoPointerCancel}
-                          title={`${idx + 1}번째 · ${role} (드래그해서 순서 변경)`}
-                          className="group relative w-16 h-16 cursor-grab active:cursor-grabbing"
-                          style={{
-                            opacity: draggingPhotoId === photo.id ? 0.4 : 1,
-                            touchAction: 'none',
-                            outline: dragOverPhotoId === photo.id && draggingPhotoId && draggingPhotoId !== photo.id ? '2px solid #3b82f6' : 'none',
-                            outlineOffset: 1,
-                          }}
-                        >
-                          {/* Clips only the thumbnail image to its rounded box — the star dropdown below
-                              lives outside this wrapper so it isn't clipped along with the photo. */}
-                          <div className="absolute inset-0 rounded-md overflow-hidden border border-slate-600 bg-slate-800">
-                            <img src={photo.dataUrl} alt="" draggable={false} className="w-full h-full object-cover pointer-events-none" />
-                            <span className="absolute bottom-0.5 left-0.5 text-[9px] leading-none px-1 py-0.5 rounded bg-slate-900/80 text-slate-200">
-                              {role}
-                            </span>
-                          </div>
-                          <div className="absolute top-0.5 left-0.5" ref={thumbnailAssignPhotoId === photo.id ? thumbnailAssignMenuRef : undefined}>
-                            <button
-                              onClick={() => handleStarClick(photo)}
-                              className={`w-4 h-4 flex items-center justify-center rounded-full bg-slate-900/80 transition-opacity [&_svg]:h-2.5 [&_svg]:w-2.5 ${
-                                isThumbnail ? 'text-yellow-400 opacity-100' : 'text-white opacity-0 group-hover:opacity-100'
-                              }`}
-                              title={starTitle}
-                            >
-                              <StarIcon />
-                            </button>
-                            {hasMultipleOptions && thumbnailAssignPhotoId === photo.id && (
-                              <div
-                                draggable={false}
-                                onDragStart={e => e.preventDefault()}
-                                className="absolute left-0 top-full mt-1 w-40 bg-slate-800 border border-slate-600 rounded-lg shadow-[0_25px_50px_-12px_rgba(0,0,0,0.7)] z-[80] py-1 cursor-default"
-                              >
-                                <div className="px-2.5 py-1 text-[10px] font-bold text-slate-400 uppercase tracking-wider">
-                                  대표이미지로 지정할 옵션
-                                </div>
-                                {groupProducts.map((p, optionIdx) => {
-                                  const isAssignedToThis = p.thumbnailDataUrl === photo.dataUrl;
-                                  return (
-                                    <button
-                                      key={p.id}
-                                      onClick={() => handleAssignThumbnailToOption(photo, p.id)}
-                                      className={`w-full text-left px-2.5 py-1.5 text-xs transition-colors ${
-                                        isAssignedToThis ? 'text-yellow-400 font-semibold' : 'text-slate-300 hover:bg-blue-600 hover:text-white'
-                                      }`}
-                                    >
-                                      {isAssignedToThis ? '★ ' : ''}옵션{optionIdx + 1}{p.color ? ` · ${p.color}` : ''}
-                                    </button>
-                                  );
-                                })}
-                              </div>
-                            )}
-                          </div>
-                          <button
-                            onClick={() => removePhoto(photo.id)}
-                            className="absolute top-0.5 right-0.5 w-4 h-4 flex items-center justify-center rounded-full bg-slate-900/80 text-white opacity-0 group-hover:opacity-100 transition-opacity [&_svg]:h-2.5 [&_svg]:w-2.5"
-                            title="사진 삭제"
-                          >
-                            <TrashIcon />
-                          </button>
-                        </div>
-                      );
-                    })}
-                </div>
-              </div>
-            )}
-
-            {isKimchi ? (
-              <div className="space-y-2 pt-2 border-t border-slate-700">
                 <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">문구 붙여넣기</p>
                 <p className="text-xs text-slate-500 leading-relaxed">
                   프롬프트를 복사해 ChatGPT 등에 넣고, 받은 답변을 통째로 아래에 붙여넣으면 섹션별로 채워져요.
@@ -3118,7 +2944,7 @@ const DetailPageBuilderModal: React.FC<DetailPageBuilderModalProps> = ({ isOpen,
                 </p>
               </div>
             ) : (
-              <div className="space-y-2 pt-2 border-t border-slate-700">
+              <div className="space-y-2">
                 <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">문구 직접 붙여넣기</p>
                 <button
                   onClick={handleCopyPrompt}
@@ -3274,6 +3100,180 @@ const DetailPageBuilderModal: React.FC<DetailPageBuilderModalProps> = ({ isOpen,
                 </>
               )}
             </div>
+
+            {isKimchi ? (
+              <>
+              <div className="space-y-2 pt-2 border-t border-slate-700">
+                <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">디자인</p>
+                <div className="flex gap-1.5">
+                  {([
+                    { id: 'basic' as const, label: '기본', hint: '굵고 꽉 찬 컬러 블록, 가운데 정렬' },
+                    { id: 'modern' as const, label: '모던', hint: '여백 넓은 왼쪽 정렬, 얇은 선' },
+                    { id: 'bold' as const, label: '컬러', hint: '둥근 색 상자, 배지, 좌우 번갈이 배치' },
+                    { id: 'sales' as const, label: '체크포인트', hint: '배지·말풍선·색 채운 인증 패널의 설득형 구성' },
+                  ]).map(skin => (
+                    <button
+                      key={skin.id}
+                      onClick={() => setKimchiSkin(skin.id)}
+                      title={skin.hint}
+                      className={`flex-1 px-2 py-1.5 text-xs font-semibold rounded-md border transition-colors ${
+                        kimchiSkin === skin.id
+                          ? 'bg-blue-600 border-blue-500 text-white'
+                          : 'bg-slate-800 border-slate-600 text-slate-300 hover:bg-slate-700'
+                      }`}
+                    >
+                      {skin.label}
+                    </button>
+                  ))}
+                </div>
+                <p className="text-xs text-slate-500 leading-relaxed">
+                  문구와 사진은 그대로 두고 디자인만 바뀝니다. 붙여넣기 라벨도 같아요.
+                </p>
+                {/* 시그니처 색은 템플릿마다 따로 기억한다 — 디자인을 바꾸면 그 템플릿에서 고른
+                    색으로 돌아온다. 섹션에서 색을 따로 지정하면 그 섹션만 예외가 된다. */}
+                <div className="flex items-center gap-1.5 pt-1">
+                  <span className="text-[11px] text-slate-400 flex-shrink-0">시그니처 색</span>
+                  {['#d4462a', '#c2410c', '#b45309', '#2f9e44', '#2f5d50', '#1e3a5f'].map(color => (
+                    <button
+                      key={color}
+                      onClick={() => setKimchiAccents(prev => ({ ...prev, [kimchiSkin]: color }))}
+                      title={color}
+                      className={`w-5 h-5 rounded-full flex-shrink-0 transition-transform ${
+                        kimchiAccent === color ? 'ring-2 ring-white scale-110' : 'border border-slate-600'
+                      }`}
+                      style={{ background: color }}
+                    />
+                  ))}
+                  <label
+                    title="색 직접 고르기"
+                    className="w-5 h-5 rounded-full flex-shrink-0 cursor-pointer border border-slate-600 bg-gradient-to-br from-pink-400 via-yellow-300 to-sky-400"
+                  >
+                    <input
+                      type="color"
+                      value={kimchiAccent}
+                      className="sr-only"
+                      onChange={e => setKimchiAccents(prev => ({ ...prev, [kimchiSkin]: e.target.value }))}
+                    />
+                  </label>
+                </div>
+              </div>
+              <KimchiSectionPanel
+                sections={kimchiSections}
+                photosBySection={photosBySection}
+                updateSection={updateKimchiSection}
+                moveSection={moveKimchiSectionBy}
+                removeSection={removeKimchiSectionById}
+                addSection={addKimchiSection}
+                duplicateSection={duplicateKimchiSectionById}
+                templateAccent={kimchiAccent}
+                movePhoto={movePhotoToSection}
+                onAddFiles={(sectionId, files) => addPhotoFiles(files, sectionId)}
+                onRemovePhoto={removePhoto}
+                onPhotoClick={photo => startCropQueue([photo])}
+                defaultSectionGap={KIMCHI_SKIN_SECTION_GAP[kimchiSkin]}
+                setAllSectionGaps={gap => setKimchiSections(prev => prev.map(sec => ({ ...sec, sectionGap: gap })))}
+              />
+              </>
+            ) : (
+              <div className="space-y-2 pt-2 border-t border-slate-700">
+                <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">사진 업로드 (순서: 히어로 → 특징01~{String(featureBlockCount).padStart(2, '0')} → 마무리)</p>
+                <label className="text-xs px-2 py-1.5 bg-blue-600 rounded-md text-white hover:bg-blue-500 cursor-pointer inline-flex items-center gap-1">
+                  <UploadIcon className="h-3.5 w-3.5" /> 파일 업로드
+                  <input type="file" accept="image/*" multiple className="sr-only" onChange={handleFilesSelect} />
+                </label>
+                <div className="flex flex-wrap gap-2">
+                  <div
+                    tabIndex={0}
+                    onPaste={handlePastePhoto}
+                    title="클릭한 뒤 Ctrl+V(⌘V)로 복사한 이미지를 붙여넣으세요"
+                    className="w-16 h-16 flex items-center justify-center rounded-md border-2 border-dashed border-slate-600 text-slate-500 hover:border-blue-500 hover:text-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 cursor-pointer transition-colors"
+                  >
+                    <PlusIcon />
+                  </div>
+                  {photos.map((photo, idx) => {
+                      const role = idx === 0 ? '히어로' : idx === photos.length - 1 && photos.length >= 2 ? '마무리' : '특징';
+                      const assignedOptions = groupProducts.filter(p => !!p.thumbnailDataUrl && p.thumbnailDataUrl === photo.dataUrl);
+                      const isThumbnail = assignedOptions.length > 0;
+                      const hasMultipleOptions = groupProducts.length > 1;
+                      const starTitle = !isThumbnail
+                        ? '대표이미지로 저장'
+                        : hasMultipleOptions
+                          ? `대표이미지로 지정됨: ${assignedOptions.map((p, i) => `옵션${groupProducts.indexOf(p) + 1}${p.color ? ` · ${p.color}` : ''}`).join(', ')}`
+                          : '대표이미지로 지정됨';
+                      return (
+                        <div
+                          key={photo.id}
+                          data-photo-id={photo.id}
+                          onPointerDown={handlePhotoPointerDown(photo.id)}
+                          onPointerMove={handlePhotoPointerMove}
+                          onPointerUp={handlePhotoPointerUp}
+                          onPointerCancel={handlePhotoPointerCancel}
+                          title={`${idx + 1}번째 · ${role} (드래그해서 순서 변경)`}
+                          className="group relative w-16 h-16 cursor-grab active:cursor-grabbing"
+                          style={{
+                            opacity: draggingPhotoId === photo.id ? 0.4 : 1,
+                            touchAction: 'none',
+                            outline: dragOverPhotoId === photo.id && draggingPhotoId && draggingPhotoId !== photo.id ? '2px solid #3b82f6' : 'none',
+                            outlineOffset: 1,
+                          }}
+                        >
+                          {/* Clips only the thumbnail image to its rounded box — the star dropdown below
+                              lives outside this wrapper so it isn't clipped along with the photo. */}
+                          <div className="absolute inset-0 rounded-md overflow-hidden border border-slate-600 bg-slate-800">
+                            <img src={photo.dataUrl} alt="" draggable={false} className="w-full h-full object-cover pointer-events-none" />
+                            <span className="absolute bottom-0.5 left-0.5 text-[9px] leading-none px-1 py-0.5 rounded bg-slate-900/80 text-slate-200">
+                              {role}
+                            </span>
+                          </div>
+                          <div className="absolute top-0.5 left-0.5" ref={thumbnailAssignPhotoId === photo.id ? thumbnailAssignMenuRef : undefined}>
+                            <button
+                              onClick={() => handleStarClick(photo)}
+                              className={`w-4 h-4 flex items-center justify-center rounded-full bg-slate-900/80 transition-opacity [&_svg]:h-2.5 [&_svg]:w-2.5 ${
+                                isThumbnail ? 'text-yellow-400 opacity-100' : 'text-white opacity-0 group-hover:opacity-100'
+                              }`}
+                              title={starTitle}
+                            >
+                              <StarIcon />
+                            </button>
+                            {hasMultipleOptions && thumbnailAssignPhotoId === photo.id && (
+                              <div
+                                draggable={false}
+                                onDragStart={e => e.preventDefault()}
+                                className="absolute left-0 top-full mt-1 w-40 bg-slate-800 border border-slate-600 rounded-lg shadow-[0_25px_50px_-12px_rgba(0,0,0,0.7)] z-[80] py-1 cursor-default"
+                              >
+                                <div className="px-2.5 py-1 text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                                  대표이미지로 지정할 옵션
+                                </div>
+                                {groupProducts.map((p, optionIdx) => {
+                                  const isAssignedToThis = p.thumbnailDataUrl === photo.dataUrl;
+                                  return (
+                                    <button
+                                      key={p.id}
+                                      onClick={() => handleAssignThumbnailToOption(photo, p.id)}
+                                      className={`w-full text-left px-2.5 py-1.5 text-xs transition-colors ${
+                                        isAssignedToThis ? 'text-yellow-400 font-semibold' : 'text-slate-300 hover:bg-blue-600 hover:text-white'
+                                      }`}
+                                    >
+                                      {isAssignedToThis ? '★ ' : ''}옵션{optionIdx + 1}{p.color ? ` · ${p.color}` : ''}
+                                    </button>
+                                  );
+                                })}
+                              </div>
+                            )}
+                          </div>
+                          <button
+                            onClick={() => removePhoto(photo.id)}
+                            className="absolute top-0.5 right-0.5 w-4 h-4 flex items-center justify-center rounded-full bg-slate-900/80 text-white opacity-0 group-hover:opacity-100 transition-opacity [&_svg]:h-2.5 [&_svg]:w-2.5"
+                            title="사진 삭제"
+                          >
+                            <TrashIcon />
+                          </button>
+                        </div>
+                      );
+                    })}
+                </div>
+              </div>
+            )}
 
             {/* AI 문구생성은 기본 템플릿의 문구 구조(특별한점/특징 01~)로만 생성돼서 김치 템플릿에는
                 맞지 않는다. 김치는 위의 "문구 붙여넣기"에 있는 전용 프롬프트를 쓴다. */}

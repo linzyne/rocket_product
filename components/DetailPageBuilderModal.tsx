@@ -17,7 +17,7 @@ import { generateDetailPageCopyWithGemini } from '../utils/detailPageCopyGemini'
 import { saveFilesInProductFolder, productFolderName, detailSliceFileNames } from '../utils/fileSave';
 import { generateId } from '../utils/id';
 import { saveDetailPageDraft, loadDetailPageDraft, deleteDetailPageDraft } from '../data/detailPageDrafts';
-import { withTimeout, stripClonedScripts, stripEmptySections, fixTextBaselineShift } from '../utils/html2canvasHelpers';
+import { withTimeout, stripClonedScripts, stripEmptySections } from '../utils/html2canvasHelpers';
 import ImageCropModal from './ImageCropModal';
 import EditableText from './EditableText';
 import { KimchiPreview, KimchiSectionPanel, KIMCHI_TYPE_SCALE, KIMCHI_TYPE_STEPS, KimchiTypeScale } from './KimchiDetailSections';
@@ -1407,7 +1407,6 @@ const DetailPageBuilderModal: React.FC<DetailPageBuilderModalProps> = ({ isOpen,
             onclone: (clonedDoc: Document) => {
               stripClonedScripts(clonedDoc);
               stripEmptySections(clonedDoc);
-              fixTextBaselineShift(clonedDoc);
             },
           }),
           20000,

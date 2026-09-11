@@ -46,7 +46,7 @@ import { resizeImageDataUrl } from './utils/imageResize';
 import { withCoLtdSuffix } from './utils/manufacturerFormat';
 import { db, isFirebaseConfigured, ensureSignedIn } from './utils/firebase';
 import { collection, doc, setDoc, deleteDoc, onSnapshot, query, where } from 'firebase/firestore';
-import { stripClonedScripts, withTimeout } from './utils/html2canvasHelpers';
+import { stripClonedScripts, withTimeout, withInlineImageMetrics } from './utils/html2canvasHelpers';
 
 // This tells TypeScript that the global variables from CDNs exist.
 declare var XLSX: any;
@@ -1458,7 +1458,7 @@ const App: React.FC = () => {
         setIsGenerating(true);
         try {
           const canvas = await withTimeout<any>(
-            html2canvas(labelRef.current, { scale: 2, backgroundColor: null, onclone: stripClonedScripts }),
+            withInlineImageMetrics(() => html2canvas(labelRef.current, { scale: 2, backgroundColor: null, onclone: stripClonedScripts })),
             20000,
             '라벨 이미지 생성'
           );
@@ -1504,7 +1504,7 @@ const App: React.FC = () => {
         setIsGeneratingBarcodeLabel(true);
         try {
           const canvas = await withTimeout<any>(
-            html2canvas(barcodeLabelRef.current, { scale: 2, backgroundColor: null, onclone: stripClonedScripts }),
+            withInlineImageMetrics(() => html2canvas(barcodeLabelRef.current, { scale: 2, backgroundColor: null, onclone: stripClonedScripts })),
             20000,
             '바코드 라벨 이미지 생성'
           );
@@ -1546,7 +1546,7 @@ const App: React.FC = () => {
       }
       try {
         const canvas = await withTimeout<any>(
-          html2canvas(hiddenLabelCaptureRef.current, { scale: 2, backgroundColor: null, onclone: stripClonedScripts }),
+          withInlineImageMetrics(() => html2canvas(hiddenLabelCaptureRef.current, { scale: 2, backgroundColor: null, onclone: stripClonedScripts })),
           20000,
           '라벨 이미지 캡처(통합다운)'
         );

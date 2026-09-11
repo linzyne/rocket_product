@@ -29,3 +29,26 @@ export const stripEmptySections = (clonedDoc: Document) => {
   if (all.length > 0 && empty.length >= all.length) return;
   empty.forEach(el => el.remove());
 };
+
+// Tailwind의 preflight(index.html의 CDN 스크립트가 넣는다)는 `img { display: block }`을 건다.
+// 그런데 html2canvas는 글자를 어느 높이에 그릴지 정할 때, 1×1짜리 이미지를 글자 옆에 놓고
+// `vertical-align: baseline`으로 세운 뒤 그 이미지의 위치로 baseline을 읽는다
+// (FontMetrics.parseMetrics). img가 block이면 그 이미지가 글자와 같은 줄에 서지 못하고 다음 줄로
+// 떨어져서, baseline이 "글자 윗선에서 baseline까지"가 아니라 "줄 하나의 높이"로 잡힌다.
+// 글자는 딱 그 차이만큼 아래로 내려 그려진다 — 40px 배지 글자에서 17px이나 처지는 바람에,
+// 화면에서는 테두리 한가운데 있던 문구가 저장 이미지에서만 아래로 쏠려 보였다.
+//
+// 그래서 캡처하는 동안만 그 측정용 이미지에 display:inline을 돌려준다. 가로·세로가 둘 다 1인
+// img는 앱 어디에도 없으니(사진은 전부 그보다 크다) 화면에 나가는 그림에는 영향이 없고,
+// 캡처가 끝나면 규칙을 걷어낸다. html2canvas는 baseline을 원본 문서에서 재므로(new
+// FontMetrics(document)) 사본이 아니라 이쪽에 걸어야 한다.
+export const withInlineImageMetrics = async <T,>(run: () => Promise<T>): Promise<T> => {
+  const style = document.createElement('style');
+  style.textContent = 'img[width="1"][height="1"]{display:inline!important}';
+  document.head.appendChild(style);
+  try {
+    return await run();
+  } finally {
+    style.remove();
+  }
+};

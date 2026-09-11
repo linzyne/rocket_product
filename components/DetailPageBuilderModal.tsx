@@ -17,7 +17,7 @@ import { generateDetailPageCopyWithGemini } from '../utils/detailPageCopyGemini'
 import { saveFilesInProductFolder, productFolderName, detailSliceFileNames } from '../utils/fileSave';
 import { generateId } from '../utils/id';
 import { saveDetailPageDraft, loadDetailPageDraft, deleteDetailPageDraft } from '../data/detailPageDrafts';
-import { withTimeout, stripClonedScripts, stripEmptySections } from '../utils/html2canvasHelpers';
+import { withTimeout, stripClonedScripts, stripEmptySections, withInlineImageMetrics } from '../utils/html2canvasHelpers';
 import ImageCropModal from './ImageCropModal';
 import EditableText from './EditableText';
 import { KimchiPreview, KimchiSectionPanel, KIMCHI_TYPE_SCALE, KIMCHI_TYPE_STEPS, KimchiTypeScale } from './KimchiDetailSections';
@@ -1389,6 +1389,8 @@ const DetailPageBuilderModal: React.FC<DetailPageBuilderModalProps> = ({ isOpen,
 
       // html2canvas의 x/y는 "찍을 요소의 왼쪽 위"에서 잰 값이라, y만 옮기면 그 아래 띠가 나온다.
       // width/height를 준 만큼만 캔버스로 나오므로 띠 하나가 곧 캔버스 하나다.
+      // 띠를 다 찍을 때까지 baseline 측정 보정을 걸어둔다 — 띠마다 새로 재기 때문이다.
+      return await withInlineImageMetrics(async () => {
       const bands: HTMLCanvasElement[] = [];
       for (let top = 0; top < fullHeight; top += bandHeight) {
         const height = Math.min(bandHeight, fullHeight - top);
@@ -1415,6 +1417,7 @@ const DetailPageBuilderModal: React.FC<DetailPageBuilderModalProps> = ({ isOpen,
         bands.push(canvas);
       }
       return bands;
+      });
     } finally {
       if (previousZoom !== 1) setZoom(previousZoom);
     }

@@ -166,7 +166,9 @@ const MAX_SLICE_HEIGHT = 3000;
 // 찍으므로 그 위쪽은 어차피 버려지는 화소다. 원본 그대로 두면 폰 사진 한 장이 4MB라 몇 장만
 // 올려도 앱이 무거워지는데, 여기까지 줄이면 700KB 정도가 되고 눈에 보이는 차이는 없다.
 const MAX_PHOTO_WIDTH = CANVAS_WIDTH * 2;
-const PHOTO_JPEG_QUALITY = 0.85;
+// 이 사진은 저장할 때 캡처 이미지 안으로 한 번 더 구워지므로(=JPEG 두 번) 여기서 너무 깎으면
+// 최종 상세페이지에 그 손실이 그대로 남는다. 용량은 조금 늘지만 0.9로 잡는다.
+const PHOTO_JPEG_QUALITY = 0.9;
 
 // ── 캔버스 크기 한계 ──────────────────────────────────────────────────────────
 // 브라우저가 만들 수 있는 캔버스에는 한 변 길이와 총 픽셀 수 두 가지 한계가 있다. 넘겨도
@@ -2050,35 +2052,54 @@ const DetailPageBuilderModal: React.FC<DetailPageBuilderModalProps> = ({ isOpen,
   // 어떤 값을 쓸지는 가장 무거운 조각 하나로 정하고(모든 조각을 매번 다시 굽지 않으려고),
   // 정해진 값을 전 조각에 똑같이 적용한다. 용량 한도는 파일 한 장 기준이라, 잘라서 저장하면
   // 한 장으로 저장할 때보다 화질을 덜 깎아도 된다.
+  //
+  // 줄이는 순서가 중요하다: **해상도를 깎는 건 맨 마지막**이다. 사진이 몇 장만 들어가도 2배로
+  // 찍은 PNG 한 조각(1720×3000)은 10MB를 훌쩍 넘는데, 여기서 PNG를 고집하며 해상도부터 내리면
+  // 1x(860px)까지 떨어져 글자가 눈에 띄게 흐려진다. 같은 조각을 JPEG 고품질로 구우면 해상도를
+  // 그대로 두고도 보통 1~2MB에 들어간다 — 사진이 섞인 상세페이지에서는 JPEG 쪽이 늘 이긴다.
   const encodeSlices = (slices: HTMLCanvasElement[], minScale: number): string[] => {
     const fits = (url: string) => dataUrlByteSize(url) <= MAX_DETAIL_IMAGE_BYTES;
-    const qualitySteps = [0.95, 0.9, 0.85, 0.8, 0.75, 0.7, 0.6];
+    // 0.85 아래로는 김치 템플릿처럼 큰 단색 글자에서 테두리가 지저분해지므로 거기서 멈추고
+    // 해상도 쪽을 건드린다.
+    const qualitySteps = [0.95, 0.92, 0.9, 0.87, 0.85];
 
     const pngs = slices.map(c => c.toDataURL('image/png'));
     if (pngs.every(fits)) return pngs;
 
     const probe = slices[pngs.reduce((worst, url, i) => (dataUrlByteSize(url) > dataUrlByteSize(pngs[worst]) ? i : worst), 0)];
 
-    // 1) 무손실(PNG)인 채로 실제 표시 배율(1x)까지만 10%씩 줄여본다.
-    let scale = 1;
-    while (scale > minScale) {
-      scale = Math.max(minScale, scale * 0.9);
-      if (fits(downscaleCanvas(probe, scale).toDataURL('image/png'))) {
-        return slices.map(c => downscaleCanvas(c, scale).toDataURL('image/png'));
+    // 1) 찍은 해상도 그대로, JPEG 품질만 낮춰본다. 대개 여기서 끝난다.
+    for (const quality of qualitySteps) {
+      if (fits(probe.toDataURL('image/jpeg', quality))) {
+        return slices.map(c => c.toDataURL('image/jpeg', quality));
       }
     }
 
-    // 2) 그래도 안 들어가면 JPEG로 바꿔 품질을 단계적으로 낮춘다.
+    // 2) 그래도 안 들어가면 해상도를 10%씩 내리며 다시 품질을 훑는다. 화면 표시 배율(1x)까지는
+    //    내려도 눈에 보이는 해상도는 유지된다.
+    let scale = 1;
+    while (scale > minScale) {
+      scale = Math.max(minScale, scale * 0.9);
+      const scaledProbe = downscaleCanvas(probe, scale);
+      for (const quality of qualitySteps) {
+        if (fits(scaledProbe.toDataURL('image/jpeg', quality))) {
+          return slices.map(c => downscaleCanvas(c, scale).toDataURL('image/jpeg', quality));
+        }
+      }
+    }
+
+    // 3) 1x로도 안 들어가는 극단적인 경우에만 표시 배율 아래로 내려간다.
+    const lastResortQualities = [0.8, 0.75, 0.7, 0.6];
     let jpegScale = minScale;
     while (true) {
       const scaledProbe = downscaleCanvas(probe, jpegScale);
-      for (const quality of qualitySteps) {
+      for (const quality of lastResortQualities) {
         if (fits(scaledProbe.toDataURL('image/jpeg', quality))) {
           return slices.map(c => downscaleCanvas(c, jpegScale).toDataURL('image/jpeg', quality));
         }
       }
       if (jpegScale <= 0.15) {
-        return slices.map(c => downscaleCanvas(c, jpegScale).toDataURL('image/jpeg', qualitySteps[qualitySteps.length - 1]));
+        return slices.map(c => downscaleCanvas(c, jpegScale).toDataURL('image/jpeg', lastResortQualities[lastResortQualities.length - 1]));
       }
       jpegScale *= 0.85;
     }

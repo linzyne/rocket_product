@@ -484,7 +484,7 @@ const DetailPageBuilderModal: React.FC<DetailPageBuilderModalProps> = ({ isOpen,
   // any content (from 문구생성하기, 붙여넣은 문구 적용, or direct edits after that point), every
   // text block (including empty placeholders for any still-blank fields) shows again as usual.
   const hasCopyText =
-    copy.productName.trim() !== '' || copy.hookCopy.trim() !== '' ||
+    copy.hookCopy.trim() !== '' ||
     copy.highlights.some(h => h.trim() !== '') ||
     copy.features.some(f => f.title.trim() !== '' || f.description.trim() !== '') ||
     copy.closing.trim() !== '';
@@ -1994,7 +1994,6 @@ const DetailPageBuilderModal: React.FC<DetailPageBuilderModalProps> = ({ isOpen,
     // 인식되니 "찾지 못했어요" 경고는 안 뜬다) — 저장 후에야 빈칸을 발견하는 일이 없도록, 어떤
     // 항목이 비게 되는지 미리 알려주고 그래도 적용할지 확인한다.
     const missingParts: string[] = [];
-    if (!result.productName.trim()) missingParts.push('제품명');
     if (!result.hookCopy.trim()) missingParts.push('후킹 문구');
     if (!result.highlights.some(h => h.trim())) missingParts.push('특별한점');
     if (result.features.length === 0) missingParts.push('특징(01~)');
@@ -2204,13 +2203,13 @@ const DetailPageBuilderModal: React.FC<DetailPageBuilderModalProps> = ({ isOpen,
   const confirmIfCopyEmpty = () => {
     const isEmpty = isKimchi
       ? !kimchiHasContent
-      : !copy.productName.trim() && !copy.hookCopy.trim() &&
+      : !copy.hookCopy.trim() &&
         copy.highlights.every(h => !h.trim()) && copy.features.length === 0 && !copy.closing.trim();
     if (!isEmpty) return true;
     return window.confirm(
       isKimchi
         ? '문구가 하나도 입력되지 않았어요. 사진만으로 이대로 저장할까요?'
-        : '제품명/후킹 문구/특별한점/특징/마무리 문구가 전부 비어 있어요. 이대로 저장할까요?'
+        : '후킹 문구/특별한점/특징/마무리 문구가 전부 비어 있어요. 이대로 저장할까요?'
     );
   };
 
@@ -2674,17 +2673,12 @@ const DetailPageBuilderModal: React.FC<DetailPageBuilderModalProps> = ({ isOpen,
                 ) : (
                   <>
                 {/* Hero */}
+                {heroPhoto && renderPhoto(heroPhoto, hasCopyText ? SPACE.lg : SPACE.lg + SECTION_GAP)}
                 {hasCopyText && (
-                  <>
-                    <div style={{ marginTop: SPACE.lg, marginBottom: SPACE.sm }}>
-                      <EditableText value={copy.productName} onChange={v => setCopy(prev => ({ ...prev, productName: v }))} placeholder="제품명" style={styles.heroTitle} />
-                    </div>
-                    <div style={{ marginBottom: SPACE.lg }}>
-                      <EditableText value={copy.hookCopy} onChange={v => setCopy(prev => ({ ...prev, hookCopy: v }))} placeholder="후킹 문구" style={styles.heroSubtitle} />
-                    </div>
-                  </>
+                  <div style={{ marginTop: heroPhoto ? 0 : SPACE.lg, marginBottom: SPACE.xl + SECTION_GAP }}>
+                    <EditableText value={copy.hookCopy} onChange={v => setCopy(prev => ({ ...prev, hookCopy: v }))} placeholder="후킹 문구" style={styles.heroSubtitle} />
+                  </div>
                 )}
-                {heroPhoto && renderPhoto(heroPhoto, (hasCopyText ? SPACE.xl : SPACE.lg) + SECTION_GAP)}
 
                 {/* 특별한점 */}
                 {hasCopyText && (

@@ -88,7 +88,7 @@ export function buildDetailPageCopyPrompt(
     '(제품명 한 줄)',
     '',
     '후킹 문구',
-    '(임팩트 있는 한 줄)',
+    '(임팩트 있는 문구. 반드시 두 줄로 나눠 쓰고, 한 줄은 18자를 넘기지 마)',
     '',
     '<사진>',
     ''
@@ -256,12 +256,42 @@ function parsePositional(text: string, highlightCount: number, featureBlockCount
   return finalize(result, highlightBuf as string[], featureBuf as string[], highlightCount, featureBlockCount);
 }
 
-// 후킹 문구는 문장이 끝나면 줄을 바꿔줘야 읽힌다. 그대로 두면 상자 너비에 맞춰 아무 데서나
-// 접혀서 마지막 한두 글자만 다음 줄로 떨어진다("...우리 / 닭"). 문장 부호 뒤의 공백을 줄바꿈으로
-// 바꾼다. 소수점("1.5")처럼 뒤에 공백이 없는 마침표는 건드리지 않는다.
+// 후킹 문구는 줄을 직접 나눠줘야 읽힌다. 그대로 두면 상자 너비에 맞춰 아무 데서나 접혀서
+// 마지막 한두 글자만 다음 줄로 떨어진다("...한 권에 / 가지런히").
+//
+//  1) 문장이 끝나면(. ! ? ~) 줄을 바꾼다. 소수점("1.5")처럼 뒤에 공백이 없으면 건드리지 않는다.
+//  2) 그러고도 줄이 길면 가운데에 가장 가까운 쉼표 뒤에서, 쉼표가 없으면 가운데에 가장 가까운
+//     띄어쓰기에서 나눈다 — 두 줄의 길이가 엇비슷해야 보기 좋다.
+//
 // (문구 블록은 흰 공백을 그대로 살려 그리므로 \n이 그대로 줄바꿈이 된다.)
+const MAX_HOOK_LINE = 18;
+
+const splitLongLine = (line: string, depth = 0): string => {
+  const text = line.trim();
+  if (text.length <= MAX_HOOK_LINE || depth >= 2) return text;
+
+  const middle = text.length / 2;
+  const commas: number[] = [];
+  const spaces: number[] = [];
+  for (let i = 0; i < text.length - 1; i++) {
+    if (text[i] === ',' || text[i] === '\u3001') commas.push(i + 1);
+    else if (text[i] === ' ') spaces.push(i);
+  }
+  const nearestToMiddle = (list: number[]) =>
+    list.reduce((best, cur) => (Math.abs(cur - middle) < Math.abs(best - middle) ? cur : best), list[0]);
+
+  const at = commas.length > 0 ? nearestToMiddle(commas) : spaces.length > 0 ? nearestToMiddle(spaces) : -1;
+  if (at <= 0) return text;
+  return `${splitLongLine(text.slice(0, at), depth + 1)}\n${splitLongLine(text.slice(at), depth + 1)}`;
+};
+
 export const breakAfterSentences = (text: string): string =>
-  text.replace(/([.!?~。！？]+)[ \t]+/g, '$1\n').trim();
+  text
+    .replace(/([.!?~\u3002\uFF01\uFF1F]+)[ \t]+/g, '$1\n')
+    .split('\n')
+    .map(line => splitLongLine(line))
+    .join('\n')
+    .trim();
 
 export function parseDetailPageCopyText(
   text: string,

@@ -110,7 +110,12 @@
     .rc-image-tile { position:relative; aspect-ratio:1/1; padding:0; border:2px solid #cbd5e1; border-radius:8px; overflow:hidden; background:#fff; cursor:pointer; }
     .rc-image-tile img { width:100%; height:100%; object-fit:cover; display:block; }
     .rc-image-tile.on { border-color:#f97316; }
+    .rc-image-tile.dragging { opacity:0.4; }
+    .rc-image-tile.drop { border-color:#3b82f6; }
     .rc-image-check { position:absolute; top:3px; left:3px; width:16px; height:16px; border-radius:5px; background:rgba(255,255,255,0.92); color:#f97316; font-size:11px; font-weight:800; display:flex; align-items:center; justify-content:center; }
+    .rc-image-star { position:absolute; top:3px; right:3px; width:18px; height:18px; border-radius:5px; background:rgba(255,255,255,0.92); color:#cbd5e1; font-size:12px; line-height:18px; text-align:center; cursor:pointer; }
+    .rc-image-star:hover { color:#f59e0b; }
+    .rc-image-star.on { color:#f59e0b; background:rgba(255,255,255,0.98); }
     .rc-image-kind { position:absolute; left:0; right:0; bottom:0; background:rgba(15,23,42,0.6); color:#fff; font-size:9px; padding:2px 0; text-align:center; }
     .rc-image-status { margin:6px 0 0; }
     .rc-quote-row { display:flex; gap:6px; align-items:center; }
@@ -966,8 +971,9 @@
     await Promise.all(Array.from({ length: Math.min(DOWNLOAD_AT_ONCE, urls.length) }, worker));
 
     return results
-      .filter((dataUrl) => typeof dataUrl === 'string')
-      .map((dataUrl, i) => ({ name: `1688_${String(i + 1).padStart(2, '0')}.jpg`, dataUrl }));
+      .map((dataUrl, index) => ({ dataUrl, url: urls[index] }))
+      .filter((item) => typeof item.dataUrl === 'string')
+      .map((item, i) => ({ name: `1688_${String(i + 1).padStart(2, '0')}.jpg`, dataUrl: item.dataUrl, url: item.url }));
   };
 
   // ---- 카테고리 견적서 찾기 ----
@@ -1120,7 +1126,7 @@
         </div>
         <div class="rc-section">
           <p class="rc-section-heading"><span class="rc-step-num">5</span>🖼 이미지</p>
-          <p class="rc-step-hint">창이 열리면서 이 페이지의 사진을 자동으로 찾습니다. 쓸 사진만 남기면 맨 아래 "등록하기"를 누를 때 그대로 담아 보냅니다.</p>
+          <p class="rc-step-hint">창이 열리면서 이 페이지의 사진을 자동으로 찾습니다. 쓸 사진만 남기면 맨 아래 "등록하기"를 누를 때 그대로 담아 보냅니다. ★를 누르면 대표이미지가 되고, 끌어다 놓으면 순서가 바뀝니다(번호 순서대로 담깁니다).</p>
           <div id="rc-image-area" hidden>
             <div class="rc-image-toolbar">
               <button type="button" id="rc-image-all" class="rc-add-option">전체 선택</button>
@@ -1770,14 +1776,24 @@
     const imageCountEl = box.querySelector('#rc-image-count');
     const imageStatusEl = box.querySelector('#rc-image-status');
     let imageItems = [];
+    // 상품 목록에 쓸 대표이미지로 지정한 사진의 주소. 한 장만 둔다.
+    let mainImageUrl = null;
 
     const pickedImageUrls = () => imageItems.filter((item) => item.checked).map((item) => item.url);
 
+    // 끌어다 놓아 순서를 바꾸는 중인 사진의 자리.
+    let dragIndex = null;
+
     const renderImageGrid = () => {
       imageGrid.innerHTML = '';
-      imageItems.forEach((item) => {
+      // 고른 사진에는 몇 번째로 들어갈지 번호를 보여준다 — 에디터에 이 순서 그대로 담긴다.
+      const orderOf = new Map();
+      imageItems.filter((item) => item.checked).forEach((item, i) => orderOf.set(item.url, i + 1));
+
+      imageItems.forEach((item, index) => {
         const tile = document.createElement('button');
         tile.type = 'button';
+        tile.draggable = true;
         tile.className = `rc-image-tile${item.checked ? ' on' : ''}`;
 
         const img = document.createElement('img');
@@ -1789,7 +1805,7 @@
 
         const check = document.createElement('span');
         check.className = 'rc-image-check';
-        check.textContent = item.checked ? '✓' : '';
+        check.textContent = item.checked ? String(orderOf.get(item.url)) : '';
         tile.appendChild(check);
 
         const kind = document.createElement('span');
@@ -1797,15 +1813,61 @@
         kind.textContent = item.kind === 'detail' ? '상세' : item.kind === 'etc' ? '기타' : '대표';
         tile.appendChild(kind);
 
+        // 상품 목록에 걸리는 대표이미지(썸네일). 한 장만 지정된다.
+        const star = document.createElement('span');
+        star.className = `rc-image-star${mainImageUrl === item.url ? ' on' : ''}`;
+        star.textContent = '★';
+        star.title = '대표이미지로 지정';
+        star.addEventListener('click', (event) => {
+          event.stopPropagation();
+          mainImageUrl = mainImageUrl === item.url ? null : item.url;
+          // 대표로 고른 사진은 당연히 함께 보낸다.
+          if (mainImageUrl === item.url) item.checked = true;
+          renderImageGrid();
+        });
+        tile.appendChild(star);
+
         tile.addEventListener('click', () => {
           item.checked = !item.checked;
-          tile.classList.toggle('on', item.checked);
-          check.textContent = item.checked ? '✓' : '';
-          imageCountEl.textContent = `${pickedImageUrls().length}장 선택`;
+          // 대표로 지정한 사진을 빼면 대표 지정도 같이 푼다.
+          if (!item.checked && mainImageUrl === item.url) mainImageUrl = null;
+          renderImageGrid();
         });
+
+        // 끌어다 놓아 순서 바꾸기. 여기서 만든 순서 그대로 상세페이지 에디터에 담긴다.
+        tile.addEventListener('dragstart', (event) => {
+          dragIndex = index;
+          tile.classList.add('dragging');
+          if (event.dataTransfer) {
+            event.dataTransfer.effectAllowed = 'move';
+            // 파이어폭스는 데이터가 없으면 끌기 자체가 시작되지 않는다.
+            try { event.dataTransfer.setData('text/plain', String(index)); } catch (err) { /* 무시 */ }
+          }
+        });
+        tile.addEventListener('dragend', () => {
+          dragIndex = null;
+          renderImageGrid();
+        });
+        tile.addEventListener('dragover', (event) => {
+          if (dragIndex === null || dragIndex === index) return;
+          event.preventDefault();
+          if (event.dataTransfer) event.dataTransfer.dropEffect = 'move';
+          tile.classList.add('drop');
+        });
+        tile.addEventListener('dragleave', () => tile.classList.remove('drop'));
+        tile.addEventListener('drop', (event) => {
+          event.preventDefault();
+          tile.classList.remove('drop');
+          if (dragIndex === null || dragIndex === index) return;
+          const [moved] = imageItems.splice(dragIndex, 1);
+          imageItems.splice(index, 0, moved);
+          dragIndex = null;
+          renderImageGrid();
+        });
+
         imageGrid.appendChild(tile);
       });
-      imageCountEl.textContent = `${pickedImageUrls().length}장 선택`;
+      imageCountEl.textContent = `${pickedImageUrls().length}장 선택${mainImageUrl ? ' · 대표 1장' : ''}`;
     };
 
     // 창이 열리면 바로 한 번 돌린다(아래 scanImages 호출). 버튼은 다시 찾을 때만 쓴다.
@@ -1870,6 +1932,12 @@
           detailEditorBtn.disabled = false;
           detailEditorBtn.textContent = label;
         }
+        // 어느 사진이 대표인지 앱에 알려준다(앱이 그 상품의 대표이미지로 넣는다).
+        images = images.map(({ name, dataUrl, url }) => ({
+          name,
+          dataUrl,
+          ...(url === mainImageUrl ? { main: true } : {}),
+        }));
         imageStatusEl.textContent = `사진 ${images.length}장을 담아 보냅니다.`;
         if (images.length < urls.length) {
           showToast(`사진 ${urls.length - images.length}장은 받지 못해 빼고 보냅니다.`, true);

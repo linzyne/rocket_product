@@ -256,6 +256,13 @@ function parsePositional(text: string, highlightCount: number, featureBlockCount
   return finalize(result, highlightBuf as string[], featureBuf as string[], highlightCount, featureBlockCount);
 }
 
+// 후킹 문구는 문장이 끝나면 줄을 바꿔줘야 읽힌다. 그대로 두면 상자 너비에 맞춰 아무 데서나
+// 접혀서 마지막 한두 글자만 다음 줄로 떨어진다("...우리 / 닭"). 문장 부호 뒤의 공백을 줄바꿈으로
+// 바꾼다. 소수점("1.5")처럼 뒤에 공백이 없는 마침표는 건드리지 않는다.
+// (문구 블록은 흰 공백을 그대로 살려 그리므로 \n이 그대로 줄바꿈이 된다.)
+export const breakAfterSentences = (text: string): string =>
+  text.replace(/([.!?~。！？]+)[ \t]+/g, '$1\n').trim();
+
 export function parseDetailPageCopyText(
   text: string,
   highlightCount: number = DEFAULT_HIGHLIGHT_COUNT,
@@ -265,5 +272,6 @@ export function parseDetailPageCopyText(
   const hasLabeledContent =
     labeled.productName || labeled.hookCopy ||
     labeled.highlights.some(h => h.trim()) || labeled.features.length > 0 || labeled.closing;
-  return hasLabeledContent ? labeled : parsePositional(text, highlightCount, featureBlockCount);
+  const parsed = hasLabeledContent ? labeled : parsePositional(text, highlightCount, featureBlockCount);
+  return { ...parsed, hookCopy: breakAfterSentences(parsed.hookCopy) };
 }

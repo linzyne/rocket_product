@@ -2626,10 +2626,13 @@ const App: React.FC = () => {
     };
 
     // 사진은 상품 값과 달리 에디터로 바로 넘긴다(아래 importedPhotos prop).
-    const photos: string[] = Array.isArray(payload.images)
-      ? payload.images.map((image: any) => image && image.dataUrl).filter((url: any) => typeof url === 'string')
-      : [];
+    const images: any[] = Array.isArray(payload.images) ? payload.images : [];
+    const photos: string[] = images.map(image => image && image.dataUrl).filter((url: any) => typeof url === 'string');
     if (photos.length > 0) setImportedDetailPhotos(photos);
+
+    // 1688 창에서 ★로 지정한 사진은 이 상품의 대표이미지로 넣는다.
+    const mainImage = images.find(image => image && image.main && typeof image.dataUrl === 'string');
+    if (mainImage) handleProductChange(productId, 'thumbnailDataUrl', mainImage.dataUrl);
 
     const run = applyImportPayloadRef.current;
     if (!run) {

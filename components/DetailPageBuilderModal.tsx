@@ -743,25 +743,23 @@ const DetailPageBuilderModal: React.FC<DetailPageBuilderModalProps> = ({ isOpen,
       ctx.lineTo(to.x, to.y);
       ctx.stroke();
     } else if (obj.type === 'rect') {
-      // 캔버스 선은 경로를 가운데 두고 그려져서, 경로를 드래그한 자리에 그대로 두면 선 굵기의
-      // 절반만큼 바깥으로 삐져나온다. 반만큼 안으로 넣어 상자의 바깥 모서리가 드래그한 만큼
-      // 딱 맞게 한다. 모서리도 둥글게 뭉치지 않도록 각지게 잇는다.
-      const half = obj.size / 2;
-      const x = Math.min(from.x, to.x) + half;
-      const y = Math.min(from.y, to.y) + half;
-      const width = Math.max(0, Math.abs(to.x - from.x) - obj.size);
-      const height = Math.max(0, Math.abs(to.y - from.y) - obj.size);
-      ctx.lineJoin = 'miter';
-      ctx.strokeRect(x, y, width, height);
+      // 속까지 칠한다. 선으로 그리면 경로를 가운데 두고 그려져서 굵기의 절반만큼 바깥으로
+      // 삐져나오는데, 채우기는 드래그한 네모와 정확히 같은 자리를 덮는다(굵기와 무관).
+      ctx.fillRect(
+        Math.min(from.x, to.x),
+        Math.min(from.y, to.y),
+        Math.abs(to.x - from.x),
+        Math.abs(to.y - from.y),
+      );
     } else if (obj.type === 'ellipse') {
-      const half = obj.size / 2;
+      // 드래그한 네모에 딱 들어맞는 타원을 속까지 칠한다.
       const cx = (from.x + to.x) / 2;
       const cy = (from.y + to.y) / 2;
-      const rx = Math.max(0, Math.abs(to.x - from.x) / 2 - half);
-      const ry = Math.max(0, Math.abs(to.y - from.y) / 2 - half);
+      const rx = Math.abs(to.x - from.x) / 2;
+      const ry = Math.abs(to.y - from.y) / 2;
       ctx.beginPath();
       ctx.ellipse(cx, cy, rx, ry, 0, 0, Math.PI * 2);
-      ctx.stroke();
+      ctx.fill();
     } else if (obj.type === 'arrow') {
       const angle = Math.atan2(to.y - from.y, to.x - from.x);
       const headLen = Math.max(10, obj.size * 2.5);

@@ -1,5 +1,5 @@
 import { GoogleGenAI, Type } from "@google/genai";
-import { DetailPageCopy, DetailPageCopyInput } from "./detailPageCopyTemplate";
+import { DetailPageCopy, DetailPageCopyInput, breakAfterSentences } from "./detailPageCopyTemplate";
 
 // Direct in-editor generation: unlike buildDetailPageCopyPrompt (utils/detailPageCopyTemplate.ts),
 // which the user copies out to an external chat AI and pastes the reply back in, this calls Gemini
@@ -66,7 +66,8 @@ export async function generateDetailPageCopyWithGemini(
 
   return {
     productName: String(parsed.productName ?? ''),
-    hookCopy: String(parsed.hookCopy ?? ''),
+    // 후킹 문구는 문장이 끝나면 줄을 바꿔야 상자 너비에 맞춰 엉뚱한 데서 접히지 않는다.
+    hookCopy: breakAfterSentences(String(parsed.hookCopy ?? '')),
     highlights: Array.from({ length: highlightCount }, (_, i) => highlights[i] || ''),
     features: rawFeatures.slice(0, featureBlockCount).map((f, i) => ({
       number: String(i + 1).padStart(2, '0'),

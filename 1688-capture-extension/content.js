@@ -1658,6 +1658,33 @@
       if (!response.ok) quoteStatusEl.textContent = `견적서를 받지 못했습니다: ${response.error}`;
     };
 
+    const showQuoteDone = () => {
+      quoteResultsEl.innerHTML = '';
+      quoteStatusEl.innerHTML = '';
+      const done = document.createElement('div');
+      done.className = 'rc-quote-done';
+      done.textContent = `✓ "${categoryQuote.category}" 견적서를 받았습니다. "등록하기"를 누르면 이 상품에 함께 등록됩니다.`;
+      quoteStatusEl.appendChild(done);
+    };
+
+    // 견적서 한 장에 카테고리가 여러 개 들어 있는 경우. 어느 값을 넣을지 여기서 고른다.
+    const showCategoryOptions = (options, fallback) => {
+      quoteStatusEl.textContent = '견적서에 넣을 카테고리를 고르세요. (파일의 드롭다운에 있는 값 그대로 들어갑니다)';
+      quoteResultsEl.innerHTML = '';
+      options.forEach((option) => {
+        const item = document.createElement('button');
+        item.type = 'button';
+        item.className = 'rc-quote-item';
+        // 고른 카테고리 경로의 마지막 조각과 같은 값이 대개 맞는 값이라 표시해준다.
+        item.textContent = option === fallback ? `${option} (찾은 카테고리)` : option;
+        item.addEventListener('click', () => {
+          categoryQuote.category = option;
+          showQuoteDone();
+        });
+        quoteResultsEl.appendChild(item);
+      });
+    };
+
     categoryHandlers = {
       onResults: (items) => {
         quoteResultsEl.innerHTML = '';
@@ -1682,16 +1709,29 @@
           quoteStatusEl.textContent = `견적서를 저장하지 못했습니다: ${saved.error}`;
           return;
         }
+
         // 파일 자체는 저장소에 두고, 넘기는 값에는 어떤 견적서인지만 적는다(클립보드에 수 MB를
         // 실으면 복사·붙여넣기가 무거워진다).
-        categoryQuote = { name, path, keyword };
-        const category = String(path || '').split('>').pop().trim() || '카테고리';
+        const fallback = String(path || '').split('>').pop().trim() || '카테고리';
+        categoryQuote = { name, path, keyword, category: fallback };
+
         quoteResultsEl.innerHTML = '';
-        quoteStatusEl.innerHTML = '';
-        const done = document.createElement('div');
-        done.className = 'rc-quote-done';
-        done.textContent = `✓ "${category}" 견적서를 받았습니다. "등록하기"를 누르면 이 상품에 함께 등록됩니다.`;
-        quoteStatusEl.appendChild(done);
+        quoteStatusEl.textContent = '견적서를 확인하는 중입니다...';
+
+        // 견적서의 카테고리 칸은 드롭다운이라 파일에 든 값 그대로 넣어야 한다. 파일을 열어 그
+        // 목록을 읽고, 여러 개면 여기서 고르게 한다(못 읽으면 앱이 물어본다).
+        let options = [];
+        try {
+          options = await window.__rocketReadCategoryOptions(dataUrl);
+        } catch (err) {
+          console.warn('[로켓제안] 견적서 카테고리 목록을 읽지 못했습니다', err);
+        }
+
+        if (options.length > 1) showCategoryOptions(options, fallback);
+        else {
+          categoryQuote.category = options[0] || fallback;
+          showQuoteDone();
+        }
       },
       onError: (message) => {
         quoteResultsEl.innerHTML = '';

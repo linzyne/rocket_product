@@ -1850,8 +1850,10 @@ const App: React.FC = () => {
       const file = await unwrapDownloadedQuote(dataUrlToFile(pending.dataUrl, fileName), fileName);
 
       // 견적서의 카테고리 칸은 드롭다운이라, 파일에 든 목록의 값을 그대로 넣어야 한다.
-      let category = lastSegment;
-      const template = getQuoteTemplates(quoteFixedValues)[0];
+      // 1688 창에서 이미 골랐으면(확장이 파일을 열어 목록을 보여준다) 그 값을 그대로 쓴다.
+      const pickedInExtension = meta && meta.category ? String(meta.category) : '';
+      let category = pickedInExtension || lastSegment;
+      const template = !pickedInExtension ? getQuoteTemplates(quoteFixedValues)[0] : null;
       if (template) {
         try {
           const fileDataUrl = await new Promise<string>((resolve, reject) => {

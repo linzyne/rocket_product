@@ -20,6 +20,7 @@ import MissingFieldsModal from './components/MissingFieldsModal';
 import { saveDataUrlInProductFolder, productFolderName, productNameFolderName, buildZipBlob, saveFilesInProductFolder, getRootDirectory, detailSliceFileNames } from './utils/fileSave';
 import { sendProposalToSupplierHub, requestPendingCategoryQuote, dataUrlToFile, unwrapDownloadedQuote } from './utils/rocketProposal';
 import CategoryQuoteFinderModal from './components/CategoryQuoteFinderModal';
+import CategoryPickModal from './components/CategoryPickModal';
 import { collectMissingFields } from './utils/productValidation';
 import {
   QuoteFixedValues,
@@ -364,6 +365,9 @@ const App: React.FC = () => {
   const applyImportPayloadRef = useRef<((productId: string, payload: any) => Promise<void>) | null>(null);
   // 확장이 상세페이지 에디터를 열면서 보내준 값. 새로 만든 행이 목록에 들어온 뒤에 채운다.
   const [pendingDetailImport, setPendingDetailImport] = useState<{ productId: string; payload: any } | null>(null);
+  // 1688 창에서 받아둔 견적서에 카테고리가 여러 개 들어 있을 때, 어느 값을 쓸지 물어보는 창.
+  // 고를 때까지 기다려야 해서 resolve를 들고 있는다.
+  const [categoryPick, setCategoryPick] = useState<{ options: string[]; resolve: (value: string | null) => void } | null>(null);
   // 확장이 1688 페이지에서 받아 보내준 사진(dataURL). 상품에 저장하지 않고 에디터에만 한 번
   // 넘긴다 — 상품 목록은 localStorage에 들어가므로 사진을 실으면 금세 용량이 찬다.
   const [importedDetailPhotos, setImportedDetailPhotos] = useState<string[] | null>(null);
@@ -1857,7 +1861,14 @@ const App: React.FC = () => {
             reader.readAsDataURL(file);
           });
           const options = await readCategoryDropdownOptions(fileDataUrl, template);
-          if (options.length > 0) category = options.find(option => option === lastSegment) || options[0];
+          if (options.length === 1) {
+            category = options[0];
+          } else if (options.length > 1) {
+            // 어느 카테고리로 넣을지는 사람이 골라야 한다(경로의 마지막 조각과 딱 맞는 값이
+            // 있어도, 같은 이름이 여러 대분류 밑에 있을 수 있다).
+            const picked = await new Promise<string | null>(resolve => setCategoryPick({ options, resolve }));
+            category = picked || options.find(option => option === lastSegment) || options[0];
+          }
         } catch (error) {
           console.error('카테고리 목록을 읽지 못했습니다:', error);
         }
@@ -3157,6 +3168,20 @@ const App: React.FC = () => {
           onSave={handleSaveQuoteFixedValues}
         />
       )}
+
+      <CategoryPickModal
+        isOpen={!!categoryPick}
+        options={categoryPick?.options || []}
+        onPick={(option) => {
+          categoryPick?.resolve(option);
+          setCategoryPick(null);
+        }}
+        onClose={() => {
+          // 닫기만 하면 파일에 든 첫 카테고리로 넣는다(견적서 없이 두면 통합다운이 막힌다).
+          categoryPick?.resolve(null);
+          setCategoryPick(null);
+        }}
+      />
 
       <CategoryQuoteFinderModal
         isOpen={!!categoryFinderProductId}

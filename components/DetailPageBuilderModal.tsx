@@ -743,14 +743,22 @@ const DetailPageBuilderModal: React.FC<DetailPageBuilderModalProps> = ({ isOpen,
       ctx.lineTo(to.x, to.y);
       ctx.stroke();
     } else if (obj.type === 'rect') {
-      const x = Math.min(from.x, to.x);
-      const y = Math.min(from.y, to.y);
-      ctx.strokeRect(x, y, Math.abs(to.x - from.x), Math.abs(to.y - from.y));
+      // 캔버스 선은 경로를 가운데 두고 그려져서, 경로를 드래그한 자리에 그대로 두면 선 굵기의
+      // 절반만큼 바깥으로 삐져나온다. 반만큼 안으로 넣어 상자의 바깥 모서리가 드래그한 만큼
+      // 딱 맞게 한다. 모서리도 둥글게 뭉치지 않도록 각지게 잇는다.
+      const half = obj.size / 2;
+      const x = Math.min(from.x, to.x) + half;
+      const y = Math.min(from.y, to.y) + half;
+      const width = Math.max(0, Math.abs(to.x - from.x) - obj.size);
+      const height = Math.max(0, Math.abs(to.y - from.y) - obj.size);
+      ctx.lineJoin = 'miter';
+      ctx.strokeRect(x, y, width, height);
     } else if (obj.type === 'ellipse') {
+      const half = obj.size / 2;
       const cx = (from.x + to.x) / 2;
       const cy = (from.y + to.y) / 2;
-      const rx = Math.abs(to.x - from.x) / 2;
-      const ry = Math.abs(to.y - from.y) / 2;
+      const rx = Math.max(0, Math.abs(to.x - from.x) / 2 - half);
+      const ry = Math.max(0, Math.abs(to.y - from.y) / 2 - half);
       ctx.beginPath();
       ctx.ellipse(cx, cy, rx, ry, 0, 0, Math.PI * 2);
       ctx.stroke();
@@ -2801,7 +2809,7 @@ const DetailPageBuilderModal: React.FC<DetailPageBuilderModalProps> = ({ isOpen,
                 <canvas
                   ref={drawCanvasRef}
                   className="absolute inset-0"
-                  style={{ width: '100%', height: '100%', pointerEvents: drawMode ? 'auto' : 'none', cursor: !drawMode ? 'default' : drawTool === 'label' ? 'crosshair' : 'none' }}
+                  style={{ width: '100%', height: '100%', pointerEvents: drawMode ? 'auto' : 'none', cursor: !drawMode ? 'default' : drawTool === 'brush' ? 'none' : 'crosshair' }}
                   onPointerDown={handleDrawPointerDown}
                   onPointerMove={handleDrawPointerMove}
                   onPointerUp={handleDrawPointerUp}
@@ -2918,7 +2926,7 @@ const DetailPageBuilderModal: React.FC<DetailPageBuilderModalProps> = ({ isOpen,
                   }}
                 />
               )}
-              {drawMode && drawTool !== 'label' && drawCursorPos && (
+              {drawMode && drawTool === 'brush' && drawCursorPos && (
                 <div
                   className="absolute rounded-full pointer-events-none"
                   style={{

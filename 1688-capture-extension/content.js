@@ -86,6 +86,7 @@
     .rc-pick-bar { position:fixed; top:16px; left:50%; transform:translateX(-50%); z-index:2147483647; background:#dc2626; color:#ffffff; padding:16px 24px; border-radius:14px; border:2px solid #7f1d1d; box-shadow:0 20px 40px -10px rgba(0,0,0,0.5); font-size:17px; font-weight:700; display:flex; align-items:center; gap:16px; max-width:90vw; pointer-events:auto; }
     .rc-pick-bar span { min-width:0; }
     .rc-pick-bar button { flex:0 0 auto; padding:9px 22px; border-radius:9999px; border:none; background:#f97316; color:#fff; font-weight:700; cursor:pointer; font-size:15px; }
+    .rc-pick-warn { display:block; font-size:12px; font-weight:600; color:#fde047; margin-top:2px; }
     .rc-pick-bar button.rc-pick-cancel { background:#ffffff; color:#b91c1c; border:1px solid #fecaca; }
     .rc-margin-result { display:grid; grid-template-columns:1fr 1fr; gap:6px; margin:8px 0 4px; }
     .rc-margin-result-item { background:#f8fafc; border:1px solid #cbd5e1; border-radius:8px; padding:8px 10px; }
@@ -98,13 +99,33 @@
     .rc-apply-price-btn { width:100%; padding:10px 14px; border-radius:10px; border:none; background:linear-gradient(135deg,#fb923c,#f97316); color:#fff; cursor:pointer; font-size:13px; font-weight:700; margin-top:10px; box-shadow:0 6px 16px -4px rgba(249,115,22,0.55); transition:transform .12s ease, box-shadow .12s ease; }
     .rc-apply-price-btn:hover { transform:translateY(-1px); box-shadow:0 8px 20px -4px rgba(249,115,22,0.65); }
     .rc-apply-price-btn:active { transform:translateY(0); }
-    .rc-detail-editor-btn { width:100%; margin-top:8px; padding:10px 14px; border-radius:10px; border:none; background:#7c3aed; color:#fff; cursor:pointer; font-size:13px; font-weight:700; }
-    .rc-detail-editor-btn:hover { filter:brightness(1.08); }
     .rc-textarea { min-height:70px; resize:vertical; font-family:inherit; line-height:1.5; }
     .rc-step-hint { margin:0 0 8px; font-size:11px; color:#94a3b8; line-height:1.5; }
     .rc-image-work-btn { width:100%; padding:10px 14px; border-radius:10px; border:none; background:linear-gradient(135deg,#60a5fa,#3b82f6); color:#fff; cursor:pointer; font-size:13px; font-weight:700; margin-top:8px; box-shadow:0 6px 16px -4px rgba(59,130,246,0.55); transition:transform .12s ease, box-shadow .12s ease; }
     .rc-image-work-btn:hover { transform:translateY(-1px); box-shadow:0 8px 20px -4px rgba(59,130,246,0.65); }
     .rc-image-work-btn:active { transform:translateY(0); }
+    .rc-image-toolbar { display:flex; align-items:center; gap:6px; margin-top:8px; }
+    .rc-image-count { margin-left:auto; font-size:11px; color:#64748b; }
+    .rc-image-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:6px; margin-top:8px; max-height:240px; overflow-y:auto; padding:2px; }
+    .rc-image-tile { position:relative; aspect-ratio:1/1; padding:0; border:2px solid #cbd5e1; border-radius:8px; overflow:hidden; background:#fff; cursor:pointer; }
+    .rc-image-tile img { width:100%; height:100%; object-fit:cover; display:block; }
+    .rc-image-tile.on { border-color:#f97316; }
+    .rc-image-check { position:absolute; top:3px; left:3px; width:16px; height:16px; border-radius:5px; background:rgba(255,255,255,0.92); color:#f97316; font-size:11px; font-weight:800; display:flex; align-items:center; justify-content:center; }
+    .rc-image-kind { position:absolute; left:0; right:0; bottom:0; background:rgba(15,23,42,0.6); color:#fff; font-size:9px; padding:2px 0; text-align:center; }
+    .rc-image-status { margin:6px 0 0; }
+    .rc-quote-row { display:flex; gap:6px; align-items:center; }
+    .rc-quote-row .rc-input { margin-top:0; }
+    .rc-quote-search { flex:0 0 auto; padding:7px 14px; border-radius:8px; border:none; background:#3b82f6; color:#fff; font-size:12px; font-weight:700; cursor:pointer; }
+    .rc-quote-search:hover { background:#2563eb; }
+    .rc-quote-search:disabled { background:#94a3b8; cursor:not-allowed; }
+    .rc-quote-words { display:flex; flex-wrap:wrap; gap:4px; margin-top:6px; }
+    .rc-quote-word { padding:3px 9px; border-radius:9999px; border:1px solid #cbd5e1; background:#fff; color:#475569; font-size:11px; cursor:pointer; }
+    .rc-quote-word:hover { border-color:#3b82f6; color:#1d4ed8; }
+    .rc-quote-word.on { background:#3b82f6; border-color:#3b82f6; color:#fff; }
+    .rc-quote-results { display:flex; flex-direction:column; gap:4px; margin-top:8px; max-height:190px; overflow-y:auto; }
+    .rc-quote-item { text-align:left; padding:7px 9px; border-radius:8px; border:1px solid #cbd5e1; background:#fff; color:#0f172a; font-size:11.5px; line-height:1.4; cursor:pointer; }
+    .rc-quote-item:hover { border-color:#3b82f6; background:#eff6ff; }
+    .rc-quote-done { margin-top:8px; padding:8px 10px; border-radius:8px; background:#dcfce7; border:1px solid #86efac; color:#166534; font-size:11.5px; line-height:1.4; }
     .rc-option-calc { display:grid; grid-template-columns:1fr 1fr; gap:5px; margin-top:6px; }
     .rc-calc-chip { font-size:10.5px; padding:4px 6px; border-radius:8px; background:#f8fafc; border:1px solid #cbd5e1; color:#64748b; white-space:nowrap; text-align:center; overflow:hidden; text-overflow:ellipsis; }
     .rc-calc-chip strong { display:block; color:#0f172a; font-weight:700; font-size:12px; }
@@ -585,7 +606,10 @@
 
       const bar = document.createElement('div');
       bar.className = 'rc-pick-bar';
-      bar.innerHTML = `<span>옵션을 클릭하세요 · <strong id="rc-pick-count" style="color:#fde047;">0</strong>개 선택됨</span><button type="button" id="rc-pick-done">완료</button><button type="button" id="rc-pick-cancel" class="rc-pick-cancel">취소</button>`;
+      // 크롬 번역이 켜져 있으면 <html>에 translated-* 클래스가 붙는다. 그 상태에서는 옵션명이
+      // 번역문으로 들어가고 클릭이 잘 안 먹을 수 있어 미리 알려준다.
+      const translated = /translated-(ltr|rtl)/.test(document.documentElement.className);
+      bar.innerHTML = `<span>옵션을 클릭하세요 · <strong id="rc-pick-count" style="color:#fde047;">0</strong>개 선택됨${translated ? ' <span class="rc-pick-warn">크롬 번역을 끄면 원문 옵션명이 들어갑니다</span>' : ''}</span><button type="button" id="rc-pick-done">완료</button><button type="button" id="rc-pick-skip" class="rc-pick-cancel">옵션 없이 열기</button><button type="button" id="rc-pick-cancel" class="rc-pick-cancel">취소</button>`;
       root.appendChild(bar);
       const countEl = bar.querySelector('#rc-pick-count');
       let count = 0;
@@ -601,12 +625,30 @@
         highlight.style.height = `${rect.height}px`;
       };
 
+      // 크롬 "이 페이지 번역"을 켜면 글자가 <font> 안으로 들어가고 번역문으로 바뀐다. 그때는
+      // 클릭한 곳에 글자가 없을 수 있어, 위로 올라가며 title/alt 같은 원문이 남아 있는 곳을 찾는다.
+      const optionTextAt = (el) => {
+        const clean = (value) => String(value || '').replace(/\s+/g, ' ').trim();
+        let node = el;
+        for (let i = 0; i < 4 && node && node.getAttribute; i++) {
+          const attr = clean(node.getAttribute('title') || node.getAttribute('aria-label') || node.getAttribute('data-name'));
+          if (attr) return attr;
+          const img = node.querySelector && node.querySelector('img[alt]');
+          const alt = img && clean(img.getAttribute('alt'));
+          if (alt) return alt;
+          const text = clean(node.textContent);
+          if (text) return text;
+          node = node.parentElement;
+        }
+        return '';
+      };
+
       const onClick = (e) => {
         const target = e.target;
         if (target === shadowHost) return; // 완료 버튼 등 우리 UI 클릭은 그대로 통과시킨다.
         e.preventDefault();
         e.stopPropagation();
-        const text = (target.getAttribute('title') || target.textContent || '').replace(/\s+/g, ' ').trim();
+        const text = optionTextAt(target);
         if (!text || text.length > 60) return;
         count += 1;
         countEl.textContent = String(count);
@@ -628,6 +670,8 @@
       };
 
       bar.querySelector('#rc-pick-done').addEventListener('click', () => finish(false));
+      // 옵션을 하나도 못 골라도(번역 중이거나 옵션이 없는 상품) 창은 열 수 있어야 한다.
+      bar.querySelector('#rc-pick-skip').addEventListener('click', () => finish(false));
       bar.querySelector('#rc-pick-cancel').addEventListener('click', () => finish(true));
       document.addEventListener('mouseover', onMouseOver, true);
       document.addEventListener('click', onClick, true);
@@ -640,7 +684,25 @@
 
   try {
     chrome.runtime.onMessage.addListener((message) => {
-      if (!message || message.type !== 'DETAIL_EDITOR_CLOSED' || !currentBox) return;
+      if (!message || !message.type) return;
+
+      // 카테고리 검색 결과·견적서 파일(서플라이어허브 탭에서 background.js를 거쳐 온다).
+      if (categoryHandlers) {
+        if (message.type === 'CATEGORY_RESULTS') {
+          categoryHandlers.onResults(Array.isArray(message.items) ? message.items : []);
+          return;
+        }
+        if (message.type === 'CATEGORY_FILE') {
+          categoryHandlers.onFile({ name: message.name, dataUrl: message.dataUrl, path: message.path });
+          return;
+        }
+        if (message.type === 'CATEGORY_ERROR') {
+          categoryHandlers.onError(String(message.message || '알 수 없는 오류'));
+          return;
+        }
+      }
+
+      if (message.type !== 'DETAIL_EDITOR_CLOSED' || !currentBox) return;
       const copyBtn = currentBox.querySelector('#rc-copy');
       if (!copyBtn) return;
       if (window.confirm('로켓제안서로 보낼 값을 복사할까요?')) copyBtn.click();
@@ -648,6 +710,311 @@
   } catch (err) {
     /* 확장이 새로 로드된 경우 무시 */
   }
+
+  const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+  // ---- 페이지 사진 모으기 ----
+  // 상세페이지 에디터로 사진을 바로 넘기기 위해, 이 페이지에 있는 사진 "주소"를 긁어온다.
+  // 실제로 내려받는 건 background.js가 한다 — 여기서 받으면 이미지 서버가 막는다(CORS).
+  const ALICDN_RE = /^https?:\/\/[^/]*alicdn\.com\//i;
+
+  // 같은 사진이 썸네일(...jpg_60x60.jpg)·중간 크기(...jpg_.webp)로 여러 번 나온다. 확장자 뒤에
+  // 붙은 크기 꼬리표를 떼어 원본 주소 하나로 모은다.
+  const normalizeImageUrl = (raw) => {
+    if (!raw) return null;
+    let url = String(raw).trim();
+    if (url.startsWith('//')) url = `https:${url}`;
+    if (!ALICDN_RE.test(url)) return null;
+    // /tfs/·/tps/ 아래는 사이트 UI용 아이콘·로고라 상품 사진이 아니다.
+    if (/\/(tfs|tps)\//i.test(url)) return null;
+    url = url.split(/[?#]/)[0];
+    const match = /^(.*?\.(?:jpg|jpeg|png|gif|webp))(?:_.*)?$/i.exec(url);
+    if (match) return match[1];
+    // HTML을 통째로 훑을 때는 스크립트·스타일 주소도 딸려 나온다. 사진이 아닌 건 버린다.
+    if (/\.(js|css|html?|json|mp4|swf|woff2?|ttf|ico|svg)$/i.test(url)) return null;
+    return url;
+  };
+
+  // 상세설명 이미지는 그 자리까지 스크롤해야 로드된다. 내려갈수록 페이지가 길어지므로 매번
+  // 바닥을 다시 재면서 끝까지 내려간 뒤 원래 자리로 돌아온다.
+  const loadLazyImages = async () => {
+    const start = window.scrollY;
+    const pageBottom = () => Math.max(document.body.scrollHeight, document.documentElement.scrollHeight);
+    const step = Math.max(400, Math.round(window.innerHeight * 0.75));
+    let y = 0;
+    for (let i = 0; i < 80 && y < pageBottom(); i++) {
+      window.scrollTo(0, y);
+      await sleep(260);
+      y += step;
+    }
+    // 맨 아래 사진들은 바닥에 한 번 더 머물러야 로드되는 경우가 있다.
+    window.scrollTo(0, pageBottom());
+    await sleep(700);
+    window.scrollTo(0, start);
+    await sleep(250);
+  };
+
+  // 상세설명 영역. 여기 있는 사진은 "상세", 나머지(갤러리·옵션 썸네일)는 "대표"로 표시한다.
+  const DETAIL_AREA_SELECTOR =
+    '#mod-detail-description, #desc, .desc-lazyload-container, [class*="detail-desc"], [class*="description"], [id*="description"], [id*="detail"]';
+
+  // 같은 사진이 여러 경로로 잡히면 더 확실한 쪽을 남긴다(대표 > 상세 > 기타).
+  const KIND_RANK = { main: 3, detail: 2, etc: 1 };
+
+  // 문서 하나(페이지 또는 iframe) 안의 사진 주소를 모은다.
+  //  - <img>와 배경 이미지: 지금 화면에 그려져 있는 사진.
+  //  - HTML 전체 훑기: 아직 안 그려진 사진(스크립트 안 JSON, 이름이 제각각인 data-* 속성 등)까지
+  //    건진다. 보이는 것만 모으면 빠지는 게 많다. 대신 추천상품 같은 잡다한 것도 딸려오므로
+  //    "기타"로 따로 표시하고 기본 선택은 하지 않는다.
+  const collectImagesInDocument = (doc, forcedKind) => {
+    const found = new Map();
+    const add = (raw, kind) => {
+      const url = normalizeImageUrl(raw);
+      if (!url) return;
+      const existing = found.get(url);
+      if (existing && KIND_RANK[existing.kind] >= KIND_RANK[kind]) return;
+      found.set(url, { url, kind });
+    };
+
+    const detailRoots = Array.from(doc.querySelectorAll(DETAIL_AREA_SELECTOR));
+    const kindOf = (el) => forcedKind || (detailRoots.some((root) => root.contains(el)) ? 'detail' : 'main');
+
+    doc.querySelectorAll('img').forEach((img) => {
+      const kind = kindOf(img);
+      // 지연 로딩 속성 이름이 사이트마다 제각각(data-src, data-lazyload-src, data-ks-lazyload...)이라
+      // 주소처럼 생긴 값은 속성 이름을 가리지 않고 본다.
+      Array.from(img.attributes).forEach((attr) => {
+        if (/^(src|srcset|data-|lazy)/i.test(attr.name)) add(String(attr.value).split(/\s+/)[0], kind);
+      });
+    });
+
+    doc.querySelectorAll('[style*="background-image"]').forEach((el) => {
+      const match = /url\((['"]?)(.*?)\1\)/i.exec(el.getAttribute('style') || '');
+      if (match) add(match[2], kindOf(el));
+    });
+
+    try {
+      // 스크립트 안 JSON에는 주소가 \/ 로 적혀 있어 되돌린 뒤 훑는다.
+      const html = (doc.documentElement ? doc.documentElement.innerHTML : '').replace(/\\\//g, '/');
+      (html.match(/(?:https?:)?\/\/[^"'\\\s()<>]*alicdn\.com\/[^"'\\\s()<>]+/gi) || []).forEach((raw) => {
+        add(raw, forcedKind || 'etc');
+      });
+    } catch (err) {
+      /* 페이지가 너무 크면 건너뛴다 */
+    }
+
+    return Array.from(found.values());
+  };
+
+  const collectPageImages = () => collectImagesInDocument(document);
+
+  // 여러 곳에서 모은 목록을 합치고, 고르기 좋게 대표 -> 상세 -> 기타 순으로 늘어놓는다.
+  const mergeImages = (lists) => {
+    const found = new Map();
+    lists.flat().forEach((item) => {
+      const existing = found.get(item.url);
+      if (existing && KIND_RANK[existing.kind] >= KIND_RANK[item.kind]) return;
+      found.set(item.url, item);
+    });
+    const all = Array.from(found.values());
+    return [
+      ...all.filter((i) => i.kind === 'main'),
+      ...all.filter((i) => i.kind === 'detail'),
+      ...all.filter((i) => i.kind === 'etc'),
+    ].slice(0, 150);
+  };
+
+  // 상세설명이 iframe 안에 든 페이지가 있다. 그 안에서도 이 스크립트가 도니까(manifest의
+  // all_frames), 부탁을 보내면 각자 훑어서 결과를 맨 위 창으로 보내준다.
+  const FRAME_REQUEST = 'rocket-1688-collect-request';
+  const FRAME_RESPONSE = 'rocket-1688-collect-response';
+
+  const askFramesToCollect = () => {
+    document.querySelectorAll('iframe').forEach((frame) => {
+      try {
+        frame.contentWindow.postMessage({ source: FRAME_REQUEST }, '*');
+      } catch (err) {
+        /* 접근할 수 없는 프레임은 무시 */
+      }
+    });
+  };
+
+  const collectFrameImages = (waitMs) =>
+    new Promise((resolve) => {
+      const gathered = [];
+      const onMessage = (event) => {
+        if (!event.data || event.data.source !== FRAME_RESPONSE || !Array.isArray(event.data.items)) return;
+        gathered.push(...event.data.items);
+      };
+      window.addEventListener('message', onMessage);
+      askFramesToCollect();
+      setTimeout(() => {
+        window.removeEventListener('message', onMessage);
+        resolve(gathered);
+      }, waitMs);
+    });
+
+  // iframe 안에서 도는 경우: 화면(FAB·입력 창)은 맨 위 창에만 있고, 여기서는 부탁을 받으면
+  // 자기 문서를 훑어서 보내주기만 한다.
+  const setUpFrameCollector = () => {
+    window.addEventListener('message', async (event) => {
+      if (!event.data || event.data.source !== FRAME_REQUEST) return;
+      askFramesToCollect();
+      await loadLazyImages();
+      try {
+        window.top.postMessage({ source: FRAME_RESPONSE, items: collectImagesInDocument(document, 'detail') }, '*');
+      } catch (err) {
+        /* 무시 */
+      }
+    });
+  };
+
+  // 상세페이지에 쓰기엔 너무 작은 썸네일·아이콘은 아예 가져오지 않는다. 주소만 보고는 크기를
+  // 알 수 없어(썸네일 주소를 원본으로 되돌려 놓은 것이라 더 그렇다) 실제로 한 번 불러와
+  // 가로폭을 재고 거른다. 여기서 받아둔 건 브라우저 캐시에 남아 뒤에 다시 쓴다.
+  const MIN_IMAGE_WIDTH = 400;
+  const MEASURE_AT_ONCE = 8;
+
+  const measureImageWidth = (url) =>
+    new Promise((resolve) => {
+      const img = new Image();
+      const timer = setTimeout(() => resolve(0), 8000);
+      img.onload = () => { clearTimeout(timer); resolve(img.naturalWidth || 0); };
+      img.onerror = () => { clearTimeout(timer); resolve(0); };
+      img.src = url;
+    });
+
+  const keepBigImages = async (items, onProgress) => {
+    const widths = new Array(items.length).fill(0);
+    let next = 0;
+    let done = 0;
+
+    const worker = async () => {
+      while (next < items.length) {
+        const index = next++;
+        widths[index] = await measureImageWidth(items[index].url);
+        done += 1;
+        if (onProgress) onProgress(done, items.length);
+      }
+    };
+
+    await Promise.all(Array.from({ length: Math.min(MEASURE_AT_ONCE, items.length) }, worker));
+
+    return items
+      .map((item, index) => ({ ...item, width: widths[index] }))
+      .filter((item) => item.width >= MIN_IMAGE_WIDTH);
+  };
+
+  // 고르는 화면에 띄울 작은 그림. alicdn은 주소 뒤에 크기를 붙이면 그 크기로 내려준다.
+  const thumbUrl = (url) => `${url}_200x200.jpg`;
+
+  // 확장(background.js)에 물어본다. 확장이 잠들거나 죽으면 답이 영영 안 올 수 있어, 시간 제한을
+  // 두고 실패로 돌린다 — 안 그러면 버튼이 눌린 채로 멈춰 있게 된다.
+  const askExtension = (message, timeoutMs = 30000) =>
+    new Promise((resolve) => {
+      let done = false;
+      const finish = (result) => {
+        if (done) return;
+        done = true;
+        resolve(result);
+      };
+      setTimeout(() => finish({ ok: false, error: '확장이 응답하지 않았습니다(시간 초과).' }), timeoutMs);
+      try {
+        chrome.runtime.sendMessage(message, (response) => {
+          if (chrome.runtime.lastError) finish({ ok: false, error: chrome.runtime.lastError.message });
+          else finish(response || { ok: false, error: '확장이 응답하지 않았습니다.' });
+        });
+      } catch (err) {
+        finish({ ok: false, error: String((err && err.message) || err) });
+      }
+    });
+
+  // 앱에 넘길 값을 확장 저장소에 직접 넣는다. 사진까지 담으면 수 MB라, 메시지로 넘기면 크기
+  // 제한에 걸려 통째로 실패한다(저장소는 unlimitedStorage로 열어두었다).
+  const savePendingDetailCopy = (payload) =>
+    new Promise((resolve) => {
+      try {
+        chrome.storage.local.set({ pendingDetailCopy: { payload, savedAt: Date.now() } }, () => {
+          if (chrome.runtime.lastError) resolve({ ok: false, error: chrome.runtime.lastError.message });
+          else resolve({ ok: true });
+        });
+      } catch (err) {
+        resolve({ ok: false, error: String((err && err.message) || err) });
+      }
+    });
+
+  // 고른 사진을 확장을 통해 받아 dataURL로 만든다. 한 장씩 차례로 받으면 수십 장일 때 몇 분씩
+  // 걸려 멈춘 것처럼 보이므로, 몇 개씩 동시에 받는다. 고른 순서는 그대로 지킨다.
+  const DOWNLOAD_AT_ONCE = 5;
+
+  const downloadImages = async (urls, onProgress) => {
+    const results = new Array(urls.length).fill(null);
+    let next = 0;
+    let done = 0;
+
+    const worker = async () => {
+      while (next < urls.length) {
+        const index = next++;
+        const response = await askExtension({ type: 'FETCH_IMAGE', url: urls[index] }, 20000);
+        if (response && response.ok && response.dataUrl) results[index] = response.dataUrl;
+        else console.warn('[로켓제안] 사진 받기 실패', urls[index], response && response.error);
+        done += 1;
+        if (onProgress) onProgress(done, urls.length);
+      }
+    };
+
+    await Promise.all(Array.from({ length: Math.min(DOWNLOAD_AT_ONCE, urls.length) }, worker));
+
+    return results
+      .filter((dataUrl) => typeof dataUrl === 'string')
+      .map((dataUrl, i) => ({ name: `1688_${String(i + 1).padStart(2, '0')}.jpg`, dataUrl }));
+  };
+
+  // ---- 카테고리 견적서 찾기 ----
+  // 앱의 "견적서 찾기"와 같은 일을 여기서 한다. 검색과 다운로드는 서플라이어허브 화면을 실제로
+  // 조작해야 해서 supplier.js가 맡고(background.js가 중계), 이 창은 물어보고 받기만 한다.
+  // 받은 파일은 확장 저장소에 넣어두고, 앱이 1688 값을 받을 때 함께 가져가 등록한다.
+  const QUOTE_KEY = 'pendingCategoryQuote';
+
+  // 카테고리 검색은 한 단어여야 결과가 나온다. 상품명에서 품목으로 보이는 단어 하나를 고른다
+  // (앱의 utils/categoryKeyword.ts와 같은 규칙).
+  const KEYWORD_NOISE = new Set([
+    '세트', '개입', '개', '매', '장', '팩', '박스', '묶음', '벌크',
+    '대용량', '휴대용', '무료배송', '정품', '신상', '인기',
+  ]);
+
+  const extractCategoryKeywords = (productName) => {
+    const tokens = String(productName || '')
+      .replace(/[[\](){}<>,/·]/g, ' ')
+      .split(/\s+/)
+      .map((t) => t.trim())
+      .filter(Boolean)
+      .filter((t) => t.length >= 2 && !KEYWORD_NOISE.has(t) && /[가-힣]/.test(t) && !/^\d/.test(t));
+    if (tokens.length === 0) return [];
+    // 한국어 상품명은 보통 끝쪽에 품목명이 오므로 뒤에서부터 후보로 삼고, 맨 앞 단어(대개
+    // 브랜드)는 맨 뒤로 미룬다.
+    const [first, ...others] = tokens;
+    const ordered = others.length > 0 ? [...others.reverse(), first] : [first];
+    return Array.from(new Set(ordered));
+  };
+
+  /** 가장 그럴듯한 키워드 하나. 검색창의 기본값으로 쓴다. */
+  const guessCategoryKeyword = (productName) => extractCategoryKeywords(productName)[0] || '';
+
+  const saveCategoryQuote = (value) =>
+    new Promise((resolve) => {
+      try {
+        chrome.storage.local.set({ [QUOTE_KEY]: value }, () => {
+          if (chrome.runtime.lastError) resolve({ ok: false, error: chrome.runtime.lastError.message });
+          else resolve({ ok: true });
+        });
+      } catch (err) {
+        resolve({ ok: false, error: String((err && err.message) || err) });
+      }
+    });
+
+  // 지금 열려 있는 창이 검색 결과·견적서를 받을 자리. 창을 닫으면 비운다.
+  let categoryHandlers = null;
 
   async function buildModal(initial, pickedLabels) {
     const overlay = document.createElement('div');
@@ -666,8 +1033,15 @@
       </div>
       <div class="rc-fields">
         <div class="rc-section">
-          <p class="rc-section-heading"><span class="rc-step-num">1</span>🖼 이미지 다운받기</p>
-          <p class="rc-step-hint">상품 이미지를 먼저 받아두세요.</p>
+          <p class="rc-section-heading"><span class="rc-step-num">1</span>📋 견적서 찾기 (선택)</p>
+          <p class="rc-step-hint">쿠팡 카테고리를 찾아 견적서를 미리 받아둡니다. 받은 견적서는 "등록하기"를 누를 때 그 상품에 함께 등록됩니다.</p>
+          <div class="rc-quote-row">
+            <input id="rc-quote-keyword" class="rc-input" placeholder="검색어 한 단어 (예: 노트)" />
+            <button type="button" id="rc-quote-search" class="rc-quote-search">검색</button>
+          </div>
+          <div id="rc-quote-words" class="rc-quote-words"></div>
+          <div id="rc-quote-results" class="rc-quote-results"></div>
+          <p id="rc-quote-status" class="rc-step-hint rc-image-status"></p>
         </div>
         <div class="rc-section">
           <p class="rc-section-heading"><span class="rc-step-num">2</span>🎨 옵션 선택</p>
@@ -745,7 +1119,21 @@
           <button type="button" id="rc-apply-price" class="rc-apply-price-btn">↑ 옵션에 적용하기</button>
         </div>
         <div class="rc-section">
-          <p class="rc-section-heading"><span class="rc-step-num">5</span>📄 상세페이지 문구 (선택)</p>
+          <p class="rc-section-heading"><span class="rc-step-num">5</span>🖼 이미지</p>
+          <p class="rc-step-hint">창이 열리면서 이 페이지의 사진을 자동으로 찾습니다. 쓸 사진만 남기면 맨 아래 "등록하기"를 누를 때 그대로 담아 보냅니다.</p>
+          <div id="rc-image-area" hidden>
+            <div class="rc-image-toolbar">
+              <button type="button" id="rc-image-all" class="rc-add-option">전체 선택</button>
+              <button type="button" id="rc-image-none" class="rc-add-option">전체 해제</button>
+              <span id="rc-image-count" class="rc-image-count">0장 선택</span>
+            </div>
+            <div id="rc-image-grid" class="rc-image-grid"></div>
+          </div>
+          <p id="rc-image-status" class="rc-step-hint rc-image-status"></p>
+          <button type="button" id="rc-scan-images" class="rc-image-work-btn">🔁 사진 다시 찾기</button>
+        </div>
+        <div class="rc-section">
+          <p class="rc-section-heading"><span class="rc-step-num">6</span>📄 상세페이지 문구 (선택)</p>
           <p class="rc-step-hint">프롬프트를 복사해 AI에 물어보고, 받은 답을 그대로 아래에 붙여넣으세요. 로켓제안서에 붙여넣을 때 상세페이지에도 같이 들어갑니다.</p>
           <label class="rc-label">소구점 메모 (프롬프트에 들어갈 재료)
             <input id="rc-selling-points" class="rc-input" placeholder="예) 튼튼함, 넉넉한 수납, 선물용" />
@@ -754,11 +1142,10 @@
           <label class="rc-label" style="margin-top:8px;">AI가 준 문구 붙여넣기
             <textarea id="rc-detail-copy" class="rc-input rc-textarea" rows="4" placeholder="AI 답변을 그대로 붙여넣으세요"></textarea>
           </label>
-          <button type="button" id="rc-open-detail-editor" class="rc-detail-editor-btn">🎨 상세페이지 에디터 열기</button>
         </div>
       </div>
       <div class="rc-actions">
-        <button id="rc-copy" class="rc-btn-primary">복사하기</button>
+        <button id="rc-copy" class="rc-btn-primary">🚀 등록하기</button>
       </div>
     `;
 
@@ -1220,28 +1607,255 @@
       showToast(`체크된 옵션 ${checkedRows.length}개에 적용했어요.`);
     });
 
-    // 상세페이지 에디터는 로켓제안서 앱 화면을 창으로 띄워 그대로 쓴다(background.js가 연다).
-    box.querySelector('#rc-open-detail-editor').addEventListener('click', () => {
-      try {
-        chrome.runtime.sendMessage(
-          {
-            type: 'OPEN_APP_DETAIL',
-            screenWidth: window.screen.availWidth,
-            screenHeight: window.screen.availHeight,
-            // 에디터를 복붙보다 먼저 열기 때문에, 지금 입력해둔 값을 통째로 들려 보낸다.
-            // 앱은 이 값으로 상품 행을 채우고(복붙과 같은 처리) 에디터를 연다.
-            payload: buildPayload({ silent: true }),
-          },
-          (response) => {
-            if (chrome.runtime.lastError || !response || !response.ok) {
-              showToast('앱 창을 열지 못했습니다. 확장을 새로고침해주세요.', true);
-            }
-          },
-        );
-      } catch (err) {
-        showToast('확장을 새로고침한 뒤 다시 눌러주세요.', true);
+    // ---- 견적서 찾기 ----
+    // 앱의 "견적서 찾기"와 같은 화면. 검색·다운로드는 서플라이어허브 탭에서 일어나고, 받은
+    // 파일은 확장 저장소에 넣어둔다. 앱은 1688 값을 받을 때 그 파일을 가져가 상품에 등록한다.
+    const quoteKeywordInput = box.querySelector('#rc-quote-keyword');
+    const quoteSearchBtn = box.querySelector('#rc-quote-search');
+    const quoteResultsEl = box.querySelector('#rc-quote-results');
+    const quoteStatusEl = box.querySelector('#rc-quote-status');
+    const titleInput = box.querySelector('#rc-title');
+    let categoryQuote = null;
+    let searchedKeyword = '';
+
+    // 상품명에서 뽑은 키워드 후보들. 검색은 한 단어여야 결과가 나오므로, 눌러서 바꿔 가며
+    // 찾을 수 있게 칩으로 늘어놓는다(앱의 견적서 찾기와 같은 방식).
+    const quoteWordsEl = box.querySelector('#rc-quote-words');
+
+    const renderKeywordWords = () => {
+      const words = extractCategoryKeywords(titleInput.value);
+      quoteWordsEl.innerHTML = '';
+      words.forEach((word) => {
+        const chip = document.createElement('button');
+        chip.type = 'button';
+        chip.className = `rc-quote-word${quoteKeywordInput.value.trim() === word ? ' on' : ''}`;
+        chip.textContent = word;
+        chip.addEventListener('click', () => {
+          quoteKeywordInput.value = word;
+          quoteKeywordInput.dataset.rcTouched = '1';
+          renderKeywordWords();
+        });
+        quoteWordsEl.appendChild(chip);
+      });
+    };
+
+    // 검색어는 상품명에서 뽑아 기본값으로 깔아준다. 사람이 한 번 고치면 그 뒤로는 건드리지 않는다.
+    quoteKeywordInput.value = guessCategoryKeyword(titleInput.value);
+    titleInput.addEventListener('input', () => {
+      if (quoteKeywordInput.dataset.rcTouched !== '1') quoteKeywordInput.value = guessCategoryKeyword(titleInput.value);
+      renderKeywordWords();
+    });
+    quoteKeywordInput.addEventListener('input', () => {
+      quoteKeywordInput.dataset.rcTouched = '1';
+      renderKeywordWords();
+    });
+    renderKeywordWords();
+
+    const pickCategory = async (path) => {
+      quoteResultsEl.innerHTML = '';
+      quoteStatusEl.textContent = '견적서를 받는 중입니다...';
+      const response = await askExtension({ type: 'CATEGORY_PICK', path });
+      if (!response.ok) quoteStatusEl.textContent = `견적서를 받지 못했습니다: ${response.error}`;
+    };
+
+    categoryHandlers = {
+      onResults: (items) => {
+        quoteResultsEl.innerHTML = '';
+        if (items.length === 0) {
+          quoteStatusEl.textContent = '검색 결과가 없습니다. 다른 단어로 찾아보세요.';
+          return;
+        }
+        quoteStatusEl.textContent = `${items.length}개를 찾았어요. 맞는 카테고리를 누르면 견적서를 받습니다.`;
+        items.forEach((path) => {
+          const item = document.createElement('button');
+          item.type = 'button';
+          item.className = 'rc-quote-item';
+          item.textContent = path;
+          item.addEventListener('click', () => { void pickCategory(path); });
+          quoteResultsEl.appendChild(item);
+        });
+      },
+      onFile: async ({ name, dataUrl, path }) => {
+        const keyword = searchedKeyword || guessCategoryKeyword(titleInput.value);
+        const saved = await saveCategoryQuote({ name, dataUrl, path, keyword, savedAt: Date.now() });
+        if (!saved.ok) {
+          quoteStatusEl.textContent = `견적서를 저장하지 못했습니다: ${saved.error}`;
+          return;
+        }
+        // 파일 자체는 저장소에 두고, 넘기는 값에는 어떤 견적서인지만 적는다(클립보드에 수 MB를
+        // 실으면 복사·붙여넣기가 무거워진다).
+        categoryQuote = { name, path, keyword };
+        const category = String(path || '').split('>').pop().trim() || '카테고리';
+        quoteResultsEl.innerHTML = '';
+        quoteStatusEl.innerHTML = '';
+        const done = document.createElement('div');
+        done.className = 'rc-quote-done';
+        done.textContent = `✓ "${category}" 견적서를 받았습니다. "등록하기"를 누르면 이 상품에 함께 등록됩니다.`;
+        quoteStatusEl.appendChild(done);
+      },
+      onError: (message) => {
+        quoteResultsEl.innerHTML = '';
+        quoteStatusEl.textContent = `오류: ${message}`;
+      },
+    };
+
+    quoteSearchBtn.addEventListener('click', async () => {
+      const keyword = quoteKeywordInput.value.trim();
+      if (!keyword) {
+        showToast('검색어를 한 단어 입력해주세요.', true);
+        return;
+      }
+      searchedKeyword = keyword;
+      quoteResultsEl.innerHTML = '';
+      quoteStatusEl.textContent = `"${keyword}" 카테고리를 찾는 중입니다... (쿠팡 창이 잠깐 열립니다)`;
+      quoteSearchBtn.disabled = true;
+      const response = await askExtension({ type: 'CATEGORY_SEARCH', keyword });
+      quoteSearchBtn.disabled = false;
+      if (!response.ok) quoteStatusEl.textContent = `검색을 시작하지 못했습니다: ${response.error}`;
+    });
+
+    quoteKeywordInput.addEventListener('keydown', (event) => {
+      if (event.key === 'Enter') {
+        event.preventDefault();
+        quoteSearchBtn.click();
       }
     });
+
+    // ---- 1번: 페이지 사진 고르기 ----
+    // 고른 사진은 "상세페이지 에디터 열기"를 누르는 순간 받아서 함께 보낸다. 미리 받아두면
+    // 고르기만 하고 에디터를 안 여는 경우에 헛일이 되고, 메모리에 몇 MB를 들고 있게 된다.
+    const imageScanBtn = box.querySelector('#rc-scan-images');
+    const imageArea = box.querySelector('#rc-image-area');
+    const imageGrid = box.querySelector('#rc-image-grid');
+    const imageCountEl = box.querySelector('#rc-image-count');
+    const imageStatusEl = box.querySelector('#rc-image-status');
+    let imageItems = [];
+
+    const pickedImageUrls = () => imageItems.filter((item) => item.checked).map((item) => item.url);
+
+    const renderImageGrid = () => {
+      imageGrid.innerHTML = '';
+      imageItems.forEach((item) => {
+        const tile = document.createElement('button');
+        tile.type = 'button';
+        tile.className = `rc-image-tile${item.checked ? ' on' : ''}`;
+
+        const img = document.createElement('img');
+        img.loading = 'lazy';
+        img.src = thumbUrl(item.url);
+        // 크기를 붙인 주소가 안 먹는 이미지 서버도 있어, 실패하면 원본으로 보여준다.
+        img.addEventListener('error', () => { img.src = item.url; }, { once: true });
+        tile.appendChild(img);
+
+        const check = document.createElement('span');
+        check.className = 'rc-image-check';
+        check.textContent = item.checked ? '✓' : '';
+        tile.appendChild(check);
+
+        const kind = document.createElement('span');
+        kind.className = 'rc-image-kind';
+        kind.textContent = item.kind === 'detail' ? '상세' : item.kind === 'etc' ? '기타' : '대표';
+        tile.appendChild(kind);
+
+        tile.addEventListener('click', () => {
+          item.checked = !item.checked;
+          tile.classList.toggle('on', item.checked);
+          check.textContent = item.checked ? '✓' : '';
+          imageCountEl.textContent = `${pickedImageUrls().length}장 선택`;
+        });
+        imageGrid.appendChild(tile);
+      });
+      imageCountEl.textContent = `${pickedImageUrls().length}장 선택`;
+    };
+
+    // 창이 열리면 바로 한 번 돌린다(아래 scanImages 호출). 버튼은 다시 찾을 때만 쓴다.
+    const scanImages = async () => {
+      if (imageScanBtn.disabled) return;
+      imageScanBtn.disabled = true;
+      imageStatusEl.textContent = '페이지를 훑어 사진을 찾는 중입니다...';
+      try {
+        await loadLazyImages();
+        const frameItems = await collectFrameImages(5000);
+        // 대표 이미지는 기본으로 골라두고, 상세·기타는 배너나 추천상품이 섞여 있어 직접 고르게 둔다.
+        const candidates = mergeImages([collectPageImages(), frameItems]);
+        imageStatusEl.textContent = `사진 ${candidates.length}장의 크기를 확인하는 중입니다...`;
+        const bigEnough = await keepBigImages(candidates, (done, total) => {
+          imageStatusEl.textContent = `사진 크기 확인 중 ${done}/${total}...`;
+        });
+        imageItems = bigEnough.map((item) => ({ ...item, checked: item.kind === 'main' }));
+        if (imageItems.length === 0) {
+          imageArea.hidden = true;
+          imageStatusEl.textContent = '이 페이지에서 사진을 찾지 못했습니다.';
+        } else {
+          imageArea.hidden = false;
+          renderImageGrid();
+          const count = (kind) => imageItems.filter((item) => item.kind === kind).length;
+          imageStatusEl.textContent =
+            `대표 ${count('main')} · 상세 ${count('detail')} · 기타 ${count('etc')}장 (가로 ${MIN_IMAGE_WIDTH}px 미만은 뺐습니다). 쓸 사진만 남기세요.`;
+        }
+      } finally {
+        imageScanBtn.disabled = false;
+      }
+    };
+
+    imageScanBtn.addEventListener('click', () => { void scanImages(); });
+
+    box.querySelector('#rc-image-all').addEventListener('click', () => {
+      imageItems.forEach((item) => { item.checked = true; });
+      renderImageGrid();
+    });
+
+    box.querySelector('#rc-image-none').addEventListener('click', () => {
+      imageItems.forEach((item) => { item.checked = false; });
+      renderImageGrid();
+    });
+
+    // "등록하기"는 이 창에서 만든 것을 한 번에 앱으로 넘긴다 — 상품 값(복붙과 같은 처리), 고른
+    // 사진, 받아둔 견적서까지. 앱 화면은 창으로 띄워 그대로 쓴다(background.js가 연다).
+    const detailEditorBtn = box.querySelector('#rc-copy');
+
+    const openDetailEditor = async () => {
+      const urls = pickedImageUrls();
+      let images = [];
+
+      if (urls.length > 0) {
+        const label = detailEditorBtn.textContent;
+        detailEditorBtn.disabled = true;
+        try {
+          images = await downloadImages(urls, (done, total) => {
+            detailEditorBtn.textContent = `사진 받는 중... ${done}/${total}`;
+            imageStatusEl.textContent = `사진 ${done}/${total}장 받는 중입니다...`;
+          });
+        } finally {
+          detailEditorBtn.disabled = false;
+          detailEditorBtn.textContent = label;
+        }
+        imageStatusEl.textContent = `사진 ${images.length}장을 담아 보냅니다.`;
+        if (images.length < urls.length) {
+          showToast(`사진 ${urls.length - images.length}장은 받지 못해 빼고 보냅니다.`, true);
+        }
+      }
+
+      // 에디터를 복붙보다 먼저 열기 때문에, 지금 입력해둔 값을 통째로 들려 보낸다.
+      // 앱은 이 값으로 상품 행을 채우고(복붙과 같은 처리) 사진까지 담은 에디터를 연다.
+      const payload = { ...(buildPayload({ silent: true }) || {}), images };
+      console.log('[로켓제안] 에디터로 보낼 값', { ...payload, images: `${images.length}장` });
+
+      const saved = await savePendingDetailCopy(payload);
+      if (!saved.ok) {
+        showToast(`값을 넘기지 못했습니다: ${saved.error}`, true);
+        return;
+      }
+
+      const response = await askExtension({
+        type: 'OPEN_APP_DETAIL',
+        screenWidth: window.screen.availWidth,
+        screenHeight: window.screen.availHeight,
+      });
+      if (!response || !response.ok) {
+        showToast(`앱 창을 열지 못했습니다: ${(response && response.error) || '확장을 새로고침해주세요.'}`, true);
+      }
+    };
 
     box.querySelector('#rc-copy-prompt').addEventListener('click', async () => {
       const prompt = buildDetailPageCopyPrompt({
@@ -1299,6 +1913,13 @@
           };
     applyValues(box, merged);
 
+    // 상품명이 채워진 뒤에 견적서 검색어 기본값을 다시 깐다(applyValues는 input 이벤트를
+    // 내지 않아서, 위에서 건 리스너로는 반영되지 않는다).
+    if (quoteKeywordInput.dataset.rcTouched !== '1') {
+      quoteKeywordInput.value = guessCategoryKeyword(titleInput.value);
+    }
+    renderKeywordWords();
+
     const isOptionRowInput = (el) => el.classList && (el.classList.contains('rc-option-label') || el.classList.contains('rc-option-dim') || el.classList.contains('rc-option-price'));
 
     // draft에는 편집된 값과 함께, 이 값이 어느 상품 페이지에서 저장된 것인지(guessedSku)도 같이
@@ -1327,6 +1948,7 @@
       persistWork();
       overlay.remove();
       if (currentBox === box) currentBox = null;
+      categoryHandlers = null;
     };
     // 배경이 더 이상 클릭을 가로채지 않아(뒤 페이지를 자유롭게 조작할 수 있게) 바깥 클릭으로는
     // 닫히지 않는다. 취소/복사하기 버튼으로만 닫는다.
@@ -1368,6 +1990,9 @@
       return {
         source: '1688-import',
         url: location.href,
+        // 확장에서 받아둔 카테고리 견적서. 파일 자체는 확장 저장소에 있고, 앱이 그걸 가져가
+        // 이 상품에 등록한다(사진과 같은 방식).
+        ...(categoryQuote ? { categoryQuote } : {}),
         titleRaw: box.querySelector('#rc-title').value.trim(),
         manufacturerRaw: box.querySelector('#rc-manufacturer').value.trim(),
         sku: box.querySelector('#rc-sku').value.trim(),
@@ -1400,18 +2025,33 @@
       };
     };
 
-    box.querySelector('#rc-copy').addEventListener('click', async () => {
+    detailEditorBtn.addEventListener('click', async () => {
+      // 옵션을 하나도 고르지 않았으면 여기서 멈춘다(경고는 buildPayload가 띄운다).
       const payload = buildPayload();
       if (!payload) return;
+
+      // 앱이 이미 열려 있어 직접 붙여넣고 싶을 때를 위해 값은 클립보드에도 남겨둔다
+      // (사진·견적서 파일은 무거워서 클립보드에 싣지 않는다).
       try {
         await navigator.clipboard.writeText(JSON.stringify(payload));
-        const suffix = payload.variants.length > 1 ? ` (옵션 ${payload.variants.length}개)` : '';
-        showToast(`복사됐어요${suffix}! 로켓제안서 앱에서 "1688 붙여넣기" 버튼을 누르세요.`);
       } catch (err) {
-        showToast('클립보드 복사에 실패했습니다: ' + err.message, true);
+        /* 클립보드를 못 써도 아래 등록은 그대로 진행한다 */
       }
-      close();
+
+      try {
+        await openDetailEditor();
+        close();
+      } catch (err) {
+        console.error('[로켓제안] 등록 실패', err);
+        showToast(`등록하지 못했습니다: ${(err && err.message) || err}`, true);
+        detailEditorBtn.disabled = false;
+        detailEditorBtn.textContent = '🚀 등록하기';
+      }
     });
+
+    // 사진 찾기는 사람이 누르지 않아도 되게, 창이 뜨자마자 자동으로 돌린다. 페이지를 위아래로
+    // 훑느라 몇 초 걸리므로 기다리지 않고 띄워둔 채로 진행한다(그동안 옵션·정보를 입력하면 된다).
+    void scanImages();
   }
 
   function showToast(message, isError) {
@@ -1451,7 +2091,10 @@
     root.appendChild(btn);
   }
 
-  if (document.readyState === 'complete' || document.readyState === 'interactive') {
+  if (window.top !== window.self) {
+    // iframe 안에서는 사진 모으기만 돕는다(버튼·창은 맨 위 창에만).
+    setUpFrameCollector();
+  } else if (document.readyState === 'complete' || document.readyState === 'interactive') {
     injectButton();
   } else {
     document.addEventListener('DOMContentLoaded', injectButton);

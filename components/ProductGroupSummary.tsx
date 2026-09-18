@@ -17,7 +17,8 @@ interface ProductGroupSummaryProps {
   isImportingFrom1688: boolean;
   onOpenDetailPageBuilder: (product: Product) => void;
   isDetailPageDone: boolean;
-  onIntegratedDownload: (id: string) => void;
+  /** filesOnly면 파일만 폴더에 저장하고, 제안·상품목록 저장 확인창은 띄우지 않는다. */
+  onIntegratedDownload: (id: string, filesOnly?: boolean) => void;
   isIntegratedDownloading: boolean;
   isIntegratedDownloadDone: boolean;
   onArchiveGroup: (products: Product[]) => boolean;
@@ -224,6 +225,18 @@ const ProductGroupSummary: React.FC<ProductGroupSummaryProps> = ({
             title="라벨·이미지·견적서를 상품명 폴더에 저장하고, 이어서 쿠팡에 제안합니다"
           />
         </div>
+
+        {/* 04 등록은 저장 뒤에 "제안할까요?"를 묻는다. 파일만 챙기고 싶을 때를 위해 따로 둔다. */}
+        <button
+          type="button"
+          onClick={() => onIntegratedDownload(lead.id, true)}
+          disabled={isIntegratedDownloading}
+          className="flex-shrink-0 text-gray-400 hover:text-emerald-600 transition-colors duration-200 p-1 rounded-md hover:bg-emerald-400/10 disabled:opacity-50"
+          aria-label="파일만 폴더에 저장"
+          title="라벨·이미지·견적서를 상품명 폴더에 저장하기만 합니다 (쿠팡 제안·상품목록 저장은 하지 않습니다)"
+        >
+          {isIntegratedDownloading ? <SpinnerIcon /> : <SaveIcon />}
+        </button>
 
         {/* 견적서는 통합다운에 이미 들어가지만, 양식만 따로 확인하고 싶을 때가 있어 따로 둔다. */}
         {lead.quoteTemplateId && (

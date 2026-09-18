@@ -18,7 +18,7 @@ import ImageEditorModal from './components/ImageEditorModal';
 import DetailPageBuilderModal, { STANDALONE_DRAFT_ID } from './components/DetailPageBuilderModal';
 import MissingFieldsModal from './components/MissingFieldsModal';
 import { saveDataUrlInProductFolder, productFolderName, productNameFolderName, buildZipBlob, saveFilesInProductFolder, getRootDirectory, detailSliceFileNames } from './utils/fileSave';
-import { sendProposalToSupplierHub } from './utils/rocketProposal';
+import { sendProposalToSupplierHub, requestPendingCategoryQuote, dataUrlToFile, unwrapDownloadedQuote } from './utils/rocketProposal';
 import CategoryQuoteFinderModal from './components/CategoryQuoteFinderModal';
 import { collectMissingFields } from './utils/productValidation';
 import {
@@ -37,6 +37,7 @@ import {
   getProductMaterialValue,
   RequiredFieldGap,
   OPTION_FIELD_COLOR,
+  readCategoryDropdownOptions,
 } from './data/quoteTemplates';
 import { getAllQuoteTemplates, putQuoteTemplate, deleteQuoteTemplate } from './data/quoteTemplateStore';
 import { generateProductImportFields } from './utils/geminiProductImport';
@@ -363,6 +364,9 @@ const App: React.FC = () => {
   const applyImportPayloadRef = useRef<((productId: string, payload: any) => Promise<void>) | null>(null);
   // 확장이 상세페이지 에디터를 열면서 보내준 값. 새로 만든 행이 목록에 들어온 뒤에 채운다.
   const [pendingDetailImport, setPendingDetailImport] = useState<{ productId: string; payload: any } | null>(null);
+  // 확장이 1688 페이지에서 받아 보내준 사진(dataURL). 상품에 저장하지 않고 에디터에만 한 번
+  // 넘긴다 — 상품 목록은 localStorage에 들어가므로 사진을 실으면 금세 용량이 찬다.
+  const [importedDetailPhotos, setImportedDetailPhotos] = useState<string[] | null>(null);
 
   // 견적서 선택/관리 화면에 보여줄 목록. 카테고리 견적서 찾기로 받아온 임시 양식(hidden)은
   // 그 상품에서만 쓰이므로 목록에는 넣지 않는다.
@@ -1747,13 +1751,7 @@ const App: React.FC = () => {
   // 카테고리 견적서 찾기로 받아온 양식은 "등록"하지 않는다. 상품마다 카테고리가 달라서
   // 목록에 쌓이기만 하고 다시 쓸 일이 없기 때문이다. 대신 이 상품 그룹에만 몰래 붙여두고
   // (hidden), 견적서 생성/통합다운이 값을 채워 넣는 데만 쓴다.
-  const handleCategoryQuoteDownloaded = useCallback(async (category: string, file: File) => {
-    const productId = categoryFinderProductId;
-    setCategoryFinderProductId(null);
-    if (!productId) return;
-    const target = products.find(p => p.id === productId);
-    if (!target) return;
-
+  const registerCategoryQuote = useCallback(async (productId: string, category: string, file: File) => {
     try {
       const fileDataUrl = await new Promise<string>((resolve, reject) => {
         const reader = new FileReader();
@@ -1785,9 +1783,10 @@ const App: React.FC = () => {
 
       // 새로고침 후에도 통합다운이 되도록 IndexedDB에는 남기되, 클라우드/카테고리 목록에는
       // 올리지 않는다. 같은 그룹에서 전에 받아둔 임시 양식은 정리한다.
-      const groupKey = getProductGroupKey(target);
+      const target = products.find(p => p.id === productId);
+      const groupKey = target ? getProductGroupKey(target) : null;
       const previousIds = products
-        .filter(p => getProductGroupKey(p) === groupKey && p.quoteTemplateId)
+        .filter(p => groupKey !== null && getProductGroupKey(p) === groupKey && p.quoteTemplateId)
         .map(p => p.quoteTemplateId);
       const staleIds = quoteTemplateRegistrations
         .filter(r => r.hidden && previousIds.includes(r.id))
@@ -1797,24 +1796,79 @@ const App: React.FC = () => {
       await Promise.all(staleIds.map(id => deleteQuoteTemplate(id).catch(() => undefined)));
 
       setQuoteTemplateRegistrations(prev => [...prev.filter(r => !staleIds.includes(r.id)), registration]);
-      setProducts(prev => prev.map(p => (
-        getProductGroupKey(p) === groupKey
-          ? {
-              ...p,
-              category,
-              quoteTemplateId: registration.id,
-              customFields: {
-                ...(p.customFields || {}),
-                ...Object.fromEntries(customFieldNames.map(name => [name, (p.customFields || {})[name] || ''])),
-              },
-            }
-          : p
-      )));
+      // 1688 값을 채우면서 방금 만들어진 행은 위 products(한 박자 전 값)에 없을 수 있어,
+      // 어느 그룹에 붙일지는 최신 목록에서 다시 구한다.
+      setProducts(prev => {
+        const fresh = prev.find(p => p.id === productId);
+        if (!fresh) return prev;
+        const key = getProductGroupKey(fresh);
+        return prev.map(p => (
+          getProductGroupKey(p) === key
+            ? {
+                ...p,
+                category,
+                quoteTemplateId: registration.id,
+                customFields: {
+                  ...(p.customFields || {}),
+                  ...Object.fromEntries(customFieldNames.map(name => [name, (p.customFields || {})[name] || ''])),
+                },
+              }
+            : p
+        ));
+      });
     } catch (error) {
       console.error('카테고리 견적서 적용 실패:', error);
       alert(`받아온 견적서를 적용하지 못했습니다.\n${error instanceof Error ? error.message : String(error)}`);
     }
-  }, [categoryFinderProductId, products, quoteTemplateRegistrations, quoteFixedValues]);
+  }, [products, quoteTemplateRegistrations, quoteFixedValues]);
+
+  const handleCategoryQuoteDownloaded = useCallback(async (category: string, file: File) => {
+    const productId = categoryFinderProductId;
+    setCategoryFinderProductId(null);
+    if (!productId) return;
+    await registerCategoryQuote(productId, category, file);
+  }, [categoryFinderProductId, registerCategoryQuote]);
+
+  // 1688 캡처 창의 "견적서 찾기"로 미리 받아둔 견적서를 가져와 이 상품에 등록한다. 파일은 사진과
+  // 마찬가지로 확장 저장소에 들어 있고, 여기서 한 번 가져가면 저장소에서 지워진다.
+  const applyPendingCategoryQuote = useCallback(async (productId: string, meta: any) => {
+    const pending = await requestPendingCategoryQuote();
+    if (!pending || !pending.dataUrl) return;
+
+    const path = String(pending.path || (meta && meta.path) || '');
+    // 카테고리 이름은 경로의 마지막 조각(예: "일반노트")을 쓴다.
+    const lastSegment = path.split('>').pop()?.trim() || '카테고리';
+    // 파일 이름은 검색에 쓴 키워드로 둔다(쿠팡이 주는 이름은 카테고리 구분이 안 된다).
+    const fileName = `${pending.keyword || (meta && meta.keyword) || lastSegment}_견적서.xlsx`;
+
+    try {
+      // zip으로 내려오면 그 안의 엑셀을 꺼내 쓴다.
+      const file = await unwrapDownloadedQuote(dataUrlToFile(pending.dataUrl, fileName), fileName);
+
+      // 견적서의 카테고리 칸은 드롭다운이라, 파일에 든 목록의 값을 그대로 넣어야 한다.
+      let category = lastSegment;
+      const template = getQuoteTemplates(quoteFixedValues)[0];
+      if (template) {
+        try {
+          const fileDataUrl = await new Promise<string>((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onloadend = () => resolve(String(reader.result));
+            reader.onerror = () => reject(reader.error);
+            reader.readAsDataURL(file);
+          });
+          const options = await readCategoryDropdownOptions(fileDataUrl, template);
+          if (options.length > 0) category = options.find(option => option === lastSegment) || options[0];
+        } catch (error) {
+          console.error('카테고리 목록을 읽지 못했습니다:', error);
+        }
+      }
+
+      await registerCategoryQuote(productId, category, file);
+    } catch (error) {
+      console.error('1688 창에서 받아둔 견적서 적용 실패:', error);
+      alert(`1688 창에서 받아둔 견적서를 적용하지 못했습니다.\n${error instanceof Error ? error.message : String(error)}`);
+    }
+  }, [quoteFixedValues, registerCategoryQuote]);
 
   const handleUpdateQuoteTemplateCustomFieldNames = useCallback((id: string, customFieldNames: string[]) => {
     const target = quoteTemplateRegistrations.find(r => r.id === id);
@@ -2033,7 +2087,9 @@ const App: React.FC = () => {
   // 클릭한 옵션 하나가 아니라 같은 URL 그룹의 옵션 전체를 대상으로 한다: 견적서는 옵션당 한 행씩
   // 그룹 전체가 한 파일에(runGenerateProductQuote와 동일한 방식), 대표이미지·라벨은 옵션마다 SKU/
   // 색상이 달라 옵션별로 하나씩, 상세이미지는 그룹 전체가 공유하는 한 장이라 한 번만 담는다.
-  const handleIntegratedDownload = useCallback(async (productId: string) => {
+  // filesOnly면 파일만 폴더에 저장하고 끝낸다 — 쿠팡 제안도, 상품목록 저장 확인창도 띄우지
+  // 않는다(이미 저장해둔 상품목록을 건드리지 않는다). 아이콘 버튼으로 따로 부른다.
+  const handleIntegratedDownload = useCallback(async (productId: string, filesOnly = false) => {
     if (integratedDownloadingId) return;
     const product = products.find(p => p.id === productId);
     if (!product) return;
@@ -2131,10 +2187,16 @@ const App: React.FC = () => {
       setIntegratedDownloadDoneId(productId);
       setTimeout(() => setIntegratedDownloadDoneId(prev => (prev === productId ? null : prev)), 1500);
       // 04 단계 체크는 잠깐이 아니라 계속 남아 있어야 "이 상품은 끝났다"를 알 수 있다.
-      const doneAt = Date.now();
-      setProducts(prev => prev.map(p => (
-        getProductGroupKey(p) === groupKey ? { ...p, integratedDownloadedAt: doneAt } : p
-      )));
+      // 파일만 받은 경우에는 제안을 한 게 아니라서 이 표시를 남기지 않는다.
+      if (!filesOnly) {
+        const doneAt = Date.now();
+        setProducts(prev => prev.map(p => (
+          getProductGroupKey(p) === groupKey ? { ...p, integratedDownloadedAt: doneAt } : p
+        )));
+      }
+
+      // 파일만 받으러 온 경우에는 여기서 끝낸다.
+      if (filesOnly) return;
 
       // 확인창은 하나만 띄운다. 견적서가 있으면 "제안 + 상품목록 저장"을 한 번에 묻고,
       // 견적서가 없어 제안할 수 없을 때만 상품목록 저장을 따로 묻는다.
@@ -2333,6 +2395,9 @@ const App: React.FC = () => {
       return next;
     }));
 
+    // 1688 창에서 견적서까지 찾아뒀으면 그 상품에 등록한다(파일은 확장 저장소에 있다).
+    if (payload.categoryQuote) await applyPendingCategoryQuote(productId, payload.categoryQuote);
+
     // AI 번역을 꺼둔 경우, 여기서 끝(제조사는 위에서 이미 원문 그대로 채웠고 검색어는 비워둔다).
     if (!use1688AiTranslation) return;
 
@@ -2366,7 +2431,7 @@ const App: React.FC = () => {
         return next;
       });
     }
-  }, [products, quoteTemplateRegistrations, use1688AiTranslation, expandProductGroup]);
+  }, [products, quoteTemplateRegistrations, use1688AiTranslation, expandProductGroup, applyPendingCategoryQuote]);
 
   applyImportPayloadRef.current = applyImportPayload;
 
@@ -2546,6 +2611,12 @@ const App: React.FC = () => {
         return current;
       });
     };
+
+    // 사진은 상품 값과 달리 에디터로 바로 넘긴다(아래 importedPhotos prop).
+    const photos: string[] = Array.isArray(payload.images)
+      ? payload.images.map((image: any) => image && image.dataUrl).filter((url: any) => typeof url === 'string')
+      : [];
+    if (photos.length > 0) setImportedDetailPhotos(photos);
 
     const run = applyImportPayloadRef.current;
     if (!run) {
@@ -3138,6 +3209,8 @@ const App: React.FC = () => {
         onSaveThumbnail={handleSaveThumbnailFromDetailPageBuilder}
         // 헤더의 "상페작업"으로 연 독립 상세페이지는 김치 템플릿으로, 상품등록에서 연 것은 기존 템플릿 그대로.
         templateId={detailPageBuilderState.standalone ? 'kimchi' : 'basic'}
+        importedPhotos={importedDetailPhotos}
+        onImportedPhotosUsed={() => setImportedDetailPhotos(null)}
       />
     </div>
   );

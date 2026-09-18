@@ -150,6 +150,43 @@ export const cancelCategorySearch = () => {
   window.postMessage({ source: APP_SOURCE, type: 'CATEGORY_CANCEL' }, window.location.origin);
 };
 
+export interface PendingCategoryQuote {
+  name: string;
+  dataUrl: string;
+  /** "대분류 > 중분류 > 소분류" 형태의 카테고리 경로. */
+  path: string;
+  /** 검색에 쓴 키워드. 파일 이름에 씁니다. */
+  keyword: string;
+}
+
+/**
+ * 1688 캡처 창의 "견적서 찾기"로 미리 받아둔 카테고리 견적서를 확장에서 가져옵니다.
+ * 한 번 가져가면 확장 저장소에서 지워집니다. 없거나 확장이 없으면 null.
+ */
+export const requestPendingCategoryQuote = (timeoutMs = 5000): Promise<PendingCategoryQuote | null> =>
+  new Promise((resolve) => {
+    let settled = false;
+    const finish = (value: PendingCategoryQuote | null) => {
+      if (settled) return;
+      settled = true;
+      window.removeEventListener('message', onMessage);
+      window.clearTimeout(timer);
+      resolve(value);
+    };
+
+    const onMessage = (event: MessageEvent) => {
+      if (event.source !== window) return;
+      const data = event.data;
+      if (!data || data.source !== EXT_SOURCE || data.type !== 'CATEGORY_QUOTE') return;
+      const payload = data.payload;
+      finish(payload && payload.dataUrl ? payload : null);
+    };
+
+    window.addEventListener('message', onMessage);
+    const timer = window.setTimeout(() => finish(null), timeoutMs);
+    window.postMessage({ source: APP_SOURCE, type: 'REQUEST_CATEGORY_QUOTE' }, window.location.origin);
+  });
+
 export const dataUrlToFile = (dataUrl: string, fileName: string): File => {
   const [meta, base64 = ''] = dataUrl.split(',');
   const mime = (meta.match(/data:([^;]+)/) || [])[1] || 'application/octet-stream';

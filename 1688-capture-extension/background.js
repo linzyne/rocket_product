@@ -24,14 +24,45 @@ const closeHubTab = () => {
 
 // 이미 열려 있는 서플라이어허브 탭이 있으면 그 탭을 다시 씁니다(검색할 때마다 새 창이
 // 쌓이지 않게). 없을 때만 새로 엽니다.
+//
+// 새로 열 때는 탭이 아니라 "창"으로 엽니다. 같은 창에 탭으로 열면 보고 있던 1688 화면이
+// 가려져서, 쿠팡 로그인을 하고 나면 원래 창을 다시 찾기 어렵습니다. 로그인 화면이 뜰 수 있어
+// 주소창이 있는 보통 창으로 열고, 원래 창이 뒤에 보이도록 조금 작게 띄웁니다.
 const openOrReuseHubTab = async () => {
   const [existing] = await chrome.tabs.query({ url: '*://supplier.coupang.com/*' });
   if (existing) {
     await chrome.tabs.update(existing.id, { url: REGISTRATION_URL, active: true });
+    try {
+      await chrome.windows.update(existing.windowId, { focused: true });
+    } catch (err) {
+      /* 창이 이미 닫혔으면 무시 */
+    }
     return { id: existing.id, owned: false };
   }
-  const created = await chrome.tabs.create({ url: REGISTRATION_URL, active: true });
-  return { id: created.id, owned: true };
+  const created = await chrome.windows.create({
+    url: REGISTRATION_URL,
+    type: 'normal',
+    focused: true,
+    left: 80,
+    top: 80,
+    width: 1180,
+    height: 860,
+  });
+  const tab = created.tabs && created.tabs[0];
+  return { id: tab ? tab.id : null, owned: true };
+};
+
+// 검색을 요청한 창(1688 또는 앱)을 다시 앞으로 가져옵니다. 쿠팡 창이 따로 열리므로 탭만
+// 고르면 화면은 그대로 쿠팡에 머뭅니다 — 창까지 같이 앞으로 가져와야 합니다.
+const focusRequester = async () => {
+  if (!job || !job.appTabId) return;
+  try {
+    const tab = await chrome.tabs.get(job.appTabId);
+    await chrome.tabs.update(tab.id, { active: true });
+    await chrome.windows.update(tab.windowId, { focused: true });
+  } catch (err) {
+    /* 탭이 닫혔으면 무시 */
+  }
 };
 
 // 상세페이지 에디터는 앱 화면을 그대로 쓰는 게 가장 확실하다(에디터가 쓰는 API 키·저장소가
@@ -53,14 +84,56 @@ const resolveAppUrl = async () => {
   }
 };
 
+// ---- 1688 이미지 가져오기 ----
+// 상세페이지 에디터에 사진을 바로 담아 보내기 위해, 1688 이미지는 확장이 직접 받아옵니다.
+// 페이지 쪽(content script)에서 받으면 이미지 서버가 막고(CORS), 원본 그대로 넘기면 한 장에
+// 수 MB라 창이 버벅입니다. 여기서 받아 폭 IMAGE_MAX_WIDTH까지 줄인 JPEG로 만들어 돌려줍니다.
+// (에디터도 어차피 이 정도 해상도까지 줄여서 씁니다.)
+const IMAGE_MAX_WIDTH = 1000;
+const IMAGE_JPEG_QUALITY = 0.85;
+
+// 서비스워커에는 FileReader가 없어 직접 base64로 만듭니다. 한 번에 넘기면 인자 개수 제한에
+// 걸리므로 잘라서 이어 붙입니다.
+const blobToDataUrl = async (blob) => {
+  const bytes = new Uint8Array(await blob.arrayBuffer());
+  const CHUNK = 0x8000;
+  let binary = '';
+  for (let i = 0; i < bytes.length; i += CHUNK) {
+    binary += String.fromCharCode.apply(null, bytes.subarray(i, i + CHUNK));
+  }
+  return `data:${blob.type || 'image/jpeg'};base64,${btoa(binary)}`;
+};
+
+const fetchShrunkImage = async (url) => {
+  const response = await fetch(url, { credentials: 'omit' });
+  if (!response.ok) throw new Error(`HTTP ${response.status}`);
+  const bitmap = await createImageBitmap(await response.blob());
+  const scale = Math.min(1, IMAGE_MAX_WIDTH / bitmap.width);
+  const width = Math.max(1, Math.round(bitmap.width * scale));
+  const height = Math.max(1, Math.round(bitmap.height * scale));
+  const canvas = new OffscreenCanvas(width, height);
+  const ctx = canvas.getContext('2d');
+  // 투명한 png를 그대로 jpeg로 만들면 배경이 검게 나오므로 흰 바탕을 먼저 깝니다.
+  ctx.fillStyle = '#ffffff';
+  ctx.fillRect(0, 0, width, height);
+  ctx.drawImage(bitmap, 0, 0, width, height);
+  bitmap.close();
+  const shrunk = await canvas.convertToBlob({ type: 'image/jpeg', quality: IMAGE_JPEG_QUALITY });
+  return blobToDataUrl(shrunk);
+};
+
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message && message.type === 'OPEN_APP_DETAIL') {
     (async () => {
       try {
         // 앱 화면에 붙는 app-bridge.js가 이 값을 읽어 앱으로 넘겨준다(한 번 쓰고 지운다).
-        await chrome.storage.local.set({
-          pendingDetailCopy: { payload: message.payload || null, savedAt: Date.now() },
-        });
+        // 사진까지 담은 값은 메시지로 넘기기엔 너무 커서 1688 탭이 저장소에 직접 넣어두고
+        // 온다 — 그런 경우(payload 없음)에는 이미 들어 있는 값을 건드리지 않는다.
+        if (message.payload) {
+          await chrome.storage.local.set({
+            pendingDetailCopy: { payload: message.payload, savedAt: Date.now() },
+          });
+        }
 
         const base = await resolveAppUrl();
         const created = await chrome.windows.create({
@@ -80,6 +153,16 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
 
   if (!message || !message.type) return;
+
+  // 1688 탭 -> 확장: 이미지 한 장을 받아서 줄여 돌려줍니다(한 장씩 물어봐야 진행 상황을
+  // 보여줄 수 있고, 메시지 하나가 지나치게 커지지도 않습니다).
+  if (message.type === 'FETCH_IMAGE') {
+    fetchShrunkImage(message.url).then(
+      (dataUrl) => sendResponse({ ok: true, dataUrl }),
+      (err) => sendResponse({ ok: false, error: String((err && err.message) || err) }),
+    );
+    return true;
+  }
 
   // ---- 앱 -> 확장 ----
   if (message.type === 'OPEN_REGISTRATION') {
@@ -138,14 +221,15 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
   if (message.type === 'CATEGORY_RESULTS') {
     relayToApp({ type: 'CATEGORY_RESULTS', items: message.items });
-    // 목록에서 고르는 건 앱에서 하므로 화면을 돌려줍니다.
-    if (job && job.appTabId) chrome.tabs.update(job.appTabId, { active: true }).catch(() => {});
+    // 목록에서 고르는 건 요청한 쪽(1688 창 또는 앱)에서 하므로 화면을 돌려줍니다.
+    void focusRequester();
     sendResponse({ ok: true });
     return true;
   }
 
   if (message.type === 'CATEGORY_FILE') {
     relayToApp({ type: 'CATEGORY_FILE', name: message.name, dataUrl: message.dataUrl, path: message.path });
+    void focusRequester();
     closeHubTab();
     job = null;
     sendResponse({ ok: true });
@@ -154,7 +238,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
   if (message.type === 'CATEGORY_ERROR') {
     relayToApp({ type: 'CATEGORY_ERROR', message: message.message });
-    if (job && job.appTabId) chrome.tabs.update(job.appTabId, { active: true }).catch(() => {});
+    void focusRequester();
     sendResponse({ ok: true });
     return true;
   }

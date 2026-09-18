@@ -10,6 +10,8 @@
   const APP_SOURCE = 'rocket-proposal-app';
   const EXT_SOURCE = 'rocket-proposal-extension';
   const PENDING_KEY = 'rocketPendingQuote';
+  // 1688 값 확인 창의 "견적서 찾기"로 미리 받아둔 카테고리 견적서.
+  const QUOTE_KEY = 'pendingCategoryQuote';
 
   const reply = (payload) => {
     window.postMessage({ source: EXT_SOURCE, ...payload }, window.location.origin);
@@ -68,6 +70,11 @@
         return;
       }
 
+      if (data.type === 'REQUEST_CATEGORY_QUOTE') {
+        sendPendingCategoryQuote();
+        return;
+      }
+
       if (data.type === 'CATEGORY_SEARCH') {
         await ask({ type: 'CATEGORY_SEARCH', keyword: data.keyword });
         reply({ type: 'CATEGORY_SEARCH_ACK', ok: true });
@@ -110,6 +117,26 @@
       });
     } catch (err) {
       reply({ type: 'DETAIL_COPY', payload: null });
+    }
+  };
+
+  // 1688 값 확인 창에서 미리 받아둔 카테고리 견적서를 앱에 넘깁니다. 파일이 수 MB라 값과 같이
+  // 들려 보내지 않고 저장소에 두었다가, 앱이 그 값을 상품에 채울 때 이렇게 따로 가져갑니다.
+  const sendPendingCategoryQuote = () => {
+    try {
+      chrome.storage.local.get(QUOTE_KEY, (result) => {
+        const pending = result && result[QUOTE_KEY];
+        if (chrome.runtime.lastError || !pending) {
+          reply({ type: 'CATEGORY_QUOTE', payload: null });
+          return;
+        }
+        chrome.storage.local.remove(QUOTE_KEY);
+        // 예전에 받아둔 견적서가 엉뚱한 상품에 붙지 않도록 1시간만 인정합니다.
+        const fresh = Date.now() - (pending.savedAt || 0) <= 60 * 60 * 1000;
+        reply({ type: 'CATEGORY_QUOTE', payload: fresh ? pending : null });
+      });
+    } catch (err) {
+      reply({ type: 'CATEGORY_QUOTE', payload: null });
     }
   };
 

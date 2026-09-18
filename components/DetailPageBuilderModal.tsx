@@ -71,7 +71,15 @@ interface DetailPageBuilderModalProps {
   // 어떤 레이아웃으로 조립할지. 'basic'이 상품등록에서 쓰던 기존 템플릿이고(기본값이라 기존
   // 호출부는 바꿀 게 없다), 'kimchi'는 헤더에서 여는 독립 모드 전용 김치 템플릿이다.
   templateId?: 'basic' | 'kimchi';
+  // 1688 확장이 상품 페이지에서 받아 보내준 사진(dataURL). 창이 열릴 때 사진 목록에 그대로
+  // 담는다 — PC에 내려받았다가 다시 올리는 수고를 없애는 길이다. 한 번 담고 나면
+  // onImportedPhotosUsed로 알려서 앱이 들고 있던 것을 비우게 한다(다시 열 때 또 담기지 않게).
+  importedPhotos?: string[] | null;
+  onImportedPhotosUsed?: () => void;
 }
+
+// 창을 열 때의 미리보기 배율.
+const DEFAULT_ZOOM = 0.5;
 
 interface PhotoItem {
   id: string;
@@ -304,7 +312,7 @@ interface KimchiDraft {
   templateStyle: TemplateStyleSettings;
 }
 
-const DetailPageBuilderModal: React.FC<DetailPageBuilderModalProps> = ({ isOpen, onClose, product, groupProducts, onSave, onSaveThumbnail, templateId = 'basic' }) => {
+const DetailPageBuilderModal: React.FC<DetailPageBuilderModalProps> = ({ isOpen, onClose, product, groupProducts, onSave, onSaveThumbnail, templateId = 'basic', importedPhotos, onImportedPhotosUsed }) => {
   const [photos, setPhotos] = useState<PhotoItem[]>([]);
   const isKimchi = templateId === 'kimchi';
   // 김치 템플릿 전용 상태. 사진 배열(photos)은 두 템플릿이 그대로 공유해서 자르기·드래그 정렬·
@@ -343,7 +351,9 @@ const DetailPageBuilderModal: React.FC<DetailPageBuilderModalProps> = ({ isOpen,
   const [isExporting, setIsExporting] = useState(false);
   const [pastedText, setPastedText] = useState('');
   const [promptCopyStatus, setPromptCopyStatus] = useState<'idle' | 'copied'>('idle');
-  const [zoom, setZoom] = useState(1);
+  // 미리보기는 50%로 시작한다 — 상세페이지는 세로로 길어서 100%면 한 화면에 한 토막밖에
+  // 안 보인다. 창 위쪽의 ＋/－로 언제든 키울 수 있다.
+  const [zoom, setZoom] = useState(DEFAULT_ZOOM);
 
   // AI 문구생성: 저장된 프롬프트(이름 + 스타일 지침) 목록과 현재 선택/편집 중인 지침.
   // savedPrompts는 상품과 무관하게 앱 전체에서 공유되고, promptInstruction은 선택한 프롬프트를
@@ -626,7 +636,7 @@ const DetailPageBuilderModal: React.FC<DetailPageBuilderModalProps> = ({ isOpen,
   useEffect(() => {
     if (!isOpen) return;
     setPromptCopyStatus('idle');
-    setZoom(1);
+    setZoom(DEFAULT_ZOOM);
     setBrushMode(false);
     setHasPainted(false);
     paintedBoundsRef.current = null;
@@ -911,6 +921,27 @@ const DetailPageBuilderModal: React.FC<DetailPageBuilderModalProps> = ({ isOpen,
     if (!name) return;
     setCopy(prev => (prev.productName === name ? prev : { ...prev, productName: name }));
   }, [product?.productName]);
+
+  // 1688 확장이 들려 보낸 사진(dataURL)을 파일 고르기와 똑같이 처리해서 담는다.
+  // (아래 addPhotoFiles와 짝이지만, 이 훅은 조기 반환 위에 있어야 해서 여기에 둔다 — 창이
+  // 닫혔을 때와 열렸을 때의 훅 개수가 달라지면 화면이 통째로 깨진다.)
+  const addPhotoDataUrls = (dataUrls: string[]) => {
+    void (async () => {
+      for (const raw of dataUrls) {
+        const dataUrl = await shrinkPhotoDataUrl(raw);
+        setPhotos(prev => [...prev, { id: generateId(), dataUrl }]);
+      }
+    })();
+  };
+
+  // 창이 열리는 순간 한 번만 담는다. 담고 나면 앱이 들고 있던 목록을 비우므로(importedPhotos가
+  // null이 된다) 같은 사진이 두 번 들어가지 않는다.
+  useEffect(() => {
+    if (!isOpen || !importedPhotos || importedPhotos.length === 0) return;
+    addPhotoDataUrls(importedPhotos);
+    onImportedPhotosUsed?.();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOpen, importedPhotos]);
 
   if (!isOpen) return null;
 

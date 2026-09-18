@@ -2408,6 +2408,16 @@ const App: React.FC = () => {
       return next;
     }));
 
+    // 1688 창에서 ★로 지정한 대표이미지를 옵션마다 넣는다. 옵션 순서대로 상품 행을 만들었으므로
+    // mainForIndex가 곧 그 행의 자리다(옵션이 하나뿐이면 0번).
+    if (Array.isArray(payload.images)) {
+      payload.images.forEach((image: any) => {
+        if (!image || typeof image.dataUrl !== 'string' || typeof image.mainForIndex !== 'number') return;
+        const targetId = targetIds[image.mainForIndex];
+        if (targetId) handleProductChange(targetId, 'thumbnailDataUrl', image.dataUrl);
+      });
+    }
+
     // 1688 창에서 견적서까지 찾아뒀으면 그 상품에 등록한다(파일은 확장 저장소에 있다).
     if (payload.categoryQuote) await applyPendingCategoryQuote(productId, payload.categoryQuote);
 
@@ -2444,7 +2454,7 @@ const App: React.FC = () => {
         return next;
       });
     }
-  }, [products, quoteTemplateRegistrations, use1688AiTranslation, expandProductGroup, applyPendingCategoryQuote]);
+  }, [products, quoteTemplateRegistrations, use1688AiTranslation, expandProductGroup, applyPendingCategoryQuote, handleProductChange]);
 
   applyImportPayloadRef.current = applyImportPayload;
 
@@ -2630,9 +2640,6 @@ const App: React.FC = () => {
     const photos: string[] = images.map(image => image && image.dataUrl).filter((url: any) => typeof url === 'string');
     if (photos.length > 0) setImportedDetailPhotos(photos);
 
-    // 1688 창에서 ★로 지정한 사진은 이 상품의 대표이미지로 넣는다.
-    const mainImage = images.find(image => image && image.main && typeof image.dataUrl === 'string');
-    if (mainImage) handleProductChange(productId, 'thumbnailDataUrl', mainImage.dataUrl);
 
     const run = applyImportPayloadRef.current;
     if (!run) {

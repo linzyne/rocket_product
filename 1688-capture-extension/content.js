@@ -1126,7 +1126,7 @@
         </div>
         <div class="rc-section">
           <p class="rc-section-heading"><span class="rc-step-num">5</span>🖼 이미지</p>
-          <p class="rc-step-hint">창이 열리면서 이 페이지의 사진을 자동으로 찾습니다. 쓸 사진만 남기면 맨 아래 "등록하기"를 누를 때 그대로 담아 보냅니다. ★를 누르면 대표이미지가 되고, 끌어다 놓으면 순서가 바뀝니다(번호 순서대로 담깁니다).</p>
+          <p class="rc-step-hint">창이 열리면서 이 페이지의 사진을 자동으로 찾습니다. 쓸 사진만 남기면 맨 아래 "등록하기"를 누를 때 그대로 담아 보냅니다. ★를 누르면 대표이미지가 되고(옵션이 여럿이면 누를 때마다 옵션이 바뀝니다), 끌어다 놓으면 순서가 바뀝니다. 고른 것은 초기화 전까지 그대로 남습니다.</p>
           <div id="rc-image-area" hidden>
             <div class="rc-image-toolbar">
               <button type="button" id="rc-image-all" class="rc-add-option">전체 선택</button>
@@ -1209,6 +1209,11 @@
       rows = initial.colorRaw ? [makeRow(initial.colorRaw, true)] : [];
     }
 
+    // 고른 사진과 받아둔 견적서도 옵션 행과 함께 "작업 내역"에 남긴다 — 창을 닫았다 열거나
+    // 페이지를 오갔다 와도 "초기화"를 누르기 전까지 그대로 있어야 한다.
+    let imageItems = [];
+    let categoryQuote = null;
+
     const optionRowsEl = box.querySelector('#rc-option-rows');
     const numVal = (v) => (v === '' || v === null || v === undefined ? '' : v);
 
@@ -1240,6 +1245,9 @@
         previewWidth: widthPreviewInput.value,
         previewHeight: heightPreviewInput.value,
         previewDepth: depthPreviewInput.value,
+        // 사진은 주소와 고른 상태만 남긴다(그림 자체는 페이지에서 다시 불러온다).
+        images: imageItems.map(({ url, kind, checked, mainFor }) => ({ url, kind, checked, mainFor: mainFor || null })),
+        categoryQuote,
       });
     }
 
@@ -1621,7 +1629,6 @@
     const quoteResultsEl = box.querySelector('#rc-quote-results');
     const quoteStatusEl = box.querySelector('#rc-quote-status');
     const titleInput = box.querySelector('#rc-title');
-    let categoryQuote = null;
     let searchedKeyword = '';
 
     // 상품명에서 뽑은 키워드 후보들. 검색은 한 단어여야 결과가 나오므로, 눌러서 바꿔 가며
@@ -1671,6 +1678,7 @@
       done.className = 'rc-quote-done';
       done.textContent = `✓ "${categoryQuote.category}" 견적서를 받았습니다. "등록하기"를 누르면 이 상품에 함께 등록됩니다.`;
       quoteStatusEl.appendChild(done);
+      persistWork();
     };
 
     // 견적서 한 장에 카테고리가 여러 개 들어 있는 경우. 어느 값을 넣을지 여기서 고른다.
@@ -1775,11 +1783,12 @@
     const imageGrid = box.querySelector('#rc-image-grid');
     const imageCountEl = box.querySelector('#rc-image-count');
     const imageStatusEl = box.querySelector('#rc-image-status');
-    let imageItems = [];
-    // 상품 목록에 쓸 대표이미지로 지정한 사진의 주소. 한 장만 둔다.
-    let mainImageUrl = null;
 
     const pickedImageUrls = () => imageItems.filter((item) => item.checked).map((item) => item.url);
+
+    // 대표이미지를 옵션별로 고를 수 있게, 지금 체크된 옵션들의 이름을 순서대로 돌려준다.
+    // (이름이 비어 있는 행은 "옵션 1"처럼 순번으로 부른다.)
+    const optionLabels = () => rows.filter((row) => row.checked).map((row, i) => row.label.trim() || `옵션 ${i + 1}`);
 
     // 끌어다 놓아 순서를 바꾸는 중인 사진의 자리.
     let dragIndex = null;
@@ -1810,19 +1819,29 @@
 
         const kind = document.createElement('span');
         kind.className = 'rc-image-kind';
-        kind.textContent = item.kind === 'detail' ? '상세' : item.kind === 'etc' ? '기타' : '대표';
+        // 대표로 지정한 사진은 어느 옵션의 대표인지 보여준다.
+        kind.textContent = item.mainFor
+          ? `★ ${item.mainFor || '대표'}`
+          : item.kind === 'detail' ? '상세' : item.kind === 'etc' ? '기타' : '대표';
         tile.appendChild(kind);
 
-        // 상품 목록에 걸리는 대표이미지(썸네일). 한 장만 지정된다.
+        // 대표이미지(썸네일)는 옵션마다 따로 고를 수 있다. ★를 누를 때마다 옵션을 하나씩
+        // 돌아가며 지정된다(마지막 옵션 다음은 지정 해제). 작은 칸에 목록을 띄우면 가려져서
+        // 누르기 어려우므로 돌려가며 고르는 방식으로 둔다.
         const star = document.createElement('span');
-        star.className = `rc-image-star${mainImageUrl === item.url ? ' on' : ''}`;
+        star.className = `rc-image-star${item.mainFor ? ' on' : ''}`;
         star.textContent = '★';
-        star.title = '대표이미지로 지정';
+        star.title = optionLabels().length > 1 ? '누를 때마다 옵션이 바뀝니다 (대표이미지 지정)' : '대표이미지로 지정';
         star.addEventListener('click', (event) => {
           event.stopPropagation();
-          mainImageUrl = mainImageUrl === item.url ? null : item.url;
-          // 대표로 고른 사진은 당연히 함께 보낸다.
-          if (mainImageUrl === item.url) item.checked = true;
+          const labels = optionLabels();
+          if (labels.length === 0) return;
+          const current = labels.indexOf(item.mainFor);
+          const nextLabel = current + 1 >= labels.length ? null : labels[current + 1];
+          // 한 옵션에 두 장이 대표일 수는 없다. 다른 사진에 걸려 있던 지정은 푼다.
+          if (nextLabel) imageItems.forEach((other) => { if (other.mainFor === nextLabel) other.mainFor = null; });
+          item.mainFor = nextLabel;
+          if (nextLabel) item.checked = true;
           renderImageGrid();
         });
         tile.appendChild(star);
@@ -1830,7 +1849,7 @@
         tile.addEventListener('click', () => {
           item.checked = !item.checked;
           // 대표로 지정한 사진을 빼면 대표 지정도 같이 푼다.
-          if (!item.checked && mainImageUrl === item.url) mainImageUrl = null;
+          if (!item.checked) item.mainFor = null;
           renderImageGrid();
         });
 
@@ -1867,7 +1886,9 @@
 
         imageGrid.appendChild(tile);
       });
-      imageCountEl.textContent = `${pickedImageUrls().length}장 선택${mainImageUrl ? ' · 대표 1장' : ''}`;
+      const mainCount = imageItems.filter((item) => item.mainFor).length;
+      imageCountEl.textContent = `${pickedImageUrls().length}장 선택${mainCount > 0 ? ` · 대표 ${mainCount}장` : ''}`;
+      persistWork();
     };
 
     // 창이 열리면 바로 한 번 돌린다(아래 scanImages 호출). 버튼은 다시 찾을 때만 쓴다.
@@ -1932,12 +1953,14 @@
           detailEditorBtn.disabled = false;
           detailEditorBtn.textContent = label;
         }
-        // 어느 사진이 대표인지 앱에 알려준다(앱이 그 상품의 대표이미지로 넣는다).
-        images = images.map(({ name, dataUrl, url }) => ({
-          name,
-          dataUrl,
-          ...(url === mainImageUrl ? { main: true } : {}),
-        }));
+        // 어느 사진이 어느 옵션의 대표인지 앱에 알려준다. 앱은 옵션 순서대로 상품 행을 만들므로
+        // 체크된 옵션 중 몇 번째인지(mainForIndex)로 넘긴다.
+        const labels = optionLabels();
+        images = images.map(({ name, dataUrl, url }) => {
+          const item = imageItems.find((candidate) => candidate.url === url);
+          const index = item && item.mainFor ? labels.indexOf(item.mainFor) : -1;
+          return { name, dataUrl, ...(index >= 0 ? { mainForIndex: index, mainForLabel: item.mainFor } : {}) };
+        });
         imageStatusEl.textContent = `사진 ${images.length}장을 담아 보냅니다.`;
         if (images.length < urls.length) {
           showToast(`사진 ${urls.length - images.length}장은 받지 못해 빼고 보냅니다.`, true);
@@ -2064,6 +2087,19 @@
     box.querySelector('#rc-reset').addEventListener('click', () => {
       clearDraft();
       clearWorkDraft();
+      // 고른 사진과 받아둔 견적서도 여기서만 지운다.
+      imageItems = [];
+      categoryQuote = null;
+      imageArea.hidden = true;
+      imageGrid.innerHTML = '';
+      imageStatusEl.textContent = '';
+      quoteResultsEl.innerHTML = '';
+      quoteStatusEl.textContent = '';
+      try {
+        chrome.storage.local.remove(QUOTE_KEY);
+      } catch (err) {
+        /* 확장이 새로 로드된 경우 무시 */
+      }
       applyValues(box, valuesFromGuess(initial));
       rows = initial.colorRaw ? [makeRow(initial.colorRaw, true)] : [];
       cnyPreviewInput.value = defaultPrice;
@@ -2157,9 +2193,29 @@
       }
     });
 
-    // 사진 찾기는 사람이 누르지 않아도 되게, 창이 뜨자마자 자동으로 돌린다. 페이지를 위아래로
-    // 훑느라 몇 초 걸리므로 기다리지 않고 띄워둔 채로 진행한다(그동안 옵션·정보를 입력하면 된다).
-    void scanImages();
+    // 지난번에 고른 사진과 받아둔 견적서를 되살린다. "초기화"를 누르기 전까지는 창을 닫았다
+    // 열어도, 페이지를 오갔다 와도 그대로 있어야 한다.
+    if (workDraft && Array.isArray(workDraft.images) && workDraft.images.length > 0) {
+      imageItems = workDraft.images.map((item) => ({
+        url: item.url,
+        kind: item.kind || 'main',
+        checked: !!item.checked,
+        mainFor: item.mainFor || null,
+      }));
+      imageArea.hidden = false;
+      renderImageGrid();
+      imageStatusEl.textContent = `지난번에 고른 사진 ${imageItems.length}장입니다. 다시 찾으려면 아래 버튼을 누르세요.`;
+    }
+
+    if (workDraft && workDraft.categoryQuote) {
+      categoryQuote = workDraft.categoryQuote;
+      searchedKeyword = categoryQuote.keyword || '';
+      showQuoteDone();
+    }
+
+    // 사진 찾기는 사람이 누르지 않아도 되게, 창이 뜨자마자 자동으로 돌린다(지난 작업이 있으면
+    // 그대로 두고 건너뛴다). 페이지를 위아래로 훑느라 몇 초 걸리므로 기다리지 않고 진행한다.
+    if (imageItems.length === 0) void scanImages();
   }
 
   function showToast(message, isError) {

@@ -130,9 +130,10 @@
           reply({ type: 'CATEGORY_QUOTE', payload: null });
           return;
         }
-        chrome.storage.local.remove(QUOTE_KEY);
-        // 예전에 받아둔 견적서가 엉뚱한 상품에 붙지 않도록 1시간만 인정합니다.
-        const fresh = Date.now() - (pending.savedAt || 0) <= 60 * 60 * 1000;
+        // 가져간 뒤에도 지우지 않습니다. 1688 창에서 "초기화"를 누르기 전까지는 같은 견적서로
+        // 다시 등록할 수 있어야 합니다(반려돼서 고쳐 올리는 경우 등).
+        // 다만 아주 오래된 것이 엉뚱한 상품에 붙지는 않도록 일주일까지만 인정합니다.
+        const fresh = Date.now() - (pending.savedAt || 0) <= 7 * 24 * 60 * 60 * 1000;
         reply({ type: 'CATEGORY_QUOTE', payload: fresh ? pending : null });
       });
     } catch (err) {

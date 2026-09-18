@@ -201,8 +201,12 @@
     return { ok: pickOption(target, exact) };
   };
 
-  const agreeToTerms = () => {
-    const target = deepestWithText(/쿠팡\s*약관에\s*동의합니다/)[0];
+  // 검증 버튼 위 동의 체크박스들. 쿠팡 약관은 필수(*)이고, 라벨 연락처 확인은 별표가 없어도
+  // 체크하지 않으면 개인정보로 간주돼 등록이 막히므로 같이 눌러줍니다.
+  const TERM_LABELS = [/쿠팡\s*약관에\s*동의합니다/, /연락처는\s*법인\s*명의/];
+
+  const checkAgreement = (re) => {
+    const target = deepestWithText(re)[0];
     if (!target) return { skipped: true };
     const label = target.closest('label');
     let checkbox = label && label.querySelector('input[type="checkbox"]');
@@ -221,6 +225,12 @@
     }
     target.click();
     return { ok: checkbox ? checkbox.checked : true };
+  };
+
+  const agreeToTerms = () => {
+    const results = TERM_LABELS.map(checkAgreement).filter((result) => !result.skipped);
+    if (results.length === 0) return { skipped: true };
+    return { total: results.length, done: results.filter((result) => result.ok).length };
   };
 
   const isDisabled = (el) =>
@@ -287,7 +297,11 @@
       panel.step('install', install.skipped ? 'skip' : install.ok ? 'ok' : 'fail', install.skipped ? '로켓설치 항목 없음' : install.ok ? '로켓설치: 아니오' : '로켓설치 선택 실패');
 
       const terms = agreeToTerms();
-      panel.step('terms', terms.skipped ? 'skip' : terms.ok ? 'ok' : 'fail', terms.skipped ? '약관 항목 없음' : terms.ok ? '약관 동의 체크' : '약관 체크 실패');
+      panel.step(
+        'terms',
+        terms.skipped ? 'skip' : terms.done === terms.total ? 'ok' : 'fail',
+        terms.skipped ? '약관 항목 없음' : `동의 체크 ${terms.done}/${terms.total}개`,
+      );
 
       // 필수인 01번이 안 들어갔으면 검증을 눌러봐야 실패하므로 여기서 멈춥니다.
       if (!quote.ok) {

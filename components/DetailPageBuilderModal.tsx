@@ -3,6 +3,7 @@ import { Product } from '../types';
 import {
   buildDetailPageCopyPrompt,
   parseDetailPageCopyText,
+  breakAfterSentences,
   DetailPageCopy,
   DEFAULT_HIGHLIGHT_COUNT,
   HIGHLIGHT_COUNT_MIN,
@@ -2713,7 +2714,14 @@ const DetailPageBuilderModal: React.FC<DetailPageBuilderModalProps> = ({ isOpen,
                 {heroPhoto && renderPhoto(heroPhoto, hasCopyText ? SPACE.lg : SPACE.lg + SECTION_GAP)}
                 {hasCopyText && (
                   <div style={{ marginTop: heroPhoto ? 0 : SPACE.lg, marginBottom: SPACE.xl + SECTION_GAP }}>
-                    <EditableText value={copy.hookCopy} onChange={v => setCopy(prev => ({ ...prev, hookCopy: v }))} placeholder="후킹 문구" style={styles.heroSubtitle} />
+                    {/* 어느 경로로 들어온 문구든(예전에 만들어둔 것 포함) 문장이 끝나면 줄을 바꿔
+                        보여준다. 줄바꿈이 이미 있는 문구는 사람이 맞춰둔 것이라 건드리지 않는다. */}
+                    <EditableText
+                      value={/\n|<br/i.test(copy.hookCopy) ? copy.hookCopy : breakAfterSentences(copy.hookCopy)}
+                      onChange={v => setCopy(prev => ({ ...prev, hookCopy: v }))}
+                      placeholder="후킹 문구"
+                      style={styles.heroSubtitle}
+                    />
                   </div>
                 )}
 

@@ -1039,7 +1039,18 @@
       </div>
       <div class="rc-fields">
         <div class="rc-section">
-          <p class="rc-section-heading"><span class="rc-step-num">1</span>📋 견적서 찾기 (선택)</p>
+          <p class="rc-section-heading"><span class="rc-step-num">1</span>📄 상세페이지 문구 (선택)</p>
+          <p class="rc-step-hint">프롬프트를 복사해 AI에 물어보고, 받은 답을 그대로 아래에 붙여넣으세요. 로켓제안서에 붙여넣을 때 상세페이지에도 같이 들어갑니다.</p>
+          <label class="rc-label">소구점 메모 (프롬프트에 들어갈 재료)
+            <input id="rc-selling-points" class="rc-input" placeholder="예) 튼튼함, 넉넉한 수납, 선물용" />
+          </label>
+          <button type="button" id="rc-copy-prompt" class="rc-image-work-btn">🤖 AI용 프롬프트 복사하기</button>
+          <label class="rc-label" style="margin-top:8px;">AI가 준 문구 붙여넣기
+            <textarea id="rc-detail-copy" class="rc-input rc-textarea" rows="4" placeholder="AI 답변을 그대로 붙여넣으세요"></textarea>
+          </label>
+        </div>
+        <div class="rc-section">
+          <p class="rc-section-heading"><span class="rc-step-num">2</span>📋 견적서 찾기 (선택)</p>
           <p class="rc-step-hint">쿠팡 카테고리를 찾아 견적서를 미리 받아둡니다. 받은 견적서는 "등록하기"를 누를 때 그 상품에 함께 등록됩니다.</p>
           <div class="rc-quote-row">
             <input id="rc-quote-keyword" class="rc-input" placeholder="검색어 한 단어 (예: 노트)" />
@@ -1050,7 +1061,7 @@
           <p id="rc-quote-status" class="rc-step-hint rc-image-status"></p>
         </div>
         <div class="rc-section">
-          <p class="rc-section-heading"><span class="rc-step-num">2</span>🎨 옵션 선택</p>
+          <p class="rc-section-heading"><span class="rc-step-num">3</span>🎨 옵션 선택</p>
           <div id="rc-option-rows" class="rc-option-rows"></div>
           <div class="rc-option-buttons">
             <button type="button" id="rc-pick-options" class="rc-pick-option">🎯 클릭해서 옵션 선택</button>
@@ -1058,7 +1069,7 @@
           </div>
         </div>
         <div class="rc-section">
-          <p class="rc-section-heading"><span class="rc-step-num">3</span>📝 기본 정보</p>
+          <p class="rc-section-heading"><span class="rc-step-num">4</span>📝 기본 정보</p>
           <div class="rc-field-group">
             <label class="rc-label">제조사/공급사(원문)
               <input id="rc-manufacturer" class="rc-input" />
@@ -1089,7 +1100,7 @@
           </div>
         </div>
         <div class="rc-section">
-          <p class="rc-section-heading"><span class="rc-step-num">4</span>💰 수익 계산기 (선택)</p>
+          <p class="rc-section-heading"><span class="rc-step-num">5</span>💰 수익 계산기 (선택)</p>
           <div class="rc-row">
             <label class="rc-label">환율
               <input id="rc-exchange-rate" class="rc-input" type="number" placeholder="210" title="환율(1위안=?원)" />
@@ -1125,7 +1136,7 @@
           <button type="button" id="rc-apply-price" class="rc-apply-price-btn">↑ 옵션에 적용하기</button>
         </div>
         <div class="rc-section">
-          <p class="rc-section-heading"><span class="rc-step-num">5</span>🖼 이미지</p>
+          <p class="rc-section-heading"><span class="rc-step-num">6</span>🖼 이미지</p>
           <p class="rc-step-hint">창이 열리면서 이 페이지의 사진을 자동으로 찾습니다. 쓸 사진만 남기면 맨 아래 "등록하기"를 누를 때 그대로 담아 보냅니다. ★를 누르면 대표이미지가 되고(옵션이 여럿이면 누를 때마다 옵션이 바뀝니다), 끌어다 놓으면 순서가 바뀝니다. 고른 것은 초기화 전까지 그대로 남습니다.</p>
           <div id="rc-image-area" hidden>
             <div class="rc-image-toolbar">
@@ -1137,17 +1148,6 @@
           </div>
           <p id="rc-image-status" class="rc-step-hint rc-image-status"></p>
           <button type="button" id="rc-scan-images" class="rc-image-work-btn">🔁 사진 다시 찾기</button>
-        </div>
-        <div class="rc-section">
-          <p class="rc-section-heading"><span class="rc-step-num">6</span>📄 상세페이지 문구 (선택)</p>
-          <p class="rc-step-hint">프롬프트를 복사해 AI에 물어보고, 받은 답을 그대로 아래에 붙여넣으세요. 로켓제안서에 붙여넣을 때 상세페이지에도 같이 들어갑니다.</p>
-          <label class="rc-label">소구점 메모 (프롬프트에 들어갈 재료)
-            <input id="rc-selling-points" class="rc-input" placeholder="예) 튼튼함, 넉넉한 수납, 선물용" />
-          </label>
-          <button type="button" id="rc-copy-prompt" class="rc-image-work-btn">🤖 AI용 프롬프트 복사하기</button>
-          <label class="rc-label" style="margin-top:8px;">AI가 준 문구 붙여넣기
-            <textarea id="rc-detail-copy" class="rc-input rc-textarea" rows="4" placeholder="AI 답변을 그대로 붙여넣으세요"></textarea>
-          </label>
         </div>
       </div>
       <div class="rc-actions">

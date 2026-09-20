@@ -68,21 +68,12 @@ const focusRequester = async () => {
 // 상세페이지 에디터는 앱 화면을 그대로 쓰는 게 가장 확실하다(에디터가 쓰는 API 키·저장소가
 // 전부 앱 쪽에 있다). 1688 페이지 안에 iframe으로 넣으면 그 사이트의 CSP에 막힐 수 있어,
 // 창(팝업)으로 띄운다.
-const APP_URLS = ['http://localhost:3000/', 'https://rocket-product.vercel.app/'];
+// 앱 주소는 항상 배포본을 쓴다. 예전에는 개발 서버(localhost:3000)가 떠 있으면 그쪽을 열었는데,
+// 개발 서버를 켜둔 줄 모르고 쓰다가 배포본이 아닌 화면에서 작업하게 되는 일이 있어서 고정했다.
+const APP_URL = 'https://rocket-product.vercel.app/';
 
 // 상세페이지 에디터 창과, 그 창을 연 1688 탭.
 let detailEditor = null;
-
-// 앱 주소는 개발 서버(localhost:3000)가 떠 있으면 그쪽, 아니면 배포본을 쓴다.
-// 열려 있는 탭을 따라가면 어느 쪽이 열렸는지 사람이 알 수 없어 헷갈리므로 직접 확인한다.
-const resolveAppUrl = async () => {
-  try {
-    await fetch(APP_URLS[0], { method: 'HEAD', cache: 'no-store', signal: AbortSignal.timeout(1200) });
-    return APP_URLS[0];
-  } catch (err) {
-    return APP_URLS[1];
-  }
-};
 
 // ---- 1688 이미지 가져오기 ----
 // 상세페이지 에디터에 사진을 바로 담아 보내기 위해, 1688 이미지는 확장이 직접 받아옵니다.
@@ -135,9 +126,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           });
         }
 
-        const base = await resolveAppUrl();
         const created = await chrome.windows.create({
-          url: `${base}?openDetail=1`,
+          url: `${APP_URL}?openDetail=1`,
           type: 'popup',
           width: Math.min(1280, (message.screenWidth || 1440) - 80),
           height: Math.min(900, (message.screenHeight || 900) - 80),

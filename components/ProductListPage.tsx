@@ -100,7 +100,7 @@ const ProductListPage: React.FC<ProductListPageProps> = ({
     const q = query.trim().toLowerCase();
     let list = [...entries].sort((a, b) => (b.savedAt || '').localeCompare(a.savedAt || ''));
     if (approvedOnly) list = list.filter(e => e.approvalStatus === 'approved');
-    if (q) list = list.filter(e => e.productName.toLowerCase().includes(q) || e.url.toLowerCase().includes(q));
+    if (q) list = list.filter(e => e.productName.toLowerCase().includes(q) || e.url.toLowerCase().includes(q) || (e.memo || '').toLowerCase().includes(q));
     return list;
   }, [entries, query, approvedOnly]);
 
@@ -136,7 +136,7 @@ const ProductListPage: React.FC<ProductListPageProps> = ({
             </span>
             <input
               type="text"
-              placeholder="상품명 또는 URL로 검색..."
+              placeholder="상품명·URL·메모로 검색..."
               value={query}
               onChange={e => setQuery(e.target.value)}
               className="w-full pl-10 pr-3 py-1.5 bg-white border border-gray-300 text-gray-900 text-sm placeholder:text-gray-400 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors"
@@ -332,6 +332,7 @@ const emptyManualEntry = () => ({
   importer: '',
   manufacturer: '',
   thumbnailDataUrl: '',
+  memo: '',
   approvalStatus: 'pending' as const,
 });
 
@@ -401,6 +402,10 @@ const AddManualEntryModal: React.FC<AddManualEntryModalProps> = ({ onCancel, onS
           <div className="sm:col-span-2">
             <label className={labelClass}>URL</label>
             <input type="text" value={form.url} onChange={setField('url')} className={inputClass} />
+          </div>
+          <div className="sm:col-span-2">
+            <label className={labelClass}>메모</label>
+            <textarea rows={2} value={form.memo} onChange={setField('memo')} className={`${inputClass} resize-y`} />
           </div>
           <div>
             <label className={labelClass}>공급가</label>
@@ -517,6 +522,41 @@ const ProductListRow: React.FC<ProductListRowProps> = ({ entry, isExpanded, onTo
   const [editingField, setEditingField] = useState<EditableAmountField | null>(null);
   const [draftValue, setDraftValue] = useState('');
   const [thumbLoading, setThumbLoading] = useState(false);
+
+  // 상품마다 따로 적어두는 메모. 저장하면 onUpdate를 타고 클라우드(또는 이 기기)에 그대로 남아서
+  // 앱을 껐다 켜도 계속 보인다. 예전에 저장된 항목에는 memo가 없으므로 빈 메모로 취급한다.
+  const savedMemo = entry.memo || '';
+  const [memoEditing, setMemoEditing] = useState(false);
+  const [memoDraft, setMemoDraft] = useState(savedMemo);
+
+  // 다른 컴퓨터에서 메모를 고치면 여기로 내려오는데, 내가 지금 타이핑 중인 내용을 덮어쓰면
+  // 안 되므로 편집 중이 아닐 때만 화면 값을 맞춘다.
+  useEffect(() => {
+    if (!memoEditing) setMemoDraft(savedMemo);
+  }, [savedMemo, memoEditing]);
+
+  const startMemoEdit = () => {
+    setMemoDraft(savedMemo);
+    setMemoEditing(true);
+  };
+
+  const saveMemo = () => {
+    onUpdate({ memo: memoDraft.trim() });
+    setMemoEditing(false);
+  };
+
+  const cancelMemoEdit = () => {
+    setMemoDraft(savedMemo);
+    setMemoEditing(false);
+  };
+
+  const deleteMemo = () => {
+    if (!savedMemo) return;
+    if (!window.confirm('이 상품의 메모를 삭제하시겠습니까?')) return;
+    onUpdate({ memo: '' });
+    setMemoDraft('');
+    setMemoEditing(false);
+  };
 
   const handleThumbnailUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -649,6 +689,9 @@ const ProductListRow: React.FC<ProductListRowProps> = ({ entry, isExpanded, onTo
         <div className="min-w-0 flex-1">
           <p className="text-sm font-semibold text-gray-900 truncate">{entry.productName || '상품명 없음'}</p>
           <p className="text-xs text-gray-400 truncate">{entry.color || '색상 없음'}</p>
+          {savedMemo && (
+            <p className="text-xs text-amber-700 truncate" title={savedMemo}>메모: {savedMemo}</p>
+          )}
         </div>
 
         <div className="flex-shrink-0 flex items-center gap-3 text-xs font-mono">
@@ -760,6 +803,73 @@ const ProductListRow: React.FC<ProductListRowProps> = ({ entry, isExpanded, onTo
               </button>
             </div>
           )}
+
+          <div className="bg-amber-50 border border-amber-200 rounded-md px-3 py-2.5">
+            <div className="flex items-center justify-between gap-2 mb-1.5">
+              <p className="text-[11px] font-semibold text-amber-700">메모</p>
+              <div className="flex items-center gap-1">
+                {memoEditing ? (
+                  <>
+                    <button
+                      type="button"
+                      onClick={saveMemo}
+                      className="px-2 py-0.5 text-[11px] font-medium bg-amber-600 text-white rounded hover:bg-amber-700 focus:outline-none focus:ring-2 focus:ring-amber-400 transition-colors"
+                    >
+                      저장
+                    </button>
+                    <button
+                      type="button"
+                      onClick={cancelMemoEdit}
+                      className="px-2 py-0.5 text-[11px] font-medium bg-white border border-gray-300 text-gray-600 rounded hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-gray-300 transition-colors"
+                    >
+                      취소
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <button
+                      type="button"
+                      onClick={startMemoEdit}
+                      className="px-2 py-0.5 text-[11px] font-medium bg-white border border-amber-300 text-amber-700 rounded hover:bg-amber-100 focus:outline-none focus:ring-2 focus:ring-amber-400 transition-colors"
+                    >
+                      {savedMemo ? '수정' : '메모 작성'}
+                    </button>
+                    {savedMemo && (
+                      <button
+                        type="button"
+                        onClick={deleteMemo}
+                        className="px-2 py-0.5 text-[11px] font-medium bg-white border border-gray-300 text-red-600 rounded hover:bg-red-50 focus:outline-none focus:ring-2 focus:ring-red-400 transition-colors"
+                      >
+                        삭제
+                      </button>
+                    )}
+                  </>
+                )}
+              </div>
+            </div>
+            {memoEditing ? (
+              <>
+                <textarea
+                  autoFocus
+                  rows={3}
+                  value={memoDraft}
+                  onChange={e => setMemoDraft(e.target.value)}
+                  onKeyDown={e => {
+                    e.stopPropagation();
+                    if (e.key === 'Escape') { e.preventDefault(); cancelMemoEdit(); }
+                    if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); saveMemo(); }
+                  }}
+                  placeholder="이 상품에 대해 기억해둘 내용을 적어두세요."
+                  className="w-full px-2.5 py-2 bg-white border border-amber-300 text-gray-900 text-sm rounded-md placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-amber-400 resize-y"
+                />
+                <p className="text-[10px] text-amber-600 mt-1">저장 버튼(또는 Ctrl/⌘+Enter)을 눌러야 저장됩니다. Esc는 취소.</p>
+              </>
+            ) : savedMemo ? (
+              <p className="text-sm text-gray-800 whitespace-pre-wrap break-words">{savedMemo}</p>
+            ) : (
+              <p className="text-sm text-gray-400">메모가 없습니다.</p>
+            )}
+          </div>
 
           <p className="text-[11px] text-gray-400">저장일시: {formatDate(entry.savedAt)}</p>
         </div>

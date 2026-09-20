@@ -328,6 +328,8 @@ const buildArchiveEntry = (p: Product, thumbnailDataUrl: string): ArchivedProduc
   importer: p.importer,
   manufacturer: p.manufacturer,
   thumbnailDataUrl,
+  // 상품 등록 화면에 적어둔 메모를 상품목록으로도 그대로 옮겨서, 목록에서 바로 보고 고칠 수 있게 한다.
+  memo: p.memo || '',
   approvalStatus: 'pending',
 });
 

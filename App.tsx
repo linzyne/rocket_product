@@ -12,7 +12,6 @@ import QuoteGeneratorModal from './components/QuoteGeneratorModal';
 import QuoteSettingsModal from './components/QuoteSettingsModal';
 import QuoteTemplateManagerModal from './components/QuoteTemplateManagerModal';
 import MemoModal from './components/MemoModal';
-import NotepadSidebar from './components/NotepadSidebar';
 import ImageRenamer from './components/ImageRenamer';
 import ImageEditorModal from './components/ImageEditorModal';
 import DetailPageBuilderModal, { STANDALONE_DRAFT_ID } from './components/DetailPageBuilderModal';
@@ -2797,8 +2796,7 @@ const App: React.FC = () => {
 
   return (
     <div className="min-h-screen text-slate-200 flex flex-col items-start p-4 sm:p-6 lg:p-8">
-      <div className="w-full flex flex-row items-start gap-6">
-      <div className="flex-1 min-w-0 relative z-10">
+      <div className="w-full min-w-0 relative z-10">
       {currentView === 'renamer' ? (
         <ImageRenamer onBack={() => setCurrentView('products')} />
       ) : currentView === 'productList' ? (
@@ -3031,9 +3029,6 @@ const App: React.FC = () => {
           </div>
         </div>
       )}
-      </div>
-
-      <NotepadSidebar />
       </div>
 
       {/* Off-screen: 통합다운이 라벨 모달을 열지 않고 라벨 이미지를 캡처하기 위한 숨김 렌더링 */}

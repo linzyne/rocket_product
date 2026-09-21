@@ -10,6 +10,10 @@
   const APP_SOURCE = 'rocket-proposal-app';
   const EXT_SOURCE = 'rocket-proposal-extension';
   const PENDING_KEY = 'rocketPendingQuote';
+  // 앱의 상세페이지 에디터에서 정한 "AI 문구 설정"(프롬프트 전문 + 특별한점/특징 개수). 1688 값 확인
+  // 창의 프롬프트도 이 설정을 쓰므로 앱과 확장의 프롬프트가 어긋나지 않는다
+  // (content.js의 buildDetailPageCopyPrompt).
+  const COPY_SETTINGS_KEY = 'detailCopySettings';
   // 1688 값 확인 창의 "견적서 찾기"로 미리 받아둔 카테고리 견적서.
   const QUOTE_KEY = 'pendingCategoryQuote';
 
@@ -62,6 +66,18 @@
         });
         await ask({ type: 'OPEN_REGISTRATION' });
         reply({ type: 'PROPOSE_QUOTE_ACK', ok: true });
+        return;
+      }
+
+      if (data.type === 'SET_COPY_SETTINGS') {
+        const s = data.settings || {};
+        chrome.storage.local.set({
+          [COPY_SETTINGS_KEY]: {
+            template: String(s.template || ''),
+            highlightCount: Number(s.highlightCount) || 0,
+            featureBlockCount: Number(s.featureBlockCount) || 0,
+          },
+        });
         return;
       }
 

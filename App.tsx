@@ -17,6 +17,7 @@ import ImageEditorModal from './components/ImageEditorModal';
 import DetailPageBuilderModal, { STANDALONE_DRAFT_ID } from './components/DetailPageBuilderModal';
 import MissingFieldsModal from './components/MissingFieldsModal';
 import { saveDataUrlInProductFolder, productFolderName, productNameFolderName, buildZipBlob, saveFilesInProductFolder, getRootDirectory, detailSliceFileNames } from './utils/fileSave';
+import { loadCopySettings, pushCopySettingsToExtension } from './utils/detailPageCopyPrompt';
 import { sendProposalToSupplierHub, requestPendingCategoryQuote, dataUrlToFile, unwrapDownloadedQuote } from './utils/rocketProposal';
 import CategoryQuoteFinderModal from './components/CategoryQuoteFinderModal';
 import CategoryPickModal from './components/CategoryPickModal';
@@ -2554,6 +2555,13 @@ const App: React.FC = () => {
   // 먼저 만들고 그다음에 값을 복사해 붙여넣는 순서라, 여기서 새 상품 행을 하나 만들어 그 행의
   // 에디터를 연다. 그러면 나중에 그 행에 01 복붙을 해도 상세페이지가 그대로 남는다.
   // (마지막 상품을 열면 이전 상품의 상세페이지를 덮어쓰게 된다.)
+  // AI 문구 설정(지시문·섹션 개수)은 앱과 확장이 함께 쓴다. 확장을 새로 깔거나 다시 로드하면
+  // 저장해둔 값이 사라지므로, 앱이 뜰 때 한 번 다시 보내준다(브리지가 붙을 시간을 조금 준다).
+  useEffect(() => {
+    const timer = window.setTimeout(() => pushCopySettingsToExtension(loadCopySettings()), 500);
+    return () => window.clearTimeout(timer);
+  }, []);
+
   const openedFromUrlRef = useRef(false);
   useEffect(() => {
     if (openedFromUrlRef.current) return;

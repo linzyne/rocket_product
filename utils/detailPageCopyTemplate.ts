@@ -15,6 +15,35 @@ export interface DetailPageCopy {
   closing: string;
 }
 
+// AI 문구생성 프롬프트 전체 — 사용자가 앱에서 직접 고쳐 쓴다(utils/detailPageCopyPrompt.ts).
+// {상품명} 같은 자리표시자는 renderCopyPrompt가 실제 값으로 바꿔 넣는다.
+//
+// {응답형식}만 특별하다. 붙여넣기용(labels)일 때는 파서(parseDetailPageCopyText)가 읽는 라벨
+// 형식으로, Gemini 직접 호출용(json)일 때는 개수 지시문으로 바뀐다 — 그쪽은 responseSchema가
+// 모양을 잡으므로 라벨이 필요 없다. 이 자리표시자를 지우면 AI 답을 앱이 못 알아본다.
+export const DEFAULT_COPY_PROMPT_TEMPLATE = [
+  '아래 상품 정보를 참고해서 쇼핑몰 상세페이지 문구를 작성해줘.',
+  '과장되거나 근거 없는 표현(효능 단정, 최상급 남발)은 피하고, 담백하면서도 매력적인 톤으로 써줘.',
+  '',
+  '상품명: {상품명}',
+  '카테고리: {카테고리}',
+  '소재: {소재}',
+  '소구점 메모: {소구점}',
+  '',
+  '{응답형식}',
+].join('\n');
+
+// 화면에 안내로 띄우는 목록 — 여기 없는 자리표시자는 글자 그대로 남는다.
+export const COPY_PROMPT_PLACEHOLDERS = [
+  { token: '{상품명}', hint: '상품명' },
+  { token: '{카테고리}', hint: '카테고리' },
+  { token: '{소재}', hint: '소재 (비어 있으면 그 줄이 통째로 빠짐)' },
+  { token: '{소구점}', hint: '소구점 메모' },
+  { token: '{특별한점개수}', hint: '특별한점 개수' },
+  { token: '{특징개수}', hint: '특징 블록 개수' },
+  { token: '{응답형식}', hint: '답변 형식 — 지우면 붙여넣기가 동작하지 않음' },
+];
+
 // 특별한점(텍스트만) 섹션 개수 — 사진이 없는 항목이라 특징 블록 개수와 독립적. 앱에서 조절 가능(기본값/범위).
 export const DEFAULT_HIGHLIGHT_COUNT = 4;
 export const HIGHLIGHT_COUNT_MIN = 1;
@@ -63,25 +92,13 @@ export function generateDetailPageCopyTemplate(
   return { productName, hookCopy, highlights, features, closing };
 }
 
-// Builds a copy-pasteable prompt for an external chat AI (ChatGPT, Gemini web, etc.) — the user
-// pastes the AI's reply back into parseDetailPageCopyText below. No API call from this app.
-// The requested format uses plain Korean labels (no bracket tags) plus literal "<사진>" markers,
-// matching exactly what a user would type by hand — see parseDetailPageCopyText.
-export function buildDetailPageCopyPrompt(
-  input: DetailPageCopyInput,
+// 붙여넣기용 답변 형식 — 라벨과 <사진> 표시, 줄 순서가 파서(parseDetailPageCopyText)가 읽는
+// 규격 그 자체다. 개수만 설정을 따라간다.
+export function buildLabelFormatBlock(
   highlightCount: number = DEFAULT_HIGHLIGHT_COUNT,
   featureBlockCount: number = DEFAULT_FEATURE_BLOCK_COUNT,
 ): string {
   const lines: string[] = [
-    '아래 상품 정보를 참고해서 쇼핑몰 상세페이지 문구를 작성해줘.',
-    '과장되거나 근거 없는 표현(효능 단정, 최상급 남발)은 피하고, 담백하면서도 매력적인 톤으로 써줘.',
-    '',
-    `상품명: ${input.productName || '(미입력)'}`,
-    `카테고리: ${input.category || '(미입력)'}`,
-  ];
-  if (input.material) lines.push(`소재: ${input.material}`);
-  lines.push(`소구점 메모: ${input.sellingPoints || '(미입력)'}`, '');
-  lines.push(
     '아래 형식을 절대 그대로 지켜서 답변해줘 (라벨과 <사진> 표시, 줄 순서를 바꾸지 말고, 라벨 다음 줄에 내용만 채워줘):',
     '',
     '제품명',
@@ -91,8 +108,8 @@ export function buildDetailPageCopyPrompt(
     '(임팩트 있는 문구. 반드시 두 줄로 나눠 쓰고, 한 줄은 18자를 넘기지 마)',
     '',
     '<사진>',
-    ''
-  );
+    '',
+  ];
   for (let i = 1; i <= highlightCount; i++) {
     lines.push(`특별한점 ${String(i).padStart(2, '0')}`, '(짧은 특징 한 줄)', '');
   }
@@ -101,6 +118,46 @@ export function buildDetailPageCopyPrompt(
   }
   lines.push('마무리 문구', '(마무리 한 줄)');
   return lines.join('\n');
+}
+
+// Gemini를 직접 부를 때의 답변 형식. 모양은 responseSchema가 강제하므로(utils/detailPageCopyGemini.ts)
+// 여기서는 개수만 알려주면 된다.
+export function buildJsonFormatBlock(
+  highlightCount: number = DEFAULT_HIGHLIGHT_COUNT,
+  featureBlockCount: number = DEFAULT_FEATURE_BLOCK_COUNT,
+): string {
+  return `highlights(특별한점, 짧은 한 줄 특징)는 정확히 ${highlightCount}개, features(제목+2~3문장 설명)는 정확히 ${featureBlockCount}개 작성해줘.`;
+}
+
+// 사용자가 고쳐 쓴 프롬프트에 실제 값을 채워 넣는다.
+//  - 'labels': 외부 챗봇에 복사해 갈 프롬프트. 답을 parseDetailPageCopyText가 읽는다.
+//  - 'json'  : Gemini 직접 호출용.
+// {소재}가 든 줄은 소재가 비어 있으면 통째로 뺀다("소재: " 만 남는 줄을 AI에게 보내지 않으려고).
+export function renderCopyPrompt(
+  template: string,
+  input: DetailPageCopyInput,
+  highlightCount: number = DEFAULT_HIGHLIGHT_COUNT,
+  featureBlockCount: number = DEFAULT_FEATURE_BLOCK_COUNT,
+  format: 'labels' | 'json' = 'labels',
+): string {
+  const body = (template.trim() ? template : DEFAULT_COPY_PROMPT_TEMPLATE)
+    .split('\n')
+    .filter(line => !(line.includes('{소재}') && !input.material?.trim()))
+    .join('\n');
+
+  const formatBlock = format === 'labels'
+    ? buildLabelFormatBlock(highlightCount, featureBlockCount)
+    : buildJsonFormatBlock(highlightCount, featureBlockCount);
+
+  return body
+    .replace(/\{상품명\}/g, input.productName || '(미입력)')
+    .replace(/\{카테고리\}/g, input.category || '(미입력)')
+    .replace(/\{소재\}/g, input.material || '')
+    .replace(/\{소구점\}/g, input.sellingPoints || '(미입력)')
+    .replace(/\{특별한점개수\}/g, String(highlightCount))
+    .replace(/\{특징개수\}/g, String(featureBlockCount))
+    .replace(/\{응답형식\}/g, formatBlock)
+    .trim();
 }
 
 const PHOTO_MARKER = '<사진>';
@@ -184,7 +241,7 @@ function emptyCopy(): DetailPageCopy {
   return { productName: '', hookCopy: '', highlights: [], features: [], closing: '' };
 }
 
-// Parses the labeled format produced by buildDetailPageCopyPrompt — and, just as importantly,
+// Parses the labeled format produced by buildLabelFormatBlock — and, just as importantly,
 // what a user types by hand: "라벨: 내용" or "라벨" on its own line with the content below it,
 // spacing inside the label word doesn't matter, and "<사진>" is a standalone marker that's
 // simply skipped (photo placement follows upload order, not the pasted text).

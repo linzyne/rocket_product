@@ -1,28 +1,30 @@
 import { GoogleGenAI, Type } from "@google/genai";
-import { DetailPageCopy, DetailPageCopyInput, breakAfterSentences } from "./detailPageCopyTemplate";
+import {
+  DEFAULT_COPY_PROMPT_TEMPLATE,
+  DetailPageCopy,
+  DetailPageCopyInput,
+  breakAfterSentences,
+  renderCopyPrompt,
+} from "./detailPageCopyTemplate";
 
-// Direct in-editor generation: unlike buildDetailPageCopyPrompt (utils/detailPageCopyTemplate.ts),
+// Direct in-editor generation: unlike the 'labels' rendering (utils/detailPageCopyTemplate.ts),
 // which the user copies out to an external chat AI and pastes the reply back in, this calls Gemini
 // itself and asks for the exact DetailPageCopy shape via responseSchema — no label parsing needed.
+// 프롬프트 본문은 같은 템플릿을 쓰되 {응답형식}만 'json'으로 렌더링한다.
 export async function generateDetailPageCopyWithGemini(
   input: DetailPageCopyInput,
   highlightCount: number,
   featureBlockCount: number,
   styleInstruction?: string,
+  // 사용자가 앱에서 고쳐 쓴 프롬프트 전문(utils/detailPageCopyPrompt.ts). 안 넘기면 기본값.
+  template: string = DEFAULT_COPY_PROMPT_TEMPLATE,
 ): Promise<DetailPageCopy> {
   const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
+  // 'json' 형식: 라벨 대신 개수 지시문만 들어간다(모양은 아래 responseSchema가 강제한다).
   const prompt = [
-    '아래 상품 정보를 참고해서 쇼핑몰 상세페이지 문구를 작성해줘.',
-    '과장되거나 근거 없는 표현(효능 단정, 최상급 남발)은 피하고, 담백하면서도 매력적인 톤으로 써줘.',
-    '',
-    `상품명: ${input.productName || '(미입력)'}`,
-    `카테고리: ${input.category || '(미입력)'}`,
-    input.material ? `소재: ${input.material}` : '',
-    `소구점 메모: ${input.sellingPoints || '(미입력)'}`,
-    '',
-    `highlights(특별한점, 짧은 한 줄 특징)는 정확히 ${highlightCount}개, features(제목+2~3문장 설명)는 정확히 ${featureBlockCount}개 작성해줘.`,
-    styleInstruction ? `추가 스타일/톤 지침: ${styleInstruction}` : '',
+    renderCopyPrompt(template, input, highlightCount, featureBlockCount, 'json'),
+    styleInstruction ? `\n추가 스타일/톤 지침: ${styleInstruction}` : '',
   ].filter(Boolean).join('\n');
 
   const response = await ai.models.generateContent({

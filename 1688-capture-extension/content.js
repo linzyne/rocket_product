@@ -567,21 +567,60 @@
   // 마우스로 실제 옵션 요소를 직접 가리켜서 클릭하는 방식으로, 클릭한 요소의 텍스트만 정확히
   // 옵션으로 추가한다. onAdd(text)는 클릭할 때마다 호출되고, 완료(Esc 또는 버튼)되면 resolve된다.
 
-  // 로켓제안서 앱의 buildDetailPageCopyPrompt(utils/detailPageCopyTemplate.ts)와 같은 형식.
+  // 로켓제안서 앱의 renderCopyPrompt(utils/detailPageCopyTemplate.ts)와 같은 결과를 내야 한다.
   // 라벨과 줄 구성이 어긋나면 앱이 AI 답변을 알아보지 못하므로 그대로 맞춰 둔다.
-  const DETAIL_HIGHLIGHT_COUNT = 4;
-  const DETAIL_FEATURE_COUNT = 3;
-  function buildDetailPageCopyPrompt({ productName, category, material, sellingPoints }) {
-    const lines = [
+  //
+  // 프롬프트 전문과 섹션 개수는 앱의 상세페이지 에디터에서 사용자가 직접 정한다. 정한 값은
+  // app-bridge.js가 chrome.storage.local에 넣어두므로 여기서 읽어 쓰고, 아직 한 번도 정한 적이
+  // 없으면 앱과 같은 기본값을 쓴다(utils/detailPageCopyPrompt.ts).
+  const DEFAULT_COPY_SETTINGS = {
+    template: [
       '아래 상품 정보를 참고해서 쇼핑몰 상세페이지 문구를 작성해줘.',
       '과장되거나 근거 없는 표현(효능 단정, 최상급 남발)은 피하고, 담백하면서도 매력적인 톤으로 써줘.',
       '',
-      `상품명: ${productName || '(미입력)'}`,
-      `카테고리: ${category || '(미입력)'}`,
-    ];
-    if (material) lines.push(`소재: ${material}`);
-    lines.push(`소구점 메모: ${sellingPoints || '(미입력)'}`, '');
-    lines.push(
+      '상품명: {상품명}',
+      '카테고리: {카테고리}',
+      '소재: {소재}',
+      '소구점 메모: {소구점}',
+      '',
+      '{응답형식}',
+    ].join('\n'),
+    highlightCount: 4,
+    featureBlockCount: 3,
+  };
+  let copySettings = DEFAULT_COPY_SETTINGS;
+
+  const normalizeCopySettings = (raw) => {
+    if (!raw || typeof raw !== 'object') return DEFAULT_COPY_SETTINGS;
+    const clamp = (value, fallback) => {
+      const n = Math.round(Number(value));
+      return Number.isFinite(n) && n >= 1 && n <= 8 ? n : fallback;
+    };
+    return {
+      template: typeof raw.template === 'string' && raw.template.trim() ? raw.template : DEFAULT_COPY_SETTINGS.template,
+      highlightCount: clamp(raw.highlightCount, DEFAULT_COPY_SETTINGS.highlightCount),
+      featureBlockCount: clamp(raw.featureBlockCount, DEFAULT_COPY_SETTINGS.featureBlockCount),
+    };
+  };
+
+  try {
+    chrome.storage.local.get('detailCopySettings', (result) => {
+      if (chrome.runtime.lastError) return;
+      copySettings = normalizeCopySettings(result && result.detailCopySettings);
+    });
+    // 1688 창을 열어둔 채로 앱에서 프롬프트를 고치는 경우도 있어 바뀌면 바로 따라간다.
+    chrome.storage.onChanged.addListener((changes, area) => {
+      if (area !== 'local' || !changes.detailCopySettings) return;
+      copySettings = normalizeCopySettings(changes.detailCopySettings.newValue);
+    });
+  } catch (err) {
+    // 확장을 다시 로드해서 옛 스크립트가 남은 경우. 기본값으로 계속 동작한다.
+  }
+
+  // {응답형식} 자리에 들어가는 라벨 형식. 앱의 파서(parseDetailPageCopyText)가 읽는 규격이라
+  // 사용자가 고칠 수 없고, 개수만 설정을 따라간다.
+  function buildLabelFormatBlock(highlightCount, featureBlockCount) {
+    const lines = [
       '아래 형식을 절대 그대로 지켜서 답변해줘 (라벨과 <사진> 표시, 줄 순서를 바꾸지 말고, 라벨 다음 줄에 내용만 채워줘):',
       '',
       '제품명',
@@ -591,16 +630,34 @@
       '(임팩트 있는 문구. 반드시 두 줄로 나눠 쓰고, 한 줄은 18자를 넘기지 마)',
       '',
       '<사진>',
-      ''
-    );
-    for (let i = 1; i <= DETAIL_HIGHLIGHT_COUNT; i++) {
+      '',
+    ];
+    for (let i = 1; i <= highlightCount; i++) {
       lines.push(`특별한점 ${String(i).padStart(2, '0')}`, '(짧은 특징 한 줄)', '');
     }
-    for (let i = 1; i <= DETAIL_FEATURE_COUNT; i++) {
+    for (let i = 1; i <= featureBlockCount; i++) {
       lines.push(String(i).padStart(2, '0'), '(특징 소제목 한 줄)', '', '(특징 설명 2~3문장)', '<사진>', '');
     }
     lines.push('마무리 문구', '(마무리 한 줄)');
     return lines.join('\n');
+  }
+
+  function buildDetailPageCopyPrompt({ productName, category, material, sellingPoints }) {
+    const { template, highlightCount, featureBlockCount } = copySettings;
+    // {소재}가 든 줄은 소재가 비어 있으면 통째로 뺀다(앱의 renderCopyPrompt와 같은 규칙).
+    const body = template
+      .split('\n')
+      .filter((line) => !(line.includes('{소재}') && !String(material || '').trim()))
+      .join('\n');
+    return body
+      .replace(/\{상품명\}/g, productName || '(미입력)')
+      .replace(/\{카테고리\}/g, category || '(미입력)')
+      .replace(/\{소재\}/g, material || '')
+      .replace(/\{소구점\}/g, sellingPoints || '(미입력)')
+      .replace(/\{특별한점개수\}/g, String(highlightCount))
+      .replace(/\{특징개수\}/g, String(featureBlockCount))
+      .replace(/\{응답형식\}/g, buildLabelFormatBlock(highlightCount, featureBlockCount))
+      .trim();
   }
 
   function startPickMode(onAdd) {
@@ -1040,7 +1097,7 @@
       <div class="rc-fields">
         <div class="rc-section">
           <p class="rc-section-heading"><span class="rc-step-num">1</span>📄 상세페이지 문구 (선택)</p>
-          <p class="rc-step-hint">프롬프트를 복사해 AI에 물어보고, 받은 답을 그대로 아래에 붙여넣으세요. 로켓제안서에 붙여넣을 때 상세페이지에도 같이 들어갑니다.</p>
+          <p class="rc-step-hint">프롬프트를 복사해 AI에 물어보고, 받은 답을 그대로 아래에 붙여넣으세요. 로켓제안서에 붙여넣을 때 상세페이지에도 같이 들어갑니다. 프롬프트 내용은 로켓제안서 상세페이지 에디터의 "프롬프트 직접 수정하기"에서 고칠 수 있고, 고치면 여기에도 바로 반영됩니다.</p>
           <label class="rc-label">소구점 메모 (프롬프트에 들어갈 재료)
             <input id="rc-selling-points" class="rc-input" placeholder="예) 튼튼함, 넉넉한 수납, 선물용" />
           </label>

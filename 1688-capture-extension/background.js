@@ -129,7 +129,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         const created = await chrome.windows.create({
           url: `${APP_URL}?openDetail=1`,
           type: 'popup',
-          width: Math.min(1280, (message.screenWidth || 1440) - 80),
+          width: Math.min(700, (message.screenWidth || 1440) - 80),
           height: Math.min(900, (message.screenHeight || 900) - 80),
         });
         // 이 창을 닫으면 값 확인 창에게 알려서, 이어서 "복사할까요?"를 물어보게 한다.

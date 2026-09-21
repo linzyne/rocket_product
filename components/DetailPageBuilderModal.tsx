@@ -1,20 +1,25 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Product } from '../types';
 import {
-  buildDetailPageCopyPrompt,
+  COPY_PROMPT_PLACEHOLDERS,
+  renderCopyPrompt,
   parseDetailPageCopyText,
   breakAfterSentences,
   DetailPageCopy,
-  DEFAULT_HIGHLIGHT_COUNT,
   HIGHLIGHT_COUNT_MIN,
   HIGHLIGHT_COUNT_MAX,
-  DEFAULT_FEATURE_BLOCK_COUNT,
   FEATURE_BLOCK_COUNT_MIN,
   FEATURE_BLOCK_COUNT_MAX,
 } from '../utils/detailPageCopyTemplate';
 import { CloseIcon, SpinnerIcon, SaveIcon, DownloadIcon, SparklesIcon, UploadIcon, TrashIcon, ChevronUpIcon, ChevronDownIcon, BrushIcon, PlusIcon, StarIcon, CropIcon, CheckIcon, EyedropperIcon, UndoIcon, LineIcon, SquareIcon, CircleIcon, ArrowIcon, TextToolIcon } from './Icons';
 import { editImageWithGemini, BRUSH_ERASE_PROMPT } from '../utils/geminiImageEdit';
 import { generateDetailPageCopyWithGemini } from '../utils/detailPageCopyGemini';
+import {
+  DEFAULT_COPY_PROMPT_TEMPLATE,
+  loadCopySettings,
+  pushCopySettingsToExtension,
+  saveCopySettings,
+} from '../utils/detailPageCopyPrompt';
 import { saveFilesInProductFolder, productFolderName, detailSliceFileNames } from '../utils/fileSave';
 import { generateId } from '../utils/id';
 import { saveDetailPageDraft, loadDetailPageDraft, deleteDetailPageDraft } from '../data/detailPageDrafts';
@@ -362,6 +367,10 @@ const DetailPageBuilderModal: React.FC<DetailPageBuilderModalProps> = ({ isOpen,
   const [savedPrompts, setSavedPrompts] = useState<SavedCopyPrompt[]>(loadSavedCopyPrompts);
   const [selectedPromptId, setSelectedPromptId] = useState('');
   const [promptInstruction, setPromptInstruction] = useState('');
+  // AI에게 보내는 프롬프트 전문. 앱·확장이 함께 쓰는 값이라 저장하면 확장에도 밀어 넣는다.
+  const [promptTemplate, setPromptTemplate] = useState(() => loadCopySettings().template);
+  const [promptEditorOpen, setPromptEditorOpen] = useState(false);
+  const [promptPreviewOpen, setPromptPreviewOpen] = useState(false);
   const [copyGenStatus, setCopyGenStatus] = useState<'idle' | 'loading' | 'error'>('idle');
   const [copyGenError, setCopyGenError] = useState('');
   // Template-level settings (not per-product): shared across every product's detail page so the
@@ -372,8 +381,10 @@ const DetailPageBuilderModal: React.FC<DetailPageBuilderModalProps> = ({ isOpen,
     ...DEFAULT_TEMPLATE_STYLE,
     fontFamily: templateId === 'kimchi' ? 'Pretendard' : DEFAULT_TEMPLATE_STYLE.fontFamily,
   }));
-  const [highlightCount, setHighlightCount] = useState(DEFAULT_HIGHLIGHT_COUNT);
-  const [featureBlockCount, setFeatureBlockCount] = useState(DEFAULT_FEATURE_BLOCK_COUNT);
+  // 개수와 지시문은 상품마다 다시 정하는 값이 아니라 한 번 정해두고 계속 쓰는 값이라, 저장해뒀다가
+  // 다음에 열 때도 그대로 쓴다. 같은 값을 1688 창의 확장 프롬프트도 쓴다(detailPageCopyPrompt.ts).
+  const [highlightCount, setHighlightCount] = useState(() => loadCopySettings().highlightCount);
+  const [featureBlockCount, setFeatureBlockCount] = useState(() => loadCopySettings().featureBlockCount);
 
   // Brush-erase flow: paint over any photo(s) in the assembled detail page, then "텍스트 삭제" sends
   // just the photo(s) the brush touched through Gemini — one call per affected photo, each at its own
@@ -657,6 +668,17 @@ const DetailPageBuilderModal: React.FC<DetailPageBuilderModalProps> = ({ isOpen,
       console.error('Failed to save detail page copy prompts to localStorage', error);
     }
   }, [savedPrompts]);
+
+  // 지시문·개수는 바꿀 때마다 바로 저장한다(별도 저장 버튼 없이). 확장은 chrome.storage에
+  // 받아두므로 1688 창을 새로 열어도 마지막에 저장한 설정으로 프롬프트가 만들어진다.
+  useEffect(() => {
+    saveCopySettings({ template: promptTemplate, highlightCount, featureBlockCount });
+  }, [promptTemplate, highlightCount, featureBlockCount]);
+
+  // 확장을 새로 설치했거나 다시 로드한 경우를 대비해, 에디터를 열 때 현재 설정을 한 번 보낸다.
+  useEffect(() => {
+    if (isOpen) pushCopySettingsToExtension({ template: promptTemplate, highlightCount, featureBlockCount });
+  }, [isOpen]);
 
   // Brush mode needs 1:1 screen-to-canvas coordinates, so force zoom to 100% while it's active (same
   // reason captureImage/captureCanvas reset zoom before capturing) and size the paint canvas to match
@@ -1895,6 +1917,7 @@ const DetailPageBuilderModal: React.FC<DetailPageBuilderModalProps> = ({ isOpen,
         highlightCount,
         featureBlockCount,
         promptInstruction.trim() || undefined,
+        promptTemplate,
       );
       setCopy(result);
       setCopyGenStatus('idle');
@@ -1905,14 +1928,74 @@ const DetailPageBuilderModal: React.FC<DetailPageBuilderModalProps> = ({ isOpen,
     }
   };
 
-  const handleCopyPrompt = async () => {
-    if (!product) return;
-    const prompt = buildDetailPageCopyPrompt({
-      productName: product.productName,
-      category: product.category,
+  // 프롬프트 편집기. "AI용 프롬프트 복사하기"와 "문구생성하기"가 같은 글을 쓰므로 두 자리에서
+  // 같은 편집기를 연다. <컴포넌트/>로 두면 글자를 칠 때마다 새로 마운트돼 포커스가 풀리므로
+  // 함수로 호출해서 그린다.
+  const renderPromptEditor = () => (
+    <div className="space-y-1.5 p-2 rounded-md bg-slate-900/60 border border-slate-700">
+      <div className="flex items-center justify-between gap-2">
+        <p className="text-xs font-semibold text-slate-300">AI 프롬프트 (직접 수정)</p>
+        <button
+          onClick={() => setPromptTemplate(DEFAULT_COPY_PROMPT_TEMPLATE)}
+          disabled={promptTemplate === DEFAULT_COPY_PROMPT_TEMPLATE}
+          className="px-2 py-1 text-[11px] rounded-md bg-slate-700 text-slate-200 hover:bg-slate-600 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+        >
+          기본값으로 되돌리기
+        </button>
+      </div>
+      <textarea
+        value={promptTemplate}
+        onChange={e => setPromptTemplate(e.target.value)}
+        rows={12}
+        spellCheck={false}
+        className="w-full px-2.5 py-2 bg-slate-800 border border-slate-600 rounded-md text-xs text-slate-100 font-mono leading-relaxed resize-y"
+      />
+      {!promptTemplate.includes('{응답형식}') && (
+        <p className="text-xs text-amber-400 leading-relaxed">
+          {'{응답형식}'}이 빠졌어요. 이 자리에 라벨 형식이 들어가는데, 없으면 AI 답을 붙여넣어도 앱이 알아보지 못해요.
+        </p>
+      )}
+      <p className="text-xs text-slate-500 leading-relaxed">
+        아래 표시는 실제 값으로 바뀝니다. 고친 내용은 바로 저장되고, 1688 창의 확장 프롬프트에도 똑같이 쓰여요.
+      </p>
+      <ul className="text-[11px] text-slate-500 leading-relaxed space-y-0.5">
+        {COPY_PROMPT_PLACEHOLDERS.map(({ token, hint }) => (
+          <li key={token}>
+            <code className="text-slate-300">{token}</code> — {hint}
+          </li>
+        ))}
+      </ul>
+      <button
+        onClick={() => setPromptPreviewOpen(o => !o)}
+        className="w-full px-3 py-1.5 text-xs bg-slate-700 text-slate-100 font-semibold rounded-lg hover:bg-slate-600 transition-colors"
+      >
+        {promptPreviewOpen ? '미리보기 닫기' : '지금 값으로 완성된 프롬프트 보기'}
+      </button>
+      {promptPreviewOpen && (
+        <pre className="max-h-60 overflow-auto px-2.5 py-2 bg-slate-950 border border-slate-700 rounded-md text-[11px] text-slate-300 whitespace-pre-wrap leading-relaxed">
+          {buildCopyPrompt()}
+        </pre>
+      )}
+    </div>
+  );
+
+  // "AI용 프롬프트 복사하기"가 실제로 클립보드에 넣는 글. 미리보기도 같은 함수를 쓴다.
+  const buildCopyPrompt = () => renderCopyPrompt(
+    promptTemplate,
+    {
+      productName: product?.productName || '',
+      category: product?.category || '',
       material,
       sellingPoints,
-    }, highlightCount, featureBlockCount);
+    },
+    highlightCount,
+    featureBlockCount,
+    'labels',
+  );
+
+  const handleCopyPrompt = async () => {
+    if (!product) return;
+    const prompt = buildCopyPrompt();
     try {
       await navigator.clipboard.writeText(prompt);
       setPromptCopyStatus('copied');
@@ -2997,6 +3080,13 @@ const DetailPageBuilderModal: React.FC<DetailPageBuilderModalProps> = ({ isOpen,
                   {promptCopyStatus === 'copied' ? '복사됨!' : 'AI용 프롬프트 복사하기'}
                 </button>
                 <button
+                  onClick={() => setPromptEditorOpen(o => !o)}
+                  className="w-full px-3 py-1.5 text-xs bg-slate-800 text-slate-300 font-semibold rounded-lg border border-slate-600 hover:bg-slate-700 transition-colors"
+                >
+                  {promptEditorOpen ? '프롬프트 수정 닫기' : '이 프롬프트 직접 수정하기'}
+                </button>
+                {promptEditorOpen && renderPromptEditor()}
+                <button
                   onClick={handleApplyPasted}
                   disabled={!pastedText.trim()}
                   className="w-full px-3 py-2 text-sm bg-emerald-700 text-white font-semibold rounded-lg hover:bg-emerald-600 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
@@ -3325,6 +3415,13 @@ const DetailPageBuilderModal: React.FC<DetailPageBuilderModalProps> = ({ isOpen,
                 <p className="text-xs text-slate-500 leading-relaxed">
                   소구점을 적어두면 더 정확한 문구가 나와요. 스타일 지침은 이름을 붙여 저장해두고 다음에도 골라서 바로 쓸 수 있어요.
                 </p>
+                <button
+                  onClick={() => setPromptEditorOpen(o => !o)}
+                  className="w-full px-3 py-1.5 text-xs bg-slate-700 text-slate-100 font-semibold rounded-lg hover:bg-slate-600 transition-colors"
+                >
+                  {promptEditorOpen ? '프롬프트 수정 닫기' : '프롬프트 직접 수정하기'}
+                </button>
+                {promptEditorOpen && renderPromptEditor()}
                 <textarea
                   value={sellingPoints}
                   onChange={e => setSellingPoints(e.target.value)}

@@ -1437,17 +1437,41 @@ export const KimchiSectionPanel: React.FC<KimchiSectionPanelProps> = ({
 
 // 섹션 추가 버튼은 섹션 목록과 떨어져 사이드 패널 맨 위에 놓는다 — 목록 아래에 있으면 섹션이
 // 많아질수록 버튼이 멀어지고, 문구를 붙여넣기 전에 섹션부터 갖춰야 라벨이 맞기 때문이다.
-export const KimchiSectionAddBar: React.FC<{ addSection: (kind: KimchiSection['kind']) => void }> = ({ addSection }) => (
+// 종류마다 지금 몇 개 들어가 있는지 보여주고, ×로 그 종류의 맨 마지막 섹션을 지운다.
+export const KimchiSectionAddBar: React.FC<{
+  sections: KimchiSection[];
+  addSection: (kind: KimchiSection['kind']) => void;
+  removeSection: (id: string) => void;
+}> = ({ sections, addSection, removeSection }) => (
   <div className="flex flex-wrap gap-1.5">
-    <p className="text-xs font-bold text-slate-400 uppercase tracking-wider w-full">섹션 추가</p>
-    {(Object.keys(KIND_BADGE) as KimchiSection['kind'][]).map(kind => (
-      <button
-        key={kind}
-        onClick={() => addSection(kind)}
-        className="px-2 py-1 text-xs bg-slate-700 text-slate-200 rounded hover:bg-slate-600 transition-colors"
-      >
-        + {KIND_BADGE[kind]}
-      </button>
-    ))}
+    <p className="text-xs font-bold text-slate-400 uppercase tracking-wider w-full">
+      섹션 추가 <span className="text-slate-500 normal-case">· 총 {sections.length}개</span>
+    </p>
+    {(Object.keys(KIND_BADGE) as KimchiSection['kind'][]).map(kind => {
+      const ofKind = sections.filter(section => section.kind === kind);
+      const last = ofKind[ofKind.length - 1];
+      return (
+        <div key={kind} className="flex items-stretch rounded overflow-hidden bg-slate-700 text-xs">
+          <button
+            onClick={() => addSection(kind)}
+            className="px-2 py-1 text-slate-200 hover:bg-slate-600 transition-colors"
+          >
+            + {KIND_BADGE[kind]}
+            {ofKind.length > 0 && <span className="ml-1 text-amber-300 font-bold">{ofKind.length}</span>}
+          </button>
+          {last && (
+            <button
+              onClick={() => {
+                if (window.confirm(`마지막 "${KIND_BADGE[kind]}" 섹션과 거기 올린 사진을 삭제할까요?`)) removeSection(last.id);
+              }}
+              title={`마지막 ${KIND_BADGE[kind]} 섹션 삭제`}
+              className="px-1.5 border-l border-slate-600 text-slate-400 hover:bg-red-600 hover:text-white transition-colors"
+            >
+              ×
+            </button>
+          )}
+        </div>
+      );
+    })}
   </div>
 );

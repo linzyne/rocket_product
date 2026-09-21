@@ -2954,7 +2954,7 @@ const DetailPageBuilderModal: React.FC<DetailPageBuilderModalProps> = ({ isOpen,
 
           {/* Side panel: inputs only — everything else is edited directly in the preview */}
           <div className="lg:w-80 flex-shrink-0 flex flex-col gap-4 overflow-y-auto pr-1">
-            {isKimchi && <KimchiSectionAddBar addSection={addKimchiSection} />}
+            {isKimchi && <KimchiSectionAddBar sections={kimchiSections} addSection={addKimchiSection} removeSection={removeKimchiSectionById} />}
 
             {isKimchi ? (
               <div className="space-y-2 pt-2 border-t border-slate-700">

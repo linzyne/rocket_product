@@ -4,7 +4,7 @@ import { Product, ArchivedProduct } from './types';
 import ProductRow from './components/ProductRow';
 import ProductGroupSummary from './components/ProductGroupSummary';
 import ProductListPage from './components/ProductListPage';
-import { PlusIcon, DownloadIcon, CloseIcon, BroomIcon, SearchIcon, DocumentAddIcon, SaveIcon, CameraIcon, SettingsIcon, TagIcon, CheckIcon, ArchiveIcon, BrushIcon } from './components/Icons';
+import { PlusIcon, DownloadIcon, CloseIcon, BroomIcon, SearchIcon, DocumentAddIcon, SaveIcon, CameraIcon, SettingsIcon, TagIcon, CheckIcon, ArchiveIcon } from './components/Icons';
 import ProductLabel from './components/ProductLabel';
 import BarcodeLabel from './components/BarcodeLabel';
 import MarginCalculatorModal from './components/MarginCalculatorModal';
@@ -14,7 +14,10 @@ import QuoteTemplateManagerModal from './components/QuoteTemplateManagerModal';
 import MemoModal from './components/MemoModal';
 import ImageRenamer from './components/ImageRenamer';
 import ImageEditorModal from './components/ImageEditorModal';
-import DetailPageBuilderModal, { STANDALONE_DRAFT_ID } from './components/DetailPageBuilderModal';
+import DetailPageBuilderModal from './components/DetailPageBuilderModal';
+import DetailCategoryTabs, { DetailCategory, KIMCHI_CATEGORY_ID, draftIdForCategory, loadDetailCategories, saveDetailCategories, loadActiveCategoryId, saveActiveCategoryId } from './components/DetailCategoryTabs';
+import { deleteDetailPageDraft } from './data/detailPageDrafts';
+import AppSidebar, { AppMenuId, isAppMenuId, MenuPlaceholder } from './components/AppSidebar';
 import MissingFieldsModal from './components/MissingFieldsModal';
 import { saveDataUrlInProductFolder, productFolderName, productNameFolderName, buildZipBlob, saveFilesInProductFolder, getRootDirectory, detailSliceFileNames } from './utils/fileSave';
 import { loadCopySettings, pushCopySettingsToExtension } from './utils/detailPageCopyPrompt';
@@ -334,6 +337,17 @@ const buildArchiveEntry = (p: Product, thumbnailDataUrl: string): ArchivedProduc
 });
 
 
+// 1688 확장의 "등록하기"는 이 앱을 ?openDetail=1 로 새 창에 연다. 그 창에서는 상페작업 화면만
+// 보여주고(로켓제안서 목록은 그리지 않는다) 메뉴도 접어서 시작한다.
+const OPENED_FOR_DETAIL = new URLSearchParams(window.location.search).get('openDetail') === '1';
+
+const SIDEBAR_COLLAPSED_KEY = 'sidebarCollapsed';
+
+const readMenuFromHash = (): AppMenuId => {
+  const id = window.location.hash.replace(/^#\/?/, '');
+  return isAppMenuId(id) ? id : 'proposal';
+};
+
 const App: React.FC = () => {
   const [products, setProducts] = useState<Product[]>(getInitialProducts());
   // 게시판 형태의 상품 그룹 중 펼쳐진(옵션까지 보이는) 그룹을 상품 id로 추적한다. 그룹을 구분하는
@@ -404,6 +418,17 @@ const App: React.FC = () => {
   const [isSampleExporting, setIsSampleExporting] = useState(false);
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved'>('idle');
   const [currentView, setCurrentView] = useState<'products' | 'renamer' | 'productList'>('products');
+  const [activeMenu, setActiveMenu] = useState<AppMenuId>(() => (OPENED_FOR_DETAIL ? 'detail' : readMenuFromHash()));
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
+    if (OPENED_FOR_DETAIL) return true;
+    try { return localStorage.getItem(SIDEBAR_COLLAPSED_KEY) === '1'; } catch { return false; }
+  });
+  // 확장이 연 창은 값이 도착해 상품 행이 만들어질 때까지 잠깐 기다린다. 그 사이에 상페작업 메뉴가
+  // 비어 있다고 독립 상세페이지를 먼저 열어버리지 않게 막는 표시.
+  const [awaitingUrlDetail, setAwaitingUrlDetail] = useState(OPENED_FOR_DETAIL);
+  // 상페작업 안의 카테고리 탭(김치, ...).
+  const [detailCategories, setDetailCategories] = useState<DetailCategory[]>(loadDetailCategories);
+  const [activeDetailCategoryId, setActiveDetailCategoryId] = useState(() => loadActiveCategoryId(loadDetailCategories()));
   const [confirmResetAll, setConfirmResetAll] = useState(false);
   const resetAllTimeoutRef = useRef<number | null>(null);
   const [activeProductId, setActiveProductId] = useState<string | null>(null);
@@ -2233,7 +2258,7 @@ const App: React.FC = () => {
         });
         console.log('[통합다운] 로켓 제안 전달 결과', result);
         if (result.noExtension) {
-          alert('크롬 확장(1688 상품 캡처 → 로켓제안서)이 필요합니다.\n확장을 설치·새로고침한 뒤 다시 시도해주세요.');
+          alert('크롬 확장(1688 상품 캡처 → 로켓)이 필요합니다.\n확장을 설치·새로고침한 뒤 다시 시도해주세요.');
         } else if (!result.ok) {
           alert(`서플라이어허브로 파일을 넘기지 못했습니다.\n${result.error || '알 수 없는 오류'}`);
         }
@@ -2549,6 +2574,25 @@ const App: React.FC = () => {
   // Detail Page Builder Handlers
   const openDetailPageBuilder = useCallback((product: Product) => {
     setDetailPageBuilderState({ isOpen: true, product, standalone: false });
+    setActiveMenu('detail');
+  }, []);
+
+  // 메뉴는 주소창 해시에 남겨서 새로고침·뒤로가기에도 같은 메뉴가 열리게 한다.
+  useEffect(() => {
+    if (window.location.hash !== `#/${activeMenu}`) window.location.hash = `/${activeMenu}`;
+  }, [activeMenu]);
+  useEffect(() => {
+    const onHashChange = () => setActiveMenu(readMenuFromHash());
+    window.addEventListener('hashchange', onHashChange);
+    return () => window.removeEventListener('hashchange', onHashChange);
+  }, []);
+
+  const toggleSidebarCollapsed = useCallback(() => {
+    setSidebarCollapsed(prev => {
+      const next = !prev;
+      try { localStorage.setItem(SIDEBAR_COLLAPSED_KEY, next ? '1' : '0'); } catch { /* 저장 못 해도 동작엔 지장 없음 */ }
+      return next;
+    });
   }, []);
 
   // 1688 확장의 "상페 에디터" 버튼은 이 앱을 ?openDetail=1 로 열어준다. 확장에서는 상세페이지를
@@ -2576,6 +2620,7 @@ const App: React.FC = () => {
         const isEmpty = last && !last.productName && !last.url;
         const target = isEmpty ? last : createNewProduct();
         setDetailPageBuilderState({ isOpen: true, product: target, standalone: false });
+        setAwaitingUrlDetail(false);
         return isEmpty ? prev : [...prev, target];
       });
     };
@@ -2640,6 +2685,7 @@ const App: React.FC = () => {
       setProducts(current => {
         const filled = current.find(p => p.id === productId);
         if (filled) setDetailPageBuilderState({ isOpen: true, product: filled, standalone: false });
+        setAwaitingUrlDetail(false);
         return current;
       });
     };
@@ -2664,17 +2710,64 @@ const App: React.FC = () => {
   //
   // 임시 상품이지만 id는 매번 새로 만들지 않고 고정해서 쓴다. 빌더는 id가 바뀌면 "다른 상품을
   // 열었다"고 보고 화면을 비우는데, 그러면 닫았다 다시 열 때마다 작업이 날아간다.
-  const openStandaloneDetailPageBuilder = useCallback(() => {
+  //
+  // 카테고리 탭마다 id를 달리 줘서(draftIdForCategory) 작업 내용이 탭별로 따로 저장된다.
+  const openStandaloneDetailPageBuilder = useCallback((categoryId: string) => {
     setDetailPageBuilderState({
       isOpen: true,
-      product: { ...createNewProduct(), id: STANDALONE_DRAFT_ID },
+      product: { ...createNewProduct(), id: draftIdForCategory(categoryId) },
       standalone: true,
     });
   }, []);
 
+  const selectDetailCategory = useCallback((id: string) => {
+    setActiveDetailCategoryId(id);
+    saveActiveCategoryId(id);
+    openStandaloneDetailPageBuilder(id);
+  }, [openStandaloneDetailPageBuilder]);
+
+  // 새 카테고리는 김치 틀 그대로 시작한다(빈 작업이면 에디터가 김치 기본 섹션을 깔아준다).
+  const addDetailCategory = useCallback(() => {
+    const name = window.prompt('새 카테고리 이름을 입력하세요 (예: 반찬, 젓갈)')?.trim();
+    if (!name) return;
+    if (detailCategories.some(c => c.name === name)) {
+      alert(`"${name}" 카테고리가 이미 있습니다.`);
+      return;
+    }
+    const category = { id: generateId(), name };
+    const next = [...detailCategories, category];
+    setDetailCategories(next);
+    saveDetailCategories(next);
+    selectDetailCategory(category.id);
+  }, [detailCategories, selectDetailCategory]);
+
+  const removeDetailCategory = useCallback((id: string) => {
+    const category = detailCategories.find(c => c.id === id);
+    if (!category || id === KIMCHI_CATEGORY_ID) return;
+    if (!window.confirm(`"${category.name}" 카테고리를 삭제할까요?\n이 카테고리에서 작업하던 상세페이지도 함께 지워집니다.`)) return;
+    const next = detailCategories.filter(c => c.id !== id);
+    setDetailCategories(next);
+    saveDetailCategories(next);
+    // 지우는 탭이 열려 있으면 김치로 옮긴 뒤에 저장본을 지운다(열린 채 지우면 닫히면서 다시 저장된다).
+    if (id === activeDetailCategoryId) selectDetailCategory(KIMCHI_CATEGORY_ID);
+    window.setTimeout(() => void deleteDetailPageDraft(draftIdForCategory(id)), 300);
+  }, [detailCategories, activeDetailCategoryId, selectDetailCategory]);
+
   const closeDetailPageBuilder = useCallback(() => {
     setDetailPageBuilderState({ isOpen: false, product: null, standalone: false });
   }, []);
+
+  // 에디터의 "로켓제안서로" 버튼. 독립 상세페이지는 id가 고정이라 닫아도 작업이 남는다.
+  const leaveDetailPageBuilder = useCallback(() => {
+    closeDetailPageBuilder();
+    setActiveMenu('proposal');
+  }, [closeDetailPageBuilder]);
+
+  // 상페작업 메뉴에 열린 상품이 없으면 독립 상세페이지를 연다.
+  useEffect(() => {
+    if (activeMenu !== 'detail' || detailPageBuilderState.isOpen || awaitingUrlDetail) return;
+    openStandaloneDetailPageBuilder(activeDetailCategoryId);
+  }, [activeMenu, detailPageBuilderState.isOpen, awaitingUrlDetail, openStandaloneDetailPageBuilder, activeDetailCategoryId]);
 
   // 같은 URL을 공유하는 옵션들(=하나의 상품 그룹)을 하나의 상세페이지로 함께 관리하기 위해, 빌더를
   // 연 상품이 속한 그룹의 모든 상품을 반환한다. 상세페이지 이미지는 이 그룹 전체에 동일하게
@@ -2733,7 +2826,11 @@ const App: React.FC = () => {
         setTimeout(() => setDetailPageDoneId(prev => (prev === productId ? null : prev)), 1500);
       }
     }
-    if (field !== 'detailFile') closeDetailPageBuilder();
+    // 상품 상세페이지를 저장하면 그 행이 있는 로켓제안서 목록으로 돌아간다.
+    if (field !== 'detailFile') {
+      closeDetailPageBuilder();
+      setActiveMenu('proposal');
+    }
   }, [detailPageBuilderState.product, detailPageBuilderState.standalone, handleProductChange, closeDetailPageBuilder, getGroupProducts]);
 
   // 사진 갤러리에서 특정 사진을 특정 옵션의 대표이미지로 지정한다(옵션마다 다른 사진을 쓸 수 있게).
@@ -2803,7 +2900,16 @@ const App: React.FC = () => {
   const isSearching = searchQuery.trim().length > 0;
 
   return (
-    <div className="min-h-screen text-slate-200 flex flex-col items-start p-4 sm:p-6 lg:p-8">
+    <div className="min-h-screen text-slate-200 flex">
+      <AppSidebar
+        active={activeMenu}
+        onSelect={setActiveMenu}
+        collapsed={sidebarCollapsed}
+        onToggleCollapsed={toggleSidebarCollapsed}
+      />
+      <div className="flex-1 min-w-0">
+      {activeMenu === 'proposal' && (
+      <div className="flex flex-col items-start p-4 sm:p-6 lg:p-8">
       <div className="w-full min-w-0 relative z-10">
       {currentView === 'renamer' ? (
         <ImageRenamer onBack={() => setCurrentView('products')} />
@@ -2837,14 +2943,6 @@ const App: React.FC = () => {
                 >
                     <PlusIcon />
                     <span className="hidden sm:inline">상품 추가</span>
-                </button>
-                <button
-                    onClick={openStandaloneDetailPageBuilder}
-                    className="inline-flex items-center justify-center gap-1.5 px-3 py-1.5 bg-white border border-gray-300 text-gray-700 text-sm font-medium rounded-md hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-400 transition-colors [&_svg]:h-4 [&_svg]:w-4"
-                    title="상세페이지만 따로 만듭니다 (상품 목록과 무관, 완성하면 이미지 파일로 저장)"
-                >
-                    <BrushIcon />
-                    <span className="hidden sm:inline">상페작업</span>
                 </button>
                 <div className="relative flex-1 sm:max-w-xs">
                     <span className="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none">
@@ -3037,6 +3135,50 @@ const App: React.FC = () => {
           </div>
         </div>
       )}
+      </div>
+      </div>
+      )}
+      {activeMenu !== 'proposal' && activeMenu !== 'detail' && <MenuPlaceholder id={activeMenu} />}
+      {/* 상세페이지 에디터는 상품 행에서 연 것과 카테고리 탭에서 연 것을 따로 둔다. 둘 다 계속
+          떠 있게 두고 숨겨만 둬서, 메뉴·탭을 오가도 작업 중인 내용이 날아가지 않는다.
+          카테고리 탭 쪽은 탭마다 key를 달리 줘서 탭을 바꾸면 그 탭의 저장본으로 새로 뜬다. */}
+      <div className={activeMenu === 'detail' && detailPageBuilderState.isOpen ? 'h-screen flex flex-col' : 'hidden'}>
+        <DetailCategoryTabs
+          categories={detailCategories}
+          productTabLabel={detailPageBuilderState.standalone ? null : (detailPageBuilderState.product?.productName ?? '')}
+          activeCategoryId={activeDetailCategoryId}
+          onSelect={selectDetailCategory}
+          onAdd={addDetailCategory}
+          onRemove={removeDetailCategory}
+        />
+        <div className="flex-1 min-h-0">
+          <DetailPageBuilderModal
+            key="product"
+            isOpen={detailPageBuilderState.isOpen && !detailPageBuilderState.standalone}
+            onClose={leaveDetailPageBuilder}
+            product={detailPageBuilderState.standalone ? null : (products.find(p => p.id === detailPageBuilderState.product?.id) ?? detailPageBuilderState.product)}
+            groupProducts={!detailPageBuilderState.standalone && detailPageBuilderState.product ? getGroupProducts(detailPageBuilderState.product) : []}
+            onSave={handleSaveFromDetailPageBuilder}
+            onSaveThumbnail={handleSaveThumbnailFromDetailPageBuilder}
+            templateId="basic"
+            importedPhotos={importedDetailPhotos}
+            onImportedPhotosUsed={() => setImportedDetailPhotos(null)}
+            embedded
+          />
+          <DetailPageBuilderModal
+            key={`category-${activeDetailCategoryId}`}
+            isOpen={detailPageBuilderState.isOpen && detailPageBuilderState.standalone}
+            onClose={leaveDetailPageBuilder}
+            product={detailPageBuilderState.standalone ? detailPageBuilderState.product : null}
+            groupProducts={detailPageBuilderState.standalone && detailPageBuilderState.product ? [detailPageBuilderState.product] : []}
+            onSave={handleSaveFromDetailPageBuilder}
+            onSaveThumbnail={handleSaveThumbnailFromDetailPageBuilder}
+            templateId="kimchi"
+            draftId={draftIdForCategory(activeDetailCategoryId)}
+            embedded
+          />
+        </div>
+      </div>
       </div>
 
       {/* Off-screen: 통합다운이 라벨 모달을 열지 않고 라벨 이미지를 캡처하기 위한 숨김 렌더링 */}
@@ -3242,18 +3384,6 @@ const App: React.FC = () => {
         />
       )}
 
-      <DetailPageBuilderModal
-        isOpen={detailPageBuilderState.isOpen}
-        onClose={closeDetailPageBuilder}
-        product={products.find(p => p.id === detailPageBuilderState.product?.id) ?? detailPageBuilderState.product}
-        groupProducts={detailPageBuilderState.product ? getGroupProducts(detailPageBuilderState.product) : []}
-        onSave={handleSaveFromDetailPageBuilder}
-        onSaveThumbnail={handleSaveThumbnailFromDetailPageBuilder}
-        // 헤더의 "상페작업"으로 연 독립 상세페이지는 김치 템플릿으로, 상품등록에서 연 것은 기존 템플릿 그대로.
-        templateId={detailPageBuilderState.standalone ? 'kimchi' : 'basic'}
-        importedPhotos={importedDetailPhotos}
-        onImportedPhotosUsed={() => setImportedDetailPhotos(null)}
-      />
     </div>
   );
 };

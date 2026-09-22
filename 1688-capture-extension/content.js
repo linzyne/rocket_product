@@ -186,7 +186,7 @@
   `;
   root.appendChild(style);
 
-  // 로켓제안서 앱의 수익 계산기(MarginCalculatorModal)와 동일한 계산식. 옵션별 위안화 가격에
+  // 로켓 앱의 수익 계산기(MarginCalculatorModal)와 동일한 계산식. 옵션별 위안화 가격에
   // 공급/판매 마진율을 적용해 원가·공급가·판매가를 미리 계산해두면, 복사 → 앱에서 붙여넣기 시
   // 그 값이 그대로 원가/공급가/판매가 칸에 채워진다(별도로 앱 계산기를 다시 열 필요가 없어진다).
   const CNY_BASE_RATE_DEFAULT = 210;
@@ -567,7 +567,7 @@
   // 마우스로 실제 옵션 요소를 직접 가리켜서 클릭하는 방식으로, 클릭한 요소의 텍스트만 정확히
   // 옵션으로 추가한다. onAdd(text)는 클릭할 때마다 호출되고, 완료(Esc 또는 버튼)되면 resolve된다.
 
-  // 로켓제안서 앱의 renderCopyPrompt(utils/detailPageCopyTemplate.ts)와 같은 결과를 내야 한다.
+  // 로켓 앱의 renderCopyPrompt(utils/detailPageCopyTemplate.ts)와 같은 결과를 내야 한다.
   // 라벨과 줄 구성이 어긋나면 앱이 AI 답변을 알아보지 못하므로 그대로 맞춰 둔다.
   //
   // 프롬프트 전문과 섹션 개수는 앱의 상세페이지 에디터에서 사용자가 직접 정한다. 정한 값은
@@ -767,7 +767,7 @@
       if (message.type !== 'DETAIL_EDITOR_CLOSED' || !currentBox) return;
       const copyBtn = currentBox.querySelector('#rc-copy');
       if (!copyBtn) return;
-      if (window.confirm('로켓제안서로 보낼 값을 복사할까요?')) copyBtn.click();
+      if (window.confirm('로켓으로 보낼 값을 복사할까요?')) copyBtn.click();
     });
   } catch (err) {
     /* 확장이 새로 로드된 경우 무시 */
@@ -1088,7 +1088,7 @@
 
     box.innerHTML = `
       <div class="rc-header-row">
-        <h2>로켓제안서로 보낼 값 확인</h2>
+        <h2>로켓으로 보낼 값 확인</h2>
         <div class="rc-header-actions">
           <button id="rc-reset" class="rc-btn-secondary" title="저장된 값을 지우고 이 페이지에서 다시 읽어옵니다">초기화</button>
           <button id="rc-cancel" class="rc-btn-secondary">취소</button>
@@ -1097,7 +1097,7 @@
       <div class="rc-fields">
         <div class="rc-section">
           <p class="rc-section-heading"><span class="rc-step-num">1</span>📄 상세페이지 문구 (선택)</p>
-          <p class="rc-step-hint">프롬프트를 복사해 AI에 물어보고, 받은 답을 그대로 아래에 붙여넣으세요. 로켓제안서에 붙여넣을 때 상세페이지에도 같이 들어갑니다. 프롬프트 내용은 로켓제안서 상세페이지 에디터의 "프롬프트 직접 수정하기"에서 고칠 수 있고, 고치면 여기에도 바로 반영됩니다.</p>
+          <p class="rc-step-hint">프롬프트를 복사해 AI에 물어보고, 받은 답을 그대로 아래에 붙여넣으세요. 로켓에 붙여넣을 때 상세페이지에도 같이 들어갑니다. 프롬프트 내용은 로켓 앱 상세페이지 에디터의 "프롬프트 직접 수정하기"에서 고칠 수 있고, 고치면 여기에도 바로 반영됩니다.</p>
           <label class="rc-label">소구점 메모 (프롬프트에 들어갈 재료)
             <input id="rc-selling-points" class="rc-input" placeholder="예) 튼튼함, 넉넉한 수납, 선물용" />
           </label>
@@ -1376,7 +1376,7 @@
       });
     }
 
-    // 옵션 카드의 🧮 아이콘을 누르면 뜨는 팝업. 로켓제안서 앱의 MarginCalculatorModal과 동일한
+    // 옵션 카드의 🧮 아이콘을 누르면 뜨는 팝업. 로켓 앱의 MarginCalculatorModal과 동일한
     // 입력/계산 흐름(환율 → 위안 → 공급 마진율(%) → 판매 마진율(%) → 세금 상세 → 최종 순수익)을
     // 그대로 재현한다. 환율은 앱처럼 바꾸는 즉시 저장·전체 반영되고, 위안/마진율은 앱처럼 "저장하고
     // 적용하기"를 눌러야 이 옵션에 반영된다(그 전까지는 이 옵션의 기존 값에 영향을 주지 않는다).

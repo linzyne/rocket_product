@@ -82,6 +82,12 @@ interface DetailPageBuilderModalProps {
   // onImportedPhotosUsed로 알려서 앱이 들고 있던 것을 비우게 한다(다시 열 때 또 담기지 않게).
   importedPhotos?: string[] | null;
   onImportedPhotosUsed?: () => void;
+  // 상페작업 메뉴처럼 화면 안에 바로 넣어 쓸 때. 어두운 배경·바깥 클릭 닫기·× 버튼 없이
+  // 부모 영역을 꽉 채운다.
+  embedded?: boolean;
+  // 김치 템플릿 작업을 이 컴퓨터에 자동 저장할 때 쓰는 이름. 상페작업의 카테고리 탭마다
+  // 따로 저장되게 탭별로 다른 값을 준다(김치 탭은 예전 그대로 STANDALONE_DRAFT_ID).
+  draftId?: string;
 }
 
 // 창을 열 때의 미리보기 배율.
@@ -318,7 +324,7 @@ interface KimchiDraft {
   templateStyle: TemplateStyleSettings;
 }
 
-const DetailPageBuilderModal: React.FC<DetailPageBuilderModalProps> = ({ isOpen, onClose, product, groupProducts, onSave, onSaveThumbnail, templateId = 'basic', importedPhotos, onImportedPhotosUsed }) => {
+const DetailPageBuilderModal: React.FC<DetailPageBuilderModalProps> = ({ isOpen, onClose, product, groupProducts, onSave, onSaveThumbnail, templateId = 'basic', importedPhotos, onImportedPhotosUsed, embedded = false, draftId = STANDALONE_DRAFT_ID }) => {
   const [photos, setPhotos] = useState<PhotoItem[]>([]);
   const isKimchi = templateId === 'kimchi';
   // 김치 템플릿 전용 상태. 사진 배열(photos)은 두 템플릿이 그대로 공유해서 자르기·드래그 정렬·
@@ -539,7 +545,7 @@ const DetailPageBuilderModal: React.FC<DetailPageBuilderModalProps> = ({ isOpen,
     draftRestoreStartedRef.current = true;
     let cancelled = false;
     void (async () => {
-      const saved = await loadDetailPageDraft<KimchiDraft>(STANDALONE_DRAFT_ID);
+      const saved = await loadDetailPageDraft<KimchiDraft>(draftId);
       if (cancelled) return;
       const live = liveRef.current;
       // 읽는 사이에 사용자가 벌써 뭔가 올렸다면 그쪽이 최신이다 — 덮지 않는다.
@@ -569,7 +575,7 @@ const DetailPageBuilderModal: React.FC<DetailPageBuilderModalProps> = ({ isOpen,
   useEffect(() => {
     if (!isKimchi || !draftReady) return;
     const timer = setTimeout(() => {
-      void saveDetailPageDraft(STANDALONE_DRAFT_ID, collectKimchiDraft()).then(() => setDraftSavedAt(Date.now()));
+      void saveDetailPageDraft(draftId, collectKimchiDraft()).then(() => setDraftSavedAt(Date.now()));
     }, DRAFT_SAVE_DELAY_MS);
     return () => clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -582,17 +588,25 @@ const DetailPageBuilderModal: React.FC<DetailPageBuilderModalProps> = ({ isOpen,
   useEffect(() => {
     const openNow = isOpen && isKimchi;
     if (kimchiWasOpenRef.current && !openNow && draftReady) {
-      void saveDetailPageDraft(STANDALONE_DRAFT_ID, collectKimchiDraft()).then(() => setDraftSavedAt(Date.now()));
+      void saveDetailPageDraft(draftId, collectKimchiDraft()).then(() => setDraftSavedAt(Date.now()));
     }
     kimchiWasOpenRef.current = openNow;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen, isKimchi]);
 
+  // 카테고리 탭을 바꾸면 이 화면이 통째로 새로 뜬다(앱이 탭마다 key를 달리 준다). 그때도
+  // 자동 저장 타이머가 취소돼 마지막 몇 글자가 빠지지 않게, 사라지기 직전에 한 번 저장한다.
+  const unmountSaveRef = useRef<() => void>(() => {});
+  unmountSaveRef.current = () => {
+    if (isKimchi && draftReady) void saveDetailPageDraft(draftId, collectKimchiDraft());
+  };
+  useEffect(() => () => unmountSaveRef.current(), []);
+
   // 저장해둔 작업을 버리고 빈 화면에서 다시 시작한다. 자동 저장이라 지우는 길이 따로 있어야 한다.
   const handleResetKimchiDraft = async () => {
     if (!window.confirm('지금 작업 중인 상세페이지를 지우고 새로 시작할까요?\n이 컴퓨터에 저장해둔 내용도 함께 지워집니다.')) return;
-    await deleteDetailPageDraft(STANDALONE_DRAFT_ID);
-    draftsRef.current.delete(STANDALONE_DRAFT_ID);
+    await deleteDetailPageDraft(draftId);
+    draftsRef.current.delete(draftId);
     setPhotos([]);
     setPhotoSectionMap({});
     setKimchiSections(createDefaultKimchiSections());
@@ -2377,9 +2391,14 @@ const DetailPageBuilderModal: React.FC<DetailPageBuilderModalProps> = ({ isOpen,
   };
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-80 flex justify-center items-center z-[70] p-4" onClick={onClose}>
+    <div
+      className={embedded ? 'h-full flex' : 'fixed inset-0 bg-black bg-opacity-80 flex justify-center items-center z-[70] p-4'}
+      onClick={embedded ? undefined : onClose}
+    >
       <div
-        className="bg-slate-900 rounded-2xl shadow-2xl max-w-6xl w-full flex flex-col max-h-[95vh] overflow-hidden"
+        className={embedded
+          ? 'bg-slate-900 w-full h-full flex flex-col overflow-hidden'
+          : 'bg-slate-900 rounded-2xl shadow-2xl max-w-6xl w-full flex flex-col max-h-[95vh] overflow-hidden'}
         onClick={e => e.stopPropagation()}
       >
         <div className="flex items-center justify-between px-6 pt-5">
@@ -2387,9 +2406,11 @@ const DetailPageBuilderModal: React.FC<DetailPageBuilderModalProps> = ({ isOpen,
             <SparklesIcon className="text-purple-400 w-5 h-5" />
             상세페이지 만들기{product ? ` · ${product.productName || '상품'}` : ''}
           </h2>
-          <button onClick={onClose} className="text-slate-400 hover:text-slate-200 transition-colors" aria-label="Close modal">
-            <CloseIcon />
-          </button>
+          {!embedded && (
+            <button onClick={onClose} className="text-slate-400 hover:text-slate-200 transition-colors" aria-label="Close modal">
+              <CloseIcon />
+            </button>
+          )}
         </div>
 
         <div className="flex-1 overflow-y-auto px-6 py-5 flex flex-col lg:flex-row gap-5 min-h-0">
@@ -3502,7 +3523,7 @@ const DetailPageBuilderModal: React.FC<DetailPageBuilderModalProps> = ({ isOpen,
             </>
           )}
           <button onClick={onClose} className="px-4 py-2 text-sm bg-slate-700 text-slate-300 font-semibold rounded-lg hover:bg-slate-600 transition-colors">
-            닫기
+            {embedded ? '로켓제안서로' : '닫기'}
           </button>
           <button
             onClick={handleDownload}

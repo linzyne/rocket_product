@@ -1,7 +1,7 @@
 (function () {
   'use strict';
 
-  // 로켓제안서 앱의 MarginCalculatorModal과 동일한 계산식을 사용한다(공급가/판매가가 앱과
+  // 로켓 앱의 MarginCalculatorModal과 동일한 계산식을 사용한다(공급가/판매가가 앱과
   // 다르게 나오면 혼란스러우므로 상수/공식을 그대로 맞춘다).
   const CNY_BASE_RATE_DEFAULT = 210;
   const CNY_RATE_STORAGE_KEY = 'cnyExchangeRate';
@@ -117,7 +117,7 @@
     };
     try {
       await navigator.clipboard.writeText(JSON.stringify(payload));
-      showToast('복사됐어요! 로켓제안서 앱에서 "마진 붙여넣기" 버튼을 누르세요.', false);
+      showToast('복사됐어요! 로켓 앱에서 "마진 붙여넣기" 버튼을 누르세요.', false);
     } catch (err) {
       showToast('클립보드 복사에 실패했습니다: ' + err.message, true);
     }

@@ -1,5 +1,5 @@
 // 쿠팡 서플라이어허브 "대량 상품 등록"(supplier.coupang.com/qvt/registration) 화면에서,
-// 로켓제안서 앱이 통합다운으로 만든 파일들을 대신 채워 넣습니다.
+// 로켓 앱이 통합다운으로 만든 파일들을 대신 채워 넣습니다.
 //
 //   01 견적서 Excel      <- 통합다운의 _견적서_....xlsx
 //   02 상품 이미지        <- 통합다운의 _이미지.zip (대표/상세)
@@ -361,7 +361,7 @@
         button:hover { filter: brightness(1.1); }
       </style>
       <div class="box">
-        <p class="title">📄 로켓제안서 자동 등록</p>
+        <p class="title">📄 로켓 자동 등록</p>
         <p class="file"></p>
         <ul class="steps"></ul>
         <p class="note"></p>

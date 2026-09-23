@@ -52,7 +52,6 @@ const InventoryPage: React.FC = () => {
   const [items, setItems] = useState<InventoryItem[]>([]);
   const [extReady, setExtReady] = useState(false);
   const [search, setSearch] = useState('');
-  const [showMissing, setShowMissing] = useState(false);
   // 자동 수집: 확장이 광고 화면을 열어 모든 페이지를 모은 뒤 끝나면 바로 가져온다.
   const [autoRequestedAt, setAutoRequestedAt] = useState<number | null>(null);
   const [autoStatus, setAutoStatus] = useState('');
@@ -125,7 +124,6 @@ const InventoryPage: React.FC = () => {
     const k = search.trim().toLowerCase();
     const map = new Map<string, InventoryItem[]>();
     items
-      .filter(it => showMissing || it.inLatest !== false)
       .filter(it => !k || it.productName.toLowerCase().includes(k) || it.adsId.includes(k))
       .forEach(it => {
         const { base } = splitProductName(it.productName);
@@ -134,17 +132,17 @@ const InventoryPage: React.FC = () => {
     return Array.from(map.entries())
       .sort(([a], [b]) => a.localeCompare(b, 'ko'))
       .map(([base, list]) => ({ base, list: list.sort((a, b) => a.productName.localeCompare(b.productName, 'ko')) }));
-  }, [items, search, showMissing]);
+  }, [items, search]);
 
-  const activeCount = items.filter(it => it.inLatest !== false).length;
-  const missingCount = items.length - activeCount;
+  // 마지막 수집에 없던 상품도 지우지 않고 그대로 보여준다(수집이 중간에 끊겨도 목록이 줄지 않게).
+  const missingCount = items.filter(it => it.inLatest === false).length;
 
   return (
     <div className="p-4 sm:p-6 lg:p-8 text-gray-800">
       <div className="flex flex-wrap items-end justify-between gap-3 mb-4">
         <div>
           <h1 className="text-xl font-bold text-gray-900">상품관리</h1>
-          <p className="text-sm text-gray-500">상품 {activeCount}개 · 사무실 재고는 숫자를 눌러 고칠 수 있어요</p>
+          <p className="text-sm text-gray-500">상품 {items.length}개{missingCount > 0 && <> · 이번 수집에 없던 상품 {missingCount}개 포함</>} · 사무실 재고는 숫자를 눌러 고칠 수 있어요</p>
         </div>
         <div className="flex items-center gap-2">
           <div className="text-right text-xs text-gray-500">
@@ -173,12 +171,6 @@ const InventoryPage: React.FC = () => {
           placeholder="상품명·ID 검색"
           className="w-72 px-3 py-1.5 border border-gray-200 rounded-lg text-sm bg-white focus:outline-none focus:ring-1 focus:ring-blue-400"
         />
-        {missingCount > 0 && (
-          <label className="flex items-center gap-1.5 text-sm text-gray-500">
-            <input type="checkbox" checked={showMissing} onChange={e => setShowMissing(e.target.checked)} />
-            마지막 수집에 없던 상품도 보기 ({missingCount})
-          </label>
-        )}
       </div>
 
       <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
@@ -201,7 +193,7 @@ const InventoryPage: React.FC = () => {
               const h = lastTwoStocks(item);
               const diff = h.last != null && h.prev != null ? h.last - h.prev : null;
               return (
-                <tr key={item.adsId} className={`${i === 0 ? 'border-t border-gray-200' : ''} ${item.inLatest === false ? 'opacity-40' : ''}`}>
+                <tr key={item.adsId} className={`${i === 0 ? 'border-t border-gray-200' : ''} ${item.inLatest === false ? 'bg-gray-50/60' : ''}`}>
                   <td className="px-3 py-2">
                     {item.imageUrl
                       ? <img src={item.imageUrl} alt="" className="w-10 h-10 rounded object-cover border border-gray-100" />
@@ -212,6 +204,7 @@ const InventoryPage: React.FC = () => {
                     <div className="text-xs text-gray-500">
                       {option || (i === 0 ? '' : base)}
                       <span className="text-gray-300"> · ID {item.adsId}{item.adState === 'ad' && ' · 광고중'}</span>
+                      {item.inLatest === false && <span className="ml-1.5 px-1.5 py-0.5 rounded bg-gray-100 text-gray-400 text-[11px]" title={`마지막 수집 목록에 없었어요 · 마지막 확인 ${formatTime(item.collectedAt)}`}>지난 수집</span>}
                     </div>
                   </td>
                   <td className="px-3 py-2 text-right"><OfficeQtyCell item={item} /></td>

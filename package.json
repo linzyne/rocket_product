@@ -10,10 +10,13 @@
   },
   "dependencies": {
     "@google/genai": "^1.35.0",
+    "@types/papaparse": "^5.5.2",
     "firebase": "^12.18.0",
     "jsbarcode": "^3.12.3",
+    "papaparse": "^5.7.0",
     "react": "^19.1.1",
-    "react-dom": "^19.1.1"
+    "react-dom": "^19.1.1",
+    "xlsx": "^0.18.5"
   },
   "devDependencies": {
     "@types/jsbarcode": "^3.11.4",

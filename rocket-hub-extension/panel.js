@@ -1,0 +1,399 @@
+// 광고 화면 오른쪽 아래에 작은 패널을 띄우고, 화면이 바뀔 때마다(페이지 넘김·탭 전환·검색)
+// 해당 수집기로 값을 뽑아 chrome.storage에 쌓습니다. 앱은 app-bridge.js를 통해 이 값을 가져갑니다.
+//
+// 저장 모양: hubData = { [수집기 id]: { items: { [key]: 항목 }, startedAt, updatedAt } }
+//
+// 자동 수집(앱의 "확장에서 가져오기" → background.js가 hubAutoRun을 남기고 이 화면을 엶):
+//   광고 중인 상품 탭 → 광고하지 않는 상품 탭 순서로 열어서, 페이지가 받은 1페이지 응답으로 전체 페이지 수를
+//   알아낸 뒤 나머지 페이지는 hook.js가 같은 요청을 페이지 번호만 바꿔 다시 보냅니다(안 되면 페이지 번호 클릭).
+//   끝나면 hubAutoRun.done=true → 앱이 그 값을 가져갑니다.
+(() => {
+  if (window.__rocketHubPanelInjected) return;
+  window.__rocketHubPanelInjected = true;
+
+  const DATA_KEY = 'hubData';
+  const AUTO_KEY = 'hubAutoRun';
+  const HOOK_SOURCE = 'rocket-hub-hook';
+  const PANEL_SOURCE = 'rocket-hub-panel';
+  // 오래된 요청이 남아 엉뚱할 때 돌지 않도록, 요청 뒤 5분 안에만 자동 수집을 이어갑니다.
+  const AUTO_MAX_AGE_MS = 5 * 60 * 1000;
+  const AUTO_STEPS = [
+    { id: 'ad', page: '/marketing/product-dashboard/advertised', api: '/vendor-items-advertised', label: '광고 중인 상품' },
+    { id: 'noad', page: '/marketing/product-dashboard', api: '/vendor-items', label: '광고하지 않는 상품' },
+  ];
+  const MAX_RAW = 60;
+
+  const collectors = window.__rocketHubCollectors || [];
+  const raw = [];
+  let panel = null;
+  let collapsed = false;
+  let timer = null;
+  let autoStatus = '';
+  // 상품 목록 응답별로 받은 페이지들. { '/vendor-items': { totalPages, pages: Set } }
+  const pagingSeen = {};
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+  const activeCollector = () => collectors.find((c) => c.match());
+
+  const storageGet = () =>
+    new Promise((resolve) => {
+      try {
+        chrome.storage.local.get(DATA_KEY, (r) => resolve((r && r[DATA_KEY]) || {}));
+      } catch (err) {
+        resolve({});
+      }
+    });
+  const storageSet = (value) =>
+    new Promise((resolve) => {
+      try {
+        chrome.storage.local.set({ [DATA_KEY]: value }, () => resolve());
+      } catch (err) {
+        resolve();
+      }
+    });
+
+  const autoGet = () =>
+    new Promise((resolve) => {
+      try {
+        chrome.storage.local.get(AUTO_KEY, (r) => resolve((r && r[AUTO_KEY]) || null));
+      } catch (err) {
+        resolve(null);
+      }
+    });
+  const autoSet = (value) =>
+    new Promise((resolve) => {
+      try {
+        chrome.storage.local.set({ [AUTO_KEY]: value }, () => resolve());
+      } catch (err) {
+        resolve();
+      }
+    });
+
+  const notePaging = (url, json) => {
+    if (!/\/product-api\/vendor-items/.test(url) || !json || !json.paging) return;
+    const key = /vendor-items-advertised/.test(url) ? '/vendor-items-advertised' : '/vendor-items';
+    const seen = pagingSeen[key] || (pagingSeen[key] = { totalPages: 1, pages: new Set() });
+    seen.totalPages = Math.max(1, Number(json.paging.totalPages) || 1);
+    seen.pages.add(Number(json.paging.currentPage) || 1);
+  };
+
+  // hook.js가 넘겨주는 JSON 응답.
+  window.addEventListener('message', (event) => {
+    if (event.source !== window) return;
+    const d = event.data;
+    if (!d || d.source !== HOOK_SOURCE || d.type !== 'JSON') return;
+    raw.push({ url: d.url, at: d.at, page: location.href, text: d.text });
+    if (raw.length > MAX_RAW) raw.shift();
+    let json = null;
+    try {
+      json = JSON.parse(d.text);
+    } catch (err) {}
+    notePaging(d.url, json);
+    const c = activeCollector();
+    if (c && c.fromResponse) {
+      let items = [];
+      try {
+        items = c.fromResponse(d.url, json) || [];
+      } catch (err) {}
+      if (items.length) {
+        saveItems(c, items);
+        return;
+      }
+    }
+    render();
+  });
+
+  // 같은 key는 합칩니다. 응답에서 온 값(사진 포함)이 화면에서 읽은 값보다 정확하므로 나중 값이 덮어씁니다.
+  // 응답이 연달아 오면 읽고-쓰기가 겹쳐 앞의 것을 덮어쓰므로, 저장은 한 줄로 세워서 차례로 합니다.
+  let saveChain = Promise.resolve();
+  const queue = (fn) => (saveChain = saveChain.then(fn).catch(() => {}));
+  const saveItems = (c, items) => queue(() => doSave(c, items));
+  const doSave = async (c, items) => {
+    const data = await storageGet();
+    const bucket = data[c.id] || { items: {}, startedAt: Date.now() };
+    const now = Date.now();
+    for (const item of items) bucket.items[item.key] = { ...bucket.items[item.key], ...item, seenAt: now };
+    bucket.updatedAt = now;
+    data[c.id] = bucket;
+    await storageSet(data);
+    lastPageCount = items.length;
+    render(data);
+  };
+
+  const collectNow = async () => {
+    const c = activeCollector();
+    if (!c) return;
+    let items = [];
+    try {
+      items = c.collect() || [];
+    } catch (err) {
+      console.warn('[로켓 서허 연동] 수집 실패', err);
+    }
+    if (!items.length) {
+      render();
+      return;
+    }
+    await saveItems(c, items);
+  };
+
+  let lastPageCount = 0;
+
+  const schedule = () => {
+    clearTimeout(timer);
+    timer = setTimeout(collectNow, 700);
+  };
+
+  const clearBucket = (c) =>
+    queue(async () => {
+      const data = await storageGet();
+      data[c.id] = { items: {}, startedAt: Date.now() };
+      await storageSet(data);
+      lastPageCount = 0;
+    });
+
+  const resetCollector = async () => {
+    const c = activeCollector();
+    if (!c) return;
+    if (!confirm(`"${c.label}"에 모아둔 값을 비우고 처음부터 다시 모을까요?`)) return;
+    await clearBucket(c);
+    collectNow();
+  };
+
+  // ---- 자동 수집 ----
+  const waitFor = async (fn, timeout) => {
+    const t0 = Date.now();
+    while (Date.now() - t0 < timeout) {
+      const v = fn();
+      if (v) return v;
+      await sleep(300);
+    }
+    return null;
+  };
+
+  const fetchPages = (api, pages) =>
+    new Promise((resolve) => {
+      const onMsg = (event) => {
+        const d = event.data;
+        if (event.source !== window || !d || d.source !== HOOK_SOURCE || d.type !== 'FETCH_PAGES_RESULT' || d.path !== api) return;
+        window.removeEventListener('message', onMsg);
+        resolve(d);
+      };
+      window.addEventListener('message', onMsg);
+      window.postMessage({ source: PANEL_SOURCE, type: 'FETCH_PAGES', path: api, pages }, window.location.origin);
+      setTimeout(() => {
+        window.removeEventListener('message', onMsg);
+        resolve({ ok: false, error: 'timeout' });
+      }, 30000);
+    });
+
+  // 요청 다시 보내기가 안 될 때: 화면 아래 페이지 번호를 눌러서 넘깁니다.
+  const clickPage = (page) => {
+    const cands = Array.from(document.querySelectorAll('button, a, li, span, div')).filter((el) => {
+      if (panel && panel.contains(el)) return false;
+      if ((el.textContent || '').trim() !== String(page) || el.children.length > 1) return false;
+      const r = el.getBoundingClientRect();
+      return r.width > 0 && r.height > 0;
+    });
+    const el = cands[cands.length - 1];
+    if (!el) return false;
+    (el.closest('button, a, li') || el).click();
+    return true;
+  };
+
+  const failAuto = async (run, message) => {
+    run.error = message;
+    run.finishedAt = Date.now();
+    await autoSet(run);
+    autoStatus = `❌ ${message}`;
+    render();
+    try {
+      chrome.runtime.sendMessage({ type: 'HUB_AUTO_DONE' });
+    } catch (err) {}
+  };
+
+  const runAuto = async (run) => {
+    const idx = Math.max(0, AUTO_STEPS.findIndex((s) => s.id === run.step));
+    const step = AUTO_STEPS[idx];
+    if (location.pathname.replace(/\/$/, '') !== step.page) {
+      location.href = step.page;
+      return;
+    }
+    const c = activeCollector();
+    if (!c) return;
+    // 이번 수집에 없던 상품을 앱이 알아볼 수 있게, 처음 한 번 비우고 시작합니다.
+    if (!run.cleared) {
+      await clearBucket(c);
+      run.cleared = true;
+      await autoSet(run);
+    }
+    // 이 화면이 뜨기 전에 온 응답도 받도록 hook.js에 다시 보내 달라고 합니다.
+    window.postMessage({ source: PANEL_SOURCE, type: 'GET_BUFFER' }, window.location.origin);
+
+    autoStatus = `자동 수집 중 · ${step.label} 불러오는 중`;
+    render();
+    const seen = await waitFor(() => pagingSeen[step.api], 30000);
+    if (!seen) return failAuto(run, `${step.label} 목록을 받지 못했어요. 광고 사이트 로그인을 확인해 주세요.`);
+
+    const all = Array.from({ length: seen.totalPages }, (_, i) => i + 1);
+    const missing = () => all.filter((p) => !seen.pages.has(p));
+    if (missing().length) {
+      autoStatus = `자동 수집 중 · ${step.label} ${seen.totalPages}페이지`;
+      render();
+      const res = await fetchPages(step.api, missing());
+      if (!res.ok) {
+        for (const p of missing()) {
+          if (clickPage(p)) await waitFor(() => seen.pages.has(p), 10000);
+        }
+      }
+      await waitFor(() => !missing().length, 15000);
+      if (missing().length) return failAuto(run, `${step.label} ${missing().join(', ')}페이지를 가져오지 못했어요.`);
+    }
+    await queue(() => sleep(200)); // 저장이 다 끝난 뒤 다음으로
+
+    if (idx < AUTO_STEPS.length - 1) {
+      run.step = AUTO_STEPS[idx + 1].id;
+      await autoSet(run);
+      location.href = AUTO_STEPS[idx + 1].page;
+      return;
+    }
+    run.done = true;
+    run.finishedAt = Date.now();
+    await autoSet(run);
+    autoStatus = '✅ 자동 수집 완료 · 앱에 반영했어요';
+    render();
+    try {
+      chrome.runtime.sendMessage({ type: 'HUB_AUTO_DONE' });
+    } catch (err) {}
+  };
+
+  autoGet().then((run) => {
+    if (!run || run.done || run.error || Date.now() - (run.requestedAt || 0) > AUTO_MAX_AGE_MS) return;
+    runAuto(run);
+  });
+
+  // 데이터 확인용: 모은 항목 + 페이지가 받은 JSON 응답을 파일로 저장.
+  const downloadRaw = async () => {
+    const c = activeCollector();
+    const data = await storageGet();
+    const blob = new Blob(
+      [JSON.stringify({
+        page: location.href,
+        savedAt: new Date().toISOString(),
+        collected: c ? data[c.id] : null,
+        sampleCards: window.__rocketHubSampleCards ? window.__rocketHubSampleCards() : [],
+        // 확인용: 화면의 표 구조(앞부분). 수집이 안 될 때 어디에 값이 있는지 보려고 담습니다.
+        sampleTables: Array.from(document.querySelectorAll('table')).slice(0, 6).map((t) => t.outerHTML.slice(0, 15000)),
+        frames: document.querySelectorAll('iframe').length,
+        responses: raw,
+      }, null, 2)],
+      { type: 'application/json' }
+    );
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `로켓서허_원본_${c ? c.id : 'page'}_${Date.now()}.json`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+  };
+
+  const render = async (dataArg) => {
+    const c = activeCollector();
+    if (!c) {
+      if (panel) panel.style.display = 'none';
+      return;
+    }
+    if (!panel) {
+      panel = document.createElement('div');
+      panel.style.cssText =
+        'position:fixed;right:16px;bottom:16px;z-index:2147483647;width:260px;background:#fff;border:1px solid #d0d7e2;' +
+        'border-radius:10px;box-shadow:0 6px 20px rgba(0,0,0,.15);font:13px/1.45 -apple-system,sans-serif;color:#1f2937;';
+      panel.addEventListener('click', (e) => {
+        const act = e.target && e.target.getAttribute && e.target.getAttribute('data-act');
+        if (act === 'toggle') {
+          collapsed = !collapsed;
+          render();
+        } else if (act === 'collect') collectNow();
+        else if (act === 'reset') resetCollector();
+        else if (act === 'raw') downloadRaw();
+      });
+      document.body.appendChild(panel);
+    }
+    panel.style.display = '';
+    const data = dataArg || (await storageGet());
+    const bucket = data[c.id];
+    const total = bucket ? Object.keys(bucket.items).length : 0;
+    const updated = bucket && bucket.updatedAt ? new Date(bucket.updatedAt).toLocaleTimeString() : '-';
+    const btn = 'border:1px solid #d0d7e2;background:#f8fafc;border-radius:6px;padding:4px 8px;cursor:pointer;font-size:12px;';
+    panel.innerHTML = collapsed
+      ? `<div data-act="toggle" style="padding:8px 12px;cursor:pointer;font-weight:600">🚀 ${c.label} ${total}개</div>`
+      : `<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 12px;border-bottom:1px solid #eef1f5">
+           <b>🚀 ${c.label}</b><span data-act="toggle" style="cursor:pointer;color:#94a3b8">접기</span>
+         </div>
+         <div style="padding:10px 12px">
+           <div style="font-size:22px;font-weight:700">${total}<span style="font-size:13px;font-weight:400"> 개 모음</span></div>
+           <div style="color:#64748b;font-size:12px">이 화면 ${lastPageCount}개 · 마지막 ${updated}</div>
+           ${autoStatus ? `<div style="margin-top:6px;padding:6px 8px;background:#eff6ff;color:#1d4ed8;border-radius:6px;font-size:12px">${autoStatus}</div>` : ''}
+           <div style="color:#64748b;font-size:12px;margin:6px 0 8px">${c.hint}</div>
+           <div style="display:flex;gap:6px;flex-wrap:wrap">
+             <button data-act="collect" style="${btn}">지금 모으기</button>
+             <button data-act="reset" style="${btn}">비우고 다시</button>
+             <button data-act="raw" style="${btn}" title="확인용: 페이지가 받은 원본 데이터 ${raw.length}개">원본 저장</button>
+           </div>
+           ${c.id === 'adsStock' ? '<div style="color:#94a3b8;font-size:11px;margin-top:8px">앱의 재고 › 상품관리에서 "확장에서 가져오기"를 누르면 이 화면을 알아서 넘기며 모아 갑니다.</div>' : ''}
+         </div>`;
+  };
+
+  // 화면 구조 저장(Alt+D). 새 화면(예: 서허 쉽먼트 일괄등록)을 자동화하려면 그 화면이 어떻게 생겼는지 알아야 해서,
+  // 지금 보이는 화면의 요소들을 파일로 내려받는다. 개인정보가 아니라 화면 구조(버튼·칸 이름·위치)만 담는다.
+  const dumpScreen = () => {
+    const clean = (t) => String(t || '').replace(/\s+/g, ' ').trim().slice(0, 60);
+    const box = (el) => {
+      const r = el.getBoundingClientRect();
+      return [Math.round(r.left), Math.round(r.top), Math.round(r.width), Math.round(r.height)];
+    };
+    const wanted = 'button, a, input, select, textarea, label, th, span, div[role="button"], li';
+    const elements = Array.from(document.querySelectorAll(wanted))
+      .filter((el) => {
+        const r = el.getBoundingClientRect();
+        return r.width > 0 && r.height > 0 && !(panel && panel.contains(el));
+      })
+      .slice(0, 1200)
+      .map((el) => ({
+        tag: el.tagName,
+        text: clean(el.textContent),
+        value: clean(el.value),
+        type: el.getAttribute('type') || '',
+        id: el.id || '',
+        name: el.getAttribute('name') || '',
+        cls: String(el.className || '').slice(0, 60),
+        box: box(el),
+      }));
+    const dump = {
+      url: location.href.split('?')[0],
+      title: document.title,
+      iframes: Array.from(document.querySelectorAll('iframe')).map((f) => f.src || '(같은 창)'),
+      elements,
+    };
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([JSON.stringify(dump, null, 2)], { type: 'application/json' }));
+    a.download = `서허_화면구조_${Date.now()}.json`;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 3000);
+  };
+  window.addEventListener('keydown', (e) => {
+    if (e.altKey && (e.key === 'd' || e.key === 'D' || e.code === 'KeyD')) {
+      e.preventDefault();
+      dumpScreen();
+    }
+  });
+
+  // 페이지 넘김·탭 전환·검색 결과가 그려질 때, 늦게 불러온 사진이 들어올 때마다 다시 모읍니다
+  // (패널 자신의 변화는 무시).
+  new MutationObserver((mutations) => {
+    if (mutations.every((m) => panel && panel.contains(m.target))) return;
+    schedule();
+  }).observe(document.body, { childList: true, subtree: true, characterData: true, attributes: true, attributeFilter: ['src', 'srcset'] });
+
+  schedule();
+})();

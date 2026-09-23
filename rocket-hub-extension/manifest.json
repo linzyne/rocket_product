@@ -1,0 +1,109 @@
+{
+  "manifest_version": 3,
+  "name": "로켓 서허 연동",
+  "version": "0.9.26",
+  "description": "쿠팡 광고 화면·서플라이어허브에서 상품, 로켓센터 재고, 입고 내역을 모아 로켓 앱으로 보내고, 롯데택배(ALPS)에 택배 예약 엑셀을 올립니다. 로그인은 브라우저에서 직접 하고, 확장은 비밀번호를 다루지 않습니다.",
+  "permissions": [
+    "storage",
+    "unlimitedStorage",
+    "contentSettings",
+    "downloads"
+  ],
+  "content_scripts": [
+    {
+      "matches": [
+        "*://advertising.coupang.com/*",
+        "*://supplier.coupang.com/*"
+      ],
+      "js": [
+        "hook.js"
+      ],
+      "run_at": "document_start",
+      "world": "MAIN"
+    },
+    {
+      "matches": [
+        "*://advertising.coupang.com/*",
+        "*://supplier.coupang.com/*"
+      ],
+      "js": [
+        "collectors.js",
+        "panel.js"
+      ],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": [
+        "http://localhost/*",
+        "http://127.0.0.1/*",
+        "https://localhost/*",
+        "https://rocket-product.vercel.app/*"
+      ],
+      "js": [
+        "app-bridge.js"
+      ],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": [
+        "*://*.llogis.com/*"
+      ],
+      "js": [
+        "lotte.js"
+      ],
+      "run_at": "document_idle",
+      "all_frames": true,
+      "match_about_blank": true
+    },
+    {
+      "matches": [
+        "*://*.llogis.com/*"
+      ],
+      "js": [
+        "lotte-hook.js"
+      ],
+      "run_at": "document_start",
+      "world": "MAIN",
+      "all_frames": true,
+      "match_about_blank": true
+    },
+    {
+      "matches": [
+        "*://supplier.coupang.com/*"
+      ],
+      "js": [
+        "shub.js"
+      ],
+      "run_at": "document_idle",
+      "all_frames": true
+    },
+    {
+      "matches": [
+        "*://supplier.coupang.com/*"
+      ],
+      "js": [
+        "shub-hook.js"
+      ],
+      "run_at": "document_start",
+      "world": "MAIN",
+      "all_frames": true
+    }
+  ],
+  "host_permissions": [
+    "*://advertising.coupang.com/*",
+    "*://supplier.coupang.com/*",
+    "*://*.llogis.com/*",
+    "file:///*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_popup": "options.html",
+    "default_title": "로켓 서허 연동 설정"
+  },
+  "options_ui": {
+    "page": "options.html",
+    "open_in_tab": false
+  }
+}

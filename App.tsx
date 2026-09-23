@@ -4,6 +4,12 @@ import { Product, ArchivedProduct } from './types';
 import ProductRow from './components/ProductRow';
 import ProductGroupSummary from './components/ProductGroupSummary';
 import ProductListPage from './components/ProductListPage';
+import InventoryPage from './components/InventoryPage';
+import StockHistoryPage from './components/StockHistoryPage';
+import HanjungOrderPage from './components/hanjung/HanjungOrderPage';
+import ImportInPage from './components/hanjung/ImportInPage';
+import WarehouseInPage from './components/hanjung/WarehouseInPage';
+import CoupangOrderPage from './components/coupangOrder/CoupangOrderPage';
 import { PlusIcon, DownloadIcon, CloseIcon, BroomIcon, SearchIcon, DocumentAddIcon, SaveIcon, CameraIcon, SettingsIcon, TagIcon, CheckIcon, ArchiveIcon } from './components/Icons';
 import ProductLabel from './components/ProductLabel';
 import BarcodeLabel from './components/BarcodeLabel';
@@ -3138,7 +3144,13 @@ const App: React.FC = () => {
       </div>
       </div>
       )}
-      {activeMenu !== 'proposal' && activeMenu !== 'detail' && <MenuPlaceholder id={activeMenu} />}
+      {activeMenu === 'product-manage' && <InventoryPage />}
+      {activeMenu === 'sales' && <StockHistoryPage />}
+      {activeMenu === 'coupang-order' && <CoupangOrderPage />}
+      {activeMenu === 'cn-order' && <HanjungOrderPage />}
+      {activeMenu === 'import-in' && <ImportInPage />}
+      {activeMenu === 'warehouse-in' && <WarehouseInPage />}
+      {!['proposal', 'detail', 'product-manage', 'sales', 'coupang-order', 'cn-order', 'import-in', 'warehouse-in'].includes(activeMenu) && <MenuPlaceholder id={activeMenu} />}
       {/* 상세페이지 에디터는 상품 행에서 연 것과 카테고리 탭에서 연 것을 따로 둔다. 둘 다 계속
           떠 있게 두고 숨겨만 둬서, 메뉴·탭을 오가도 작업 중인 내용이 날아가지 않는다.
           카테고리 탭 쪽은 탭마다 key를 달리 줘서 탭을 바꾸면 그 탭의 저장본으로 새로 뜬다. */}

@@ -1,5 +1,6 @@
 import type React from 'react';
 import type { DisplayRow } from '../utils/dataProcessor';
+import type { OfficeMatch } from '../../../data/inventoryStore';
 import { parseBoxNo, boxLabel } from '../utils/dataProcessor';
 import { formatDateDisplay } from '../utils/dateUtils';
 
@@ -11,6 +12,8 @@ interface Props {
   readOnly?: boolean;
   // 있으면 맨 오른쪽에 삭제(×) 칸을 붙인다(예약 패널).
   onDelete?: (id: string) => void;
+  // 있으면 확정수량 옆에 상품관리(재고>상품관리)의 사무실 재고를 붙인다. 상품이름으로 찾는다.
+  officeQtyOf?: (productName: string) => OfficeMatch | null;
 }
 
 const SCHEME = {
@@ -147,12 +150,42 @@ function counterBtnStyle(bg: string, color: string): React.CSSProperties {
   };
 }
 
+/* ── 사무실 재고 칸 ── */
+// 상품관리에 짝이 되는 상품이 없으면 '-', 사무실 재고를 아직 안 넣었으면 '미입력'.
+// 확정수량보다 모자라면 빨갛게 보여준다. 옵션만 다른 상품이 여럿이면 합친 값이고,
+// 이름이 딱 맞지 않아 비슷한 상품으로 맞춘 경우에는 * 를 붙인다.
+function OfficeCell({ match, need }: { match: OfficeMatch | null; need: number }) {
+  if (!match) return <td style={{ ...narrow(42), color: '#ccc' }} title="상품관리에서 같은 이름을 못 찾았어요">-</td>;
+  const matched = `상품관리: ${match.names.join(' / ')}`;
+  if (match.qty == null) {
+    return <td style={{ ...narrow(42), color: '#bbb', fontSize: 10 }} title={`${matched} (사무실 재고 미입력)`}>미입력</td>;
+  }
+  const short = match.qty < need;
+  const note = [
+    match.names.length > 1 ? `상품 ${match.names.length}개를 합친 값` : '',
+    match.exact ? '' : '이름이 조금 달라 비슷한 상품으로 맞춤',
+  ].filter(Boolean).join(' · ');
+  return (
+    <td
+      style={{ ...narrow(42), color: short ? '#c0392b' : '#2d7a4f', fontWeight: 700 }}
+      title={note ? `${matched}\n${note}` : matched}
+    >
+      {match.qty.toLocaleString()}
+      {!match.exact && <span style={{ color: '#e67e22', fontWeight: 400 }}>*</span>}
+    </td>
+  );
+}
+
 /* ── 메인 테이블 ── */
-export default function OrderTable({ rows, onMemoChange, onShipmentChange, colorScheme = 'pink', readOnly = false, onDelete }: Props) {
+export default function OrderTable({ rows, onMemoChange, onShipmentChange, colorScheme = 'pink', readOnly = false, onDelete, officeQtyOf }: Props) {
   if (rows.length === 0) return null;
 
   const sc = SCHEME[colorScheme];
-  const headers = ['발주번호', '물류센터', '상품이름', '확정수량', '입고예정일', '메모', '박스수량', ...(onDelete ? ['삭제'] : [])];
+  const headers = [
+    '발주번호', '물류센터', '상품이름', '확정수량',
+    ...(officeQtyOf ? ['사무실'] : []),
+    '입고예정일', '메모', '박스수량', ...(onDelete ? ['삭제'] : []),
+  ];
 
   return (
     <div style={{ overflowX: 'auto', borderRadius: 10, border: '1px solid #e5e5e5', boxShadow: '0 1px 4px rgba(0,0,0,0.06)' }}>
@@ -164,7 +197,7 @@ export default function OrderTable({ rows, onMemoChange, onShipmentChange, color
                 background: sc.headerBg,
                 color: '#fff',
                 fontWeight: 600,
-                padding: '7px 8px',
+                padding: h === '확정수량' || h === '사무실' ? '7px 3px' : '7px 8px',
                 textAlign: 'center',
                 whiteSpace: 'nowrap',
                 border: `1px solid ${sc.headerBorder}`,
@@ -204,7 +237,8 @@ export default function OrderTable({ rows, onMemoChange, onShipmentChange, color
                 <td style={cs(70)}>{row.발주번호}</td>
                 <td style={cs(60)}>{row.물류센터}</td>
                 <td style={{ ...cs(0), textAlign: 'left', minWidth: 220, padding: '5px 8px' }}>{row.상품이름}</td>
-                <td style={cs(50)}>{row.확정수량 !== '' ? row.확정수량 : ''}</td>
+                <td style={narrow(38)}>{row.확정수량 !== '' ? row.확정수량 : ''}</td>
+                {officeQtyOf && <OfficeCell match={officeQtyOf(row.상품이름)} need={Number(row.확정수량) || 0} />}
                 <td style={{ ...cs(80), whiteSpace: 'nowrap' }}>{formatDateDisplay(row.입고예정일)}</td>
 
                 {/* 메모 */}
@@ -248,6 +282,11 @@ export default function OrderTable({ rows, onMemoChange, onShipmentChange, color
       </table>
     </div>
   );
+}
+
+// 수량 칸처럼 좁게 쓰는 칸(좌우 여백을 줄인다).
+function narrow(width: number): React.CSSProperties {
+  return { ...cs(width), padding: '5px 3px' };
 }
 
 function cs(width: number): React.CSSProperties {

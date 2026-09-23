@@ -167,3 +167,81 @@ export const splitProductName = (name: string) => {
   const i = name.indexOf(',');
   return i < 0 ? { base: name.trim(), option: '' } : { base: name.slice(0, i).trim(), option: name.slice(i + 1).trim() };
 };
+
+// 발주서 상품이름과 상품관리 상품명을 견주기 위한 열쇠.
+// 브랜드 이름(발주서에는 없고 상품관리에만 붙어 있기도 하다)과 띄어쓰기·기호는 지운다.
+const BRANDS = /(주노엘)/g;
+const SYMBOLS = /[,./()\[\]{}'"`~!@#$%^&*+=|\\:;?<>_-]/g;
+
+const cleanTokens = (name: string) =>
+  String(name || '').toLowerCase().replace(BRANDS, ' ').replace(SYMBOLS, ' ').split(/\s+/).filter(Boolean);
+
+export const productMatchKey = (name: string) => cleanTokens(name).join('');
+
+// 이름 끝에 붙는 옵션 말. 상품관리 이름에만 있는 경우가 많아 짝을 지을 때는 떼어낸다.
+// 예: "…키링 신랑 혼합색상 11cm" → "…키링 신랑"
+const OPTION_TAIL = /^(혼합색상|단일색상|기본색상|랜덤색상|혼합|단일|단품|색상|컬러|칼라|색|사이즈|size|프리사이즈|freesize|free|공용|옵션|택1|선택|종류|종|세트|set|\d+(\.\d+)?(cm|mm|m|g|kg|ml|l|호|인치|inch|p|pcs|ea|개|개입|세트|set|색|종)?)$/i;
+
+// 옵션 말까지 떼어낸 느슨한 열쇠.
+export const productBaseKey = (name: string) => {
+  const tokens = cleanTokens(name);
+  while (tokens.length > 1 && OPTION_TAIL.test(tokens[tokens.length - 1])) tokens.pop();
+  return tokens.join('');
+};
+
+export interface OfficeMatch {
+  // 사무실 재고(아직 입력 안 한 상품이면 null). 옵션만 다른 상품이 여럿이면 모두 더한 값.
+  qty: number | null;
+  // 짝지어진 상품관리 상품명(여럿이면 모두).
+  names: string[];
+  // 이름이 그대로 같았는지(아니면 한쪽이 다른 쪽을 품은 느슨한 짝).
+  exact: boolean;
+}
+
+const toMatch = (hits: InventoryItem[], exact: boolean): OfficeMatch => {
+  const entered = hits.filter(h => h.officeQty != null);
+  return {
+    qty: entered.length ? entered.reduce((s, h) => s + (h.officeQty || 0), 0) : null,
+    names: hits.map(h => h.productName),
+    exact,
+  };
+};
+
+// 상품이름으로 사무실 재고를 찾아주는 함수를 만든다. 순서대로
+//  1) 이름이 그대로 같은 상품
+//  2) 옵션 말을 뗀 이름이 같은 상품(여럿이면 재고를 합친다)
+//  3) 발주서 이름으로 시작하는 상품 — 뒤에 색상 같은 옵션만 더 붙은 경우라 여럿이면 합친다
+//  4) 발주서 이름이 더 긴 경우, 그 안에 들어 있는 상품 — 후보가 여럿이면 애매하니 안 보여준다.
+export const makeOfficeLookup = (items: InventoryItem[]) => {
+  const group = (keyOf: (it: InventoryItem) => string) => {
+    const m = new Map<string, InventoryItem[]>();
+    items.forEach(it => {
+      const k = keyOf(it);
+      if (!k) return;
+      const list = m.get(k);
+      if (list) list.push(it);
+      else m.set(k, [it]);
+    });
+    return m;
+  };
+  const byKey = group(it => productMatchKey(it.productName));
+  const byBase = group(it => productBaseKey(it.productName));
+
+  return (name: string): OfficeMatch | null => {
+    const k = productMatchKey(name);
+    if (!k) return null;
+    const same = byKey.get(k);
+    if (same) return toMatch(same, true);
+
+    const base = productBaseKey(name);
+    const sameBase = byBase.get(base);
+    if (sameBase) return toMatch(sameBase, true);
+
+    const starts = [...byBase.entries()].filter(([key]) => key.startsWith(base));
+    if (starts.length) return toMatch(starts.flatMap(([, list]) => list), false);
+
+    const inside = [...byBase.entries()].filter(([key]) => base.includes(key));
+    if (inside.length !== 1) return null;
+    return toMatch(inside[0][1], false);
+  };
+};

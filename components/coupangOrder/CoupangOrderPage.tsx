@@ -19,6 +19,7 @@ import { dateKeyYMD, normalizeDateValue } from './utils/dateUtils';
 import {
   ShipmentBatch, subscribeShipments, saveShipmentBatch, batchId, fillWaybills, allBoxes,
 } from '../../data/shipmentStore';
+import { InventoryItem, subscribeInventory, makeOfficeLookup } from '../../data/inventoryStore';
 import ShipmentWaybillModal from './components/ShipmentWaybillModal';
 import ShipmentList from './components/ShipmentList';
 import { fillShubForm, dataUrlToBuffer } from './utils/shubForm';
@@ -86,11 +87,15 @@ export default function CoupangOrderPage() {
   // 지금 B·C를 진행 중인 쉽먼트(양식을 직접 골라 채울 때 쓴다).
   const [shubBatch, setShubBatch] = useState<ShipmentBatch | null>(null);
   const [waybillBatch, setWaybillBatch] = useState<ShipmentBatch | null>(null);
+  // 재고 > 상품관리의 사무실 재고. 발주서 상품이름과 상품명을 맞춰 확정수량 옆에 보여준다.
+  const [inventory, setInventory] = useState<InventoryItem[]>([]);
+  const officeQtyOf = useMemo(() => makeOfficeLookup(inventory), [inventory]);
   const [error, setError] = useState('');
 
   useEffect(() => subscribeReservations(setReservations), []);
   // 택배주소·보내는사람은 클라우드에 저장돼 있어 다른 컴퓨터에서 고친 것도 바로 반영된다.
   useEffect(() => subscribeShipments(setBatches), []);
+  useEffect(() => subscribeInventory(setInventory), []);
   useEffect(() => subscribeShippingSettings(({ addresses, sender }) => { setAddresses(addresses); setSender(sender); }), []);
   useEffect(() => saveWork(leftRows, fileName), [leftRows, fileName]);
 
@@ -533,6 +538,7 @@ export default function CoupangOrderPage() {
                       onMemoChange={handleLeftMemoChange}
                       onShipmentChange={handleLeftShipmentChange}
                       colorScheme="pink"
+                      officeQtyOf={officeQtyOf}
                     />
                   ) : (
                     <div style={{ border: '1px dashed #e8e8e8', borderRadius: 10, padding: '48px 0', textAlign: 'center', color: '#ccc', fontSize: 13 }}>

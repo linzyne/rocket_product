@@ -234,6 +234,26 @@ export async function saveDataUrlsAsZipInProductFolder(
 // individual "save as" downloads land flat in the Downloads folder with no way to group them, so
 // instead all files are bundled into one <folderName>.zip with each entry prefixed by
 // <folderName>/ — extracting it reproduces the same product-named folder.
+// 같은 상품을 여러 번 저장하면 예전 폴더에 파일이 덮어써져 어떤 게 이번에 받은 건지 알 수 없다.
+// 이름이 이미 쓰이고 있으면 "상품명 (2)", "상품명 (3)"... 으로 비어 있는 이름을 찾아 새 폴더를
+// 만든다(기존 폴더는 그대로 둔다).
+async function createNewProductFolder(root: any, baseName: string): Promise<any> {
+  for (let seq = 1; seq <= 99; seq += 1) {
+    const name = seq === 1 ? baseName : `${baseName} (${seq})`;
+    try {
+      await root.getDirectoryHandle(name);
+    } catch (err: any) {
+      if (err?.name === 'NotFoundError') {
+        console.log('[통합다운] 새 폴더 생성:', name);
+        return root.getDirectoryHandle(name, { create: true });
+      }
+      throw err;
+    }
+  }
+  // 99개까지 다 차 있으면(사실상 없는 경우) 시각을 붙여 확실히 새 이름을 만든다.
+  return root.getDirectoryHandle(`${baseName} (${Date.now()})`, { create: true });
+}
+
 export async function saveFilesInProductFolder(
   folderName: string,
   files: { name: string; blob: Blob }[]
@@ -243,13 +263,13 @@ export async function saveFilesInProductFolder(
   console.log('[통합다운] saveFilesInProductFolder: root =', root ? root.name : null, 'fileCount =', files.length);
   if (root) {
     try {
-      const subDir = await root.getDirectoryHandle(safeFolderName, { create: true });
+      const subDir = await createNewProductFolder(root, safeFolderName);
       for (const file of files) {
         const fileHandle = await subDir.getFileHandle(file.name, { create: true });
         const writable = await fileHandle.createWritable();
         await writable.write(file.blob);
         await writable.close();
-        console.log('[통합다운] 파일 저장됨:', `${safeFolderName}/${file.name}`);
+        console.log('[통합다운] 파일 저장됨:', `${subDir.name}/${file.name}`);
       }
       return;
     } catch (err: any) {

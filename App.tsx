@@ -25,7 +25,7 @@ import DetailCategoryTabs, { DetailCategory, KIMCHI_CATEGORY_ID, draftIdForCateg
 import { deleteDetailPageDraft } from './data/detailPageDrafts';
 import AppSidebar, { AppMenuId, isAppMenuId, MenuPlaceholder } from './components/AppSidebar';
 import MissingFieldsModal from './components/MissingFieldsModal';
-import { saveDataUrlInProductFolder, productFolderName, productNameFolderName, buildZipBlob, saveFilesInProductFolder, getRootDirectory, detailSliceFileNames } from './utils/fileSave';
+import { saveDataUrlInProductFolder, productFolderName, productNameFolderName, buildZipBlob, saveFilesInProductFolder, getRootDirectory, isDirectoryPickerSupported, detailSliceFileNames } from './utils/fileSave';
 import { loadCopySettings, pushCopySettingsToExtension } from './utils/detailPageCopyPrompt';
 import { sendProposalToSupplierHub, requestPendingCategoryQuote, dataUrlToFile, unwrapDownloadedQuote } from './utils/rocketProposal';
 import CategoryQuoteFinderModal from './components/CategoryQuoteFinderModal';
@@ -2169,8 +2169,17 @@ const App: React.FC = () => {
       // 폴더 접근 권한을 클릭 직후 가장 먼저 요청한다. showDirectoryPicker/showSaveFilePicker는
       // "user activation"이 있어야 동작하는데, 라벨 캡처·zip 압축·엑셀 생성처럼 시간이 걸리는
       // 비동기 작업을 먼저 거치면 그 활성 상태가 소멸해 조용히 실패(버튼 클릭해도 무반응)한다.
-      const rootDir = await getRootDirectory();
+      // 저장할 때마다 폴더를 직접 고를 수 있게 매번 선택창을 띄운다(지난번 폴더에서 시작한다).
+      // 아래 saveFilesInProductFolder가 다시 getRootDirectory를 부를 때는 여기서 고른 폴더가
+      // 캐시에 남아 있어 창이 두 번 뜨지 않는다.
+      const rootDir = await getRootDirectory({ forcePicker: true });
       console.log('[통합다운] getRootDirectory 완료', { rootDir: rootDir ? rootDir.name : null });
+      // 폴더 선택창을 띄울 수 있는 브라우저인데 폴더가 안 잡혔다면 사용자가 창을 닫은 것이므로
+      // 여기서 조용히 끝낸다(취소했는데 zip이 다운로드 폴더로 떨어지면 더 헷갈린다).
+      if (!rootDir && isDirectoryPickerSupported()) {
+        console.log('[통합다운] 폴더 선택 취소, 종료');
+        return;
+      }
 
       const files: { name: string; blob: Blob }[] = [];
       // 저장이 끝난 뒤 "로켓에 제안할까요?"에서 서플라이어허브로 넘길 파일들. 등록 화면의
@@ -2291,7 +2300,8 @@ const App: React.FC = () => {
       }
     } catch (error) {
       console.error('[통합다운] 통합 다운로드 실패:', error);
-      alert('통합 다운로드 중 오류가 발생했습니다.');
+      // 어디서 멈췄는지 알 수 있게 실제 오류 내용을 함께 보여준다(예: 폴더 권한, 라벨 캡처 실패).
+      alert(`통합 다운로드 중 오류가 발생했습니다.\n${(error as any)?.name || ''} ${(error as any)?.message || error}`);
     } finally {
       console.log('[통합다운] 종료(finally)');
       setIntegratedDownloadingId(null);

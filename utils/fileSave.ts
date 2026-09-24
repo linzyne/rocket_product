@@ -5,6 +5,7 @@ import { openAppDb } from '../data/appDb';
 // once per session (cached in `cachedRootDir`); every save after that auto-creates/reuses a
 // subfolder named after the product (its 상세이미지 filename, see `productFolderName`) and drops
 // the file in there — no repeated folder prompts per product.
+// (통합 저장만은 예외로, 저장할 때마다 폴더 선택창을 띄운다 — getRootDirectory의 forcePicker.)
 //
 // saveBlob / saveDataUrl: single-file "save as" picker, used as the fallback when the directory
 // picker API isn't available, and directly by callers that don't have a product/folder concept.
@@ -97,7 +98,17 @@ const saveRootDir = async (handle: any): Promise<void> => {
   }
 };
 
-export async function getRootDirectory(): Promise<any | null> {
+// 폴더 선택창을 띄울 수 있는 브라우저인지(Chrome/Edge). 호출하는 쪽에서 "사용자가 취소한 것"과
+// "애초에 창을 띄울 수 없는 브라우저인 것"을 구분하는 데 씁니다.
+export function isDirectoryPickerSupported(): boolean {
+  return typeof (window as any).showDirectoryPicker === 'function';
+}
+
+// forcePicker면 기억해둔 폴더가 있어도 매번 폴더 선택창을 띄웁니다(통합 저장처럼 상품마다 저장
+// 위치를 고르고 싶을 때). 창은 지난번에 고른 폴더에서 시작하므로, 같은 곳에 계속 넣을 때도
+// 확인 버튼 한 번이면 됩니다. 반드시 클릭 직후에 불러야 합니다 — 느린 비동기 작업을 먼저 거치면
+// "user activation"이 사라져 창이 뜨지 않습니다.
+export async function getRootDirectory(options?: { forcePicker?: boolean }): Promise<any | null> {
   const picker = (window as any).showDirectoryPicker;
   if (typeof picker !== 'function') {
     console.log('[통합다운] showDirectoryPicker 미지원 브라우저');
@@ -106,6 +117,32 @@ export async function getRootDirectory(): Promise<any | null> {
 
   // 이 세션에서 아직 고른 적이 없으면, 지난번에 기억해둔 폴더를 먼저 꺼내 씁니다.
   if (!cachedRootDir) cachedRootDir = await loadSavedRootDir();
+
+  if (options?.forcePicker) {
+    // 지난번 폴더에서 시작하도록 startIn에 넘긴다. 핸들이 낡아 거부당할 수 있으므로 실패하면
+    // 옵션 없이 한 번 더 띄운다.
+    let picked: any = null;
+    try {
+      picked = await picker(cachedRootDir ? { mode: 'readwrite', startIn: cachedRootDir } : { mode: 'readwrite' });
+    } catch (err: any) {
+      if (err?.name === 'AbortError') {
+        console.log('[통합다운] 폴더 선택 취소(AbortError)');
+        return null;
+      }
+      console.log('[통합다운] startIn으로 폴더 창을 띄우지 못해 기본 위치로 다시 엽니다:', err);
+      try {
+        picked = await picker({ mode: 'readwrite' });
+      } catch (retryErr: any) {
+        if (retryErr?.name !== 'AbortError') console.error('폴더 선택 실패:', retryErr);
+        else console.log('[통합다운] 폴더 선택 취소(AbortError)');
+        return null;
+      }
+    }
+    cachedRootDir = picked;
+    console.log('[통합다운] 저장할 폴더 선택됨:', picked?.name);
+    await saveRootDir(picked);
+    return picked;
+  }
 
   if (cachedRootDir) {
     try {

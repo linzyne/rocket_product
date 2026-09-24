@@ -1538,8 +1538,32 @@
       });
     });
 
-    [widthPreviewInput, heightPreviewInput, depthPreviewInput].forEach((input) => {
-      input.addEventListener('input', () => { persistWork(); });
+    // 4번 "기본 정보"의 가로/세로/높이는 상품명·중량처럼 적으면 바로 반영되는 칸으로 보이지만,
+    // 원래는 "↑ 옵션에 적용하기"를 눌러야 옵션 행에 들어갔다. 누르는 걸 잊으면 옵션 행에 남아 있던
+    // 예전 사이즈(자동 인식값 또는 지난 작업 내역)가 그대로 앱으로 넘어간다. 그래서 여기에 값을
+    // 적으면 체크된 옵션 전체에 곧바로 반영한다(옵션마다 다르면 옵션 카드에서 따로 고치면 된다).
+    const DIM_INDEX = { width: 0, height: 1, depth: 2 };
+    const applyDimToCheckedRows = (field, rawValue) => {
+      const value = rawValue === '' ? '' : parseFloat(rawValue);
+      if (rawValue !== '' && isNaN(value)) return;
+      rows.filter(r => r.checked).forEach((row) => {
+        row[field] = value;
+        row.pristine = false;
+        // 카드를 다시 그리면 접어둔 상태가 풀리므로 해당 칸의 값만 바꿔 준다(적용 버튼과 동일).
+        const wrapperEl = optionRowsEl.querySelector(`[data-row-id="${row.id}"]`);
+        if (!wrapperEl) return;
+        const input = wrapperEl.querySelectorAll('.rc-option-dim')[DIM_INDEX[field]];
+        if (!input) return;
+        input.value = numVal(row[field]);
+        input.dataset.rcPristine = '0';
+      });
+    };
+
+    [[widthPreviewInput, 'width'], [heightPreviewInput, 'height'], [depthPreviewInput, 'depth']].forEach(([input, field]) => {
+      input.addEventListener('input', () => {
+        applyDimToCheckedRows(field, input.value);
+        persistWork();
+      });
     });
 
     function renderOptionRows() {

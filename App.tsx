@@ -135,6 +135,26 @@ const withSharedGroupFiles = (groupProducts: Product[]): Product[] => {
   ));
 };
 
+// 예전 버전에서 파일명 없이 만들어진 행(확장의 "상페 에디터" 버튼으로 생긴 행 등)은 대표/상세/
+// 라벨 파일명이 비어 있어 견적서 등록 때 "입력하지 않은 항목"으로 걸린다. 불러올 때 옵션 그룹 안의
+// 순서(1번=001, 2번=002...)대로 비어 있는 파일명만 채워 준다(이미 있는 이름은 그대로 둔다).
+const withDefaultFileNames = (products: Product[]): Product[] => {
+  const seqByGroup = new Map<string, number>();
+  return products.map(product => {
+    const key = getProductGroupKey(product);
+    const seq = (seqByGroup.get(key) ?? 0) + 1;
+    seqByGroup.set(key, seq);
+    const defaults = numberedFileNames(seq);
+    const filled: Product = {
+      ...product,
+      thumbnailFile: product.thumbnailFile || defaults.thumbnailFile,
+      detailFile: product.detailFile || defaults.detailFile,
+      labelFile: product.labelFile || defaults.labelFile,
+    };
+    return filled;
+  });
+};
+
 const getInitialProducts = (): Product[] => {
   try {
     const savedProductsJSON = localStorage.getItem('products');
@@ -150,7 +170,7 @@ const getInitialProducts = (): Product[] => {
       if (savedProducts.length > 0) {
         const seenIds = new Set<string>();
         
-        return savedProducts.map((p: Partial<Product>) => {
+        return withDefaultFileNames(savedProducts.map((p: Partial<Product>) => {
           const hydratedProduct = { ...createNewProduct(), ...p };
 
           if (!hydratedProduct.id || seenIds.has(hydratedProduct.id)) {
@@ -166,7 +186,7 @@ const getInitialProducts = (): Product[] => {
           });
 
           return hydratedProduct;
-        });
+        }));
       }
     }
   } catch (error) {
@@ -2624,7 +2644,9 @@ const App: React.FC = () => {
       setProducts(prev => {
         const last = prev[prev.length - 1];
         const isEmpty = last && !last.productName && !last.url;
-        const target = isEmpty ? last : createNewProduct();
+        // 새 행은 자기 자신만의 옵션 그룹이므로 1번(001s.png/001.png/001L.png)으로 시작한다.
+        // 번호 없이 만들면 파일명이 빈 채로 남아 견적서 등록에서 걸린다(handleAddProduct와 동일).
+        const target = isEmpty ? last : createNewProduct(1);
         setDetailPageBuilderState({ isOpen: true, product: target, standalone: false });
         setAwaitingUrlDetail(false);
         return isEmpty ? prev : [...prev, target];
@@ -2656,7 +2678,7 @@ const App: React.FC = () => {
         // 되므로, 비어 있으면 그 행을 그대로 쓴다.
         const last = prev[prev.length - 1];
         const reusable = last && !last.productName && !last.url;
-        const target = reusable ? last : createNewProduct();
+        const target = reusable ? last : createNewProduct(1);
         setPendingDetailImport({ productId: target.id, payload });
         return reusable ? prev : [...prev, target];
       });

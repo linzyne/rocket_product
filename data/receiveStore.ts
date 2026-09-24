@@ -132,6 +132,25 @@ export const saveReceives = async (rows: Omit<ReceiveRow, 'importedAt'>[]) => {
   return list.length;
 };
 
+// 여러 줄 한 번에 지우기(잘못 가져온 날짜를 골라 지울 때).
+export const deleteReceives = async (keys: string[]) => {
+  if (!keys.length) return 0;
+  if (!db) {
+    const s = readLocal();
+    keys.forEach(k => { delete s[k]; });
+    writeLocal(s);
+    return keys.length;
+  }
+  const firestore = db;
+  await ensureSignedIn();
+  for (let i = 0; i < keys.length; i += 450) {
+    const batch = writeBatch(firestore);
+    keys.slice(i, i + 450).forEach(k => batch.delete(doc(firestore, COLLECTION, docId(k))));
+    await batch.commit();
+  }
+  return keys.length;
+};
+
 export const deleteReceive = async (key: string) => {
   if (!db) {
     const s = readLocal();

@@ -6,6 +6,9 @@
 //               데이터가 바뀌면(서허 창에서 새로 모으면) HUB_DATA를 다시 보냅니다.
 //  앱 -> 확장 : { type: 'HUB_COLLECT' }  자동 수집 시작(background.js가 광고 화면을 열어 모음)
 //  확장 -> 앱 : { type: 'HUB_COLLECT_ACK', ok, requestedAt, error }
+//  앱 -> 확장 : { type: 'RECEIVE_COLLECT' }  물류창고입고 자동 수집(서허 입고상세내역을 "어제"로 검색)
+//  확장 -> 앱 : { type: 'RECEIVE_COLLECT_ACK', ok, requestedAt, error }
+//               { type: 'RECEIVE_AUTO', run, data }  진행/완료/실패. 완료면 data에 모은 값이 같이 옵니다.
 //  앱 -> 확장 : { type: 'LOTTE_UPLOAD', file: { name, dataUrl } }  롯데택배 엑셀을 ALPS에 올리기(lotte.js)
 //               { type: 'HUB_AUTO', run, data }  자동 수집 진행/완료/실패. 완료면 data에 모은 값이 같이 옵니다.
 (() => {
@@ -16,6 +19,7 @@
   const EXT_SOURCE = 'rocket-hub-extension';
   const DATA_KEY = 'hubData';
   const AUTO_KEY = 'hubAutoRun';
+  const RECEIVE_KEY = 'hubReceiveRun';
 
   const reply = (payload) => window.postMessage({ source: EXT_SOURCE, ...payload }, window.location.origin);
 
@@ -55,6 +59,18 @@
       }
       return;
     }
+    if (d.type === 'RECEIVE_COLLECT') {
+      try {
+        chrome.runtime.sendMessage({ type: 'RECEIVE_COLLECT' }, (res) => {
+          const lastError = chrome.runtime.lastError;
+          if (lastError || !res) reply({ type: 'RECEIVE_COLLECT_ACK', ok: false, error: (lastError && lastError.message) || '확장이 응답하지 않았습니다.' });
+          else reply({ type: 'RECEIVE_COLLECT_ACK', ...res });
+        });
+      } catch (err) {
+        reply({ type: 'RECEIVE_COLLECT_ACK', ok: false, error: '확장을 새로고침한 뒤 앱도 새로고침해 주세요.' });
+      }
+      return;
+    }
     if (d.type === 'HUB_COLLECT') {
       try {
         chrome.runtime.sendMessage({ type: 'HUB_COLLECT' }, (res) => {
@@ -74,11 +90,18 @@
     chrome.storage.local.get(DATA_KEY, (r) => reply({ type: 'HUB_AUTO', run, data: (r && r[DATA_KEY]) || {} }));
   };
 
+  const sendReceiveAuto = (run) => {
+    if (!run) return;
+    if (!run.done) return reply({ type: 'RECEIVE_AUTO', run, data: null });
+    chrome.storage.local.get(DATA_KEY, (r) => reply({ type: 'RECEIVE_AUTO', run, data: (r && r[DATA_KEY]) || {} }));
+  };
+
   try {
     chrome.storage.onChanged.addListener((changes, area) => {
       if (area !== 'local') return;
       if (changes[DATA_KEY]) sendData();
       if (changes[AUTO_KEY]) sendAuto(changes[AUTO_KEY].newValue);
+      if (changes[RECEIVE_KEY]) sendReceiveAuto(changes[RECEIVE_KEY].newValue);
       // 롯데택배 올리기 진행 상황(앱이 끝났는지·실패했는지 알림을 띄움).
       if (changes.lottePending && changes.lottePending.newValue) {
         const v = changes.lottePending.newValue;

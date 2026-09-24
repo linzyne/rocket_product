@@ -3,6 +3,16 @@
 // 이미 열린 광고 탭이 있으면 그 탭을 쓰고, 없으면 뒤에서 새 탭을 열었다가 끝나면 닫습니다.
 const AUTO_KEY = 'hubAutoRun';
 const START_URL = 'https://advertising.coupang.com/marketing/product-dashboard/advertised';
+// 물류창고입고 자동 수집(서허 입고상세내역). 기간은 "어제"로 검색한다.
+const RECEIVE_KEY = 'hubReceiveRun';
+const RECEIVE_URL = 'https://supplier.coupang.com/scm/receive/detail';
+
+// 어제 날짜(내 컴퓨터 시간 기준) 'YYYY-MM-DD'. 화면이 어제로 맞춰졌는지 확인하는 데 쓴다.
+const yesterdayYMD = () => {
+  const d = new Date();
+  d.setDate(d.getDate() - 1);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+};
 const LOTTE_KEY = 'lottePending';
 
 // 운송장 미리보기는 새 창(window.open)으로 뜨는데, 확장이 누른 클릭은 "사람이 누른 클릭"이 아니라서
@@ -129,6 +139,29 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true;
   }
 
+  // 앱의 물류 > 물류창고입고에서 "자동으로 가져오기" → 서허 입고상세내역을 열고 panel.js가
+  // 기간 "어제"로 검색해 표를 모은다. 이미 그 화면이 열려 있으면 그 탭을 쓴다.
+  if (message.type === 'RECEIVE_COLLECT') {
+    (async () => {
+      try {
+        const run = { requestedAt: Date.now(), step: 'search', done: false, error: null, createdTabId: null, range: '어제', day: yesterdayYMD() };
+        const tabs = await chrome.tabs.query({ url: '*://supplier.coupang.com/scm/receive*' });
+        if (tabs.length) {
+          await chrome.storage.local.set({ [RECEIVE_KEY]: run });
+          await chrome.tabs.update(tabs[0].id, { url: RECEIVE_URL });
+        } else {
+          const tab = await chrome.tabs.create({ url: RECEIVE_URL, active: false });
+          run.createdTabId = tab.id;
+          await chrome.storage.local.set({ [RECEIVE_KEY]: run });
+        }
+        sendResponse({ ok: true, requestedAt: run.requestedAt });
+      } catch (err) {
+        sendResponse({ ok: false, error: String((err && err.message) || err) });
+      }
+    })();
+    return true;
+  }
+
   // 롯데택배 엑셀을 ALPS 일괄주문접수에 올리기. 작은 팝업 창으로 ALPS를 열면 lotte.js가 로그인·메뉴 이동·
   // 파일 올리기를 하고, 올리고 나면 아래 onChanged에서 창을 닫는다(오류면 확인할 수 있게 열어 둔다).
   if (message.type === 'LOTTE_UPLOAD') {
@@ -185,6 +218,16 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.type === 'MY_WINDOW') {
     sendResponse({ windowId: (sender && sender.tab && sender.tab.windowId) || null });
     return true;
+  }
+
+  if (message.type === 'HUB_RECEIVE_DONE') {
+    chrome.storage.local.get(RECEIVE_KEY, (r) => {
+      const run = r && r[RECEIVE_KEY];
+      // 우리가 연 탭만 닫습니다(사장님이 열어둔 탭은 그대로).
+      if (run && run.done && run.createdTabId && sender.tab && sender.tab.id === run.createdTabId) {
+        chrome.tabs.remove(run.createdTabId).catch(() => {});
+      }
+    });
   }
 
   if (message.type === 'HUB_AUTO_DONE') {

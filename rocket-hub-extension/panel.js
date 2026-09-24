@@ -7,12 +7,16 @@
 //   광고 중인 상품 탭 → 광고하지 않는 상품 탭 순서로 열어서, 페이지가 받은 1페이지 응답으로 전체 페이지 수를
 //   알아낸 뒤 나머지 페이지는 hook.js가 같은 요청을 페이지 번호만 바꿔 다시 보냅니다(안 되면 페이지 번호 클릭).
 //   끝나면 hubAutoRun.done=true → 앱이 그 값을 가져갑니다.
+//
+// 물류창고입고 자동 수집(앱의 물류 › 물류창고입고 "자동으로 가져오기" → background.js가 hubReceiveRun을
+//   남기고 서허 입고상세내역을 엶): 기간에서 "어제"를 누르고 검색한 뒤, 페이지를 끝까지 넘기며 표를 모읍니다.
 (() => {
   if (window.__rocketHubPanelInjected) return;
   window.__rocketHubPanelInjected = true;
 
   const DATA_KEY = 'hubData';
   const AUTO_KEY = 'hubAutoRun';
+  const RECEIVE_KEY = 'hubReceiveRun';
   const HOOK_SOURCE = 'rocket-hub-hook';
   const PANEL_SOURCE = 'rocket-hub-panel';
   // 오래된 요청이 남아 엉뚱할 때 돌지 않도록, 요청 뒤 5분 안에만 자동 수집을 이어갑니다.
@@ -52,22 +56,24 @@
       }
     });
 
-  const autoGet = () =>
+  const runGet = (key) =>
     new Promise((resolve) => {
       try {
-        chrome.storage.local.get(AUTO_KEY, (r) => resolve((r && r[AUTO_KEY]) || null));
+        chrome.storage.local.get(key, (r) => resolve((r && r[key]) || null));
       } catch (err) {
         resolve(null);
       }
     });
-  const autoSet = (value) =>
+  const runSet = (key, value) =>
     new Promise((resolve) => {
       try {
-        chrome.storage.local.set({ [AUTO_KEY]: value }, () => resolve());
+        chrome.storage.local.set({ [key]: value }, () => resolve());
       } catch (err) {
         resolve();
       }
     });
+  const autoGet = () => runGet(AUTO_KEY);
+  const autoSet = (value) => runSet(AUTO_KEY, value);
 
   const notePaging = (url, json) => {
     if (!/\/product-api\/vendor-items/.test(url) || !json || !json.paging) return;
@@ -266,10 +272,203 @@
     } catch (err) {}
   };
 
+
+  // ---- 물류창고입고 자동 수집(서허 입고상세내역) ----
+  const visible = (el) => {
+    const r = el.getBoundingClientRect();
+    return r.width > 0 && r.height > 0;
+  };
+
+  // 글자가 딱 맞는 버튼 찾기(우리 패널 안은 뺀다). 안쪽 요소가 먼저 걸리도록 마지막 것을 쓴다.
+  const findByText = (text, selector) =>
+    Array.from(document.querySelectorAll(selector || 'button, a, span, div, li, label'))
+      .filter((el) => !(panel && panel.contains(el)) && el.children.length === 0 && (el.textContent || '').trim() === text && visible(el))
+      .pop() || null;
+
+  // 화면(React)이 알아채도록 진짜 클릭처럼 눌러준다.
+  const clickEl = (el) => {
+    if (!el) return false;
+    const target = el.closest('button, a, li, [role="button"]') || el;
+    for (const type of ['pointerdown', 'mousedown', 'mouseup', 'click']) {
+      target.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true, view: window }));
+    }
+    return true;
+  };
+
+  // 기간검색의 날짜 칸 두 개(값이 2026-09-22 모양인 입력칸).
+  const dateInputs = () =>
+    Array.from(document.querySelectorAll('input')).filter((el) => /^\d{4}-\d{2}-\d{2}$/.test(el.value || '') && visible(el));
+
+  // React가 쓰는 입력칸은 value를 그냥 바꾸면 모르기 때문에, 원래 setter로 바꾸고 이벤트를 보낸다.
+  const setInput = (el, value) => {
+    try {
+      const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
+      setter.call(el, value);
+    } catch (err) {
+      el.value = value;
+    }
+    el.dispatchEvent(new Event('input', { bubbles: true }));
+    el.dispatchEvent(new Event('change', { bubbles: true }));
+  };
+
+  const dateRangeIs = (day) => {
+    const inputs = dateInputs();
+    return inputs.length >= 2 && inputs.every((el) => el.value === day);
+  };
+
+  // 지금 표에 보이는 줄들. 어느 날짜가 나왔는지 확인하는 데도 쓴다.
+  const receiveItems = () => {
+    const c = collectors.find((x) => x.id === 'receiveDetail');
+    try {
+      return (c && c.collect()) || [];
+    } catch (err) {
+      return [];
+    }
+  };
+
+  // 지금 표에 보이는 줄들의 자취. 검색·페이지 넘김이 끝났는지 알아볼 때 쓴다.
+  const receiveSign = () => {
+    const items = receiveItems();
+    return items.length ? `${items.length}|${items[0].key}|${items[items.length - 1].key}` : '';
+  };
+
+  // 표에 그 날짜 줄만 있는지. 검색이 실제로 반영됐는지 이걸로 본다.
+  const rowsAreDay = (day) => {
+    const items = receiveItems();
+    return items.length > 0 && items.every((it) => String(it.date || '').startsWith(day));
+  };
+  const otherDays = (day) => {
+    const set = new Set(receiveItems().map((it) => String(it.date || '').slice(0, 10)).filter((d) => d && d !== day));
+    return Array.from(set);
+  };
+
+  // 표 아래 페이지 번호 버튼(표 안의 숫자와 헷갈리지 않게 버튼·링크만 본다).
+  const pageEl = (page) =>
+    Array.from(document.querySelectorAll('button, a, li, [role="button"]'))
+      .filter((el) => !(panel && panel.contains(el)) && (el.textContent || '').trim() === String(page) && visible(el))
+      .pop() || null;
+
+  const receiveStatus = (text) => {
+    autoStatus = text;
+    render();
+  };
+
+  const failReceive = async (run, message) => {
+    run.error = message;
+    run.finishedAt = Date.now();
+    await runSet(RECEIVE_KEY, run);
+    receiveStatus(`❌ ${message}`);
+    try {
+      chrome.runtime.sendMessage({ type: 'HUB_RECEIVE_DONE' });
+    } catch (err) {}
+  };
+
+  // 기간을 어제로 맞춘다. "어제" 버튼을 먼저 눌러 보고, 그래도 안 바뀌면 날짜 칸에 직접 적는다.
+  const setYesterday = async (day, label) => {
+    if (dateRangeIs(day)) return true;
+    const btn = findByText(label || '어제');
+    if (btn) {
+      clickEl(btn);
+      if (await waitFor(() => dateRangeIs(day), 5000)) return true;
+    }
+    const inputs = dateInputs();
+    if (inputs.length >= 2) {
+      setInput(inputs[0], day);
+      setInput(inputs[1], day);
+      if (await waitFor(() => dateRangeIs(day), 3000)) return true;
+    }
+    return dateRangeIs(day);
+  };
+
+  const runReceiveAuto = async (run) => {
+    const c = collectors.find((x) => x.id === 'receiveDetail');
+    if (!c || !c.match()) return;
+    const day = run.day || '';
+    // 지난번에 모은 값은 비우고 시작한다(앱은 새 줄만 골라 저장한다).
+    if (!run.cleared) {
+      await clearBucket(c);
+      run.cleared = true;
+      await runSet(RECEIVE_KEY, run);
+    }
+
+    receiveStatus(`자동 수집 중 · 기간을 ${day}(어제)로 맞추는 중`);
+    if (!(await waitFor(() => dateInputs().length >= 2, 30000))) {
+      return failReceive(run, '기간검색 날짜 칸을 찾지 못했어요. 서허 로그인을 확인해 주세요.');
+    }
+    if (!(await setYesterday(day, run.range))) {
+      const now = dateInputs().map((el) => el.value).join(' ~ ');
+      return failReceive(run, `기간을 어제(${day})로 못 맞췄어요. 지금 화면은 ${now} 입니다.`);
+    }
+
+    const searchBtn = findByText('검색', 'button, a, [role="button"]') || findByText('검색');
+    if (!searchBtn) return failReceive(run, '"검색" 버튼을 찾지 못했어요.');
+    receiveStatus(`자동 수집 중 · ${day} 입고 내역 검색하는 중`);
+    clickEl(searchBtn);
+
+    // 표가 어제 것으로 바뀔 때까지 기다린다. 어제 입고가 없으면 빈 표 그대로다.
+    const ok = await waitFor(() => rowsAreDay(day), 20000);
+    if (!ok) {
+      const others = otherDays(day);
+      if (others.length) return failReceive(run, `검색이 어제(${day})로 바뀌지 않았어요. 표에 ${others.join(', ')} 줄이 보여요.`);
+      // 줄이 아예 없으면 어제 입고가 없는 것으로 본다.
+      run.done = true;
+      run.pages = 0;
+      run.empty = true;
+      run.finishedAt = Date.now();
+      await runSet(RECEIVE_KEY, run);
+      receiveStatus(`✅ 어제(${day}) 입고 내역이 없어요`);
+      try {
+        chrome.runtime.sendMessage({ type: 'HUB_RECEIVE_DONE' });
+      } catch (err) {}
+      return;
+    }
+
+    // 페이지를 끝까지 넘기며 모은다.
+    let page = 1;
+    while (page < 50) {
+      await collectNow();
+      const sign = receiveSign();
+      const next = pageEl(page + 1);
+      if (!next) break;
+      page += 1;
+      receiveStatus(`자동 수집 중 · ${page}페이지`);
+      clickEl(next);
+      await waitFor(() => receiveSign() && receiveSign() !== sign, 15000);
+      await sleep(500);
+      if (!rowsAreDay(day)) return failReceive(run, `${page}페이지에 어제(${day})가 아닌 줄이 보여요. 다시 눌러 주세요.`);
+    }
+    await collectNow();
+    await queue(() => sleep(200)); // 저장이 다 끝난 뒤 알린다
+
+    run.done = true;
+    run.pages = page;
+    run.finishedAt = Date.now();
+    await runSet(RECEIVE_KEY, run);
+    receiveStatus('✅ 자동 수집 완료 · 앱에 반영했어요');
+    try {
+      chrome.runtime.sendMessage({ type: 'HUB_RECEIVE_DONE' });
+    } catch (err) {}
+  };
+
+  const fresh = (run) => run && !run.done && !run.error && Date.now() - (run.requestedAt || 0) <= AUTO_MAX_AGE_MS;
+
   autoGet().then((run) => {
-    if (!run || run.done || run.error || Date.now() - (run.requestedAt || 0) > AUTO_MAX_AGE_MS) return;
-    runAuto(run);
+    if (fresh(run)) runAuto(run);
   });
+
+  // 이 화면이 이미 열려 있으면 새로고침이 없을 수도 있어, 요청이 저장되는 것도 지켜본다.
+  let receiveRunning = false;
+  const startReceive = (run) => {
+    if (!fresh(run) || receiveRunning) return;
+    receiveRunning = true;
+    Promise.resolve(runReceiveAuto(run)).catch(() => {}).then(() => { receiveRunning = false; });
+  };
+  runGet(RECEIVE_KEY).then(startReceive);
+  try {
+    chrome.storage.onChanged.addListener((changes, area) => {
+      if (area === 'local' && changes[RECEIVE_KEY]) startReceive(changes[RECEIVE_KEY].newValue);
+    });
+  } catch (err) {}
 
   // 데이터 확인용: 모은 항목 + 페이지가 받은 JSON 응답을 파일로 저장.
   const downloadRaw = async () => {
@@ -341,6 +540,7 @@
              <button data-act="raw" style="${btn}" title="확인용: 페이지가 받은 원본 데이터 ${raw.length}개">원본 저장</button>
            </div>
            ${c.id === 'adsStock' ? '<div style="color:#94a3b8;font-size:11px;margin-top:8px">앱의 재고 › 상품관리에서 "확장에서 가져오기"를 누르면 이 화면을 알아서 넘기며 모아 갑니다.</div>' : ''}
+           ${c.id === 'receiveDetail' ? '<div style="color:#94a3b8;font-size:11px;margin-top:8px">앱의 물류 › 물류창고입고에서 "자동으로 가져오기"를 누르면 기간을 "어제"로 검색해 알아서 모아 갑니다.</div>' : ''}
          </div>`;
   };
 

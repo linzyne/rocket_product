@@ -207,7 +207,7 @@
     {
       id: 'receiveDetail',
       label: '물류창고 입고',
-      hint: '기간을 고르고 검색하면 표가 자동으로 모입니다. 여러 페이지면 페이지를 넘겨주세요. 앱의 물류 › 물류창고입고에서 가져오기를 누르면 반영돼요.',
+      hint: '앱의 물류 › 물류창고입고에서 "자동으로 가져오기"를 누르면 기간 "어제"로 검색해 알아서 모아 갑니다. 직접 기간을 고르고 검색해도 표가 모입니다(여러 페이지면 넘겨주세요).',
       match: () => location.hostname === 'supplier.coupang.com' && location.pathname.startsWith('/scm/receive'),
       collect: collectReceiveTable,
     },

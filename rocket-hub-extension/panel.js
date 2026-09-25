@@ -9,7 +9,7 @@
 //   끝나면 hubAutoRun.done=true → 앱이 그 값을 가져갑니다.
 //
 // 물류창고입고 자동 수집(앱의 물류 › 물류창고입고 "자동으로 가져오기" → background.js가 hubReceiveRun을
-//   남기고 서허 입고상세내역을 엶): 기간에서 "어제"를 누르고 검색한 뒤, 페이지를 끝까지 넘기며 표를 모읍니다.
+//   남기고 서허 입고상세내역을 엶): 앱이 고른 날짜로 기간을 맞추고 검색한 뒤, 페이지를 끝까지 넘기며 표를 모읍니다.
 (() => {
   if (window.__rocketHubPanelInjected) return;
   window.__rocketHubPanelInjected = true;
@@ -78,9 +78,13 @@
   const notePaging = (url, json) => {
     if (!/\/product-api\/vendor-items/.test(url) || !json || !json.paging) return;
     const key = /vendor-items-advertised/.test(url) ? '/vendor-items-advertised' : '/vendor-items';
-    const seen = pagingSeen[key] || (pagingSeen[key] = { totalPages: 1, pages: new Set() });
+    const seen = pagingSeen[key] || (pagingSeen[key] = { totalPages: 1, pages: new Set(), total: null });
     seen.totalPages = Math.max(1, Number(json.paging.totalPages) || 1);
     seen.pages.add(Number(json.paging.currentPage) || 1);
+    // 목록이 아예 비었는지(상품이 0개인 탭인지) 판단할 때 쓴다.
+    const total = [json.paging.totalElements, json.paging.totalItems, json.paging.totalCount, json.paging.total]
+      .find((v) => v != null && Number.isFinite(Number(v)));
+    if (total != null) seen.total = Number(total);
   };
 
   // hook.js가 넘겨주는 JSON 응답.
@@ -206,6 +210,62 @@
     return true;
   };
 
+  // 화면에 상품 카드("ID : 숫자")가 한 장이라도 보이는지. 상품이 0개인 탭과
+  // 화면은 있는데 못 담은 경우를 가른다.
+  const screenHasProducts = () => /ID\s*:\s*\d{6,}/.test(document.body.innerText || '');
+
+  // 지금까지 모아둔 개수(응답으로 하나도 못 담았는지 확인용).
+  const bucketCount = async (c) => {
+    const data = await storageGet();
+    const b = data[c.id];
+    return b && b.items ? Object.keys(b.items).length : 0;
+  };
+
+  // 실제로 내려가는 곳. 창이 안 내려가는 화면이면 목록을 담고 있는 안쪽 상자를 찾는다.
+  const scroller = () => {
+    const doc = document.scrollingElement || document.documentElement;
+    if (doc.scrollHeight > doc.clientHeight + 50) return doc;
+    let best = null;
+    for (const el of document.querySelectorAll('div, main, section, ul')) {
+      if (panel && panel.contains(el)) continue;
+      if (el.scrollHeight <= el.clientHeight + 50) continue;
+      if (!/overlay|auto|scroll/.test(getComputedStyle(el).overflowY)) continue;
+      if (!best || el.scrollHeight > best.scrollHeight) best = el;
+    }
+    return best || doc;
+  };
+
+  // 화면 아래쪽 카드는 스크롤해야 그려진다. 끝까지 조금씩 내리며 그때그때 담는다.
+  const scrollCollect = async () => {
+    const box = scroller();
+    const start = box.scrollTop;
+    for (let i = 0; i < 60; i++) {
+      await collectNow();
+      const y = box.scrollTop;
+      if (y + box.clientHeight >= box.scrollHeight - 8) break;
+      box.scrollTop = y + Math.round(box.clientHeight * 0.75);
+      await sleep(450);
+      if (box.scrollTop === y) break; // 더 안 내려가면 끝
+    }
+    await collectNow();
+    box.scrollTop = start;
+    await sleep(200);
+  };
+
+  // 응답으로 한 줄도 못 담았을 때의 대비책: 페이지를 넘기며 화면을 훑어 담는다.
+  const collectByScreen = async (c, totalPages, label) => {
+    for (let p = 1; p <= totalPages; p++) {
+      if (p > 1) {
+        if (!clickPage(p)) break;
+        await sleep(1200);
+      }
+      autoStatus = `자동 수집 중 · ${label} ${p}/${totalPages}페이지 화면에서 읽는 중`;
+      render();
+      await scrollCollect();
+    }
+    await queue(() => sleep(200));
+  };
+
   const failAuto = async (run, message) => {
     run.error = message;
     run.finishedAt = Date.now();
@@ -237,6 +297,7 @@
 
     autoStatus = `자동 수집 중 · ${step.label} 불러오는 중`;
     render();
+    const before = await bucketCount(c); // 이 단계에서 새로 담은 게 있는지 비교할 기준
     const seen = await waitFor(() => pagingSeen[step.api], 30000);
     if (!seen) return failAuto(run, `${step.label} 목록을 받지 못했어요. 광고 사이트 로그인을 확인해 주세요.`);
 
@@ -255,6 +316,20 @@
       if (missing().length) return failAuto(run, `${step.label} ${missing().join(', ')}페이지를 가져오지 못했어요.`);
     }
     await queue(() => sleep(200)); // 저장이 다 끝난 뒤 다음으로
+
+    // 한 줄도 못 담았을 때: 진짜로 상품이 없는 탭이면 그냥 넘어가고,
+    // 화면에는 상품이 보이는데 못 담은 것이면 스크롤하며 화면에서 직접 읽어 담는다.
+    if ((await bucketCount(c)) <= before) {
+      if (seen.total === 0 || !screenHasProducts()) {
+        autoStatus = `${step.label}은 없어요 · 다음으로 넘어갑니다`;
+        render();
+      } else {
+        await collectByScreen(c, seen.totalPages, step.label);
+        if ((await bucketCount(c)) <= before && screenHasProducts()) {
+          return failAuto(run, `${step.label}에서 한 건도 담지 못했어요. 광고 화면에 상품이 보이는지 확인해 주세요.`);
+        }
+      }
+    }
 
     if (idx < AUTO_STEPS.length - 1) {
       run.step = AUTO_STEPS[idx + 1].id;
@@ -363,18 +438,51 @@
     } catch (err) {}
   };
 
-  // 기간을 어제로 맞춘다. "어제" 버튼을 먼저 눌러 보고, 그래도 안 바뀌면 날짜 칸에 직접 적는다.
-  const setYesterday = async (day, label) => {
+  // 날짜 칸에 직접 적기. 달력이 딸린 칸이라 적은 뒤 Enter·포커스 해제까지 해 줘야 화면이 알아챈다.
+  const typeDate = (el, value) => {
+    try { el.focus(); } catch (err) {}
+    setInput(el, value);
+    for (const type of ['keydown', 'keypress', 'keyup']) {
+      el.dispatchEvent(new KeyboardEvent(type, { key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true }));
+    }
+    try { el.blur(); } catch (err) {}
+    el.dispatchEvent(new Event('blur', { bubbles: true }));
+  };
+
+  // 날짜 칸을 누르면 달력이 떠서 "검색" 클릭을 가로챈다. Esc와 빈 곳 클릭으로 닫는다.
+  const closePopups = () => {
+    document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', code: 'Escape', keyCode: 27, which: 27, bubbles: true }));
+    for (const type of ['pointerdown', 'mousedown', 'mouseup', 'click']) {
+      document.body.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true, view: window, clientX: 5, clientY: 5 }));
+    }
+  };
+
+  // 기간검색의 "검색" 버튼. 글자가 딱 "검색"인 것을 먼저 찾고, 없으면 "검색"이 든 버튼을 찾는다
+  // (단, "기간검색" 같은 항목 이름은 뺀다).
+  const searchButton = () => {
+    const label = (el) => String(el.value || el.textContent || '').replace(/\s+/g, '');
+    const list = Array.from(document.querySelectorAll('button, a, [role="button"], input[type="submit"], input[type="button"]'))
+      .filter((el) => !(panel && panel.contains(el)) && visible(el));
+    return (
+      list.find((el) => label(el) === '검색') ||
+      list.find((el) => /검색/.test(label(el)) && !/기간검색|상세검색|검색조건|검색어/.test(label(el))) ||
+      null
+    );
+  };
+
+  // 기간을 그 날짜로 맞춘다. 어제면 "어제" 버튼을 먼저 눌러 보고, 그래도 안 바뀌면 날짜 칸에 직접 적는다.
+  const setDay = async (day, label) => {
     if (dateRangeIs(day)) return true;
-    const btn = findByText(label || '어제');
+    const btn = label ? findByText(label) : null;
     if (btn) {
       clickEl(btn);
       if (await waitFor(() => dateRangeIs(day), 5000)) return true;
     }
     const inputs = dateInputs();
     if (inputs.length >= 2) {
-      setInput(inputs[0], day);
-      setInput(inputs[1], day);
+      typeDate(inputs[0], day);
+      typeDate(inputs[1], day);
+      closePopups();
       if (await waitFor(() => dateRangeIs(day), 3000)) return true;
     }
     return dateRangeIs(day);
@@ -391,32 +499,47 @@
       await runSet(RECEIVE_KEY, run);
     }
 
-    receiveStatus(`자동 수집 중 · 기간을 ${day}(어제)로 맞추는 중`);
+    receiveStatus(`자동 수집 중 · 기간을 ${day}로 맞추는 중`);
     if (!(await waitFor(() => dateInputs().length >= 2, 30000))) {
       return failReceive(run, '기간검색 날짜 칸을 찾지 못했어요. 서허 로그인을 확인해 주세요.');
     }
-    if (!(await setYesterday(day, run.range))) {
+    if (!(await setDay(day, run.range))) {
       const now = dateInputs().map((el) => el.value).join(' ~ ');
-      return failReceive(run, `기간을 어제(${day})로 못 맞췄어요. 지금 화면은 ${now} 입니다.`);
+      return failReceive(run, `기간을 ${day}로 못 맞췄어요. 지금 화면은 ${now} 입니다.`);
     }
 
-    const searchBtn = findByText('검색', 'button, a, [role="button"]') || findByText('검색');
+    closePopups(); // 달력이 떠 있으면 검색 클릭이 달력에 먹힌다
+    await sleep(300);
+    const searchBtn = searchButton();
     if (!searchBtn) return failReceive(run, '"검색" 버튼을 찾지 못했어요.');
     receiveStatus(`자동 수집 중 · ${day} 입고 내역 검색하는 중`);
     clickEl(searchBtn);
 
-    // 표가 어제 것으로 바뀔 때까지 기다린다. 어제 입고가 없으면 빈 표 그대로다.
-    const ok = await waitFor(() => rowsAreDay(day), 20000);
+    // 표가 그 날짜 것으로 바뀔 때까지 기다린다. 그날 입고가 없으면 빈 표 그대로다.
+    // 한 번에 안 되면 달력을 닫고 날짜를 다시 적은 뒤 진짜 클릭으로 한 번 더 눌러 본다.
+    let ok = await waitFor(() => rowsAreDay(day), 12000);
+    if (!ok) {
+      closePopups();
+      await setDay(day, run.range);
+      receiveStatus(`자동 수집 중 · ${day} 입고 내역 다시 검색하는 중`);
+      const again = searchButton() || searchBtn;
+      clickEl(again);
+      try { again.click(); } catch (err) {}
+      ok = await waitFor(() => rowsAreDay(day), 12000);
+    }
     if (!ok) {
       const others = otherDays(day);
-      if (others.length) return failReceive(run, `검색이 어제(${day})로 바뀌지 않았어요. 표에 ${others.join(', ')} 줄이 보여요.`);
-      // 줄이 아예 없으면 어제 입고가 없는 것으로 본다.
+      if (others.length) {
+        const now = dateInputs().map((el) => el.value).join(' ~ ');
+        return failReceive(run, `검색이 ${day}로 바뀌지 않았어요(날짜 칸은 ${now}). 표에 ${others.join(', ')} 줄이 보여요.`);
+      }
+      // 줄이 아예 없으면 그날 입고가 없는 것으로 본다.
       run.done = true;
       run.pages = 0;
       run.empty = true;
       run.finishedAt = Date.now();
       await runSet(RECEIVE_KEY, run);
-      receiveStatus(`✅ 어제(${day}) 입고 내역이 없어요`);
+      receiveStatus(`✅ ${day} 입고 내역이 없어요`);
       try {
         chrome.runtime.sendMessage({ type: 'HUB_RECEIVE_DONE' });
       } catch (err) {}
@@ -435,7 +558,7 @@
       clickEl(next);
       await waitFor(() => receiveSign() && receiveSign() !== sign, 15000);
       await sleep(500);
-      if (!rowsAreDay(day)) return failReceive(run, `${page}페이지에 어제(${day})가 아닌 줄이 보여요. 다시 눌러 주세요.`);
+      if (!rowsAreDay(day)) return failReceive(run, `${page}페이지에 ${day}가 아닌 줄이 보여요. 다시 눌러 주세요.`);
     }
     await collectNow();
     await queue(() => sleep(200)); // 저장이 다 끝난 뒤 알린다
@@ -540,7 +663,7 @@
              <button data-act="raw" style="${btn}" title="확인용: 페이지가 받은 원본 데이터 ${raw.length}개">원본 저장</button>
            </div>
            ${c.id === 'adsStock' ? '<div style="color:#94a3b8;font-size:11px;margin-top:8px">앱의 재고 › 상품관리에서 "확장에서 가져오기"를 누르면 이 화면을 알아서 넘기며 모아 갑니다.</div>' : ''}
-           ${c.id === 'receiveDetail' ? '<div style="color:#94a3b8;font-size:11px;margin-top:8px">앱의 물류 › 물류창고입고에서 "자동으로 가져오기"를 누르면 기간을 "어제"로 검색해 알아서 모아 갑니다.</div>' : ''}
+           ${c.id === 'receiveDetail' ? '<div style="color:#94a3b8;font-size:11px;margin-top:8px">앱의 물류 › 물류창고입고에서 날짜를 고르고 "자동으로 가져오기"를 누르면 그 날짜로 검색해 알아서 모아 갑니다.</div>' : ''}
          </div>`;
   };
 

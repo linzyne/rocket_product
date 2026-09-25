@@ -121,23 +121,71 @@
 
   // 광고 화면이 받아오는 상품 목록 응답(/marketing/product-api/vendor-items, vendor-items-advertised)에서
   // 바로 뽑기. 화면 글자보다 정확하고, 스크롤하지 않아도 그 페이지 50개가 다 들어옵니다.
+  // 쿠팡이 응답의 칸 이름을 바꿔도 멈추지 않도록, 상품 배열을 JSON 안에서 찾아내고 칸도 여러 이름을 봅니다.
   const COUPANG_THUMB = 'https://thumbnail.coupangcdn.com/thumbnails/remote/160x160/image/';
+
+  // 객체에서 이름이 조건에 맞는 첫 칸 값.
+  const field = (obj, re) => {
+    for (const [k, v] of Object.entries(obj)) {
+      if (re.test(k) && v != null && v !== '') return v;
+    }
+    return undefined;
+  };
+  const itemIdOf = (v) => String(v.vendorItemId || v.itemId || v.productId || field(v, /vendor.*item.*id$/i) || field(v, /item.*id$/i) || '');
+  const itemNameOf = (v) => clean(v.itemName || v.vendorItemName || v.productName || v.name || field(v, /(item|product|vendor).*name$/i) || '');
+  const stockOf = (v) => {
+    const n = [v.stockQuantity, v.stock, v.quantity, v.inventoryQuantity, field(v, /(stock|inventory).*(quantity|qty|count)?$/i)]
+      .find((x) => x != null && x !== '' && Number.isFinite(Number(x)));
+    return n == null ? null : Number(n);
+  };
+  const imageOf = (v) => {
+    const raw = v.mainImagePath || v.imagePath || v.imageUrl || v.image || field(v, /image/i) || '';
+    const path = String(raw);
+    if (!path) return '';
+    if (/^https?:\/\//.test(path)) return path;
+    return COUPANG_THUMB + path.replace(/^\/+/, '');
+  };
+  // 상품 한 줄처럼 보이는지(번호와 이름이 있는지).
+  const looksLikeItem = (v) => !!(v && typeof v === 'object' && !Array.isArray(v) && /^\d{6,}$/.test(itemIdOf(v)) && itemNameOf(v));
+
+  // JSON 어디에 있든 상품 배열을 찾는다(가장 긴 것).
+  const findItemArray = (json) => {
+    let best = null;
+    const seen = new Set();
+    const walk = (node, depth) => {
+      if (!node || typeof node !== 'object' || depth > 6 || seen.has(node)) return;
+      seen.add(node);
+      if (Array.isArray(node)) {
+        const objs = node.filter((v) => v && typeof v === 'object');
+        if (objs.some(looksLikeItem) && (!best || objs.length > best.length)) best = objs;
+        for (const v of objs) walk(v, depth + 1);
+        return;
+      }
+      for (const v of Object.values(node)) walk(v, depth + 1);
+    };
+    walk(json, 0);
+    return best || [];
+  };
+
   const fromAdsResponse = (url, json) => {
-    if (!/\/product-api\/vendor-items/.test(url) || !json || !Array.isArray(json.vendorItems)) return [];
+    if (!/vendor-item/i.test(String(url)) || !json) return [];
+    const list = Array.isArray(json.vendorItems) && json.vendorItems.some(looksLikeItem) ? json.vendorItems : findItemArray(json);
     const advertisedList = /vendor-items-advertised/.test(url);
-    return json.vendorItems
-      .filter((v) => v && v.vendorItemId)
+    return list
+      .filter(looksLikeItem)
       .map((v) => {
-        const soldOut = !!v.isSoldOut || Number(v.stockQuantity) <= 0;
+        const qty = stockOf(v);
+        const soldOut = !!v.isSoldOut || (qty != null && qty <= 0);
         const item = {
-          key: String(v.vendorItemId),
-          adsId: String(v.vendorItemId),
-          productName: clean(v.itemName),
-          stock: soldOut ? 0 : Number(v.stockQuantity),
+          key: itemIdOf(v),
+          adsId: itemIdOf(v),
+          productName: itemNameOf(v),
+          stock: soldOut ? 0 : qty,
           soldOut,
           adState: advertisedList || v.isAd ? 'ad' : 'noad',
         };
-        if (v.mainImagePath) item.imageUrl = COUPANG_THUMB + String(v.mainImagePath).replace(/^\/+/, '');
+        const imageUrl = imageOf(v);
+        if (imageUrl) item.imageUrl = imageUrl;
         return item;
       });
   };
@@ -207,7 +255,7 @@
     {
       id: 'receiveDetail',
       label: '물류창고 입고',
-      hint: '앱의 물류 › 물류창고입고에서 "자동으로 가져오기"를 누르면 기간 "어제"로 검색해 알아서 모아 갑니다. 직접 기간을 고르고 검색해도 표가 모입니다(여러 페이지면 넘겨주세요).',
+      hint: '앱의 물류 › 물류창고입고에서 날짜를 고르고 "자동으로 가져오기"를 누르면 그 날짜로 검색해 알아서 모아 갑니다. 직접 기간을 고르고 검색해도 표가 모입니다(여러 페이지면 넘겨주세요).',
       match: () => location.hostname === 'supplier.coupang.com' && location.pathname.startsWith('/scm/receive'),
       collect: collectReceiveTable,
     },

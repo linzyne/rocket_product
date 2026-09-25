@@ -3,11 +3,11 @@
 // 이미 열린 광고 탭이 있으면 그 탭을 쓰고, 없으면 뒤에서 새 탭을 열었다가 끝나면 닫습니다.
 const AUTO_KEY = 'hubAutoRun';
 const START_URL = 'https://advertising.coupang.com/marketing/product-dashboard/advertised';
-// 물류창고입고 자동 수집(서허 입고상세내역). 기간은 "어제"로 검색한다.
+// 물류창고입고 자동 수집(서허 입고상세내역). 앱이 고른 날짜로 검색하고, 안 고르면 어제로 한다.
 const RECEIVE_KEY = 'hubReceiveRun';
 const RECEIVE_URL = 'https://supplier.coupang.com/scm/receive/detail';
 
-// 어제 날짜(내 컴퓨터 시간 기준) 'YYYY-MM-DD'. 화면이 어제로 맞춰졌는지 확인하는 데 쓴다.
+// 어제 날짜(내 컴퓨터 시간 기준) 'YYYY-MM-DD'. 앱이 날짜를 안 보내면 이 날로 검색한다.
 const yesterdayYMD = () => {
   const d = new Date();
   d.setDate(d.getDate() - 1);
@@ -140,11 +140,14 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
 
   // 앱의 물류 > 물류창고입고에서 "자동으로 가져오기" → 서허 입고상세내역을 열고 panel.js가
-  // 기간 "어제"로 검색해 표를 모은다. 이미 그 화면이 열려 있으면 그 탭을 쓴다.
+  // 앱이 고른 날짜(message.day, 없으면 어제)로 검색해 표를 모은다. 이미 그 화면이 열려 있으면 그 탭을 쓴다.
   if (message.type === 'RECEIVE_COLLECT') {
     (async () => {
       try {
-        const run = { requestedAt: Date.now(), step: 'search', done: false, error: null, createdTabId: null, range: '어제', day: yesterdayYMD() };
+        const asked = /^\d{4}-\d{2}-\d{2}$/.test(String(message.day || '')) ? message.day : '';
+        const day = asked || yesterdayYMD();
+        // 어제면 화면의 "어제" 버튼을 눌러 맞추고, 다른 날이면 날짜 칸에 직접 적는다.
+        const run = { requestedAt: Date.now(), step: 'search', done: false, error: null, createdTabId: null, range: day === yesterdayYMD() ? '어제' : '', day };
         const tabs = await chrome.tabs.query({ url: '*://supplier.coupang.com/scm/receive*' });
         if (tabs.length) {
           await chrome.storage.local.set({ [RECEIVE_KEY]: run });

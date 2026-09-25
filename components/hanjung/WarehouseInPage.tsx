@@ -6,7 +6,7 @@ import { won } from './HanjungOrderPage';
 // 물류 > 물류창고입고. 서허 "입고상세내역"을 확장으로 모아 와서 저장하고, 줄마다 어느 한중발주 건인지 보여준다.
 // 여기 쌓인 내역이 쿠팡에서 정산받는 내역이다(한중발주 화면에서 건별 정산률로 합쳐 보여줌).
 //
-// "자동으로 가져오기"를 누르면 확장이 서허 입고상세내역을 열어 기간 "어제"로 검색하고, 페이지를 끝까지
+// "자동으로 가져오기"를 누르면 확장이 서허 입고상세내역을 열어 옆에서 고른 날짜(기본 어제)로 검색하고, 페이지를 끝까지
 // 넘기며 표를 모은 뒤 여기로 보내준다(rocket-hub-extension의 background.js·panel.js).
 const APP_SOURCE = 'rocket-app-hub';
 const EXT_SOURCE = 'rocket-hub-extension';
@@ -14,6 +14,10 @@ const EXT_SOURCE = 'rocket-hub-extension';
 type HubReceiveBucket = { items: Record<string, Omit<ReceiveRow, 'importedAt'>>; updatedAt?: number };
 
 const monthOf = (date: string) => date.slice(0, 7);
+
+const ymd = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+// 자동 수집의 기본 날짜. 어제 입고가 그날 저녁에 확정되므로 어제로 둔다.
+const yesterday = () => { const d = new Date(); d.setDate(d.getDate() - 1); return ymd(d); };
 
 const WarehouseInPage: React.FC = () => {
   const [rows, setRows] = useState<ReceiveRow[]>([]);
@@ -23,11 +27,15 @@ const WarehouseInPage: React.FC = () => {
   const [importing, setImporting] = useState(false);
   const [month, setMonth] = useState('');
   const [search, setSearch] = useState('');
-  // 자동 수집: 확장이 서허 화면을 열어 "어제"로 검색해 모으고, 끝나면 바로 저장한다.
+  // 자동 수집: 확장이 서허 화면을 열어 고른 날짜로 검색해 모으고, 끝나면 바로 저장한다.
+  const [autoDay, setAutoDay] = useState(yesterday);
   const [autoRequestedAt, setAutoRequestedAt] = useState<number | null>(null);
   const [autoStatus, setAutoStatus] = useState('');
   const autoRef = React.useRef<number | null>(null);
   autoRef.current = autoRequestedAt;
+  // 아래 메시지 처리기는 한 번만 붙으므로, 고른 날짜는 ref로 본다.
+  const autoDayRef = React.useRef(autoDay);
+  autoDayRef.current = autoDay;
   // 잘못 가져온 줄을 골라 지우려고 체크해 둔 것들.
   const [picked, setPicked] = useState<Set<string>>(new Set());
 
@@ -66,12 +74,12 @@ const WarehouseInPage: React.FC = () => {
           setAutoStatus('저장하는 중…');
           saveReceives(items)
             .then(n => setAutoStatus(
-              n ? `✅ ${run.day || '어제'} ${n}건 저장 완료${dropped ? ` (다른 날 ${dropped}건은 건너뜀)` : ''}`
-                : `${run.day || '어제'} 입고된 내역이 없어요`
+              n ? `✅ ${run.day || autoDayRef.current} ${n}건 저장 완료${dropped ? ` (다른 날 ${dropped}건은 건너뜀)` : ''}`
+                : `${run.day || autoDayRef.current} 입고된 내역이 없어요`
             ))
             .catch(err => { setAutoStatus(''); alert(`가져오기 실패: ${err?.message || err}`); });
         } else {
-          setAutoStatus('서허에서 어제 입고 내역 모으는 중…');
+          setAutoStatus(`서허에서 ${run.day || autoDayRef.current} 입고 내역 모으는 중…`);
         }
       }
     };
@@ -91,9 +99,10 @@ const WarehouseInPage: React.FC = () => {
   const newCount = pending.filter(r => !saved.has(r.key)).length;
 
   const startAuto = () => {
-    setAutoStatus('서허 입고상세내역 여는 중…');
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(autoDay)) { alert('가져올 날짜를 골라 주세요.'); return; }
+    setAutoStatus(`서허 입고상세내역 여는 중… (${autoDay})`);
     setAutoRequestedAt(-1); // 확장이 요청 시각을 알려주기 전까지 버튼을 잠근다
-    window.postMessage({ source: APP_SOURCE, type: 'RECEIVE_COLLECT' }, window.location.origin);
+    window.postMessage({ source: APP_SOURCE, type: 'RECEIVE_COLLECT', day: autoDay }, window.location.origin);
   };
 
   // 서허 로그인이 풀려 있으면 수집이 시작되지 못하므로, 너무 오래 걸리면 알려준다.
@@ -184,11 +193,30 @@ const WarehouseInPage: React.FC = () => {
             <a href="https://supplier.coupang.com/scm/receive/detail" target="_blank" rel="noreferrer" className="text-blue-500 hover:underline">서허 입고상세내역 열기 ↗</a>
             {autoStatus && <div className="text-blue-600">{autoStatus}</div>}
           </div>
+          <div className="flex items-center gap-1">
+            <input
+              type="date"
+              value={autoDay}
+              max={ymd(new Date())}
+              onChange={e => setAutoDay(e.target.value)}
+              disabled={autoRequestedAt != null}
+              className="px-2 py-2 border border-gray-200 rounded-lg text-sm bg-white disabled:text-gray-400"
+              title="가져올 입고 날짜"
+            />
+            <button
+              onClick={() => setAutoDay(yesterday())}
+              disabled={autoRequestedAt != null}
+              className="px-2 py-2 rounded-lg border border-gray-200 text-gray-600 text-xs hover:bg-gray-50 disabled:text-gray-300"
+              title="어제 날짜로 되돌리기"
+            >
+              어제
+            </button>
+          </div>
           <button
             onClick={startAuto}
             disabled={autoRequestedAt != null}
             className="px-3 py-2 rounded-lg bg-blue-600 text-white text-sm font-semibold hover:bg-blue-700 disabled:bg-gray-300"
-            title="확장이 서허 입고상세내역을 열어 기간 '어제'로 검색해 모아 옵니다"
+            title="확장이 서허 입고상세내역을 열어 고른 날짜로 검색해 모아 옵니다"
           >
             {autoRequestedAt != null ? '가져오는 중…' : '자동으로 가져오기'}
           </button>

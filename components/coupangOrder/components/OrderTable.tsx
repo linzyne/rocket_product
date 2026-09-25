@@ -22,7 +22,13 @@ interface Props {
   onBulkOrder?: (orderNo: string, patch: { 메모?: string; 쉼먼트?: string }) => void;
   // 일이 끝나 불을 꺼 둘 발주서들(발주번호). 그 줄은 흐리게 보여준다.
   dimmedOrders?: Set<string>;
+  // 줄 색을 무엇으로 칠할지. 'bundle'(기본)은 묶음별, 'box'는 박스 번호별로 칠한다.
+  colorBy?: 'bundle' | 'box';
 }
+
+// 박스 번호(박스1, 박스2…)마다 다른 색. 어느 상자에 담기는지 한눈에 보이게.
+const BOX_COLORS = ['#e67e22', '#2563eb', '#16a34a', '#db2777', '#7c3aed', '#0891b2', '#b45309', '#0f766e'];
+export const boxColor = (no: number) => BOX_COLORS[(no - 1) % BOX_COLORS.length];
 
 // 묶음 이름(묶음1, 묶음2…)마다 다른 색을 준다. 같은 묶음끼리 한눈에 보이게.
 const BUNDLE_COLORS = ['#7c3aed', '#0891b2', '#d97706', '#be185d', '#15803d', '#4338ca'];
@@ -204,7 +210,7 @@ function OfficeCell({ match, need }: { match: OfficeMatch | null; need: number }
 }
 
 /* ── 메인 테이블 ── */
-export default function OrderTable({ rows, onMemoChange, onShipmentChange, colorScheme = 'pink', readOnly = false, onDelete, officeQtyOf, selectedOrders, onToggleSelect, onBulkOrder, dimmedOrders }: Props) {
+export default function OrderTable({ rows, onMemoChange, onShipmentChange, colorScheme = 'pink', readOnly = false, onDelete, officeQtyOf, selectedOrders, onToggleSelect, onBulkOrder, dimmedOrders, colorBy = 'bundle' }: Props) {
   if (rows.length === 0) return null;
 
   const sc = SCHEME[colorScheme];
@@ -270,7 +276,12 @@ export default function OrderTable({ rows, onMemoChange, onShipmentChange, color
               );
             }
 
-            const bg = row.묶음 ? `${bundleColor(row.묶음)}0f` : '#fff';
+            // 이 줄을 칠할 색: 박스별로 볼 때는 박스 번호 색, 아니면 묶음 색.
+            const boxNo = parseBoxNo(row.쉼먼트);
+            const tint = colorBy === 'box'
+              ? (boxNo ? boxColor(boxNo) : '')
+              : (row.묶음 ? bundleColor(row.묶음) : '');
+            const bg = tint ? `${tint}0f` : '#fff';
             // 발주번호가 찍히는 줄이 그 발주서의 첫 줄이다(아래 줄들은 같은 발주서라 번호를 비워 둔다).
             const isOrderHead = !!row.발주번호;
             // 묶음에서 고른 센터·입고예정일이 아직 이 발주서에 안 옮겨졌으면 "적용 대기".
@@ -280,10 +291,10 @@ export default function OrderTable({ rows, onMemoChange, onShipmentChange, color
             );
             const dim = !!dimmedOrders?.has(row._발주번호);
             const head = isOrderHead ? (
-              <tr key={`${row.id}-head`} style={{ background: row.묶음 ? `${bundleColor(row.묶음)}1c` : '#f7f7f8', opacity: dim ? 0.45 : 1 }}>
+              <tr key={`${row.id}-head`} style={{ background: tint ? `${tint}1c` : '#f7f7f8', opacity: dim ? 0.45 : 1 }}>
                 <td colSpan={headers.length} style={{
                   padding: '4px 8px', borderTop: '1px solid #e8e8e8', borderBottom: '1px solid #f0f0f0',
-                  borderLeft: row.묶음 ? `4px solid ${bundleColor(row.묶음)}` : undefined,
+                  borderLeft: tint ? `4px solid ${tint}` : undefined,
                   whiteSpace: 'nowrap',
                 }}>
                   <span style={{ display: 'inline-flex', alignItems: 'center', gap: 7 }}>
@@ -299,6 +310,14 @@ export default function OrderTable({ rows, onMemoChange, onShipmentChange, color
                     <span style={{ fontSize: 13, fontWeight: 700, color: '#333' }}>{row._발주번호}</span>
                     <span style={{ fontSize: 12, fontWeight: 700, color: sc.accent }}>{(row._물류센터 || '').trim()}</span>
                     <span style={{ fontSize: 12, fontWeight: 700, color: '#2c3e50' }}>{formatDateDisplay(row._입고예정일)}</span>
+                    {colorBy === 'box' && boxNo && (
+                      <span style={{
+                        padding: '0 6px', fontSize: 11, fontWeight: 700, borderRadius: 8,
+                        color: boxColor(boxNo), background: `${boxColor(boxNo)}22`,
+                      }}>
+                        박스 {boxNo}번
+                      </span>
+                    )}
                     {row.묶음 && (
                       <span style={{
                         padding: '0 6px', fontSize: 11, fontWeight: 700, borderRadius: 8,
@@ -381,7 +400,7 @@ export default function OrderTable({ rows, onMemoChange, onShipmentChange, color
               >
                 <td style={{
                   ...cs(0), textAlign: 'left', minWidth: 210, padding: '5px 6px',
-                  borderLeft: row.묶음 ? `4px solid ${bundleColor(row.묶음)}` : undefined,
+                  borderLeft: tint ? `4px solid ${tint}` : undefined,
                 }}>{row.상품이름}</td>
                 <td style={narrow(38)}>{row.확정수량 !== '' ? row.확정수량 : ''}</td>
                 {officeQtyOf && <OfficeCell match={officeQtyOf(row.상품이름)} need={Number(row.확정수량) || 0} />}

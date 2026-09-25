@@ -439,6 +439,7 @@ export default function CoupangShipPage({ onGoOrder }: { onGoOrder?: () => void 
                 onMemoChange={(id, v) => editLine(id, { 메모: v })}
                 onShipmentChange={(id, v) => editLine(id, { 쉼먼트: v })}
                 colorScheme="pink"
+                colorBy="box"
                 officeQtyOf={officeQtyOf}
                 selectedOrders={selected}
                 onToggleSelect={toggleSelect}

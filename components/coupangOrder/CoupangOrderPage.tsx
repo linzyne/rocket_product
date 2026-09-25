@@ -1,28 +1,20 @@
 import React, { useState, useCallback, useEffect, useMemo } from 'react';
 import FileUpload from './components/FileUpload';
 import OrderTable from './components/OrderTable';
-import AddressManager from './components/AddressManager';
-import SenderManager from './components/SenderManager';
 import {
-  parseFile, buildDisplayRows, extractOrderRows, sortOrderRows, totalBoxCount, shipmentCenters,
+  parseFile, buildDisplayRows, extractOrderRows, sortOrderRows, boxLabel,
 } from './utils/dataProcessor';
 import type { DisplayRow } from './utils/dataProcessor';
-import { exportLotteExcel, exportSummaryExcel } from './utils/excelExport';
+import { exportSummaryExcel } from './utils/excelExport';
 import { printPanel } from './utils/printUtils';
-import type { AddressEntry, SenderInfo } from './types';
-import {
-  loadLocalAddresses, loadLocalSender, subscribeShippingSettings, saveAddresses, saveSender,
-} from './data/shippingSettingsStore';
-import { subscribeReservations, addReservations, updateReservationShipment, deleteReservations } from './data/reservationStore';
+import type { AddressEntry } from './types';
+import { loadLocalAddresses, subscribeShippingSettings } from './data/shippingSettingsStore';
+import { subscribeReservations, addReservations, updateReservationShipment, deleteReservations, reservationKey } from './data/reservationStore';
 import type { OrderRow } from './types';
-import { dateKeyYMD, normalizeDateValue } from './utils/dateUtils';
-import {
-  ShipmentBatch, subscribeShipments, saveShipmentBatch, batchId, fillWaybills, allBoxes,
-} from '../../data/shipmentStore';
+import { dateKeyYMD, normalizeDateValue, ymdSortKey } from './utils/dateUtils';
 import { InventoryItem, subscribeInventory, makeOfficeLookup } from '../../data/inventoryStore';
-import ShipmentWaybillModal from './components/ShipmentWaybillModal';
-import ShipmentList from './components/ShipmentList';
-import { fillShubForm, dataUrlToBuffer } from './utils/shubForm';
+import BundlePanel from './components/BundlePanel';
+import { addShipOut } from './data/shipOutStore';
 
 // 화면 한 줄 → 원래 발주 한 건(줄였던 발주번호·물류센터·날짜를 되살림).
 const toOrderRow = (r: DisplayRow): OrderRow => ({
@@ -33,30 +25,41 @@ const toOrderRow = (r: DisplayRow): OrderRow => ({
   입고예정일: r._입고예정일,
   메모: r.메모,
   쉼먼트: r.쉼먼트,
+  묶음: r.묶음 || '',
 });
 
 // 발송 쪽 작업 중인 목록(메모·롯데 표시 포함)을 이 컴퓨터에 남겨 둔다. 다른 메뉴에 다녀오거나 새로고침해도
-// 그대로 다시 뜨고, "새 파일"을 누를 때만 비운다. 날짜는 'YYYYMMDD' 글자로 저장했다가 되살린다.
+// 그대로 다시 뜨고, "전체 비우기"를 누를 때만 비운다. 발주서를 새로 올리면 지우지 않고 아래에 이어 붙인다.
+// 날짜는 'YYYYMMDD' 글자로 저장했다가 되살린다.
 const WORK_KEY = 'coupangOrderWork';
 
-function loadWork(): { rows: DisplayRow[]; fileName: string } {
+function loadWork(): { rows: DisplayRow[]; fileName: string; done: string[] } {
   try {
     const saved = JSON.parse(localStorage.getItem(WORK_KEY) || '');
     const rows: OrderRow[] = (saved.rows || []).map((r: OrderRow) => ({ ...r, 입고예정일: normalizeDateValue(r.입고예정일) }));
-    return { rows: buildDisplayRows(rows), fileName: saved.fileName || '' };
+    // 같은 발주서의 같은 상품이 두 번 들어간 줄은 하나만 남긴다(출고에 보냈다 되돌리는 사이에
+    // 센터·입고일이 바뀌어 두 줄로 남는 일이 있었다). 먼저 들어온 줄을 살린다.
+    const seen = new Set<string>();
+    const unique = rows.filter(r => {
+      const key = `${r.발주번호}│${r.상품이름}│${r.확정수량}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+    return { rows: buildDisplayRows(unique), fileName: saved.fileName || '', done: saved.done || [] };
   } catch {
-    return { rows: [], fileName: '' };
+    return { rows: [], fileName: '', done: [] };
   }
 }
 
-function saveWork(rows: DisplayRow[], fileName: string) {
+function saveWork(rows: DisplayRow[], fileName: string, done: string[]) {
   try {
     if (!rows.length) {
       localStorage.removeItem(WORK_KEY);
       return;
     }
     const plain = extractOrderRows(rows).map(r => ({ ...r, 입고예정일: dateKeyYMD(r.입고예정일).replace(/-/g, '') }));
-    localStorage.setItem(WORK_KEY, JSON.stringify({ rows: plain, fileName }));
+    localStorage.setItem(WORK_KEY, JSON.stringify({ rows: plain, fileName, done }));
   } catch {}
 }
 
@@ -67,7 +70,7 @@ type Tab = 'shipment' | 'settlement';
 // 발주 > 쿠팡발주확인. 쿠팡 발주서(엑셀/CSV)를 올려 발송·예약으로 나누고,
 // 발주서정리 엑셀과 롯데택배 업로드 엑셀을 만든다. (원래 '쉽먼트' 앱을 그대로 옮겨온 것)
 // 예약 패널은 저장소(data/reservationStore)에 계속 쌓이고, 삭제 버튼을 눌러야만 지워진다.
-export default function CoupangOrderPage() {
+export default function CoupangOrderPage({ onGoShipOut }: { onGoShipOut?: () => void } = {}) {
   const [activeTab, setActiveTab] = useState<Tab>('shipment');
   const [initialWork] = useState(loadWork);
   const [leftRows, setLeftRows] = useState<DisplayRow[]>(initialWork.rows);
@@ -76,49 +79,59 @@ export default function CoupangOrderPage() {
   const [loading, setLoading] = useState(false);
   const [fileName, setFileName] = useState(initialWork.fileName);
   const [addresses, setAddresses] = useState<AddressEntry[]>(loadLocalAddresses);
-  const [showAddressManager, setShowAddressManager] = useState(false);
-  const [sender, setSender] = useState<SenderInfo>(loadLocalSender);
-  const [showSenderManager, setShowSenderManager] = useState(false);
   // 쉽먼트생성으로 만든 택배 묶음(박스 배정 기록). 운송장번호를 여기에 채운다.
-  const [batches, setBatches] = useState<ShipmentBatch[]>([]);
   // B단계(서허 양식 받기) 진행 문구와, 받아온 양식 파일.
-  const [shubStatus, setShubStatus] = useState<string | null>(null);
-  const [shubForm, setShubForm] = useState<{ batchId: string; name: string; dataUrl: string } | null>(null);
   // 지금 B·C를 진행 중인 쉽먼트(양식을 직접 골라 채울 때 쓴다).
-  const [shubBatch, setShubBatch] = useState<ShipmentBatch | null>(null);
-  const [waybillBatch, setWaybillBatch] = useState<ShipmentBatch | null>(null);
   // 재고 > 상품관리의 사무실 재고. 발주서 상품이름과 상품명을 맞춰 확정수량 옆에 보여준다.
   const [inventory, setInventory] = useState<InventoryItem[]>([]);
   const officeQtyOf = useMemo(() => makeOfficeLookup(inventory), [inventory]);
   const [error, setError] = useState('');
+  // 발주서를 이어 붙인 결과 같은 알림(오류가 아니어서 따로 둔다).
+  const [notice, setNotice] = useState('');
+  // 일 다 본 묶음(택배까지 부친 묶음). 체크해 두면 카드 불이 꺼진다.
+  const [doneBundles, setDoneBundles] = useState<Set<string>>(() => new Set(initialWork.done));
+  // 발송·묶음 패널 접기. 접으면 제목줄만 남고 옆 패널이 넓어진다.
+  const [folded, setFolded] = useState<{ send: boolean; bundle: boolean }>({ send: false, bundle: false });
+  // 묶기 후보로 체크한 발주서들(발주번호). 묶기는 발주서 단위라서 그 번호의 줄이 통째로 담긴다.
+  const [selected, setSelected] = useState<Set<string>>(new Set());
 
   useEffect(() => subscribeReservations(setReservations), []);
   // 택배주소·보내는사람은 클라우드에 저장돼 있어 다른 컴퓨터에서 고친 것도 바로 반영된다.
-  useEffect(() => subscribeShipments(setBatches), []);
   useEffect(() => subscribeInventory(setInventory), []);
-  useEffect(() => subscribeShippingSettings(({ addresses, sender }) => { setAddresses(addresses); setSender(sender); }), []);
-  useEffect(() => saveWork(leftRows, fileName), [leftRows, fileName]);
+  // 택배주소는 묶음 카드에서 센터를 고를 때 쓴다(보내는사람·주소 관리는 쉽먼트생성 화면에 있다).
+  useEffect(() => subscribeShippingSettings(({ addresses }) => setAddresses(addresses)), []);
+  useEffect(() => saveWork(leftRows, fileName, Array.from(doneBundles)), [leftRows, fileName, doneBundles]);
 
   const hasFile = leftRows.length > 0;
   const hasData = hasFile || rightRows.length > 0;
 
+  // 발주서를 올리면 지금 목록을 지우지 않고 아래쪽에 이어 붙인다(출고할 때까지 계속 봐야 하므로).
+  // 이미 있는 줄(발주번호·상품·수량·입고예정일이 같은 줄)과 예약으로 넘긴 줄은 건너뛴다.
   const handleFile = useCallback(async (file: File) => {
     setLoading(true);
     setError('');
+    setNotice('');
     try {
       const rows = await parseFile(file);
       if (rows.length === 0) {
         setError('데이터를 찾을 수 없습니다. 헤더가 올바른지 확인해주세요.');
       } else {
-        setLeftRows(buildDisplayRows(rows));
+        const existing = extractOrderRows(leftRows);
+        const seen = new Set([...existing, ...reservations].map(reservationKey));
+        const fresh = sortOrderRows(rows).filter(r => !seen.has(reservationKey(r)));
+        setLeftRows(buildDisplayRows([...existing, ...fresh]));
         setFileName(file.name);
+        const skipped = rows.length - fresh.length;
+        setNotice(fresh.length
+          ? `${fresh.length}건 추가` + (skipped > 0 ? ` / 중복 ${skipped}건 제외` : '')
+          : `추가 0건 / 중복 ${rows.length}건 제외`);
       }
     } catch (e) {
       setError('파일 처리 중 오류가 발생했습니다: ' + (e instanceof Error ? e.message : String(e)));
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [leftRows, reservations]);
 
   // 발송 쪽에서 "예약"을 누르면 그 줄을 바로 예약 목록으로 넘긴다(발송 목록에서는 곧바로 빼고,
   // 저장에 실패하면 다시 돌려놓는다). 줄 id는 목록을 다시 만들 때마다 바뀌므로 누른 순간의 줄을 잡아 둔다.
@@ -139,6 +152,128 @@ export default function CoupangOrderPage() {
 
   const handleLeftShipmentChange = useCallback((id: string, value: string) => {
     setLeftRows(prev => prev.map(r => r.id === id ? { ...r, 쉼먼트: value } : r));
+  }, []);
+
+  const toggleSelect = useCallback((orderNo: string, checked: boolean) => {
+    setSelected(prev => {
+      const next = new Set(prev);
+      if (checked) next.add(orderNo); else next.delete(orderNo);
+      return next;
+    });
+  }, []);
+
+  // 체크한 줄들을 새 묶음(묶음1, 묶음2…)에 담는다. 줄은 발송 목록에 그대로 남고 묶음 표시만 붙는다.
+  // 묶음은 택배 한 상자로 보낼 것들이므로 담자마자 박스1을 같이 지정해 둔다.
+  const handleBundle = useCallback(() => {
+    const picked = leftRows.filter(r => !r.isBlank && selected.has(r._발주번호));
+    if (!picked.length) return;
+    const centers = new Set(picked.map(r => (r._물류센터 || '').trim()).filter(Boolean));
+    if (centers.size > 1 &&
+      !confirm(`물류센터가 ${Array.from(centers).join(', ')}로 섞여 있어요.\n택배는 ${Array.from(centers)[0]}(으)로만 갑니다. 그래도 묶을까요?`)) return;
+
+    const used = new Set(leftRows.map(r => r.묶음).filter(Boolean));
+    let no = 1;
+    while (used.has(`묶음${no}`)) no++;
+    const name = `묶음${no}`;
+    setLeftRows(prev => prev.map(r => !r.isBlank && selected.has(r._발주번호) ? { ...r, 묶음: name, 쉼먼트: boxLabel(1) } : r));
+    setSelected(new Set());
+  }, [leftRows, selected]);
+
+  // 체크한 발주서들을 이미 있는 묶음에 더 담는다. 박스 지정은 그 묶음이 쓰던 값을 따라간다.
+  const handleAddToBundle = useCallback((bundle: string) => {
+    const picked = leftRows.filter(r => !r.isBlank && selected.has(r._발주번호));
+    if (!picked.length) return;
+    const mine = leftRows.filter(r => r.묶음 === bundle);
+    const centers = new Set([...mine, ...picked].map(r => (r._물류센터 || '').trim()).filter(Boolean));
+    if (centers.size > 1 &&
+      !confirm(`물류센터가 ${Array.from(centers).join(', ')}로 섞여 있어요.\n택배는 ${Array.from(centers)[0]}(으)로만 갑니다. 그래도 담을까요?`)) return;
+
+    const box = mine[0]?.쉼먼트 || boxLabel(1);
+    setLeftRows(prev => prev.map(r => !r.isBlank && selected.has(r._발주번호) ? { ...r, 묶음: bundle, 쉼먼트: box } : r));
+    setSelected(new Set());
+  }, [leftRows, selected]);
+
+  // 묶음이 갈 물류센터를 직접 고른다(발주서 원래 센터는 그대로 두고 택배 주소만 바꾼다).
+  const handleBundleCenter = useCallback((bundle: string, center: string) => {
+    setLeftRows(prev => prev.map(r => r.묶음 === bundle ? { ...r, 묶음센터: center } : r));
+  }, []);
+
+  // 묶음의 입고예정일을 직접 고른다('YYYY-MM-DD'). 아직 발주서에는 반영하지 않는다.
+  const handleBundleDate = useCallback((bundle: string, ymd: string) => {
+    setLeftRows(prev => prev.map(r => r.묶음 === bundle ? { ...r, 묶음일자: ymd } : r));
+  }, []);
+
+  // 묶음에서 고른 센터·입고예정일을 그 묶음의 발주서들에 그대로 덮어쓴다.
+  // (쿠팡에서 입고센터·입고일을 바꿔 놓고, 우리 목록도 그 모습으로 맞출 때 쓴다.)
+  const handleApplyBundle = useCallback((bundle: string) => {
+    const mine = leftRows.filter(r => !r.isBlank && r.묶음 === bundle);
+    if (!mine.length) return;
+    const center = (mine.find(r => r.묶음센터)?.묶음센터 || mine[0]._물류센터 || '').trim();
+    const days = mine.map(r => dateKeyYMD(r._입고예정일)).filter(d => d && d !== '9999-12-31');
+    const baseDay = days.slice().sort((a, b) => ymdSortKey(a) - ymdSortKey(b))[0] || '';
+    const ymd = (mine.find(r => r.묶음일자)?.묶음일자 || baseDay).trim();
+    const orders = new Set(mine.map(r => r._발주번호));
+    if (!confirm(`${bundle}에 담긴 발주 ${orders.size}건을\n\n  물류센터: ${center}\n  입고예정일: ${ymd}\n\n(으)로 바꿀까요? 발송 목록의 원래 내용이 이 값으로 바뀝니다.`)) return;
+
+    const updated = extractOrderRows(leftRows).map(r => r.묶음 === bundle
+      ? { ...r, 물류센터: center, 입고예정일: ymd ? normalizeDateValue(ymd) : r.입고예정일, 묶음센터: '', 묶음일자: '' }
+      : r);
+    setLeftRows(buildDisplayRows(sortOrderRows(updated)));
+  }, [leftRows]);
+
+  // 묶음을 쉽먼트생성 화면으로 넘긴다. 발주서 줄들과 묶음 정보(센터·입고예정일)가 한 쌍으로 간다.
+  const handleShipOut = useCallback((bundle: string) => {
+    const mine = leftRows.filter(r => !r.isBlank && r.묶음 === bundle);
+    if (!mine.length) return;
+    const center = (mine.find(r => r.묶음센터)?.묶음센터 || mine[0]._물류센터 || '').trim();
+    const days = mine.map(r => dateKeyYMD(r._입고예정일)).filter(d => d && d !== '9999-12-31');
+    const baseDay = days.slice().sort((a, b) => ymdSortKey(a) - ymdSortKey(b))[0] || '';
+    const date = (mine.find(r => r.묶음일자)?.묶음일자 || baseDay).trim();
+    const orders = new Set(mine.map(r => r._발주번호));
+    if (!confirm(`${bundle}(발주 ${orders.size}건 · ${center} · ${date})을 쉽먼트생성으로 보낼까요?`)) return;
+
+    const item = addShipOut(bundle, center, date, mine.map(toOrderRow));
+    // 보낸 줄은 발송 목록에서 뺀다(출고 화면으로 옮겨간 것이므로). 되돌리기는 출고 화면에서 한다.
+    const rest = buildDisplayRows(extractOrderRows(leftRows).filter(r => r.묶음 !== bundle));
+    const done: string[] = [];
+    doneBundles.forEach(b => { if (b !== bundle) done.push(b); });
+    setLeftRows(rest);
+    setDoneBundles(new Set(done));
+    // 바로 다음 줄에서 출고 화면으로 넘어가며 이 화면이 닫히므로, 저장을 미루지 않고 여기서 해 둔다.
+    // (저장을 effect에 맡기면 화면이 닫히면서 빠진 줄이 다시 살아난다.)
+    saveWork(rest, fileName, done);
+    setNotice(`${item.id} · ${bundle}(발주 ${orders.size}건)을 쉽먼트생성으로 보냈어요`);
+    onGoShipOut?.();
+  }, [leftRows, doneBundles, fileName, onGoShipOut]);
+
+  // 묶음 완료 표시 켜기/끄기.
+  const handleToggleDone = useCallback((bundle: string) => {
+    setDoneBundles(prev => {
+      const next = new Set(prev);
+      if (next.has(bundle)) next.delete(bundle); else next.add(bundle);
+      return next;
+    });
+  }, []);
+
+  // 묶음 하나를 통째로 박스 지정/해제.
+  const handleBundleBox = useCallback((bundle: string, value: string) => {
+    setLeftRows(prev => prev.map(r => r.묶음 === bundle ? { ...r, 쉼먼트: value } : r));
+  }, []);
+
+  // 묶음을 없앤다. 줄은 그대로 두고 묶음 표시와 박스 지정만 뗀다.
+  const handleUnbundle = useCallback((bundle: string) => {
+    setLeftRows(prev => prev.map(r => r.묶음 === bundle ? { ...r, 묶음: '', 쉼먼트: '' } : r));
+    setDoneBundles(prev => {
+      if (!prev.has(bundle)) return prev;
+      const next = new Set(prev);
+      next.delete(bundle);
+      return next;
+    });
+  }, []);
+
+  // 발주서 하나만 묶음에서 뺀다.
+  const handleRemoveFromBundle = useCallback((orderNo: string) => {
+    setLeftRows(prev => prev.map(r => r._발주번호 === orderNo ? { ...r, 묶음: '', 쉼먼트: '' } : r));
   }, []);
 
   const handleRightShipmentChange = useCallback((id: string, value: string) => {
@@ -176,175 +311,112 @@ export default function CoupangOrderPage() {
       .catch(alertError);
   }, [leftRows, reservations]);
 
-  const handleAddressUpdate = (updated: AddressEntry[]) => {
-    setAddresses(updated);
-    saveAddresses(updated).catch(err => alert(`택배주소 저장 실패: ${err instanceof Error ? err.message : String(err)}`));
-  };
-
-  const handleSenderUpdate = (updated: SenderInfo) => {
-    setSender(updated);
-    saveSender(updated).catch(err => alert(`보내는사람 저장 실패: ${err instanceof Error ? err.message : String(err)}`));
-  };
-
-  // 롯데택배 엑셀을 만들고(내려받기), 원하면 "로켓 서허 연동" 확장이 롯데 ALPS를 작은 팝업 창으로 열어
-  // 로그인 → 거래처관리 › 일괄주문접수 → 파일 올리기까지 하고 창을 닫는다. 끝나거나 실패하면 알려준다.
-  // B단계: 서허(서플라이어허브)에서 이 쉽먼트의 일괄등록 양식을 받아온다.
-  // 확장이 서허 창을 열어 양식을 내려받고, 받은 파일을 앱으로 넘겨준다(C단계에서 채운다).
-  const handleShubForm = (batch: ShipmentBatch) => {
-    setShubBatch(batch);
-    setShubStatus(`${batch.id} · 서허 여는 중…`);
-    const onMsg = (event: MessageEvent) => {
-      const d = event.data;
-      if (event.source !== window || !d || d.source !== 'rocket-hub-extension') return;
-      if (d.type === 'SHUB_FORM_ACK' && !d.ok) {
-        window.removeEventListener('message', onMsg);
-        setShubStatus(null);
-        alert(`서허 창을 열지 못했어요: ${d.error || ''}`);
-      }
-      if (d.type === 'SHUB_STATUS') {
-        setShubStatus(`${batch.id} · ${d.status || ''}`);
-        if (d.file && d.file.dataUrl) {
-          window.removeEventListener('message', onMsg);
-          setShubForm({ batchId: batch.id, name: d.file.name, dataUrl: d.file.dataUrl });
-          // C단계: 받은 양식을 이 쉽먼트의 박스 배정대로 채워서 바로 저장한다.
-          fillAndSave(dataUrlToBuffer(d.file.dataUrl), batch);
-        }
-      }
-    };
-    window.addEventListener('message', onMsg);
-    setTimeout(() => window.removeEventListener('message', onMsg), 10 * 60 * 1000);
-    // 양식 다운로드 팝업에서 이 쉽먼트에 해당하는 발주건만 골라야 해서 발주번호를 같이 보낸다.
-    const orderNos = Array.from(
-      new Set(allBoxes(batch).flatMap(b => b.lines.map(l => String(l.발주번호 || '').trim())).filter(Boolean))
-    );
-    window.postMessage(
-      { source: 'rocket-app-hub', type: 'SHUB_FORM', batchId: batch.id, boxCount: allBoxes(batch).length, orderNos },
-      window.location.origin
-    );
-  };
-
-  // 양식을 채워서 저장한다(자동으로 받아온 파일이든, 직접 고른 파일이든 같은 길).
-  const fillAndSave = (buf: ArrayBuffer, batch: ShipmentBatch) => {
-    try {
-      const res = fillShubForm(buf, batch);
-      const a = document.createElement('a');
-      a.href = URL.createObjectURL(res.blob);
-      a.download = res.fileName;
-      a.click();
-      setTimeout(() => URL.revokeObjectURL(a.href), 5000);
-      setShubStatus(
-        `${batch.id} · ✅ 양식 채워서 저장했어요 — ${res.fileName} (상품 ${res.filled}줄, 송장 ${res.waybills.length}개)` +
-          (res.missed.length ? ` · 짝 못 찾은 줄 ${res.missed.length}개: ${res.missed.slice(0, 3).join(' / ')}` : '')
-      );
-    } catch (err) {
-      setShubStatus(`${batch.id} · 양식을 채우지 못했어요: ${err instanceof Error ? err.message : String(err)}`);
-    }
-  };
-
-  // 확장이 파일을 못 가져왔을 때, 다운로드 폴더의 양식을 직접 골라 채운다.
-  const pickFormFile = (batch: ShipmentBatch) => {
+  // 툴바의 "+ 발주서 추가"용 파일 고르기(첫 업로드 화면과 같은 길로 들어간다).
+  const pickOrderFile = () => {
     const input = document.createElement('input');
     input.type = 'file';
-    input.accept = '.xlsx,.xls';
-    input.onchange = async () => {
+    input.accept = '.xlsx,.xls,.csv';
+    input.onchange = () => {
       const f = input.files && input.files[0];
-      if (!f) return;
-      fillAndSave(await f.arrayBuffer(), batch);
+      if (f) handleFile(f);
     };
     input.click();
   };
 
-  // 받은 양식을 그대로 저장해 두는 버튼(C단계를 만들기 전까지 확인용).
-  const saveShubForm = () => {
-    if (!shubForm) return;
-    const a = document.createElement('a');
-    a.href = shubForm.dataUrl;
-    a.download = shubForm.name || '쉽먼트양식.xlsx';
-    a.click();
-  };
-
-  const handleLotte = () => {
-    // 쉽먼트 번호를 먼저 정해서 엑셀의 주문번호에 붙인다(롯데 목록에서 이번 건만 골라내는 표식).
-    const id = batchId(batches);
-    const file = exportLotteExcel(allRows, addresses, sender, id);
-    if (!file) return;
-    if (!confirm(`${file.name}을 내려받았어요.\n롯데택배(ALPS)에 올려서 택배 예약과 운송장 만들기까지 할까요?`)) return;
-
-    // 지금의 박스 배정을 기록해 둔다(나중에 서허 쉽먼트 양식을 채울 때 씀).
-    const batch: ShipmentBatch = {
-      id,
-      createdAt: Date.now(),
-      status: 'reserved',
-      centers: shipmentCenters(allRows).map(c => ({
-        center: c.center,
-        boxes: c.boxes.map(b => ({
-          boxNo: b.boxNo,
-          waybill: '',
-          lines: b.lines.map(l => ({
-            발주번호: l.발주번호,
-            상품이름: l.상품이름,
-            확정수량: Number(l.확정수량) || 0,
-            입고예정일: dateKeyYMD(l.입고예정일).replace(/-/g, ''),
-          })),
-        })),
-      })),
-    };
-    saveShipmentBatch(batch).catch(err => alert(`쉽먼트 기록 저장 실패: ${err instanceof Error ? err.message : String(err)}`));
-
-    let savedAt = 0;
-    const done = () => window.removeEventListener('message', onMsg);
-    const onMsg = (event: MessageEvent) => {
-      const d = event.data;
-      if (event.source !== window || !d || d.source !== 'rocket-hub-extension') return;
-      if (d.type === 'LOTTE_UPLOAD_ACK' && !d.ok) {
-        done();
-        alert(`택배사 창을 열지 못했어요: ${d.error || ''}\n"로켓 서허 연동" 확장이 켜져 있는지 확인해 주세요.`);
-      }
-      if (d.type === 'LOTTE_STATUS') {
-        if (!savedAt) savedAt = d.savedAt;
-        if (d.savedAt !== savedAt) return;
-        // 운송장번호까지 모아 왔으면 박스에 채워 넣고 확인 창을 띄운다.
-        if (d.waybills && d.waybills.length) {
-          done();
-          const filled = { ...fillWaybills(batch, d.waybills), status: 'waybilled' as const };
-          saveShipmentBatch(filled).catch(() => {});
-          // 번호는 이미 저장됐다. 박스가 다 채워졌으면 확인 창 없이 바로 B·C(서허 양식)로 넘어간다.
-          // 빠진 게 있을 때만 확인 창을 띄워 직접 넣게 한다.
-          const boxes = allBoxes(filled);
-          if (boxes.length && boxes.every(b => b.waybill.trim())) {
-            setShubStatus(`${filled.id} · 운송장 ${boxes.length}건 저장 완료 → 서허 양식 받는 중…`);
-            setTimeout(() => handleShubForm(filled), 800);
-          } else {
-            setWaybillBatch(filled);
-          }
-        } else if (d.step === 'error') {
-          done();
-          setWaybillBatch(batch);
-          alert(`자동 진행이 중간에 멈췄어요.\n${d.status || ''}\n운송장번호는 창에서 직접 넣어주세요.`);
-        }
-      }
-    };
-    window.addEventListener('message', onMsg);
-    setTimeout(done, 10 * 60 * 1000);
-    // boxCount: 방금 예약한 박스(=택배 건) 수. 운송장 목록에서 맨 아래 이 개수만큼만 체크해 출력한다.
-    window.postMessage({ source: 'rocket-app-hub', type: 'LOTTE_UPLOAD', file, boxCount: lotteCount, batchId: batch.id }, window.location.origin);
-  };
-
+  // 롯데택배 엑셀을 만들고(내려받기), 원하면 "로켓 서허 연동" 확장이 롯데 ALPS를 작은 팝업 창으로 열어
+  // 로그인 → 거래처관리 › 일괄주문접수 → 파일 올리기까지 하고 창을 닫는다. 끝나거나 실패하면 알려준다.
+  // 쉽먼트생성(롯데택배 예약 → 운송장 → 서허 양식)은 발주 > 쉽먼트생성 화면으로 옮겼다.
   // 발송 쪽만 비운다. 예약은 저장돼 있어서 그대로 남는다.
+  // 발송 쪽을 통째로 비운다. 되돌릴 수 없어서 한 번 더 묻는다(예약은 저장돼 있어 그대로 남는다).
   const handleReset = () => {
+    if (leftRows.length && !confirm(`발송 목록 ${leftItemCount}건을 모두 지울까요?\n묶음도 함께 사라지고 되돌릴 수 없어요.`)) return;
     setLeftRows([]);
+    setDoneBundles(new Set());
+    setSelected(new Set());
     setFileName('');
     setError('');
   };
-
-  const allRows = [...leftRows, ...rightRows];
-  // 택배 예약 건수 = 물류센터별로 지정된 상자 개수의 합.
-  const lotteCount = totalBoxCount(allRows);
 
   const leftItemCount = leftRows.filter(r => !r.isBlank).length;
   const rightItemCount = rightRows.filter(r => !r.isBlank).length;
 
   const pendingCount = leftRows.filter(isPicked).length;
+  // 택배주소 관리에 등록된 센터 + 지금 발주서에 있는 센터(묶음 센터를 고를 때 쓴다).
+  const centerOptions = useMemo(() => Array.from(new Set([
+    ...addresses.map(a => (a.key || '').trim()),
+    ...leftRows.map(r => (r._물류센터 || '').trim()),
+  ].filter(Boolean))).sort((a, b) => a.localeCompare(b, 'ko', { numeric: true })), [addresses, leftRows]);
+
+  const bundledOrderCount = new Set(leftRows.filter(r => !r.isBlank && r.묶음).map(r => r._발주번호)).size;
+  const bundleCount = new Set(leftRows.map(r => r.묶음).filter(Boolean)).size;
+  // 같은 발주서의 같은 상품이 두 번 들어간 줄(출고에 보냈다 되돌리는 사이에 생길 수 있다).
+  const dupCount = useMemo(() => {
+    const seen = new Set<string>();
+    let dup = 0;
+    for (const r of leftRows) {
+      if (r.isBlank) continue;
+      const key = `${r._발주번호}│${r.상품이름}│${r.확정수량}`;
+      if (seen.has(key)) dup++; else seen.add(key);
+    }
+    return dup;
+  }, [leftRows]);
+
+  // 발주서 머리줄의 "전체예약 · 전체박스": 그 발주서의 상품 줄 전부에 한 번에 적용한다.
+  // 예약은 한 줄씩 넘기던 길(handleLeftMemoChange)을 그대로 쓴다.
+  const handleBulkOrder = useCallback((orderNo: string, patch: { 메모?: string; 쉼먼트?: string }) => {
+    const lines = leftRows.filter(r => !r.isBlank && r._발주번호 === orderNo);
+    if (!lines.length) return;
+    if (patch.메모 !== undefined) {
+      if (!confirm(`발주 ${orderNo}의 상품 ${lines.length}줄을 모두 예약으로 넘길까요?`)) return;
+      const orders = lines.map(r => ({ ...toOrderRow(r), 메모: '예약' }));
+      const ids = new Set(lines.map(r => r.id));
+      setLeftRows(prev => buildDisplayRows(extractOrderRows(prev.filter(r => !ids.has(r.id)))));
+      addReservations(orders, reservations).catch(err => {
+        alertError(err);
+        setLeftRows(prev => buildDisplayRows(sortOrderRows([...extractOrderRows(prev), ...orders.map(o => ({ ...o, 메모: '' }))])));
+      });
+      return;
+    }
+    if (patch.쉼먼트 !== undefined) {
+      // 이미 다 지정돼 있으면 한 번 더 누를 때 해제한다.
+      const already = lines.every(r => r.쉼먼트 === patch.쉼먼트);
+      setLeftRows(prev => prev.map(r => r._발주번호 === orderNo ? { ...r, 쉼먼트: already ? '' : patch.쉼먼트! } : r));
+    }
+  }, [leftRows, reservations]);
+
+  // 발송 목록에 있는 모든 발주서(발주번호). 전체선택에 쓴다.
+  const allOrderNos = useMemo(
+    () => Array.from(new Set(leftRows.filter(r => !r.isBlank).map(r => r._발주번호).filter(Boolean))),
+    [leftRows],
+  );
+  const allSelected = allOrderNos.length > 0 && allOrderNos.every(no => selected.has(no));
+  const toggleSelectAll = useCallback(() => {
+    setSelected(allSelected ? new Set() : new Set(allOrderNos));
+  }, [allSelected, allOrderNos]);
+
+  // 지금 목록을 발주서 순서(입고예정일 → 물류센터 → 발주번호 → 상품이름)로 다시 줄 세운다.
+  // 새 발주서는 아래에 쌓이고 출고에서 되돌린 줄도 자리를 찾아가지만, 이미 섞여 버린 목록은 이걸로 정리한다.
+  const handleSort = useCallback(() => {
+    setLeftRows(buildDisplayRows(sortOrderRows(extractOrderRows(leftRows))));
+    setNotice('발주서 순서(입고예정일 → 센터 → 발주번호)로 다시 정렬했어요.');
+  }, [leftRows]);
+
+  // 중복 줄을 먼저 들어온 것만 남기고 지운다.
+  const handleDedupe = useCallback(() => {
+    if (!dupCount) return;
+    if (!confirm(`똑같이 겹친 줄 ${dupCount}개를 지울까요?\n같은 발주번호·상품·수량인 줄 중 먼저 들어온 하나만 남겨요.`)) return;
+    const seen = new Set<string>();
+    const kept = extractOrderRows(leftRows).filter(r => {
+      const key = `${r.발주번호}│${r.상품이름}│${r.확정수량}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+    setLeftRows(buildDisplayRows(kept));
+    setNotice(`겹친 줄 ${dupCount}개를 지웠어요.`);
+  }, [leftRows, dupCount]);
+
+  const selectedCount = new Set(leftRows.filter(r => !r.isBlank && selected.has(r._발주번호)).map(r => r._발주번호)).size;
 
   return (
     <div style={{ minHeight: '100vh', background: '#fff', color: '#1a1a1a', fontFamily: "'Apple SD Gothic Neo', 'Malgun Gothic', 'Noto Sans KR', sans-serif" }}>
@@ -379,30 +451,6 @@ export default function CoupangOrderPage() {
               </span>
             )}
           </div>
-          {activeTab === 'shipment' && (
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <button
-                onClick={() => setShowSenderManager(true)}
-                style={{
-                  display: 'flex', alignItems: 'center', gap: 6, padding: '6px 12px',
-                  fontSize: 12, color: '#666', background: 'none',
-                  border: '1px solid #e5e5e5', borderRadius: 8, cursor: 'pointer',
-                }}
-              >
-                📮 보내는사람 설정
-              </button>
-              <button
-                onClick={() => setShowAddressManager(true)}
-                style={{
-                  display: 'flex', alignItems: 'center', gap: 6, padding: '6px 12px',
-                  fontSize: 12, color: '#666', background: 'none',
-                  border: '1px solid #e5e5e5', borderRadius: 8, cursor: 'pointer',
-                }}
-              >
-                🗺️ 택배주소 관리
-              </button>
-            </div>
-          )}
         </div>
       </header>
 
@@ -419,6 +467,13 @@ export default function CoupangOrderPage() {
             {!hasFile && (
               <div style={{ marginBottom: 20 }}>
                 <FileUpload onFile={handleFile} loading={loading} />
+              </div>
+            )}
+
+            {notice && (
+              <div style={{ background: '#eff6ff', border: '1px solid #cfe0ff', color: '#1d4ed8', fontSize: 13, padding: '10px 16px', borderRadius: 8, marginBottom: 14, display: 'flex', alignItems: 'center', gap: 10 }}>
+                <span style={{ flex: 1 }}>{notice}</span>
+                <button onClick={() => setNotice('')} style={{ border: 'none', background: 'transparent', color: '#94a3b8', cursor: 'pointer' }}>×</button>
               </div>
             )}
 
@@ -442,17 +497,39 @@ export default function CoupangOrderPage() {
             {hasData && (
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <button
+                    onClick={pickOrderFile}
+                    title="발주서를 하나 더 올려 지금 목록 아래에 이어 붙입니다"
+                    style={btnStyle('#fff', '#d6c9f5', '#7c3aed')}
+                  >
+                    + 발주서 추가
+                  </button>
                   {hasFile && (
-                    <button onClick={handleReset} style={btnStyle('#fff', '#e5e5e5', '#555')}>
-                      ↩ 새 파일
+                    <button
+                      onClick={handleReset}
+                      title="발송 목록을 통째로 비웁니다(예약은 그대로 남아요)"
+                      style={btnStyle('#fff', '#e5e5e5', '#999')}
+                    >
+                      전체 비우기
                     </button>
                   )}
                   <span style={{ fontSize: 11, color: '#ccc' }}>
-                    발송 {leftItemCount}건 / 예약 {rightItemCount}건
+                    발송 {leftItemCount}건 / 묶음 {bundleCount}개(발주 {bundledOrderCount}건) / 예약 {rightItemCount}건
                   </span>
                 </div>
 
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  {selectedCount > 0 && <button
+                    onClick={handleBundle}
+                    title="체크한 발주서들로 새 묶음(택배 한 상자)을 만듭니다. 이미 있는 묶음에 더 담을 때는 그 묶음 카드의 +담기를 누르세요."
+                    style={{ ...btnStyle('#7c3aed', '#7c3aed', '#fff'), fontWeight: 600 }}
+                  >
+                    ▶ 새 묶음
+                    <span style={{ background: 'rgba(255,255,255,0.25)', padding: '1px 7px', borderRadius: 12, fontSize: 11, marginLeft: 4 }}>
+                      발주 {selectedCount}건
+                    </span>
+                  </button>}
+
                   {pendingCount > 0 && <button
                     onClick={handleReserve}
                     disabled={!pendingCount}
@@ -481,33 +558,14 @@ export default function CoupangOrderPage() {
                     ↓ 발주서정리 저장
                   </button>
 
-                  <button
-                    onClick={handleLotte}
-                    disabled={lotteCount === 0}
-                    title="물류센터별로 지정한 상자 개수만큼 롯데택배 예약 엑셀을 만들고, 원하면 택배사 사이트에 올려 예약까지 합니다."
-                    style={{
-                      ...btnStyle(
-                        lotteCount > 0 ? '#e67e22' : '#f5f5f5',
-                        lotteCount > 0 ? '#e67e22' : '#f5f5f5',
-                        lotteCount > 0 ? '#fff' : '#bbb'
-                      ),
-                      cursor: lotteCount > 0 ? 'pointer' : 'not-allowed',
-                      fontWeight: 600,
-                    }}
-                  >
-                    ↓ 쉽먼트생성
-                    {lotteCount > 0 && (
-                      <span style={{ background: 'rgba(255,255,255,0.25)', padding: '1px 7px', borderRadius: 12, fontSize: 11, marginLeft: 4 }}>
-                        {lotteCount}박스
-                      </span>
-                    )}
-                  </button>
                 </div>
               </div>
             )}
 
             {hasData && (
               <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'flex-end', gap: '2px 10px', marginTop: -8, marginBottom: 14 }}>
+                <span style={{ fontSize: 11, color: '#bbb' }}>발주서 체크 → 새 묶음 만들기 / 이미 있는 묶음의 +담기로 추가</span>
+                <span style={{ fontSize: 11, color: '#ddd' }}>·</span>
                 <span style={{ fontSize: 11, color: '#bbb' }}>예약 버튼 = 누르면 바로 예약 목록으로 이동 (한중발주 메뉴의 발주 대기에 뜸)</span>
                 <span style={{ fontSize: 11, color: '#ddd' }}>·</span>
                 <span style={{ fontSize: 11, color: '#bbb' }}>↓ 발주서정리 저장 = 발송 목록 엑셀 저장</span>
@@ -517,11 +575,64 @@ export default function CoupangOrderPage() {
             )}
 
             {hasData && (
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20, alignItems: 'start' }}>
+              <div style={{
+                display: 'grid',
+                gridTemplateColumns: [
+                  folded.send ? '34px' : '1.25fr',
+                  folded.bundle ? '34px' : '0.7fr',
+                  '1.1fr',
+                ].join(' '),
+                gap: 20, alignItems: 'start',
+              }}>
+                {folded.send ? (
+                  <FoldedStrip
+                    icon="📤" label="발송" color="#c0392b" count={`${leftItemCount}건`}
+                    onOpen={() => setFolded(f => ({ ...f, send: false }))}
+                  />
+                ) : (
                 <div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
-                    <span style={{ fontSize: 12, fontWeight: 700, color: '#c0392b', letterSpacing: '-0.2px' }}>📤 발송</span>
+                    <PanelTitle
+                      icon="📤" label="발송" color="#c0392b"
+                      folded={folded.send}
+                      onToggle={() => setFolded(f => ({ ...f, send: !f.send }))}
+                    />
                     {leftItemCount > 0 && <span style={{ fontSize: 11, color: '#aaa' }}>{leftItemCount}건</span>}
+                    {allOrderNos.length > 0 && (
+                      <label
+                        title="발송 목록의 발주서를 모두 고릅니다(묶기용)"
+                        style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 11, color: '#777', cursor: 'pointer' }}
+                      >
+                        <input type="checkbox" checked={allSelected} onChange={toggleSelectAll} style={{ cursor: 'pointer', margin: 0 }} />
+                        전체선택
+                      </label>
+                    )}
+                    {dupCount > 0 && (
+                      <button
+                        onClick={handleDedupe}
+                        title="같은 발주번호·상품·수량으로 두 번 들어간 줄을 하나만 남깁니다"
+                        style={{
+                          display: 'inline-flex', alignItems: 'center', gap: 4,
+                          padding: '3px 9px', fontSize: 11, fontWeight: 700, color: '#fff',
+                          background: '#e67e22', border: '1px solid #e67e22', borderRadius: 6, cursor: 'pointer',
+                        }}
+                      >
+                        중복 정리 {dupCount}
+                      </button>
+                    )}
+                    {leftRows.length > 0 && (
+                      <button
+                        onClick={handleSort}
+                        title="입고예정일 → 물류센터 → 발주번호 순으로 목록을 다시 줄 세웁니다"
+                        style={{
+                          display: 'inline-flex', alignItems: 'center', gap: 4,
+                          padding: '3px 9px', fontSize: 11, color: '#777',
+                          background: '#fff', border: '1px solid #e0e0e0', borderRadius: 6, cursor: 'pointer',
+                        }}
+                      >
+                        ↕ 정렬
+                      </button>
+                    )}
                     {leftRows.length > 0 && (
                       <button
                         onClick={() => printPanel(leftRows, '발송', '#c0392b')}
@@ -539,6 +650,9 @@ export default function CoupangOrderPage() {
                       onShipmentChange={handleLeftShipmentChange}
                       colorScheme="pink"
                       officeQtyOf={officeQtyOf}
+                      selectedOrders={selected}
+                      onToggleSelect={toggleSelect}
+                      onBulkOrder={handleBulkOrder}
                     />
                   ) : (
                     <div style={{ border: '1px dashed #e8e8e8', borderRadius: 10, padding: '48px 0', textAlign: 'center', color: '#ccc', fontSize: 13 }}>
@@ -546,8 +660,42 @@ export default function CoupangOrderPage() {
                     </div>
                   )}
                 </div>
+                )}
 
-                <div>
+                {folded.bundle ? (
+                  <FoldedStrip
+                    icon="🧺" label="묶음" color="#7c3aed" count={`${bundleCount}묶음`}
+                    onOpen={() => setFolded(f => ({ ...f, bundle: false }))}
+                  />
+                ) : (
+                <div style={STICKY_PANEL}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+                    <PanelTitle
+                      icon="🧺" label="묶음" color="#7c3aed"
+                      folded={folded.bundle}
+                      onToggle={() => setFolded(f => ({ ...f, bundle: !f.bundle }))}
+                    />
+                    {bundleCount > 0 && <span style={{ fontSize: 11, color: '#aaa' }}>{bundleCount}묶음 · 발주 {bundledOrderCount}건</span>}
+                  </div>
+                  <BundlePanel
+                    rows={leftRows}
+                    onBoxChange={handleBundleBox}
+                    onUnbundle={handleUnbundle}
+                    onRemoveOrder={handleRemoveFromBundle}
+                    selectedCount={selectedCount}
+                    onAddSelected={handleAddToBundle}
+                    doneBundles={doneBundles}
+                    onToggleDone={handleToggleDone}
+                    centerOptions={centerOptions}
+                    onCenterChange={handleBundleCenter}
+                    onDateChange={handleBundleDate}
+                    onApply={handleApplyBundle}
+                    onShipOut={handleShipOut}
+                  />
+                </div>
+                )}
+
+                <div style={STICKY_PANEL}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
                     <span style={{ fontSize: 12, fontWeight: 700, color: '#27ae60', letterSpacing: '-0.2px' }}>📅 예약</span>
                     {rightItemCount > 0 && <span style={{ fontSize: 11, color: '#aaa' }}>{rightItemCount}건</span>}
@@ -596,53 +744,65 @@ export default function CoupangOrderPage() {
                 </div>
               </div>
             )}
-            {shubStatus && (
-              <div style={{ marginTop: 18, padding: '8px 12px', background: '#eff6ff', color: '#1d4ed8', borderRadius: 8, fontSize: 12, display: 'flex', alignItems: 'center', gap: 10 }}>
-                <span style={{ flex: 1 }}>{shubStatus}</span>
-                {shubBatch && (
-                  <button onClick={() => pickFormFile(shubBatch)} style={{ padding: '4px 10px', border: 'none', borderRadius: 6, background: '#2980b9', color: '#fff', fontSize: 12, cursor: 'pointer' }} title="다운로드 폴더에 받아진 양식 파일을 직접 골라 채웁니다">
-                    양식 직접 고르기
-                  </button>
-                )}
-                {shubForm && (
-                  <button onClick={saveShubForm} style={{ padding: '4px 10px', border: 'none', borderRadius: 6, background: '#95a5a6', color: '#fff', fontSize: 12, cursor: 'pointer' }} title="서허에서 받은 원본(빈 양식)">
-                    빈 양식 저장
-                  </button>
-                )}
-                <button onClick={() => setShubStatus(null)} style={{ border: 'none', background: 'transparent', color: '#94a3b8', cursor: 'pointer' }}>×</button>
-              </div>
-            )}
-            <ShipmentList
-              batches={batches}
-              onWaybills={setWaybillBatch}
-              onShubForm={handleShubForm}
-            />
           </div>
         )}
       </main>
 
-      {showAddressManager && (
-        <AddressManager
-          addresses={addresses}
-          onUpdate={handleAddressUpdate}
-          onClose={() => setShowAddressManager(false)}
-        />
-      )}
-
-      {waybillBatch && (
-        <ShipmentWaybillModal batch={waybillBatch} onClose={() => setWaybillBatch(null)} />
-      )}
-
-      {showSenderManager && (
-        <SenderManager
-          sender={sender}
-          onUpdate={handleSenderUpdate}
-          onClose={() => setShowSenderManager(false)}
-        />
-      )}
     </div>
   );
 }
+
+// 접힌 패널. 왼쪽에 세로 막대만 남기고, 누르면 다시 펼쳐진다.
+function FoldedStrip({ icon, label, color, count, onOpen }: { icon: string; label: string; color: string; count: string; onOpen: () => void }) {
+  return (
+    <button
+      onClick={onOpen}
+      title={`${label} 패널 펼치기`}
+      style={{
+        position: 'sticky', top: 66,
+        width: 34, minHeight: 220, alignSelf: 'start',
+        display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'flex-start',
+        gap: 8, padding: '10px 0',
+        background: `${color}0f`, border: `1px solid ${color}33`, borderRadius: 10,
+        cursor: 'pointer', color,
+      }}
+    >
+      <span style={{ fontSize: 10, color: '#bbb' }}>▸</span>
+      <span style={{ fontSize: 13 }}>{icon}</span>
+      <span style={{ writingMode: 'vertical-rl', fontSize: 12, fontWeight: 700, letterSpacing: '1px' }}>{label}</span>
+      <span style={{ writingMode: 'vertical-rl', fontSize: 10, color: '#999', fontWeight: 400 }}>{count}</span>
+    </button>
+  );
+}
+
+// 패널 제목. 누르면 그 패널을 접었다 편다(접으면 옆 패널이 넓어진다).
+function PanelTitle({ icon, label, color, folded, onToggle }: { icon: string; label: string; color: string; folded: boolean; onToggle: () => void }) {
+  return (
+    <button
+      onClick={onToggle}
+      title={folded ? `${label} 패널 펼치기` : `${label} 패널 접기`}
+      style={{
+        display: 'inline-flex', alignItems: 'center', gap: 4,
+        padding: 0, background: 'none', border: 'none', cursor: 'pointer',
+        fontSize: 12, fontWeight: 700, color, letterSpacing: '-0.2px',
+      }}
+    >
+      <span style={{ fontSize: 10, color: '#bbb' }}>{folded ? '▸' : '▾'}</span>
+      {icon} {label}
+    </button>
+  );
+}
+
+// 묶음·예약 패널은 발송 목록이 길어도 화면에 붙어 따라다닌다(위 머리줄 아래에 고정).
+// 내용이 화면보다 길면 그 패널 안에서만 스크롤한다.
+const STICKY_PANEL: React.CSSProperties = {
+  position: 'sticky',
+  top: 66,
+  maxHeight: 'calc(100vh - 80px)',
+  overflowY: 'auto',
+  overflowX: 'hidden',
+  paddingRight: 2,
+};
 
 function btnStyle(bg: string, border: string, color: string): React.CSSProperties {
   return {

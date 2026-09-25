@@ -144,6 +144,58 @@
     return done;
   };
 
+  // 이 발주번호 줄의 체크가 켜져 있는지 본다(쪽을 넘겨도 선택이 남는지 확인할 때 쓴다).
+  const isPicked = (no) => {
+    const cell = Array.from(document.querySelectorAll('td, th, span, div, li, a'))
+      .filter((el) => visible(el) && el.children.length === 0 && clean(el.textContent) === String(no))
+      .pop();
+    const row = cell && (cell.closest('tr, li, [role="row"]') || cell.parentElement);
+    const box = row && row.querySelector('input[type="checkbox"]');
+    return !!(box && box.checked);
+  };
+
+  // 쪽 번호 버튼(1 2 3 4). 눌린 뒤 화면이 다시 그려지므로 쓸 때마다 새로 찾는다.
+  const pageButton = (n) =>
+    Array.from(document.querySelectorAll('button, a, li, span'))
+      .filter((el) => visible(el) && el.children.length === 0 && clean(el.textContent) === String(n))
+      .filter((el) => {
+        const r = el.getBoundingClientRect();
+        return r.width > 0 && r.width < 80 && r.height < 80;
+      })[0] || null;
+
+  const lastPageNo = () => {
+    let max = 1;
+    for (let n = 2; n <= 50; n++) if (pageButton(n)) max = n;
+    return max;
+  };
+
+  // 팝업 목록이 여러 쪽이면 쪽을 넘겨 가며 우리 발주건을 모두 고른다.
+  const pickOrdersAcrossPages = async (orderNos) => {
+    const picked = new Set(pickOrders(orderNos));
+    if (picked.size >= orderNos.length) return Array.from(picked);
+
+    const last = lastPageNo();
+    const first = Array.from(picked)[0];
+    for (let n = 2; n <= last && picked.size < orderNos.length; n++) {
+      const btn = pageButton(n);
+      if (!btn) continue;
+      realClick(btn);
+      await sleep(1200);
+      pickOrders(orderNos.filter((no) => !picked.has(no))).forEach((no) => picked.add(no));
+    }
+
+    // 1쪽으로 돌아가서, 쪽을 넘기는 사이에 앞서 고른 게 풀리지 않았는지 본다.
+    if (last > 1) {
+      const home = pageButton(1);
+      if (home) {
+        realClick(home);
+        await sleep(1200);
+      }
+      if (first && !isPicked(first)) return { lost: true, picked: Array.from(picked) };
+    }
+    return Array.from(picked);
+  };
+
   // MAIN world 쪽에서 가로챈 양식 파일을 받아 저장한다(확장이 다시 받으면 서버가 거절해서 이 길을 쓴다).
   window.addEventListener('message', async (event) => {
     const d = event.data;
@@ -208,13 +260,28 @@
       const dl = find(TEXT.formDownload);
       if (dl) {
         const orderNos = Array.isArray(p.orderNos) ? p.orderNos : [];
-        if (!p.picked) {
-          const got = pickOrders(orderNos);
-          if (!got.length) {
+        // 이 쉽먼트의 발주건을 "전부" 고른 다음에만 양식을 받는다. 일부만 골라 받으면 양식에 그
+        // 건들만 들어와서, 나중에 송장번호를 채울 줄이 통째로 빠져 버린다.
+        if (!p.picked || p.picked < orderNos.length) {
+          const res = await pickOrdersAcrossPages(orderNos);
+          // 쪽을 넘기면 선택이 풀리는 화면이면 자동으로 할 수 없다. 사람에게 넘긴다.
+          if (res && res.lost) {
+            await patch({
+              step: 'manual',
+              status: '목록 쪽을 넘기면 앞에서 고른 발주건이 풀려요. 한 쪽에 다 보이게 필터(입고예정일 등)를 좁히거나, 직접 모두 고른 뒤 양식다운로드를 눌러 주세요.',
+            });
+            return;
+          }
+          const got = Array.isArray(res) ? res : [];
+          const missing = orderNos.filter((no) => !got.includes(no));
+          if (missing.length) {
             if (Date.now() - (p.savedAt || 0) > 40000) {
-              await patch({ step: 'manual', status: `팝업에서 발주번호(${orderNos.slice(0, 2).join(', ')}…)를 못 찾았어요. 직접 골라 양식다운로드를 눌러 주세요.` });
+              await patch({
+                step: 'manual',
+                status: `팝업에서 발주번호 ${missing.length}건(${missing.slice(0, 3).join(', ')}${missing.length > 3 ? '…' : ''})을 못 찾았어요. 목록에서 직접 모두 고른 뒤 양식다운로드를 눌러 주세요.`,
+              });
             } else {
-              await patch({ step: 'popup', status: '팝업에서 발주건 찾는 중…' });
+              await patch({ step: 'popup', picked: got.length, status: `발주건 고르는 중… ${got.length}/${orderNos.length}건` });
             }
             return;
           }

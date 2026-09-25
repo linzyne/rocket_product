@@ -70,6 +70,9 @@ function mapRawToOrderRows(rawData: unknown[][]): OrderRow[] {
       입고예정일: normalizeDateValue(pDate),
       메모: '',
       쉼먼트: '',
+      묶음: '',
+      묶음센터: '',
+      묶음일자: '',
     };
   });
 
@@ -101,6 +104,9 @@ export interface DisplayRow {
   입고예정일: Date | string;
   메모: string;
   쉼먼트: string;
+  묶음: string;
+  묶음센터: string;
+  묶음일자: string;
   isBlank: boolean;
   groupKey: string;
   // 원본 전체 값 (abbreviated 되지 않은 값, 데이터 조작용)
@@ -124,7 +130,7 @@ export function buildDisplayRows(rows: OrderRow[]): DisplayRow[] {
       display.push({
         id: `blank-${idx++}`,
         발주번호: '', 물류센터: '', 상품이름: '', 확정수량: '',
-        입고예정일: '', 메모: '', 쉼먼트: '',
+        입고예정일: '', 메모: '', 쉼먼트: '', 묶음: '', 묶음센터: '', 묶음일자: '',
         isBlank: true, groupKey: '',
         _발주번호: '', _물류센터: '', _입고예정일: '',
       });
@@ -140,6 +146,9 @@ export function buildDisplayRows(rows: OrderRow[]): DisplayRow[] {
       입고예정일: isFirst ? r.입고예정일 : '',
       메모: r.메모,
       쉼먼트: r.쉼먼트,
+      묶음: r.묶음 || '',
+      묶음센터: r.묶음센터 || '',
+      묶음일자: r.묶음일자 || '',
       isBlank: false,
       groupKey: centerDateKey,
       _발주번호: r.발주번호,
@@ -166,6 +175,9 @@ export function extractOrderRows(displayRows: DisplayRow[]): OrderRow[] {
       입고예정일: r._입고예정일,
       메모: r.메모,
       쉼먼트: r.쉼먼트,
+      묶음: r.묶음 || '',
+      묶음센터: r.묶음센터 || '',
+      묶음일자: r.묶음일자 || '',
     }));
 }
 
@@ -187,6 +199,9 @@ export function splitByReservation(displayRows: DisplayRow[]): {
       입고예정일: row._입고예정일,
       메모: row.메모,
       쉼먼트: row.쉼먼트,
+      묶음: row.묶음 || '',
+      묶음센터: row.묶음센터 || '',
+      묶음일자: row.묶음일자 || '',
     };
     if (row.메모.includes('예약') || row.쉼먼트.includes('예약')) {
       reservedRows.push(orderRow);
@@ -208,17 +223,35 @@ export function parseBoxNo(value: string): number | null {
 
 export const boxLabel = (no: number) => `박스${no}`;
 
+// 묶음으로 담은 줄은 발주번호·입고예정일이 달라도 한 상자로 본다. 묶음이 걸친 물류센터는
+// 묶음 카드에서 고른 센터(묶음센터)로, 안 골랐으면 그 묶음의 첫 줄 센터로 맞춘다(택배는 한 곳으로만 가므로).
+export function bundleCenters(displayRows: DisplayRow[]): Map<string, string> {
+  const out = new Map<string, string>();
+  const chosen = new Map<string, string>();
+  for (const row of displayRows) {
+    if (row.isBlank || !row.묶음) continue;
+    if (row.묶음센터 && !chosen.has(row.묶음)) chosen.set(row.묶음, row.묶음센터.trim());
+    if (!out.has(row.묶음)) out.set(row.묶음, (row._물류센터 || row.물류센터).trim());
+  }
+  chosen.forEach((center, bundle) => out.set(bundle, center));
+  return out;
+}
+
+// 한 상자를 가리키는 키: 묶음에 담았으면 묶음 이름, 아니면 센터+입고예정일 묶음(groupKey).
+const boxGroupKey = (row: DisplayRow) => (row.묶음 ? `묶음:${row.묶음}` : row.groupKey);
+
 // 물류센터별 상자 개수. 물류센터가 빈칸인 줄은 바로 위 줄과 같은 센터다(buildDisplayRows가 _물류센터에
 // 원래 값을 넣어 둔다). 같은 센터라도 입고예정일 묶음이 다르면 다른 상자로 센다.
 export function boxesByCenter(displayRows: DisplayRow[]): Map<string, number> {
   const seen = new Map<string, Set<string>>();
+  const bundleCenter = bundleCenters(displayRows);
   for (const row of displayRows) {
     if (row.isBlank) continue;
-    const center = (row._물류센터 || row.물류센터).trim();
+    const center = (row.묶음 ? bundleCenter.get(row.묶음) : '') || (row._물류센터 || row.물류센터).trim();
     const no = parseBoxNo(row.쉼먼트);
     if (!center || !no) continue;
     const set = seen.get(center) || new Set<string>();
-    set.add(`${row.groupKey}|${no}`);
+    set.add(`${boxGroupKey(row)}|${no}`);
     seen.set(center, set);
   }
   const out = new Map<string, number>();
@@ -233,13 +266,14 @@ export const totalBoxCount = (displayRows: DisplayRow[]) =>
 // 물류센터가 빈 줄은 위 줄과 같은 센터(_물류센터에 원래 값이 들어 있음).
 export function shipmentCenters(displayRows: DisplayRow[]) {
   const centers = new Map<string, Map<string, { boxNo: number; lines: OrderRow[] }>>();
+  const bundleCenter = bundleCenters(displayRows);
   for (const row of displayRows) {
     if (row.isBlank) continue;
-    const center = (row._물류센터 || row.물류센터).trim();
+    const center = (row.묶음 ? bundleCenter.get(row.묶음) : '') || (row._물류센터 || row.물류센터).trim();
     const no = parseBoxNo(row.쉼먼트);
     if (!center || !no) continue;
     const boxes = centers.get(center) || new Map();
-    const key = `${row.groupKey}|${no}`;
+    const key = `${boxGroupKey(row)}|${no}`;
     const box = boxes.get(key) || { boxNo: no, lines: [] as OrderRow[] };
     box.lines.push({
       발주번호: row._발주번호,

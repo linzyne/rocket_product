@@ -191,8 +191,12 @@
     const combo = comboText(label);
     if (combo && TEXT.senderOption.test(shown(combo))) return true; // 이미 골라져 있음
     if (combo) realClick(combo);
-    await sleep(500);
-    const item = findAll(TEXT.senderOption).filter((el) => el !== combo).pop();
+    // 선택지 목록은 화면이 그려진 뒤에 나타난다. 최대 3초까지 기다리며 찾는다.
+    let item = null;
+    for (let i = 0; i < 12 && !item; i++) {
+      await sleep(250);
+      item = findAll(TEXT.senderOption).filter((el) => el !== combo).pop() || null;
+    }
     if (!item) return false;
     realClick(item);
     await sleep(400);
@@ -1129,7 +1133,13 @@
       // 일괄주문접수 화면(사용자파일 선택지가 보임)이면 옵션을 고르고 파일을 올립니다.
       if (!UPLOADED_STEPS.includes(p.step) && (find(TEXT.userFile) || Array.from(document.querySelectorAll('select option')).some((o) => TEXT.userFile.test(clean(o.textContent))))) {
         await patch({ step: 'options', status: '사용자파일에서 B-type[지정송하인] 고르는 중…' });
-        const picked = await pickSenderType();
+        // 화면이 덜 그려졌을 수 있어 몇 번 더 시도한다(한 번 실패했다고 바로 포기하지 않는다).
+        let picked = await pickSenderType();
+        for (let i = 0; !picked && i < 3; i++) {
+          await sleep(1000);
+          await patch({ step: 'options', status: `사용자파일에서 B-type[지정송하인] 고르는 중… (다시 시도 ${i + 1}/3)` });
+          picked = await pickSenderType();
+        }
         if (!picked) {
           await patch({ step: 'error', status: '사용자파일 드롭다운에서 "B-type[지정송하인]"을 못 골랐어요. 직접 고른 뒤 "파일열기 및 업로드"로 다운로드 폴더의 파일을 올려주세요.' });
           return;

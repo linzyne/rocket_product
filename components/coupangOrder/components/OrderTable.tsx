@@ -1,8 +1,8 @@
-import type React from 'react';
+import React from 'react';
 import type { DisplayRow } from '../utils/dataProcessor';
 import type { OfficeMatch } from '../../../data/inventoryStore';
 import { parseBoxNo, boxLabel } from '../utils/dataProcessor';
-import { formatDateDisplay } from '../utils/dateUtils';
+import { formatDateDisplay, dateKeyYMD } from '../utils/dateUtils';
 
 interface Props {
   rows: DisplayRow[];
@@ -14,17 +14,35 @@ interface Props {
   onDelete?: (id: string) => void;
   // 있으면 확정수량 옆에 상품관리(재고>상품관리)의 사무실 재고를 붙인다. 상품이름으로 찾는다.
   officeQtyOf?: (productName: string) => OfficeMatch | null;
+  // 있으면 맨 왼쪽에 체크 칸을 붙인다. 묶기는 발주서 단위라서 체크 칸도 발주번호마다 하나만 나온다.
+  // 담기는 값은 줄 id가 아니라 발주번호다.
+  selectedOrders?: Set<string>;
+  onToggleSelect?: (orderNo: string, checked: boolean) => void;
+  // 있으면 발주서 머리줄에 "전체예약 · 전체박스" 버튼을 붙인다. 그 발주서의 상품 줄 전부에 한 번에 적용한다.
+  onBulkOrder?: (orderNo: string, patch: { 메모?: string; 쉼먼트?: string }) => void;
+  // 일이 끝나 불을 꺼 둘 발주서들(발주번호). 그 줄은 흐리게 보여준다.
+  dimmedOrders?: Set<string>;
+}
+
+// 묶음 이름(묶음1, 묶음2…)마다 다른 색을 준다. 같은 묶음끼리 한눈에 보이게.
+const BUNDLE_COLORS = ['#7c3aed', '#0891b2', '#d97706', '#be185d', '#15803d', '#4338ca'];
+export function bundleColor(name: string): string {
+  const no = Number(/\d+/.exec(name || '')?.[0] || 0);
+  return BUNDLE_COLORS[(no || 1) - 1] || BUNDLE_COLORS[(no || 1) % BUNDLE_COLORS.length];
 }
 
 const SCHEME = {
   pink: {
-    headerBg: '#c0392b', headerBorder: '#a93226', rowHover: '#fff0ef',
+    // 머리줄은 눈에 덜 띄는 연한 회색으로 두고, 글자는 진한 회색으로 읽는다.
+    headerBg: '#f3f4f6', headerBorder: '#e3e5e8', headerText: '#4b5563', accent: '#b04a3e',
+    rowHover: '#fff0ef',
     groupOdd: '#fff', groupEven: '#fdf5f4',
     sepBg: '#f5e6e5', sepBorder: '#e8c4c1',
     accentBorder: '#d4796f',
   },
   green: {
-    headerBg: '#27ae60', headerBorder: '#1e8449', rowHover: '#eaf7ef',
+    headerBg: '#eef6f1', headerBorder: '#dbe9e1', headerText: '#41705a', accent: '#2f8a57',
+    rowHover: '#eaf7ef',
     groupOdd: '#fff', groupEven: '#f3faf5',
     sepBg: '#dff2e7', sepBorder: '#b7dfc5',
     accentBorder: '#5bbf82',
@@ -38,7 +56,7 @@ function MemoToggle({ label, color, bg, active, onClick }: { label: string; colo
       onClick={onClick}
       style={{
         padding: '3px 8px',
-        fontSize: 11,
+        fontSize: 12,
         fontWeight: active ? 700 : 400,
         borderRadius: 5,
         border: active ? `1.5px solid ${color}` : '1.5px solid #d5d5d5',
@@ -66,7 +84,7 @@ function MemoButton({ value, onChange, withHanjung, showCode }: { value: string;
       {withHanjung && (
         <MemoToggle label="한중" color="#2563eb" bg="#eff6ff" active={hanjung} onClick={() => onChange(hanjung ? '' : '한중')} />
       )}
-      {code && <span style={{ fontSize: 10, color: '#2563eb', whiteSpace: 'nowrap' }} title="한중발주 고유번호">{code}</span>}
+      {code && <span style={{ fontSize: 11, color: '#2563eb', whiteSpace: 'nowrap' }} title="한중발주 고유번호">{code}</span>}
     </span>
   );
 }
@@ -91,7 +109,7 @@ function BoxButton({ value, onChange }: { value: string; onChange: (v: string) =
         onClick={toggle}
         style={{
           padding: '3px 12px',
-          fontSize: 11,
+          fontSize: 12,
           borderRadius: 5,
           border: '1.5px solid #d5d5d5',
           background: '#fafafa',
@@ -116,7 +134,7 @@ function BoxButton({ value, onChange }: { value: string; onChange: (v: string) =
         onClick={toggle}
         style={{
           padding: '3px 8px',
-          fontSize: 11,
+          fontSize: 12,
           fontWeight: 700,
           background: '#fff4ec',
           color: '#e67e22',
@@ -138,10 +156,19 @@ function BoxButton({ value, onChange }: { value: string; onChange: (v: string) =
   );
 }
 
+// 발주서 머리줄의 일괄 적용 버튼(전체예약·전체박스).
+function bulkBtn(color: string): React.CSSProperties {
+  return {
+    padding: '1px 7px', fontSize: 10, fontWeight: 700,
+    color, background: '#fff', border: `1px solid ${color}55`,
+    borderRadius: 5, cursor: 'pointer', whiteSpace: 'nowrap',
+  };
+}
+
 function counterBtnStyle(bg: string, color: string): React.CSSProperties {
   return {
     padding: '3px 7px',
-    fontSize: 12,
+    fontSize: 13,
     fontWeight: 700,
     background: bg,
     color,
@@ -158,7 +185,7 @@ function OfficeCell({ match, need }: { match: OfficeMatch | null; need: number }
   if (!match) return <td style={{ ...narrow(42), color: '#ccc' }} title="상품관리에서 같은 이름을 못 찾았어요">-</td>;
   const matched = `상품관리: ${match.names.join(' / ')}`;
   if (match.qty == null) {
-    return <td style={{ ...narrow(42), color: '#bbb', fontSize: 10 }} title={`${matched} (사무실 재고 미입력)`}>미입력</td>;
+    return <td style={{ ...narrow(42), color: '#bbb', fontSize: 11 }} title={`${matched} (사무실 재고 미입력)`}>미입력</td>;
   }
   const short = match.qty < need;
   const note = [
@@ -177,31 +204,41 @@ function OfficeCell({ match, need }: { match: OfficeMatch | null; need: number }
 }
 
 /* ── 메인 테이블 ── */
-export default function OrderTable({ rows, onMemoChange, onShipmentChange, colorScheme = 'pink', readOnly = false, onDelete, officeQtyOf }: Props) {
+export default function OrderTable({ rows, onMemoChange, onShipmentChange, colorScheme = 'pink', readOnly = false, onDelete, officeQtyOf, selectedOrders, onToggleSelect, onBulkOrder, dimmedOrders }: Props) {
   if (rows.length === 0) return null;
 
   const sc = SCHEME[colorScheme];
+  const selectable = !!onToggleSelect;
+  // 같은 물류센터·입고예정일로 한 덩어리(한 박스)에 묶여 있는 발주번호들. 덩어리 전체선택에 쓴다.
+  const ordersByGroup = new Map<string, string[]>();
+  for (const row of rows) {
+    if (row.isBlank || !row._발주번호) continue;
+    const list = ordersByGroup.get(row.groupKey) || [];
+    if (!list.includes(row._발주번호)) list.push(row._발주번호);
+    ordersByGroup.set(row.groupKey, list);
+  }
+  // 발주번호·센터·입고예정일은 발주서마다 한 줄(머리줄)로 위에 올리고, 표 본문은 상품만 남긴다.
   const headers = [
-    '발주번호', '물류센터', '상품이름', '확정수량',
+    '상품이름', '확정수량',
     ...(officeQtyOf ? ['사무실'] : []),
-    '입고예정일', '메모', '박스수량', ...(onDelete ? ['삭제'] : []),
+    '예약', '박스', ...(onDelete ? ['삭제'] : []),
   ];
 
   return (
     <div style={{ overflowX: 'auto', borderRadius: 10, border: '1px solid #e5e5e5', boxShadow: '0 1px 4px rgba(0,0,0,0.06)' }}>
-      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
         <thead>
           <tr>
             {headers.map(h => (
               <th key={h} style={{
                 background: sc.headerBg,
-                color: '#fff',
-                fontWeight: 600,
+                color: sc.headerText,
+                fontWeight: 700,
                 padding: h === '확정수량' || h === '사무실' ? '7px 3px' : '7px 8px',
                 textAlign: 'center',
                 whiteSpace: 'nowrap',
                 border: `1px solid ${sc.headerBorder}`,
-                fontSize: 12,
+                fontSize: 13,
               }}>
                 {h}
               </th>
@@ -227,33 +264,124 @@ export default function OrderTable({ rows, onMemoChange, onShipmentChange, color
               );
             }
 
-            return (
+            const bg = row.묶음 ? `${bundleColor(row.묶음)}0f` : '#fff';
+            // 발주번호가 찍히는 줄이 그 발주서의 첫 줄이다(아래 줄들은 같은 발주서라 번호를 비워 둔다).
+            const isOrderHead = !!row.발주번호;
+            // 묶음에서 고른 센터·입고예정일이 아직 이 발주서에 안 옮겨졌으면 "적용 대기".
+            const pending = !!row.묶음 && (
+              (!!row.묶음센터 && row.묶음센터.trim() !== (row._물류센터 || '').trim()) ||
+              (!!row.묶음일자 && row.묶음일자 !== dateKeyYMD(row._입고예정일))
+            );
+            const dim = !!dimmedOrders?.has(row._발주번호);
+            const head = isOrderHead ? (
+              <tr key={`${row.id}-head`} style={{ background: row.묶음 ? `${bundleColor(row.묶음)}1c` : '#f7f7f8', opacity: dim ? 0.45 : 1 }}>
+                <td colSpan={headers.length} style={{
+                  padding: '4px 8px', borderTop: '1px solid #e8e8e8', borderBottom: '1px solid #f0f0f0',
+                  borderLeft: row.묶음 ? `4px solid ${bundleColor(row.묶음)}` : undefined,
+                  whiteSpace: 'nowrap',
+                }}>
+                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 7 }}>
+                    {selectable && (
+                      <input
+                        type="checkbox"
+                        checked={!!selectedOrders?.has(row._발주번호)}
+                        onChange={e => onToggleSelect!(row._발주번호, e.target.checked)}
+                        style={{ cursor: 'pointer', margin: 0 }}
+                        title="이 발주서를 묶음에 담을 후보로 고릅니다"
+                      />
+                    )}
+                    <span style={{ fontSize: 13, fontWeight: 700, color: '#333' }}>{row._발주번호}</span>
+                    <span style={{ fontSize: 12, fontWeight: 700, color: sc.accent }}>{(row._물류센터 || '').trim()}</span>
+                    <span style={{ fontSize: 12, fontWeight: 700, color: '#2c3e50' }}>{formatDateDisplay(row._입고예정일)}</span>
+                    {row.묶음 && (
+                      <span style={{
+                        padding: '0 6px', fontSize: 11, fontWeight: 700, borderRadius: 8,
+                        color: bundleColor(row.묶음), background: `${bundleColor(row.묶음)}22`,
+                      }}>
+                        {row.묶음}
+                      </span>
+                    )}
+                    {selectable && !!row.물류센터 && (ordersByGroup.get(row.groupKey) || []).length > 1 && (() => {
+                      const groupOrders = ordersByGroup.get(row.groupKey) || [];
+                      const allOn = groupOrders.every(no => selectedOrders?.has(no));
+                      return (
+                        <label
+                          title={`${(row._물류센터 || '').trim()} · ${formatDateDisplay(row._입고예정일)}로 한 덩어리인 발주서 ${groupOrders.length}건을 모두 고릅니다`}
+                          style={{ display: 'inline-flex', alignItems: 'center', gap: 3, marginLeft: 4, fontSize: 10, color: '#888', cursor: 'pointer' }}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={allOn}
+                            onChange={() => groupOrders.forEach(no => onToggleSelect!(no, !allOn))}
+                            style={{ cursor: 'pointer', margin: 0 }}
+                          />
+                          이 센터 {groupOrders.length}건
+                        </label>
+                      );
+                    })()}
+                    {onBulkOrder && !readOnly && (
+                      <span style={{ display: 'inline-flex', gap: 4, marginLeft: 6 }}>
+                        <button
+                          onClick={() => onBulkOrder(row._발주번호, { 메모: '예약' })}
+                          title="이 발주서의 상품을 모두 예약으로 넘깁니다"
+                          style={bulkBtn('#27ae60')}
+                        >
+                          전체예약
+                        </button>
+                        <button
+                          onClick={() => onBulkOrder(row._발주번호, { 쉼먼트: boxLabel(1) })}
+                          title="이 발주서의 상품을 모두 박스 1번으로 지정합니다"
+                          style={bulkBtn('#e67e22')}
+                        >
+                          전체박스
+                        </button>
+                      </span>
+                    )}
+                    {row.묶음 && (
+                      pending ? (
+                        <span style={{ fontSize: 11, fontWeight: 700, color: '#e67e22' }}
+                          title="묶음에서 고른 센터·입고예정일이 아직 이 발주서에 반영되지 않았어요. 묶음 카드의 '묶음 적용'을 눌러주세요.">
+                          적용 대기
+                        </span>
+                      ) : (
+                        <span style={{ fontSize: 11, fontWeight: 700, color: '#27ae60' }}
+                          title="묶음의 센터·입고예정일이 이 발주서에 반영돼 있어요">
+                          적용됨 ✓
+                        </span>
+                      )
+                    )}
+                  </span>
+                </td>
+              </tr>
+            ) : null;
+
+            const line = (
               <tr
                 key={row.id}
-                style={{ borderBottom: '1px solid #ebebeb', background: '#fff' }}
+                style={{ borderBottom: '1px solid #ebebeb', background: bg, opacity: dim ? 0.45 : 1 }}
                 onMouseEnter={e => (e.currentTarget.style.background = sc.rowHover)}
-                onMouseLeave={e => (e.currentTarget.style.background = '#fff')}
+                onMouseLeave={e => (e.currentTarget.style.background = bg)}
               >
-                <td style={cs(70)}>{row.발주번호}</td>
-                <td style={cs(60)}>{row.물류센터}</td>
-                <td style={{ ...cs(0), textAlign: 'left', minWidth: 220, padding: '5px 8px' }}>{row.상품이름}</td>
+                <td style={{
+                  ...cs(0), textAlign: 'left', minWidth: 210, padding: '5px 6px',
+                  borderLeft: row.묶음 ? `4px solid ${bundleColor(row.묶음)}` : undefined,
+                }}>{row.상품이름}</td>
                 <td style={narrow(38)}>{row.확정수량 !== '' ? row.확정수량 : ''}</td>
                 {officeQtyOf && <OfficeCell match={officeQtyOf(row.상품이름)} need={Number(row.확정수량) || 0} />}
-                <td style={{ ...cs(80), whiteSpace: 'nowrap' }}>{formatDateDisplay(row.입고예정일)}</td>
 
-                {/* 메모 */}
-                <td style={{ ...cs(70), padding: '4px 6px' }}>
+                {/* 예약(예전 이름은 메모 칸) */}
+                <td style={{ ...cs(64), padding: '4px 4px' }}>
                   {readOnly ? (
-                    <span style={{ fontSize: 11, color: '#666' }}>{row.메모}</span>
+                    <span style={{ fontSize: 12, color: '#666' }}>{row.메모}</span>
                   ) : (
                     <MemoButton value={row.메모} onChange={(v) => onMemoChange(row.id, v)} withHanjung={false} showCode={colorScheme === 'green'} />
                   )}
                 </td>
 
                 {/* 박스수량(롯데 N박스) */}
-                <td style={{ ...cs(90), padding: '4px 6px' }}>
+                <td style={{ ...cs(76), padding: '4px 4px' }}>
                   {readOnly ? (
-                    <span style={{ fontSize: 11, color: '#666' }}>{row.쉼먼트}</span>
+                    <span style={{ fontSize: 12, color: '#666' }}>{row.쉼먼트}</span>
                   ) : (
                     <BoxButton value={row.쉼먼트} onChange={(v) => onShipmentChange(row.id, v)} />
                   )}
@@ -276,6 +404,8 @@ export default function OrderTable({ rows, onMemoChange, onShipmentChange, color
                 )}
               </tr>
             );
+
+            return head ? <React.Fragment key={row.id}>{head}{line}</React.Fragment> : line;
           });
           })()}
         </tbody>
@@ -296,6 +426,6 @@ function cs(width: number): React.CSSProperties {
     color: '#444',
     border: '1px solid #eeeeee',
     width: width > 0 ? width : undefined,
-    fontSize: 11,
+    fontSize: 12,
   };
 }

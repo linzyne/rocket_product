@@ -22,8 +22,6 @@ interface Props {
   onBulkOrder?: (orderNo: string, patch: { 메모?: string; 쉼먼트?: string }) => void;
   // 일이 끝나 불을 꺼 둘 발주서들(발주번호). 그 줄은 흐리게 보여준다.
   dimmedOrders?: Set<string>;
-  // 줄 색을 무엇으로 칠할지. 'bundle'(기본)은 묶음별, 'box'는 박스 번호별로 칠한다.
-  colorBy?: 'bundle' | 'box';
 }
 
 // 박스 번호(박스1, 박스2…)마다 다른 색. 어느 상자에 담기는지 한눈에 보이게.
@@ -109,6 +107,8 @@ function BoxButton({ value, onChange }: { value: string; onChange: (v: string) =
     onChange(boxLabel(next));
   };
 
+  const c = no ? boxColor(no) : '';
+
   if (!no) {
     return (
       <button
@@ -131,10 +131,10 @@ function BoxButton({ value, onChange }: { value: string; onChange: (v: string) =
   }
 
   return (
-    <div style={{ display: 'inline-flex', alignItems: 'center', gap: 0, border: '1.5px solid #e67e22', borderRadius: 6, overflow: 'hidden' }}>
+    <div style={{ display: 'inline-flex', alignItems: 'center', gap: 0, border: `1.5px solid ${c}`, borderRadius: 6, overflow: 'hidden' }}>
       <button
         onClick={(e) => adjust(-1, e)}
-        style={counterBtnStyle('#fff4ec', '#c0392b')}
+        style={counterBtnStyle(`${c}14`, c)}
       >−</button>
       <button
         onClick={toggle}
@@ -142,13 +142,13 @@ function BoxButton({ value, onChange }: { value: string; onChange: (v: string) =
           padding: '3px 8px',
           fontSize: 12,
           fontWeight: 700,
-          background: '#fff4ec',
-          color: '#e67e22',
+          background: `${c}14`,
+          color: c,
           border: 'none',
           cursor: 'pointer',
           whiteSpace: 'nowrap',
-          borderLeft: '1px solid #f0c090',
-          borderRight: '1px solid #f0c090',
+          borderLeft: `1px solid ${c}55`,
+          borderRight: `1px solid ${c}55`,
         }}
         title="클릭하면 상자 지정 해제"
       >
@@ -156,7 +156,7 @@ function BoxButton({ value, onChange }: { value: string; onChange: (v: string) =
       </button>
       <button
         onClick={(e) => adjust(+1, e)}
-        style={counterBtnStyle('#fff4ec', '#c0392b')}
+        style={counterBtnStyle(`${c}14`, c)}
       >+</button>
     </div>
   );
@@ -210,7 +210,7 @@ function OfficeCell({ match, need }: { match: OfficeMatch | null; need: number }
 }
 
 /* ── 메인 테이블 ── */
-export default function OrderTable({ rows, onMemoChange, onShipmentChange, colorScheme = 'pink', readOnly = false, onDelete, officeQtyOf, selectedOrders, onToggleSelect, onBulkOrder, dimmedOrders, colorBy = 'bundle' }: Props) {
+export default function OrderTable({ rows, onMemoChange, onShipmentChange, colorScheme = 'pink', readOnly = false, onDelete, officeQtyOf, selectedOrders, onToggleSelect, onBulkOrder, dimmedOrders }: Props) {
   if (rows.length === 0) return null;
 
   const sc = SCHEME[colorScheme];
@@ -276,11 +276,7 @@ export default function OrderTable({ rows, onMemoChange, onShipmentChange, color
               );
             }
 
-            // 이 줄을 칠할 색: 박스별로 볼 때는 박스 번호 색, 아니면 묶음 색.
-            const boxNo = parseBoxNo(row.쉼먼트);
-            const tint = colorBy === 'box'
-              ? (boxNo ? boxColor(boxNo) : '')
-              : (row.묶음 ? bundleColor(row.묶음) : '');
+            const tint = row.묶음 ? bundleColor(row.묶음) : '';
             const bg = tint ? `${tint}0f` : '#fff';
             // 발주번호가 찍히는 줄이 그 발주서의 첫 줄이다(아래 줄들은 같은 발주서라 번호를 비워 둔다).
             const isOrderHead = !!row.발주번호;
@@ -310,14 +306,6 @@ export default function OrderTable({ rows, onMemoChange, onShipmentChange, color
                     <span style={{ fontSize: 13, fontWeight: 700, color: '#333' }}>{row._발주번호}</span>
                     <span style={{ fontSize: 12, fontWeight: 700, color: sc.accent }}>{(row._물류센터 || '').trim()}</span>
                     <span style={{ fontSize: 12, fontWeight: 700, color: '#2c3e50' }}>{formatDateDisplay(row._입고예정일)}</span>
-                    {colorBy === 'box' && boxNo && (
-                      <span style={{
-                        padding: '0 6px', fontSize: 11, fontWeight: 700, borderRadius: 8,
-                        color: boxColor(boxNo), background: `${boxColor(boxNo)}22`,
-                      }}>
-                        박스 {boxNo}번
-                      </span>
-                    )}
                     {row.묶음 && (
                       <span style={{
                         padding: '0 6px', fontSize: 11, fontWeight: 700, borderRadius: 8,

@@ -202,6 +202,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             batchId: message.batchId || '',
             boxCount: Number(message.boxCount) || 0,
             orderNos: Array.isArray(message.orderNos) ? message.orderNos : [],
+            center: message.center || '',
+            edd: message.edd || '',
             savedAt: Date.now(),
             step: 'start',
             status: '서허 여는 중…',

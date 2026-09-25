@@ -22,6 +22,12 @@ interface Props {
   onBulkOrder?: (orderNo: string, patch: { 메모?: string; 쉼먼트?: string }) => void;
   // 일이 끝나 불을 꺼 둘 발주서들(발주번호). 그 줄은 흐리게 보여준다.
   dimmedOrders?: Set<string>;
+  // 있으면 박스 버튼 옆에 작은 정렬 아이콘을 붙인다(박스 번호 순으로 줄을 다시 세운다).
+  onSortByBox?: () => void;
+  // 묶음 값이 화면에 보여줄 이름과 다를 때(예: 출고번호로 묶어 둔 경우) 이름을 돌려준다.
+  bundleLabel?: (key: string) => string;
+  // 묶음 색을 바깥에서 정할 때(카드와 같은 색을 쓰려고). 없으면 묶음 이름으로 색을 뽑는다.
+  bundleColorOf?: (key: string) => string;
 }
 
 // 박스 번호(박스1, 박스2…)마다 다른 색. 어느 상자에 담기는지 한눈에 보이게.
@@ -210,7 +216,7 @@ function OfficeCell({ match, need }: { match: OfficeMatch | null; need: number }
 }
 
 /* ── 메인 테이블 ── */
-export default function OrderTable({ rows, onMemoChange, onShipmentChange, colorScheme = 'pink', readOnly = false, onDelete, officeQtyOf, selectedOrders, onToggleSelect, onBulkOrder, dimmedOrders }: Props) {
+export default function OrderTable({ rows, onMemoChange, onShipmentChange, colorScheme = 'pink', readOnly = false, onDelete, officeQtyOf, selectedOrders, onToggleSelect, onBulkOrder, dimmedOrders, onSortByBox, bundleLabel, bundleColorOf }: Props) {
   if (rows.length === 0) return null;
 
   const sc = SCHEME[colorScheme];
@@ -276,7 +282,7 @@ export default function OrderTable({ rows, onMemoChange, onShipmentChange, color
               );
             }
 
-            const tint = row.묶음 ? bundleColor(row.묶음) : '';
+            const tint = row.묶음 ? (bundleColorOf ? bundleColorOf(row.묶음) : bundleColor(row.묶음)) : '';
             const bg = tint ? `${tint}0f` : '#fff';
             // 발주번호가 찍히는 줄이 그 발주서의 첫 줄이다(아래 줄들은 같은 발주서라 번호를 비워 둔다).
             const isOrderHead = !!row.발주번호;
@@ -309,9 +315,9 @@ export default function OrderTable({ rows, onMemoChange, onShipmentChange, color
                     {row.묶음 && (
                       <span style={{
                         padding: '0 6px', fontSize: 11, fontWeight: 700, borderRadius: 8,
-                        color: bundleColor(row.묶음), background: `${bundleColor(row.묶음)}22`,
+                        color: tint, background: `${tint}22`,
                       }}>
-                        {row.묶음}
+                        {bundleLabel ? bundleLabel(row.묶음) : row.묶음}
                       </span>
                     )}
                     {!!row.물류센터 && (() => {
@@ -403,11 +409,26 @@ export default function OrderTable({ rows, onMemoChange, onShipmentChange, color
                 </td>
 
                 {/* 박스수량(롯데 N박스) */}
-                <td style={{ ...cs(76), padding: '4px 4px' }}>
+                <td style={{ ...cs(onSortByBox ? 104 : 76), padding: '4px 4px' }}>
                   {readOnly ? (
                     <span style={{ fontSize: 12, color: '#666' }}>{row.쉼먼트}</span>
                   ) : (
+                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, whiteSpace: 'nowrap' }}>
                     <BoxButton value={row.쉼먼트} onChange={(v) => onShipmentChange(row.id, v)} />
+                    {onSortByBox && (
+                      <button
+                        onClick={onSortByBox}
+                        title="박스 번호 순(1번 → 2번 → …)으로 줄을 다시 세웁니다"
+                        style={{
+                          marginLeft: 4, padding: '2px 4px', fontSize: 11, lineHeight: 1,
+                          color: '#bbb', background: '#fff', border: '1px solid #ececec',
+                          borderRadius: 4, cursor: 'pointer',
+                        }}
+                      >
+                        ↕
+                      </button>
+                    )}
+                  </span>
                   )}
                 </td>
 

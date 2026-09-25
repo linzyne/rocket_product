@@ -34,6 +34,8 @@ export interface ShipOut {
   formSavedAt?: number;
   // 사람이 직접 "쉽먼트 완료"로 표시한 시각(ms). 자동 표시가 안 잡히는 건을 손으로 끝낼 때 쓴다.
   doneAt?: number;
+  // 완료를 다시 푼 시각(ms). 자동으로 완료로 잡히는 건이라도 이 값이 있으면 다시 할 일로 본다.
+  undoneAt?: number;
   lines: ShipOutLine[];
 }
 
@@ -133,7 +135,7 @@ export function updateShipOutLine(
 }
 
 // 출고 건들에 진행 표시를 붙인다(쉽먼트 번호·양식 저장 시각).
-export function markShipOuts(ids: string[], patch: Partial<Pick<ShipOut, 'batchId' | 'formSavedAt' | 'doneAt'>>) {
+export function markShipOuts(ids: string[], patch: Partial<Pick<ShipOut, 'batchId' | 'formSavedAt' | 'doneAt' | 'undoneAt'>>) {
   const want = new Set(ids);
   const list = read();
   let touched = false;

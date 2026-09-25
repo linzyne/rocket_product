@@ -154,46 +154,169 @@
     return !!(box && box.checked);
   };
 
-  // 쪽 번호 버튼(1 2 3 4). 눌린 뒤 화면이 다시 그려지므로 쓸 때마다 새로 찾는다.
-  const pageButton = (n) =>
-    Array.from(document.querySelectorAll('button, a, li, span'))
-      .filter((el) => visible(el) && el.children.length === 0 && clean(el.textContent) === String(n))
+  // 쪽 번호 줄(1 2 3 4 …)을 찾는다. 표 안에도 "1", "2" 같은 숫자 칸이 있어서 글자만 보고 고르면
+  // 엉뚱한 표 칸을 누르게 된다(그러다 줄이 눌려 체크가 풀리기도 한다). 그래서
+  //   · 작은 칸이고(가로 60px 아래)
+  //   · 같은 높이에 숫자들이 나란히 있고
+  //   · 화면 아래쪽에 있는
+  // 무리만 쪽 번호로 본다.
+  const pagerMap = () => {
+    const nums = Array.from(document.querySelectorAll('button, a, li, span, div'))
+      .filter((el) => visible(el) && el.children.length === 0 && /^\d{1,2}$/.test(clean(el.textContent)))
       .filter((el) => {
         const r = el.getBoundingClientRect();
-        return r.width > 0 && r.width < 80 && r.height < 80;
-      })[0] || null;
+        return r.width > 0 && r.width < 60 && r.height > 0 && r.height < 60;
+      });
+
+    // 같은 줄(높이 차 12px 안)끼리 묶는다.
+    const lines = [];
+    for (const el of nums) {
+      const y = el.getBoundingClientRect().top;
+      const line = lines.find((l) => Math.abs(l.y - y) < 12);
+      if (line) line.items.push(el);
+      else lines.push({ y, items: [el] });
+    }
+
+    // 1, 2가 나란히 있는 줄 중 가장 아래쪽 줄이 쪽 번호 줄이다.
+    const pagers = lines.filter((l) => {
+      const texts = new Set(l.items.map((el) => clean(el.textContent)));
+      return texts.has('1') && texts.has('2') && l.items.length >= 2;
+    });
+    const pager = pagers.sort((a, b) => b.y - a.y)[0];
+    const map = new Map();
+    if (pager) {
+      for (const el of pager.items.sort((a, b) => a.getBoundingClientRect().left - b.getBoundingClientRect().left)) {
+        const n = Number(clean(el.textContent));
+        if (!map.has(n)) map.set(n, el);
+      }
+    }
+    return map;
+  };
+
+  const pageButton = (n) => pagerMap().get(n) || null;
 
   const lastPageNo = () => {
     let max = 1;
-    for (let n = 2; n <= 50; n++) if (pageButton(n)) max = n;
+    pagerMap().forEach((_, n) => { if (n > max) max = n; });
     return max;
+  };
+
+  // 팝업 위쪽 필터로 목록을 좁힌다: FC(물류센터)와 입고예정일을 넣고 검색을 누른다.
+  // 쪽을 넘겨 가며 고르는 것보다 훨씬 안전하다. 센터가 섞인 쉽먼트면 FC는 건너뛰고 날짜만 좁힌다.
+  const applyFilters = async (center, edd) => {
+    let used = [];
+
+    if (center) {
+      for (const sel of document.querySelectorAll('select')) {
+        if (!visible(sel)) continue;
+        const opt = Array.from(sel.options).find((o) => clean(o.textContent).includes(center));
+        if (!opt) continue;
+        sel.value = opt.value;
+        sel.dispatchEvent(new Event('input', { bubbles: true }));
+        sel.dispatchEvent(new Event('change', { bubbles: true }));
+        used.push('FC');
+        break;
+      }
+    }
+
+    if (edd) {
+      const input = Array.from(document.querySelectorAll('input')).find((i) => {
+        if (!visible(i)) return false;
+        const hint = `${i.placeholder || ''} ${i.getAttribute('aria-label') || ''} ${i.name || ''}`;
+        return /edd/i.test(hint) || /입고/.test(hint);
+      });
+      if (input) {
+        const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
+        setter.call(input, edd);
+        input.dispatchEvent(new Event('input', { bubbles: true }));
+        input.dispatchEvent(new Event('change', { bubbles: true }));
+        input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+        input.dispatchEvent(new Event('blur', { bubbles: true }));
+        used.push('EDD');
+      }
+    }
+
+    if (!used.length) return '';
+    await sleep(400);
+    const search = findAll(/^검색$/).filter((el) => !el.closest('table')).pop();
+    if (search) realClick(search.closest('button') || search);
+    await sleep(1500);
+    return used.join('+');
+  };
+
+  // FC(물류센터) 필터를 "전체"로 되돌리고 다시 검색한다. 한 쉽먼트에 센터가 섞여 있으면
+  // FC로 거른 목록에는 다른 센터 발주건이 안 보이기 때문이다.
+  const clearCenterFilter = async () => {
+    let done = false;
+    for (const sel of document.querySelectorAll('select')) {
+      if (!visible(sel) || !sel.options.length) continue;
+      const all = Array.from(sel.options).find((o) => /전체|all/i.test(clean(o.textContent)));
+      if (!all) continue;
+      sel.value = all.value;
+      sel.dispatchEvent(new Event('input', { bubbles: true }));
+      sel.dispatchEvent(new Event('change', { bubbles: true }));
+      done = true;
+      break;
+    }
+    if (!done) return false;
+    await sleep(400);
+    const search = findAll(/^검색$/).filter((el) => !el.closest('table')).pop();
+    if (search) realClick(search.closest('button') || search);
+    await sleep(1500);
+    return true;
+  };
+
+  // 지금 목록에 보이는 발주번호들. 쪽이 실제로 넘어갔는지 이걸로 확인한다.
+  const shownOrderNos = () =>
+    Array.from(document.querySelectorAll('td, th, span, div, li, a'))
+      .filter((el) => visible(el) && el.children.length === 0 && /^\d{8,}$/.test(clean(el.textContent)))
+      .map((el) => clean(el.textContent))
+      .join(',');
+
+  // n쪽으로 넘긴다. 숫자 글자만 눌러서는 안 먹는 화면이 있어 감싸고 있는 버튼/링크까지 눌러 보고,
+  // 목록에 보이는 발주번호가 바뀌는지로 넘어갔는지 확인한다.
+  const goToPage = async (n) => {
+    const before = shownOrderNos();
+    const btn = pageButton(n);
+    if (!btn) return false;
+    // 표의 줄(tr/td)은 절대 누르지 않는다(줄을 누르면 체크가 풀리는 화면이 있다).
+    const targets = [btn, btn.closest('a'), btn.closest('button'), btn.closest('[role="button"]'), btn.closest('li')]
+      .filter((el, i, arr) => el && arr.indexOf(el) === i && !el.closest('table'));
+    for (const t of targets) {
+      realClick(t);
+      for (let i = 0; i < 6; i++) {
+        await sleep(300);
+        if (shownOrderNos() !== before) return true;
+      }
+    }
+    return false;
   };
 
   // 팝업 목록이 여러 쪽이면 쪽을 넘겨 가며 우리 발주건을 모두 고른다.
   const pickOrdersAcrossPages = async (orderNos) => {
     const picked = new Set(pickOrders(orderNos));
-    if (picked.size >= orderNos.length) return Array.from(picked);
-
     const last = lastPageNo();
-    const first = Array.from(picked)[0];
+    const onPage1 = picked.size;
+    if (picked.size >= orderNos.length) return { picked: Array.from(picked), last, onPage1 };
+    if (last <= 1) return { picked: Array.from(picked), last, onPage1 };
+
     for (let n = 2; n <= last && picked.size < orderNos.length; n++) {
-      const btn = pageButton(n);
-      if (!btn) continue;
-      realClick(btn);
-      await sleep(1200);
+      if (!(await goToPage(n))) return { stuck: n, picked: Array.from(picked), last, onPage1 };
+      await sleep(500);
       pickOrders(orderNos.filter((no) => !picked.has(no))).forEach((no) => picked.add(no));
     }
 
     // 1쪽으로 돌아가서, 쪽을 넘기는 사이에 앞서 고른 게 풀리지 않았는지 본다.
-    if (last > 1) {
-      const home = pageButton(1);
-      if (home) {
-        realClick(home);
-        await sleep(1200);
-      }
-      if (first && !isPicked(first)) return { lost: true, picked: Array.from(picked) };
+    const first = Array.from(picked)[0];
+    if (!(await goToPage(1))) return { stuck: 1, picked: Array.from(picked), last, onPage1 };
+    await sleep(500);
+    let stillOn = false;
+    for (let i = 0; i < 10 && !stillOn; i++) {
+      stillOn = isPicked(first);
+      if (!stillOn) await sleep(400);
     }
-    return Array.from(picked);
+    if (!stillOn) return { lost: true, picked: Array.from(picked), last, onPage1 };
+    return { picked: Array.from(picked), last, onPage1 };
   };
 
   // MAIN world 쪽에서 가로챈 양식 파일을 받아 저장한다(확장이 다시 받으면 서버가 거절해서 이 길을 쓴다).
@@ -238,6 +361,9 @@
 
   let busy = false;
   let lastClick = 0;
+  // 발주건 고르기는 한 번에 하나만. 검사 주기마다 다시 시작해서 쪽을 왔다 갔다 하지 않게 한다.
+  let picking = false;
+  let pickTries = 0;
 
   const tick = async () => {
     if (busy) return;
@@ -260,32 +386,82 @@
       const dl = find(TEXT.formDownload);
       if (dl) {
         const orderNos = Array.isArray(p.orderNos) ? p.orderNos : [];
+
+        // 1) 먼저 FC(물류센터)로 목록을 좁힌다. 한 번만 한다.
+        if (!p.filtered) {
+          const used = await applyFilters(p.center || '', p.edd || '');
+          await patch({
+            filtered: true,
+            filterOk: used,
+            step: 'popup',
+            status: used ? `[v4] 필터(${used})로 목록을 좁혔어요. 발주건 고르는 중…` : '[v4] 필터를 못 써서 목록을 그대로 훑어요…',
+          });
+          return;
+        }
+
         // 이 쉽먼트의 발주건을 "전부" 고른 다음에만 양식을 받는다. 일부만 골라 받으면 양식에 그
         // 건들만 들어와서, 나중에 송장번호를 채울 줄이 통째로 빠져 버린다.
         if (!p.picked || p.picked < orderNos.length) {
-          const res = await pickOrdersAcrossPages(orderNos);
-          // 쪽을 넘기면 선택이 풀리는 화면이면 자동으로 할 수 없다. 사람에게 넘긴다.
-          if (res && res.lost) {
+          if (picking) return; // 이미 고르는 중이면 이 차례는 건너뛴다.
+          if (pickTries >= 2) {
             await patch({
               step: 'manual',
-              status: '목록 쪽을 넘기면 앞에서 고른 발주건이 풀려요. 한 쪽에 다 보이게 필터(입고예정일 등)를 좁히거나, 직접 모두 고른 뒤 양식다운로드를 눌러 주세요.',
+              status: `[v4] 발주건을 다 고르지 못했어요(${p.pickInfo || '정보 없음'}). 목록에서 직접 모두 고른 뒤 양식다운로드를 눌러 주세요.`,
             });
             return;
           }
-          const got = Array.isArray(res) ? res : [];
+          picking = true;
+          pickTries += 1;
+          let res;
+          try {
+            res = await pickOrdersAcrossPages(orderNos);
+          } finally {
+            picking = false;
+          }
+          // 쪽을 넘기면 선택이 풀리는 화면이면 자동으로 할 수 없다. 사람에게 넘긴다.
+          if (res && res.stuck) {
+            await patch({
+              step: 'manual',
+              status: `[v4] 목록 ${res.stuck}쪽으로 넘기지 못했어요(${res.picked.length}건까지 골랐어요). 나머지를 직접 고른 뒤 양식다운로드를 눌러 주세요.`,
+            });
+            return;
+          }
+          if (res && res.lost) {
+            await patch({
+              step: 'manual',
+              status: '[v4] 목록 쪽을 넘기면 앞에서 고른 발주건이 풀려요. FC(물류센터)나 입고예정일 필터로 한 쪽에 다 보이게 좁힌 뒤, 직접 모두 고르고 양식다운로드를 눌러 주세요.',
+            });
+            return;
+          }
+          const got = (res && res.picked) || [];
           const missing = orderNos.filter((no) => !got.includes(no));
+          const info = `필터 ${p.filterOk || '없음'} · 쪽수 ${res.last || 1} · 1쪽에서 ${res.onPage1 || 0}건 · 모두 ${got.length}/${orderNos.length}건 · 못 찾음 ${missing.slice(0, 4).join(',')}`;
+          await patch({ pickInfo: info });
           if (missing.length) {
+            // 센터가 섞인 쉽먼트면 FC 필터 때문에 다른 센터 건이 목록에 없다. 필터를 풀고 한 번 더 훑는다.
+            if (!p.wideRetry && String(p.filterOk || '').includes('FC')) {
+              const cleared = await clearCenterFilter();
+              pickTries = 0;
+              await patch({
+                wideRetry: true,
+                picked: 0,
+                step: 'popup',
+                status: cleared ? '[v4] FC 필터를 풀고 다시 찾는 중…' : '[v4] FC 필터를 풀지 못했어요. 목록을 그대로 훑어요…',
+              });
+              return;
+            }
             if (Date.now() - (p.savedAt || 0) > 40000) {
               await patch({
                 step: 'manual',
-                status: `팝업에서 발주번호 ${missing.length}건(${missing.slice(0, 3).join(', ')}${missing.length > 3 ? '…' : ''})을 못 찾았어요. 목록에서 직접 모두 고른 뒤 양식다운로드를 눌러 주세요.`,
+                status: `[v4] 팝업에서 발주번호 ${missing.length}건(${missing.slice(0, 3).join(', ')}${missing.length > 3 ? '…' : ''})을 못 찾았어요. 목록에서 직접 모두 고른 뒤 양식다운로드를 눌러 주세요.`,
               });
             } else {
               await patch({ step: 'popup', picked: got.length, status: `발주건 고르는 중… ${got.length}/${orderNos.length}건` });
             }
             return;
           }
-          await patch({ step: 'popup', picked: got.length, status: `발주건 ${got.length}/${orderNos.length}건 선택함. 양식 받는 중…` });
+          pickTries = 0;
+          await patch({ step: 'popup', picked: got.length, status: `[v4] 발주건 ${got.length}/${orderNos.length}건 선택함. 양식 받는 중…` });
           await sleep(600);
         }
         if (Date.now() - lastClick > 6000) {

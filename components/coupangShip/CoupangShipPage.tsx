@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { ShipOut, subscribeShipOuts, deleteShipOut, restoreShipOut, restoreOrders, updateShipOutLine, markShipOuts } from '../coupangOrder/data/shipOutStore';
 import { InventoryItem, subscribeInventory, makeOfficeLookup } from '../../data/inventoryStore';
 import { dateKeyYMD } from '../coupangOrder/utils/dateUtils';
-import OrderTable from '../coupangOrder/components/OrderTable';
+import OrderTable, { bundleColor } from '../coupangOrder/components/OrderTable';
 import { buildDisplayRows, parseBoxNo } from '../coupangOrder/utils/dataProcessor';
 import type { DisplayRow } from '../coupangOrder/utils/dataProcessor';
 import { normalizeDateValue, ymdSortKey } from '../coupangOrder/utils/dateUtils';
@@ -26,8 +26,9 @@ import ShipmentList from '../coupangOrder/components/ShipmentList';
 // 화면 모양은 쿠팡발주확인과 같게: 왼쪽은 발주서 표, 오른쪽은 묶음(출고 건) 카드.
 // 묶음 이름은 출고 건마다 겹칠 수 있어서, 표에는 출고번호(S260925-1)를 묶음 값으로 넣어 구분한다.
 // 줄 하나를 가리키는 열쇠(박스 순서를 기억할 때 쓴다).
-const lineKey = (l: { 발주번호: string; 상품이름: string; 확정수량: number | ''; 입고예정일: string }) =>
-  `${l.발주번호}│${l.상품이름}│${l.확정수량}│${l.입고예정일}`;
+// 입고예정일은 저장본('2026-09-28')과 화면용(Date)이 섞여 있어 항상 'YYYY-MM-DD'로 맞춰 비교한다.
+const lineKey = (l: { 발주번호: string; 상품이름: string; 확정수량: number | ''; 입고예정일: Date | string }) =>
+  `${l.발주번호}│${l.상품이름}│${l.확정수량}│${dateKeyYMD(l.입고예정일)}`;
 
 export default function CoupangShipPage({ onGoOrder }: { onGoOrder?: () => void } = {}) {
   const [list, setList] = useState<ShipOut[]>([]);
@@ -90,8 +91,11 @@ export default function CoupangShipPage({ onGoOrder }: { onGoOrder?: () => void 
       waybills,
       allWaybilled: boxes.length > 0 && waybills === boxes.length,
       formSaved: !!item.formSavedAt,
-      // 자동으로 다 켜졌거나, 사람이 직접 완료로 표시했으면 끝난 것으로 본다.
-      done: !!item.doneAt || (!!batch && boxes.length > 0 && waybills === boxes.length && !!item.formSavedAt),
+      // 사람이 직접 켠 완료가 가장 우선이고, 직접 풀었으면 다시 할 일로 본다.
+      // 둘 다 없으면 예약·운송장·양식이 다 끝났는지로 판단한다.
+      done: item.doneAt ? true
+        : item.undoneAt ? false
+        : (!!batch && boxes.length > 0 && waybills === boxes.length && !!item.formSavedAt),
     };
   };
 
@@ -123,7 +127,8 @@ export default function CoupangShipPage({ onGoOrder }: { onGoOrder?: () => void 
         입고예정일: normalizeDateValue(l.입고예정일),
         메모: l.메모 || '',
         쉼먼트: l.쉼먼트 || '',
-        묶음: l.묶음 || item.bundle,
+        // 상자·센터가 출고 건끼리 섞이지 않게 묶음 값은 출고번호로 둔다(화면에는 묶음 이름으로 보여준다).
+        묶음: item.id,
       }))
       .sort((a, b) => {
         // 박스 순으로 세워 둔 적이 있으면 그때 정한 자리를 지킨다. 박스 번호를 고치는 동안
@@ -144,7 +149,27 @@ export default function CoupangShipPage({ onGoOrder }: { onGoOrder?: () => void 
 
   const itemCount = rows.filter(r => !r.isBlank).length;
 
-  const lotteCount = totalBoxCount(rows);
+  // 출고 건 하나의 줄만 표 모양으로 만든다(쉽먼트생성을 그 건에만 걸 때 쓴다).
+  const rowsOf = (items: ShipOut[]): DisplayRow[] => buildDisplayRows(items.flatMap(item => item.lines.map(l => ({
+    발주번호: l.발주번호,
+    물류센터: l.물류센터,
+    상품이름: l.상품이름,
+    확정수량: l.확정수량,
+    입고예정일: normalizeDateValue(l.입고예정일),
+    메모: l.메모 || '',
+    쉼먼트: l.쉼먼트 || '',
+    묶음: item.id,
+  }))));
+
+  // 출고 건 색: 목록에 놓인 차례대로 준다(표의 세로줄·배경과 카드가 같은 색을 쓰게).
+  const colorOf = (id: string) => bundleColor(`묶음${Math.max(1, ordered.findIndex(i => i.id === id) + 1)}`);
+
+  // 아직 쉽먼트를 안 만든(= 완료 표시가 없는) 출고 건들. 위쪽 쉽먼트생성 버튼은 이것만 대상으로 한다.
+  const pendingItems = list.filter(i => !progressOf(i).done);
+  const pendingIds = pendingItems.map(i => i.id);
+  const pendingRows = rowsOf(pendingItems);
+
+  const lotteCount = totalBoxCount(pendingRows);
 
   // 표에서 예약·박스를 누르면 그 줄이 속한 출고 건의 값을 고친다(줄의 묶음 값이 출고번호다).
   const editLine = (id: string, patch: { 메모?: string; 쉼먼트?: string }) => {
@@ -240,8 +265,18 @@ export default function CoupangShipPage({ onGoOrder }: { onGoOrder?: () => void 
     const orderNos = Array.from(
       new Set(allBoxes(batch).flatMap(b => b.lines.map(l => String(l.발주번호 || '').trim())).filter(Boolean))
     );
+    // 서허 팝업 목록을 좁히는 데 쓴다(물류센터·입고예정일이 하나뿐일 때만 보낸다).
+    const centers = batch.centers.map(c => c.center.trim()).filter(Boolean);
+    // 저장본은 'YYYYMMDD'라 서허 화면에서 쓰는 'YYYY-MM-DD'로 바꾼다.
+    const edds = Array.from(new Set(allBoxes(batch).flatMap(b => b.lines.map(l => String(l.입고예정일 || '').trim())).filter(Boolean)))
+      .map(d => (/^\d{8}$/.test(d) ? `${d.slice(0, 4)}-${d.slice(4, 6)}-${d.slice(6, 8)}` : d));
     window.postMessage(
-      { source: 'rocket-app-hub', type: 'SHUB_FORM', batchId: batch.id, boxCount: allBoxes(batch).length, orderNos },
+      {
+        source: 'rocket-app-hub', type: 'SHUB_FORM', batchId: batch.id,
+        boxCount: allBoxes(batch).length, orderNos,
+        center: new Set(centers).size === 1 ? centers[0] : '',
+        edd: edds.length === 1 ? edds[0] : '',
+      },
       window.location.origin
     );
   };
@@ -287,10 +322,13 @@ export default function CoupangShipPage({ onGoOrder }: { onGoOrder?: () => void 
     a.click();
   };
 
-  const handleLotte = () => {
+  // 고른 출고 건들만 쉽먼트로 만든다. 이미 끝낸 건이 딸려 들어가면 택배를 두 번 예약하게 되므로
+  // 대상 줄을 받아서 그것만 쓴다.
+  const handleLotte = (targetRows: DisplayRow[] = pendingRows, targetIds: string[] = pendingIds) => {
+    if (!targetRows.length) return;
     // 쉽먼트 번호를 먼저 정해서 엑셀의 주문번호에 붙인다(롯데 목록에서 이번 건만 골라내는 표식).
     const id = batchId(batches);
-    const file = exportLotteExcel(rows, addresses, sender, id);
+    const file = exportLotteExcel(targetRows, addresses, sender, id);
     if (!file) return;
     if (!confirm(`${file.name}을 내려받았어요.\n롯데택배(ALPS)에 올려서 택배 예약과 운송장 만들기까지 할까요?`)) return;
 
@@ -299,7 +337,7 @@ export default function CoupangShipPage({ onGoOrder }: { onGoOrder?: () => void 
       id,
       createdAt: Date.now(),
       status: 'reserved',
-      centers: shipmentCenters(rows).map(c => ({
+      centers: shipmentCenters(targetRows).map(c => ({
         center: c.center,
         boxes: c.boxes.map(b => ({
           boxNo: b.boxNo,
@@ -315,7 +353,7 @@ export default function CoupangShipPage({ onGoOrder }: { onGoOrder?: () => void 
     };
     saveShipmentBatch(batch).catch(err => alert(`쉽먼트 기록 저장 실패: ${err instanceof Error ? err.message : String(err)}`));
     // 지금 화면에 있는 출고 건들이 이 쉽먼트에 들어갔다고 표시해 둔다(카드에 진행 상태로 보여준다).
-    markShipOuts(list.map(i => i.id), { batchId: id });
+    markShipOuts(targetIds, { batchId: id });
 
     let savedAt = 0;
     const done = () => window.removeEventListener('message', onMsg);
@@ -353,14 +391,42 @@ export default function CoupangShipPage({ onGoOrder }: { onGoOrder?: () => void 
     window.addEventListener('message', onMsg);
     setTimeout(done, 10 * 60 * 1000);
     // boxCount: 방금 예약한 박스(=택배 건) 수. 운송장 목록에서 맨 아래 이 개수만큼만 체크해 출력한다.
-    window.postMessage({ source: 'rocket-app-hub', type: 'LOTTE_UPLOAD', file, boxCount: lotteCount, batchId: batch.id }, window.location.origin);
+    window.postMessage({ source: 'rocket-app-hub', type: 'LOTTE_UPLOAD', file, boxCount: totalBoxCount(targetRows), batchId: batch.id }, window.location.origin);
   };
 
 
 
+  // 이 출고 건의 발주건만 담은 쉽먼트로 서허 양식을 받는다. 예전에 센터가 섞여 기록된 배치라도
+  // 이 건에 속한 줄만 골라 보내므로, 남의 발주건을 서허에서 찾지 않는다.
+  const shubForItem = (item: ShipOut) => {
+    const batch = progressOf(item).batch;
+    if (!batch) return;
+    const mine = new Set(item.lines.map(l => String(l.발주번호 || '').trim()));
+    const trimmed: ShipmentBatch = {
+      ...batch,
+      centers: batch.centers
+        .map(c => ({
+          ...c,
+          boxes: c.boxes
+            .map(b => ({ ...b, lines: b.lines.filter(l => mine.has(String(l.발주번호 || '').trim())) }))
+            .filter(b => b.lines.length),
+        }))
+        .filter(c => c.boxes.length),
+    };
+    if (!allBoxes(trimmed).length) {
+      alert('이 건에 해당하는 박스를 쉽먼트 기록에서 찾지 못했어요.');
+      return;
+    }
+    handleShubForm(trimmed);
+  };
+
   // 손으로 완료 표시를 켜고 끈다.
   const toggleDone = (item: ShipOut) => {
-    markShipOuts([item.id], { doneAt: item.doneAt ? undefined : Date.now() });
+    const nowDone = progressOf(item).done;
+    // 다시 누르면 완료가 풀려서 쉽먼트생성·양식받기 버튼이 되살아난다.
+    markShipOuts([item.id], nowDone
+      ? { doneAt: undefined, undoneAt: Date.now() }
+      : { doneAt: Date.now(), undoneAt: undefined });
   };
 
   const remove = (item: ShipOut) => {
@@ -386,9 +452,9 @@ export default function CoupangShipPage({ onGoOrder }: { onGoOrder?: () => void 
             <button onClick={() => setShowSenderManager(true)} style={plainBtn}>📮 보내는사람 설정</button>
             <button onClick={() => setShowAddressManager(true)} style={plainBtn}>🗺️ 택배주소 관리</button>
             <button
-              onClick={handleLotte}
+              onClick={() => handleLotte()}
               disabled={lotteCount === 0}
-              title="물류센터별로 지정한 상자 개수만큼 롯데택배 예약 엑셀을 만들고, 원하면 택배사 사이트에 올려 예약까지 합니다."
+              title="아직 끝나지 않은 출고 건만 모아 롯데택배 예약 엑셀을 만들고, 원하면 택배사 사이트에 올려 예약까지 합니다."
               style={{
                 display: 'inline-flex', alignItems: 'center', gap: 4,
                 padding: '7px 14px', fontSize: 13, fontWeight: 600, borderRadius: 8,
@@ -398,7 +464,7 @@ export default function CoupangShipPage({ onGoOrder }: { onGoOrder?: () => void 
                 cursor: lotteCount > 0 ? 'pointer' : 'not-allowed',
               }}
             >
-              ↓ 쉽먼트생성
+              ↓ 택배예약
               {lotteCount > 0 && (
                 <span style={{ background: 'rgba(255,255,255,0.25)', padding: '1px 7px', borderRadius: 12, fontSize: 11, marginLeft: 4 }}>
                   {lotteCount}박스
@@ -471,6 +537,9 @@ export default function CoupangShipPage({ onGoOrder }: { onGoOrder?: () => void 
                 selectedOrders={selected}
                 onToggleSelect={toggleSelect}
                 dimmedOrders={dimmedOrders}
+                onSortByBox={sortByBox}
+                bundleLabel={(key) => list.find(i => i.id === key)?.bundle || key}
+                bundleColorOf={colorOf}
               />
             </div>
 
@@ -493,13 +562,15 @@ export default function CoupangShipPage({ onGoOrder }: { onGoOrder?: () => void 
 
                   const pr = progressOf(item);
 
+                  const color = colorOf(item.id);
+
                   return (
                     <div key={item.id} style={{
-                      border: '1px solid #d6c9f5', borderLeft: '4px solid #7c3aed',
+                      border: `1px solid ${color}40`, borderLeft: `4px solid ${color}`,
                       borderRadius: 10, overflow: 'hidden', background: '#fff',
                       opacity: pr.done ? 0.5 : 1, transition: 'opacity 0.15s',
                     }}>
-                      <div style={{ padding: '6px 8px', background: '#7c3aed12', borderBottom: '1px solid #7c3aed2e', whiteSpace: 'nowrap' }}>
+                      <div style={{ padding: '6px 8px', background: `${color}1c`, borderBottom: `1px solid ${color}2e`, whiteSpace: 'nowrap' }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 8, overflow: 'hidden' }}>
                           <input
                             type="checkbox"
@@ -515,7 +586,7 @@ export default function CoupangShipPage({ onGoOrder }: { onGoOrder?: () => void 
                             title="이 묶음의 발주서를 모두 고릅니다"
                             style={{ cursor: 'pointer', margin: 0 }}
                           />
-                          <span style={{ fontSize: 12, fontWeight: 800, color: '#7c3aed' }} title={`출고번호 ${item.id} · ${item.bundle}`}>{item.bundle}</span>
+                          <span style={{ fontSize: 12, fontWeight: 800, color }} title={`출고번호 ${item.id} · ${item.bundle}`}>{item.bundle}</span>
                           <span style={{ fontSize: 12, fontWeight: 700, color: '#333', overflow: 'hidden', textOverflow: 'ellipsis' }}>{item.center}</span>
                           <span style={{ fontSize: 11, fontWeight: 700, color: '#2c3e50' }}>{item.date.slice(5).replace('-', '/')}</span>
                           <span style={{ marginLeft: 'auto', fontSize: 11, color: '#999' }}>발주 {orders.size} · {qty.toLocaleString()}개</span>
@@ -531,33 +602,35 @@ export default function CoupangShipPage({ onGoOrder }: { onGoOrder?: () => void 
                           </div>
                         )}
 
+                        {/* 일하는 차례대로: 택배예약 → 쉽먼트업로드 → 완료 */}
                         <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginTop: 5, flexWrap: 'wrap' }}>
-                          <button
-                            onClick={() => copyOrderNos(item.id, Array.from(orders.keys()))}
-                            title="이 출고 건의 발주번호를 한 줄에 하나씩 복사합니다"
-                            style={{
-                              padding: '2px 8px', fontSize: 11, borderRadius: 5, cursor: 'pointer',
-                              border: copied === item.id ? '1.5px solid #27ae60' : '1px solid #e5e5e5',
-                              background: copied === item.id ? '#e8f8f0' : '#fff',
-                              color: copied === item.id ? '#27ae60' : '#888',
-                              fontWeight: copied === item.id ? 700 : 400,
-                            }}
-                          >
-                            {copied === item.id ? '복사됨 ✓' : '📋 발주번호'}
-                          </button>
-                          <button
-                            onClick={() => restore(item)}
-                            title="이 출고를 취소하고 쿠팡발주확인 발송 목록으로 되돌립니다"
-                            style={{
-                              padding: '2px 8px', fontSize: 11, fontWeight: 700, borderRadius: 5, cursor: 'pointer',
-                              border: '1.5px solid #7c3aed', background: '#fff', color: '#7c3aed',
-                            }}
-                          >
-                            ← 발주확인으로
-                          </button>
+                          {!pr.done && (
+                            <button
+                              onClick={() => handleLotte(rowsOf([item]), [item.id])}
+                              title={`${item.bundle}(${item.center}) 만 따로 롯데택배에 예약합니다`}
+                              style={{
+                                padding: '2px 8px', fontSize: 11, fontWeight: 700, borderRadius: 5, cursor: 'pointer',
+                                border: '1.5px solid #e67e22', background: '#e67e22', color: '#fff',
+                              }}
+                            >
+                              ① 택배예약 {totalBoxCount(rowsOf([item]))}박스
+                            </button>
+                          )}
+                          {pr.reserved && !pr.done && (
+                            <button
+                              onClick={() => shubForItem(item)}
+                              title="이 건의 발주건만으로 서허 쉽먼트 양식을 받아 채웁니다"
+                              style={{
+                                padding: '2px 8px', fontSize: 11, fontWeight: 700, borderRadius: 5, cursor: 'pointer',
+                                border: '1.5px solid #2980b9', background: '#fff', color: '#2980b9',
+                              }}
+                            >
+                              ② 쉽먼트업로드
+                            </button>
+                          )}
                           <button
                             onClick={() => toggleDone(item)}
-                            title={pr.done ? '완료 표시를 풉니다' : '이 건의 쉽먼트 작업이 끝났다고 표시합니다'}
+                            title={pr.done ? '완료 표시를 풀고 다시 할 수 있게 합니다' : '이 건의 쉽먼트 작업이 끝났다고 표시합니다'}
                             style={{
                               marginLeft: 'auto',
                               padding: '2px 10px', fontSize: 11, fontWeight: 700, borderRadius: 5, cursor: 'pointer',
@@ -567,6 +640,20 @@ export default function CoupangShipPage({ onGoOrder }: { onGoOrder?: () => void 
                             }}
                           >
                             {pr.done ? '쉽먼트 완료 ✓' : '쉽먼트 완료'}
+                          </button>
+                        </div>
+
+                        {/* 되돌리기·삭제는 일하는 버튼과 떨어뜨려 둔다 */}
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginTop: 5 }}>
+                          <button
+                            onClick={() => restore(item)}
+                            title="이 출고를 취소하고 쿠팡발주확인 발송 목록으로 되돌립니다"
+                            style={{
+                              padding: '2px 8px', fontSize: 11, color: '#7c3aed',
+                              background: '#fff', border: '1px solid #d6c9f5', borderRadius: 5, cursor: 'pointer',
+                            }}
+                          >
+                            ← 발주확인으로
                           </button>
                           <button
                             onClick={() => remove(item)}

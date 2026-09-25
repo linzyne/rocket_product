@@ -50,7 +50,7 @@
     // B단계: 서허에서 쉽먼트 일괄등록 양식 받아오기.
     if (d.type === 'SHUB_FORM') {
       try {
-        chrome.runtime.sendMessage({ type: 'SHUB_FORM', batchId: d.batchId, boxCount: d.boxCount, orderNos: d.orderNos || [] }, (res) => {
+        chrome.runtime.sendMessage({ type: 'SHUB_FORM', batchId: d.batchId, boxCount: d.boxCount, orderNos: d.orderNos || [], center: d.center || '', edd: d.edd || '' }, (res) => {
           const lastError = chrome.runtime.lastError;
           reply({ type: 'SHUB_FORM_ACK', ok: !lastError && !!(res && res.ok), error: (lastError && lastError.message) || (res && res.error) });
         });

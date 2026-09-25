@@ -211,11 +211,17 @@ export default function OrderTable({ rows, onMemoChange, onShipmentChange, color
   const selectable = !!onToggleSelect;
   // 같은 물류센터·입고예정일로 한 덩어리(한 박스)에 묶여 있는 발주번호들. 덩어리 전체선택에 쓴다.
   const ordersByGroup = new Map<string, string[]>();
+  // 덩어리별 품목 수와 수량 합계(한 박스에 들어갈 물량이 한눈에 보이게).
+  const statsByGroup = new Map<string, { lines: number; qty: number }>();
   for (const row of rows) {
     if (row.isBlank || !row._발주번호) continue;
     const list = ordersByGroup.get(row.groupKey) || [];
     if (!list.includes(row._발주번호)) list.push(row._발주번호);
     ordersByGroup.set(row.groupKey, list);
+    const st = statsByGroup.get(row.groupKey) || { lines: 0, qty: 0 };
+    st.lines += 1;
+    st.qty += Number(row.확정수량) || 0;
+    statsByGroup.set(row.groupKey, st);
   }
   // 발주번호·센터·입고예정일은 발주서마다 한 줄(머리줄)로 위에 올리고, 표 본문은 상품만 남긴다.
   const headers = [
@@ -301,6 +307,17 @@ export default function OrderTable({ rows, onMemoChange, onShipmentChange, color
                         {row.묶음}
                       </span>
                     )}
+                    {!!row.물류센터 && (() => {
+                      const st = statsByGroup.get(row.groupKey);
+                      const cnt = (ordersByGroup.get(row.groupKey) || []).length;
+                      if (!st) return null;
+                      return (
+                        <span style={{ fontSize: 11, color: '#777', fontWeight: 700 }}
+                          title="이 센터·입고예정일로 한 덩어리인 발주서 수 · 품목 수 · 수량 합계">
+                          발주 {cnt} · {st.lines}품목 · {st.qty.toLocaleString()}개
+                        </span>
+                      );
+                    })()}
                     {selectable && !!row.물류센터 && (ordersByGroup.get(row.groupKey) || []).length > 1 && (() => {
                       const groupOrders = ordersByGroup.get(row.groupKey) || [];
                       const allOn = groupOrders.every(no => selectedOrders?.has(no));
@@ -315,7 +332,7 @@ export default function OrderTable({ rows, onMemoChange, onShipmentChange, color
                             onChange={() => groupOrders.forEach(no => onToggleSelect!(no, !allOn))}
                             style={{ cursor: 'pointer', margin: 0 }}
                           />
-                          이 센터 {groupOrders.length}건
+                          덩어리 전체
                         </label>
                       );
                     })()}

@@ -52,36 +52,12 @@ export default function CoupangShipPage({ onGoOrder }: { onGoOrder?: () => void 
   useEffect(() => subscribeShipments(setBatches), []);
   useEffect(() => subscribeShippingSettings(({ addresses, sender }) => { setAddresses(addresses); setSender(sender); }), []);
 
-  // 출고된 모든 줄을 발주확인과 같은 표 한 장으로 만든다(입고예정일 → 센터 → 발주번호 순).
   // 줄이 어느 출고 건에 속하는지 찾는 지도(발주번호 → 출고번호). 표에서 값을 고칠 때 쓴다.
   const shipIdOf = useMemo(() => {
     const map = new Map<string, string>();
     for (const item of list) for (const l of item.lines) if (!map.has(l.발주번호)) map.set(l.발주번호, item.id);
     return map;
   }, [list]);
-
-  const rows: DisplayRow[] = useMemo(() => {
-    const all: OrderRow[] = list.flatMap(item => item.lines.map(l => ({
-      발주번호: l.발주번호,
-      물류센터: l.물류센터,
-      상품이름: l.상품이름,
-      확정수량: l.확정수량,
-      입고예정일: normalizeDateValue(l.입고예정일),
-      메모: l.메모 || '',
-      쉼먼트: l.쉼먼트 || '',
-      묶음: l.묶음 || item.bundle,
-    })));
-    all.sort((a, b) => {
-      const d = ymdSortKey(a.입고예정일) - ymdSortKey(b.입고예정일);
-      if (d) return d;
-      const c = a.물류센터.localeCompare(b.물류센터, 'ko', { numeric: true });
-      if (c) return c;
-      return a.발주번호.localeCompare(b.발주번호, 'ko', { numeric: true });
-    });
-    return buildDisplayRows(all);
-  }, [list]);
-
-  const itemCount = rows.filter(r => !r.isBlank).length;
 
   // 출고 건의 진행 상태: 롯데 예약 → 운송장 → 서허 양식 저장.
   const progressOf = (item: ShipOut) => {
@@ -104,7 +80,7 @@ export default function CoupangShipPage({ onGoOrder }: { onGoOrder?: () => void 
       done: !!item.doneAt || (!!batch && boxes.length > 0 && waybills === boxes.length && !!item.formSavedAt),
     };
   };
-  // 끝난 건은 아래로 내린다(새로 할 일이 위에 오게).
+
   // 완료한 출고 건의 발주번호들. 왼쪽 발주서 표에서도 같이 불을 꺼 준다.
   const dimmedOrders = useMemo(() => {
     const set = new Set<string>();
@@ -115,11 +91,38 @@ export default function CoupangShipPage({ onGoOrder }: { onGoOrder?: () => void 
     return set;
   }, [list, batches]);
 
+  // 끝난 건은 아래로 내린다(새로 넘어온 건이 위에 오게). 표도 이 순서를 따라간다.
   const ordered = useMemo(
     () => list.slice().sort((a, b) => Number(progressOf(a).done) - Number(progressOf(b).done)),
     [list, batches],
   );
   // 택배 예약 건수 = 물류센터별로 지정된 상자 개수의 합.
+  const rows: DisplayRow[] = useMemo(() => {
+    // 표도 오른쪽 묶음 카드와 같은 순서로 쌓는다: 새로 넘어온 건이 위, 끝낸 건이 아래.
+    // 한 건 안에서는 발주서 순서(입고예정일 → 물류센터 → 발주번호)대로 줄을 세운다.
+    const all: OrderRow[] = ordered.flatMap(item => item.lines
+      .map(l => ({
+        발주번호: l.발주번호,
+        물류센터: l.물류센터,
+        상품이름: l.상품이름,
+        확정수량: l.확정수량,
+        입고예정일: normalizeDateValue(l.입고예정일),
+        메모: l.메모 || '',
+        쉼먼트: l.쉼먼트 || '',
+        묶음: l.묶음 || item.bundle,
+      }))
+      .sort((a, b) => {
+        const d = ymdSortKey(a.입고예정일) - ymdSortKey(b.입고예정일);
+        if (d) return d;
+        const c = a.물류센터.localeCompare(b.물류센터, 'ko', { numeric: true });
+        if (c) return c;
+        return a.발주번호.localeCompare(b.발주번호, 'ko', { numeric: true });
+      }));
+    return buildDisplayRows(all);
+  }, [ordered]);
+
+  const itemCount = rows.filter(r => !r.isBlank).length;
+
   const lotteCount = totalBoxCount(rows);
 
   // 표에서 예약·박스를 누르면 그 줄이 속한 출고 건의 값을 고친다(줄의 묶음 값이 출고번호다).

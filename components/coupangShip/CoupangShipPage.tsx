@@ -25,6 +25,10 @@ import ShipmentList from '../coupangOrder/components/ShipmentList';
 // 발주 > 쉽먼트생성. 쿠팡발주확인의 묶음 패널에서 "쉽먼트"를 누른 건들이 여기로 옮겨 온다.
 // 화면 모양은 쿠팡발주확인과 같게: 왼쪽은 발주서 표, 오른쪽은 묶음(출고 건) 카드.
 // 묶음 이름은 출고 건마다 겹칠 수 있어서, 표에는 출고번호(S260925-1)를 묶음 값으로 넣어 구분한다.
+// 줄 하나를 가리키는 열쇠(박스 순서를 기억할 때 쓴다).
+const lineKey = (l: { 발주번호: string; 상품이름: string; 확정수량: number | ''; 입고예정일: string }) =>
+  `${l.발주번호}│${l.상품이름}│${l.확정수량}│${l.입고예정일}`;
+
 export default function CoupangShipPage({ onGoOrder }: { onGoOrder?: () => void } = {}) {
   const [list, setList] = useState<ShipOut[]>([]);
   const [copied, setCopied] = useState('');
@@ -51,6 +55,16 @@ export default function CoupangShipPage({ onGoOrder }: { onGoOrder?: () => void 
   useEffect(() => subscribeInventory(setInventory), []);
   useEffect(() => subscribeShipments(setBatches), []);
   useEffect(() => subscribeShippingSettings(({ addresses, sender }) => { setAddresses(addresses); setSender(sender); }), []);
+
+  // 박스 순으로 세운 줄 차례(눌렀을 때 한 번 정해 두고, 그 뒤로는 그대로 둔다).
+  const [boxOrder, setBoxOrder] = useState<string[] | null>(null);
+  const sortByBox = () => {
+    const keys = ordered.flatMap(item => item.lines
+      .slice()
+      .sort((a, b) => (parseBoxNo(a.쉼먼트 || '') ?? 9999) - (parseBoxNo(b.쉼먼트 || '') ?? 9999))
+      .map(lineKey));
+    setBoxOrder(keys);
+  };
 
   // 줄이 어느 출고 건에 속하는지 찾는 지도(발주번호 → 출고번호). 표에서 값을 고칠 때 쓴다.
   const shipIdOf = useMemo(() => {
@@ -112,10 +126,13 @@ export default function CoupangShipPage({ onGoOrder }: { onGoOrder?: () => void 
         묶음: l.묶음 || item.bundle,
       }))
       .sort((a, b) => {
-        // 박스에 담은 순서대로 본다: 박스 1번 → 2번 → … → 아직 안 담은 줄.
-        const ba = parseBoxNo(a.쉼먼트 || '') ?? 9999;
-        const bb = parseBoxNo(b.쉼먼트 || '') ?? 9999;
-        if (ba !== bb) return ba - bb;
+        // 박스 순으로 세워 둔 적이 있으면 그때 정한 자리를 지킨다. 박스 번호를 고치는 동안
+        // 줄이 곧바로 움직이면 2번에서 3번으로 올릴 수가 없어서, 자동으로는 다시 세우지 않는다.
+        if (boxOrder) {
+          const ia = boxOrder.indexOf(lineKey(a));
+          const ib = boxOrder.indexOf(lineKey(b));
+          if (ia !== ib) return (ia < 0 ? 9999 : ia) - (ib < 0 ? 9999 : ib);
+        }
         const d = ymdSortKey(a.입고예정일) - ymdSortKey(b.입고예정일);
         if (d) return d;
         const c = a.물류센터.localeCompare(b.물류센터, 'ko', { numeric: true });
@@ -123,7 +140,7 @@ export default function CoupangShipPage({ onGoOrder }: { onGoOrder?: () => void 
         return a.발주번호.localeCompare(b.발주번호, 'ko', { numeric: true });
       }));
     return buildDisplayRows(all);
-  }, [ordered]);
+  }, [ordered, boxOrder]);
 
   const itemCount = rows.filter(r => !r.isBlank).length;
 
@@ -419,6 +436,17 @@ export default function CoupangShipPage({ onGoOrder }: { onGoOrder?: () => void 
                   }}
                 >
                   🖨 인쇄
+                </button>
+                <button
+                  onClick={sortByBox}
+                  title="지금 지정한 박스 번호 순(1번 → 2번 → …)으로 줄을 다시 세웁니다"
+                  style={{
+                    display: 'inline-flex', alignItems: 'center', gap: 4,
+                    padding: '3px 9px', fontSize: 11, color: '#777',
+                    background: '#fff', border: '1px solid #e0e0e0', borderRadius: 6, cursor: 'pointer',
+                  }}
+                >
+                  ↕ 박스순
                 </button>
                 {selected.size > 0 && (
                   <button

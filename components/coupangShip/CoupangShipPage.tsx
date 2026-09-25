@@ -3,7 +3,7 @@ import { ShipOut, subscribeShipOuts, deleteShipOut, restoreShipOut, restoreOrder
 import { InventoryItem, subscribeInventory, makeOfficeLookup } from '../../data/inventoryStore';
 import { dateKeyYMD } from '../coupangOrder/utils/dateUtils';
 import OrderTable from '../coupangOrder/components/OrderTable';
-import { buildDisplayRows } from '../coupangOrder/utils/dataProcessor';
+import { buildDisplayRows, parseBoxNo } from '../coupangOrder/utils/dataProcessor';
 import type { DisplayRow } from '../coupangOrder/utils/dataProcessor';
 import { normalizeDateValue, ymdSortKey } from '../coupangOrder/utils/dateUtils';
 import { printPanel } from '../coupangOrder/utils/printUtils';
@@ -112,6 +112,10 @@ export default function CoupangShipPage({ onGoOrder }: { onGoOrder?: () => void 
         묶음: l.묶음 || item.bundle,
       }))
       .sort((a, b) => {
+        // 박스에 담은 순서대로 본다: 박스 1번 → 2번 → … → 아직 안 담은 줄.
+        const ba = parseBoxNo(a.쉼먼트 || '') ?? 9999;
+        const bb = parseBoxNo(b.쉼먼트 || '') ?? 9999;
+        if (ba !== bb) return ba - bb;
         const d = ymdSortKey(a.입고예정일) - ymdSortKey(b.입고예정일);
         if (d) return d;
         const c = a.물류센터.localeCompare(b.물류센터, 'ko', { numeric: true });

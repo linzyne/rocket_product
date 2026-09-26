@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { InventoryItem, subscribeInventory, splitProductName, dateKey } from '../data/inventoryStore';
 import { ReceiveRow, subscribeReceives, sign, norm } from '../data/receiveStore';
 import CollectReceives from './CollectReceives';
+import { useRowOrder, DragHandle } from './useRowOrder';
 
 // 로켓 > 입고. 물류창고입고에 쌓인 쿠팡 입고 내역을 상품 × 날짜 표로 보여준다.
 // 서허 입고 내역은 같은 상품이라도 물류센터마다 줄이 쪼개져 있어서, 여기서는 SKU번호로 묶어
@@ -13,6 +14,8 @@ const ReceiveHistoryPage: React.FC = () => {
   const [items, setItems] = useState<InventoryItem[]>([]);
   const [month, setMonth] = useState(() => monthKey(new Date()));
   const [search, setSearch] = useState('');
+  // 상품 진열 순서. 입고는 서허 SKU번호로 줄을 만들어 로켓재고와 따로 둔다.
+  const order = useRowOrder('sku');
 
   useEffect(() => subscribeReceives(setRows), []);
   useEffect(() => subscribeInventory(setItems), []);
@@ -65,6 +68,11 @@ const ReceiveHistoryPage: React.FC = () => {
       .sort((a, b) => b.total - a.total || a.skuName.localeCompare(b.skuName, 'ko'));
   }, [rows, month, search]);
 
+  type Group = (typeof groups)[number];
+  const keyOf = (g: Group) => g.sku || g.skuName;
+  const sortedGroups = order.sort<Group>(groups, keyOf);
+  const visibleKeys = sortedGroups.map(keyOf);
+
   const monthTotal = groups.reduce((s, g) => s + g.total, 0);
   // 이름으로 상품관리 상품을 찾은 개수. 이름이 서로 달라 못 찾은 것이 많으면 여기서 바로 보인다.
   const matchedCount = groups.filter(g => findItem(g.skuName)).length;
@@ -91,6 +99,7 @@ const ReceiveHistoryPage: React.FC = () => {
           placeholder="상품명·SKU 검색"
           className="w-64 px-3 py-1.5 border border-gray-200 rounded-lg text-sm bg-white focus:outline-none focus:ring-1 focus:ring-blue-400"
         />
+        <order.Toggle />
         <span className="text-sm text-gray-500">
           상품 {groups.length}개 · 이 달 입고 {monthTotal.toLocaleString()}개
           {groups.length > 0 && <span className="text-gray-400"> · 상품관리와 이름이 맞은 건 {matchedCount}개</span>}
@@ -114,13 +123,18 @@ const ReceiveHistoryPage: React.FC = () => {
             </tr>
           </thead>
           <tbody>
-            {groups.map(g => {
+            {sortedGroups.map((g: Group) => {
               const it = findItem(g.skuName);
               const { base, option } = splitProductName(it ? it.productName : g.skuName);
               return (
-                <tr key={g.sku || g.skuName} className="border-t border-gray-100 hover:bg-gray-50">
+                <tr
+                  key={keyOf(g)}
+                  {...order.rowProps(keyOf(g), visibleKeys)}
+                  className={`border-t border-gray-100 hover:bg-gray-50 ${order.rowClass(keyOf(g))}`}
+                >
                   <td className="sticky left-0 z-10 bg-white px-3 py-1.5 border-r border-gray-200 max-w-[16rem]">
                     <div className="flex items-center gap-2">
+                      <DragHandle show={order.mine} />
                       {it?.imageUrl
                         ? <img src={it.imageUrl} alt="" className="w-8 h-8 flex-shrink-0 rounded object-cover border border-gray-100" />
                         : <div className="w-8 h-8 flex-shrink-0 rounded bg-gray-100" />}
@@ -146,7 +160,7 @@ const ReceiveHistoryPage: React.FC = () => {
                 </tr>
               );
             })}
-            {!groups.length && (
+            {!sortedGroups.length && (
               <tr><td colSpan={days.length + 2} className="px-3 py-12 text-center text-gray-400">이 달에 입고된 내역이 없어요.</td></tr>
             )}
           </tbody>

@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { InventoryItem, subscribeInventory, splitProductName, dateKey } from '../data/inventoryStore';
 import CollectFromExtension from './CollectFromExtension';
+import { useRowOrder, DragHandle } from './useRowOrder';
 
 // 로켓 > 로켓재고·판매량. 둘 다 같은 표(상품 × 날짜)를 모드만 바꿔 쓴다. 확장이 날마다 가져온
 // 로켓센터 재고를 월 단위로 보여주고, 수집한 날만 값이 있다.
@@ -17,6 +18,8 @@ const StockHistoryPage: React.FC<{ mode: StockMode }> = ({ mode }) => {
   const [items, setItems] = useState<InventoryItem[]>([]);
   const [month, setMonth] = useState(() => monthKey(new Date()));
   const [search, setSearch] = useState('');
+  // 상품 진열 순서. "내 순서"로 두면 끌어서 옮길 수 있고, 로켓재고·판매량이 같은 차례를 쓴다.
+  const order = useRowOrder('ads');
 
   useEffect(() => subscribeInventory(setItems), []);
 
@@ -70,6 +73,10 @@ const StockHistoryPage: React.FC<{ mode: StockMode }> = ({ mode }) => {
       .sort((a, b) => b.key! - a.key! || a.it.productName.localeCompare(b.it.productName, 'ko'));
   }, [items, search, days, mode, today]);
 
+  type Row = (typeof rows)[number];
+  const sortedRows = order.sort<Row>(rows, (r: Row) => r.it.adsId);
+  const visibleKeys = sortedRows.map((r: Row) => r.it.adsId);
+
   const { title, desc } = TITLES[mode];
 
   return (
@@ -94,6 +101,7 @@ const StockHistoryPage: React.FC<{ mode: StockMode }> = ({ mode }) => {
           placeholder="상품명 검색"
           className="w-64 px-3 py-1.5 border border-gray-200 rounded-lg text-sm bg-white focus:outline-none focus:ring-1 focus:ring-blue-400"
         />
+        <order.Toggle />
       </div>
 
       <div className="bg-white border border-gray-200 rounded-xl overflow-x-auto">
@@ -112,12 +120,17 @@ const StockHistoryPage: React.FC<{ mode: StockMode }> = ({ mode }) => {
             </tr>
           </thead>
           <tbody>
-            {rows.map(({ it, cells }) => {
+            {sortedRows.map(({ it, cells }) => {
               const { base, option } = splitProductName(it.productName);
               return (
-                <tr key={it.adsId} className="border-t border-gray-100 hover:bg-gray-50">
+                <tr
+                  key={it.adsId}
+                  {...order.rowProps(it.adsId, visibleKeys)}
+                  className={`border-t border-gray-100 hover:bg-gray-50 ${order.rowClass(it.adsId)}`}
+                >
                   <td className="sticky left-0 z-10 bg-white px-3 py-1.5 border-r border-gray-200 max-w-[16rem]">
                     <div className="flex items-center gap-2">
+                      <DragHandle show={order.mine} />
                       {it.imageUrl
                         ? <img src={it.imageUrl} alt="" className="w-8 h-8 flex-shrink-0 rounded object-cover border border-gray-100" />
                         : <div className="w-8 h-8 flex-shrink-0 rounded bg-gray-100" />}
@@ -145,7 +158,7 @@ const StockHistoryPage: React.FC<{ mode: StockMode }> = ({ mode }) => {
                 </tr>
               );
             })}
-            {!rows.length && (
+            {!sortedRows.length && (
               <tr><td colSpan={days.length + 1} className="px-3 py-12 text-center text-gray-400">이 달에 기록된 재고가 없어요.</td></tr>
             )}
           </tbody>

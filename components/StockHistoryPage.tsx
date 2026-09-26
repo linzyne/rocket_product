@@ -130,7 +130,7 @@ const StockHistoryPage: React.FC<{ mode: StockMode }> = ({ mode }) => {
                 >
                   <td className="sticky left-0 z-10 bg-white px-3 py-1.5 border-r border-gray-200 max-w-[16rem]">
                     <div className="flex items-center gap-2">
-                      <DragHandle show={order.mine} />
+                      <DragHandle show={order.mine} onUp={() => order.move(it.adsId, -1)} onDown={() => order.move(it.adsId, 1)} />
                       {it.imageUrl
                         ? <img src={it.imageUrl} alt="" className="w-8 h-8 flex-shrink-0 rounded object-cover border border-gray-100" />
                         : <div className="w-8 h-8 flex-shrink-0 rounded bg-gray-100" />}

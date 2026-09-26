@@ -43,13 +43,6 @@ export const lastTwoStocks = (item: InventoryItem) => {
   return { lastDay, last: lastDay ? h[lastDay] : null, prevDay, prev: prevDay ? h[prevDay] : null };
 };
 
-// 사무실 재고는 고친 날만 기록되므로, 그 날짜 이전의 가장 최근 기록을 쓴다.
-export const officeOn = (item: InventoryItem, day: string): number | null => {
-  const h = item.officeHistory || {};
-  const before = Object.keys(h).filter(d => d <= day).sort();
-  return before.length ? h[before[before.length - 1]] ?? null : null;
-};
-
 // 확장이 넘겨주는 모양(rocket-hub-extension/panel.js의 hubData).
 export interface HubData {
   adsStock?: {

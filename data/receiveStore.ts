@@ -34,7 +34,7 @@ const LOCAL_KEY = 'coupangReceives';
 // 반출(반품)은 수량·금액을 빼서 계산한다.
 export const sign = (r: ReceiveRow) => (/반출/.test(r.구분) ? -1 : 1);
 
-const norm = (s: string) => s.toLowerCase().replace(/[\s,.\-_()[\]/·]+/g, '');
+export const norm = (s: string) => s.toLowerCase().replace(/[\s,.\-_()[\]/·]+/g, '');
 
 // 한중발주의 쿠팡 발주 줄 중 이 입고 줄과 맞는 것. 발주번호가 같고, 한 발주번호에 상품이 여럿이면 상품명으로 가린다.
 export const matchLine = (order: HanjungOrder, r: ReceiveRow) => {

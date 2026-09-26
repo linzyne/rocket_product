@@ -5,8 +5,11 @@
 //
 // 자동 수집(앱의 "확장에서 가져오기" → background.js가 hubAutoRun을 남기고 이 화면을 엶):
 //   광고 중인 상품 탭 → 광고하지 않는 상품 탭 순서로 열어서, 페이지가 받은 1페이지 응답으로 전체 페이지 수를
-//   알아낸 뒤 나머지 페이지는 hook.js가 같은 요청을 페이지 번호만 바꿔 다시 보냅니다(안 되면 페이지 번호 클릭).
-//   끝나면 hubAutoRun.done=true → 앱이 그 값을 가져갑니다.
+//   알아낸 뒤 나머지 페이지는 hook.js가 같은 요청을 페이지 번호만 바꿔 한 장씩 다시 보냅니다.
+//   다 받았는지는 "이 단계에서 담은 상품 개수"로 봅니다(페이지 번호를 0부터 세는 응답도 있어 믿지 않습니다).
+//   막히면 페이지 번호를 눌러 화면에서 직접 읽습니다. 끝나면 hubAutoRun.done=true → 앱이 그 값을 가져갑니다.
+//   광고 중인 탭을 먼저 도는 이유: "광고하지 않는 상품" 목록에 광고 중인 상품이 섞여 오더라도,
+//   이미 광고 중으로 잡힌 상품은 되돌리지 않기 때문입니다(doSave).
 //
 // 물류창고입고 자동 수집(앱의 물류 › 물류창고입고 "자동으로 가져오기" → background.js가 hubReceiveRun을
 //   남기고 서허 입고상세내역을 엶): 앱이 고른 날짜로 기간을 맞추고 검색한 뒤, 페이지를 끝까지 넘기며 표를 모읍니다.
@@ -17,9 +20,10 @@
   const DATA_KEY = 'hubData';
   const AUTO_KEY = 'hubAutoRun';
   const RECEIVE_KEY = 'hubReceiveRun';
+  const LOG_KEY = 'hubLog';
   const HOOK_SOURCE = 'rocket-hub-hook';
   const PANEL_SOURCE = 'rocket-hub-panel';
-  // 오래된 요청이 남아 엉뚱할 때 돌지 않도록, 요청 뒤 5분 안에만 자동 수집을 이어갑니다.
+  // 오래된 요청이 남아 엉뚱할 때 돌지 않도록, 마지막 소식(touchedAt) 뒤 5분 안에만 이어갑니다.
   const AUTO_MAX_AGE_MS = 5 * 60 * 1000;
   const AUTO_STEPS = [
     { id: 'ad', page: '/marketing/product-dashboard/advertised', api: '/vendor-items-advertised', label: '광고 중인 상품' },
@@ -33,8 +37,18 @@
   let collapsed = false;
   let timer = null;
   let autoStatus = '';
-  // 상품 목록 응답별로 받은 페이지들. { '/vendor-items': { totalPages, pages: Set } }
+  // 상품 목록 응답이 온 탭별 정보. { '/vendor-items': { totalPages, total } }
   const pagingSeen = {};
+  // 자동 수집 중인 단계. 다른 주소로 옮기는 중이면(autoNavigating) 이 화면에서는 더 하지 않는다.
+  let autoStep = null;
+  let autoNavigating = false;
+  // 다른 창(확장이 연 수집 창)에서 수집이 돌고 있으면, 사장님이 열어둔 이 탭이 받은 값은 저장하지 않는다.
+  // 이 탭이 다른 탭을 보고 있으면 같은 상품의 광고 여부를 거꾸로 덮어쓸 수 있다.
+  let foreignRun = null;
+  // 이 화면에서 담은 상품 번호들(탭별). 자동 수집에서 "다 받았는지"를 개수로 셀 때 쓴다.
+  // 패널이 뜨기 전에 온 1페이지 응답도 세어야 하므로, 단계가 시작되기 전부터 계속 모아 둔다.
+  const pageKeys = {};
+  const keysFor = (api) => pageKeys[api] || (pageKeys[api] = new Set());
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
   const activeCollector = () => collectors.find((c) => c.match());
@@ -75,16 +89,117 @@
   const autoGet = () => runGet(AUTO_KEY);
   const autoSet = (value) => runSet(AUTO_KEY, value);
 
-  const notePaging = (url, json) => {
-    if (!/\/product-api\/vendor-items/.test(url) || !json || !json.paging) return;
-    const key = /vendor-items-advertised/.test(url) ? '/vendor-items-advertised' : '/vendor-items';
-    const seen = pagingSeen[key] || (pagingSeen[key] = { totalPages: 1, pages: new Set(), total: null });
-    seen.totalPages = Math.max(1, Number(json.paging.totalPages) || 1);
-    seen.pages.add(Number(json.paging.currentPage) || 1);
-    // 목록이 아예 비었는지(상품이 0개인 탭인지) 판단할 때 쓴다.
-    const total = [json.paging.totalElements, json.paging.totalItems, json.paging.totalCount, json.paging.total]
-      .find((v) => v != null && Number.isFinite(Number(v)));
-    if (total != null) seen.total = Number(total);
+  // ---- 수집 로그 ----
+  // 수집이 어디서 어긋났는지 나중에 볼 수 있게 한 줄씩 적어 둡니다. 앱의 재고 › 상품관리에서
+  // 파일로 내려받아 그대로 넘기면 됩니다(상품명·재고 같은 사장님 장사 자료가 함께 담깁니다).
+  // 단계마다 화면을 새로 열기 때문에, 같은 요청(requestedAt)이면 앞 단계 로그에 이어 적습니다.
+  let log = null;
+  let logTimer = null;
+  const saveLog = () => {
+    if (!log) return;
+    clearTimeout(logTimer);
+    logTimer = setTimeout(() => runSet(LOG_KEY, log), 300);
+  };
+  const saveLogNow = () => {
+    clearTimeout(logTimer);
+    return log ? runSet(LOG_KEY, log) : Promise.resolve();
+  };
+  const logLine = (text) => {
+    if (!log) return;
+    log.lines.push(`${new Date().toLocaleTimeString('ko-KR')} ${text}`);
+    if (log.lines.length > 500) log.lines.shift();
+    saveLog();
+  };
+  const startLog = async (kind, run) => {
+    const prev = await runGet(LOG_KEY);
+    if (prev && prev.requestedAt && prev.requestedAt === run.requestedAt) {
+      log = prev;
+      logLine(`─── 화면 다시 열림: ${location.pathname}`);
+      return;
+    }
+    let version = '';
+    try {
+      version = chrome.runtime.getManifest().version;
+    } catch (err) {}
+    log = {
+      kind,
+      version,
+      requestedAt: run.requestedAt || 0,
+      startedAt: new Date().toISOString(),
+      firstPage: location.href,
+      title: document.title,
+      lines: [],
+      // 주소별 JSON 응답 횟수. 쿠팡이 목록 주소를 바꿨는지 여기서 알 수 있습니다.
+      urls: {},
+      // 탭별 첫 목록 응답의 앞부분(상품 칸 이름이 바뀌었는지 보려고).
+      samples: [],
+      error: '',
+    };
+    logLine(`수집 시작 (확장 ${version || '?'}) · ${location.href}`);
+  };
+  // 목록 응답을 받았을 때 남기는 자취.
+  const logResponse = (api, path, text, json, items) => {
+    if (!log) return;
+    log.urls[path] = (log.urls[path] || 0) + 1;
+    if (!api) return;
+    const p = findPaging(json);
+    logLine(`목록 응답 ${api} · 뽑은 상품 ${items ? items.length : 0}개 · 전체페이지 ${p && p.totalPages != null ? p.totalPages : '?'} · 전체상품 ${p && p.total != null ? p.total : '?'}`);
+    if (log.samples.some((x) => x.api === api)) return;
+    log.samples.push({
+      api,
+      path,
+      parsed: items ? items.length : 0,
+      firstItem: (items && items[0]) || null,
+      // 칸 이름을 보려면 원본이 있어야 해서 앞부분만 담습니다.
+      body: String(text || '').slice(0, 20000),
+    });
+    saveLog();
+  };
+
+  // 이 응답이 어느 탭의 상품 목록인지(collectors.js와 같은 규칙). 목록이 아니면 null.
+  const apiOf = (url) => (window.__rocketHubAdsApiOf ? window.__rocketHubAdsApiOf(url) : null);
+
+  // 응답 어디에 있든 페이지 정보를 찾는다(쿠팡이 칸 이름이나 자리를 바꿔도 견디도록).
+  const numOf = (v) => (v != null && v !== '' && typeof v !== 'boolean' && Number.isFinite(Number(v)) ? Number(v) : null);
+  const findPaging = (json) => {
+    let out = null;
+    const seen = new Set();
+    const pick = (node, keys) => {
+      for (const k of keys) {
+        const v = numOf(node[k]);
+        if (v != null) return v;
+      }
+      return null;
+    };
+    const walk = (node, depth) => {
+      if (!node || typeof node !== 'object' || depth > 6 || seen.has(node)) return;
+      seen.add(node);
+      if (Array.isArray(node)) {
+        for (const v of node) walk(v, depth + 1);
+        return;
+      }
+      const totalPages = pick(node, ['totalPages', 'totalPage', 'pageCount', 'totalPageCount', 'lastPage']);
+      const total = pick(node, ['totalElements', 'totalItems', 'totalCount', 'totalElementCount', 'total']);
+      if (totalPages != null || total != null) {
+        out = out || { totalPages: null, total: null };
+        if (out.totalPages == null) out.totalPages = totalPages;
+        if (out.total == null) out.total = total;
+      }
+      for (const v of Object.values(node)) walk(v, depth + 1);
+    };
+    walk(json, 0);
+    return out;
+  };
+
+  // 목록 응답이 왔다는 표시. 전체 페이지 수·상품 수를 알면 같이 적어 둔다.
+  // 몇 페이지짜리 응답인지는 응답마다 세는 방식이 달라(0부터/1부터) 믿지 않고,
+  // "우리가 몇 개를 담았는지"로 다 받았는지 확인한다.
+  const noteList = (api, json) => {
+    const seen = pagingSeen[api] || (pagingSeen[api] = { totalPages: 1, total: null });
+    const p = findPaging(json);
+    if (!p) return;
+    if (p.totalPages != null) seen.totalPages = Math.max(1, p.totalPages);
+    if (p.total != null) seen.total = p.total;
   };
 
   // hook.js가 넘겨주는 JSON 응답.
@@ -94,21 +209,35 @@
     if (!d || d.source !== HOOK_SOURCE || d.type !== 'JSON') return;
     raw.push({ url: d.url, at: d.at, page: location.href, text: d.text });
     if (raw.length > MAX_RAW) raw.shift();
+    const api = apiOf(d.url);
+    let path = String(d.url);
+    try {
+      path = new URL(String(d.url), location.href).pathname;
+    } catch (err) {}
+    // 자동 수집 중에는 지금 단계의 탭 목록만 받는다. 두 탭 목록이 섞이면 광고 여부와 개수가 어긋난다.
+    if (api && autoStep && api !== autoStep.api) {
+      logLine(`다른 탭 목록이라 흘려보냄: ${api}`);
+      return;
+    }
     let json = null;
     try {
       json = JSON.parse(d.text);
     } catch (err) {}
-    notePaging(d.url, json);
+    if (api) noteList(api, json);
     const c = activeCollector();
+    let items = [];
     if (c && c.fromResponse) {
-      let items = [];
       try {
         items = c.fromResponse(d.url, json) || [];
-      } catch (err) {}
-      if (items.length) {
-        saveItems(c, items);
-        return;
+      } catch (err) {
+        logLine(`목록 해석 실패: ${(err && err.message) || err}`);
       }
+    }
+    logResponse(api, path, d.text, json, items);
+    if (items.length) {
+      if (api) for (const it of items) keysFor(api).add(it.key);
+      saveItems(c, items);
+      return;
     }
     render();
   });
@@ -119,10 +248,20 @@
   const queue = (fn) => (saveChain = saveChain.then(fn).catch(() => {}));
   const saveItems = (c, items) => queue(() => doSave(c, items));
   const doSave = async (c, items) => {
+    if (foreignRun && fresh(foreignRun)) return;
     const data = await storageGet();
     const bucket = data[c.id] || { items: {}, startedAt: Date.now() };
     const now = Date.now();
-    for (const item of items) bucket.items[item.key] = { ...bucket.items[item.key], ...item, seenAt: now };
+    for (const item of items) {
+      const prev = bucket.items[item.key];
+      const next = { ...prev, ...item, seenAt: now };
+      // "광고 중인 상품"으로 이미 잡힌 상품은, 뒤에 오는 전체 목록이 "광고 안 함"으로 되돌리지 않게 한다
+      // (전체 목록에는 광고 중인 상품도 같이 들어 있을 수 있다).
+      if (autoStep && prev && prev.adState === 'ad' && next.adState !== 'ad') next.adState = 'ad';
+      bucket.items[item.key] = next;
+      // 화면에서 읽어 담은 것도 이 단계 몫으로 센다(자동 수집 중에는 이 단계 탭만 들어온다).
+      if (autoStep) keysFor(autoStep.api).add(item.key);
+    }
     bucket.updatedAt = now;
     data[c.id] = bucket;
     await storageSet(data);
@@ -180,20 +319,25 @@
     return null;
   };
 
-  const fetchPages = (api, pages) =>
+  // 페이지 하나를 hook.js가 다시 요청하게 한다(응답은 위 message 처리로 들어와 저장된다).
+  // 여러 페이지를 한 번에 맡기면 오래 걸려 기다림이 먼저 끝나 버리므로 한 장씩 주고받는다.
+  const fetchPage = (api, page) =>
     new Promise((resolve) => {
+      let settled = false;
+      const finish = (res) => {
+        if (settled) return;
+        settled = true;
+        window.removeEventListener('message', onMsg);
+        resolve(res);
+      };
       const onMsg = (event) => {
         const d = event.data;
-        if (event.source !== window || !d || d.source !== HOOK_SOURCE || d.type !== 'FETCH_PAGES_RESULT' || d.path !== api) return;
-        window.removeEventListener('message', onMsg);
-        resolve(d);
+        if (event.source !== window || !d || d.source !== HOOK_SOURCE || d.path !== api) return;
+        if (d.type === 'FETCH_PAGE_RESULT' && d.page === page) finish(d);
       };
       window.addEventListener('message', onMsg);
-      window.postMessage({ source: PANEL_SOURCE, type: 'FETCH_PAGES', path: api, pages }, window.location.origin);
-      setTimeout(() => {
-        window.removeEventListener('message', onMsg);
-        resolve({ ok: false, error: 'timeout' });
-      }, 30000);
+      window.postMessage({ source: PANEL_SOURCE, type: 'FETCH_PAGES', path: api, pages: [page] }, window.location.origin);
+      setTimeout(() => finish({ ok: false, error: 'timeout' }), 25000);
     });
 
   // 요청 다시 보내기가 안 될 때: 화면 아래 페이지 번호를 눌러서 넘깁니다.
@@ -213,13 +357,6 @@
   // 화면에 상품 카드("ID : 숫자")가 한 장이라도 보이는지. 상품이 0개인 탭과
   // 화면은 있는데 못 담은 경우를 가른다.
   const screenHasProducts = () => /ID\s*:\s*\d{6,}/.test(document.body.innerText || '');
-
-  // 지금까지 모아둔 개수(응답으로 하나도 못 담았는지 확인용).
-  const bucketCount = async (c) => {
-    const data = await storageGet();
-    const b = data[c.id];
-    return b && b.items ? Object.keys(b.items).length : 0;
-  };
 
   // 실제로 내려가는 곳. 창이 안 내려가는 화면이면 목록을 담고 있는 안쪽 상자를 찾는다.
   const scroller = () => {
@@ -269,6 +406,17 @@
   const failAuto = async (run, message) => {
     run.error = message;
     run.finishedAt = Date.now();
+    // 앱이 오류를 보면 바로 로그를 가져가므로, 로그를 먼저 다 적어 둔다.
+    if (log) {
+      log.error = message;
+      logLine(`❌ 실패: ${message}`);
+      log.screenHasProducts = screenHasProducts();
+      log.lastPage = location.href;
+      try {
+        log.sampleCards = window.__rocketHubSampleCards ? window.__rocketHubSampleCards() : [];
+      } catch (err) {}
+      await saveLogNow();
+    }
     await autoSet(run);
     autoStatus = `❌ ${message}`;
     render();
@@ -277,68 +425,133 @@
     } catch (err) {}
   };
 
+  // 앱에 "아직 돌고 있다"고 알린다. 앱은 소식이 한참 없으면 끊긴 것으로 보고 멈추기 때문에,
+  // 페이지가 많아 오래 걸릴 때도 기다려 주도록 진행 상황을 계속 적어 준다.
+  const touch = async (run, force) => {
+    const now = Date.now();
+    if (!force && now - (run.touchedAt || 0) < 3000) return;
+    run.touchedAt = now;
+    run.status = autoStatus;
+    await autoSet(run);
+  };
+
   const runAuto = async (run) => {
     const idx = Math.max(0, AUTO_STEPS.findIndex((s) => s.id === run.step));
     const step = AUTO_STEPS[idx];
-    if (location.pathname.replace(/\/$/, '') !== step.page) {
+    // 이 단계의 탭으로 옮긴다. 화면이 스스로 다른 주소로 바꿔 놓는 경우가 있어 한 번만 옮긴다
+    // (주소가 다르다고 계속 옮기면 새로고침만 되풀이한다).
+    if (location.pathname.replace(/\/$/, '') !== step.page && run.goneTo !== step.id) {
+      await startLog('ads', run);
+      logLine(`"${step.label}" 화면으로 옮김: ${location.pathname} → ${step.page}`);
+      await saveLogNow();
+      run.goneTo = step.id;
+      autoNavigating = true;
+      await autoSet(run);
       location.href = step.page;
       return;
     }
+    await startLog('ads', run);
+    logLine(`단계 "${step.label}" 시작 · 주소 ${location.pathname}`);
     const c = activeCollector();
-    if (!c) return;
+    if (!c) return failAuto(run, '광고 상품 대시보드 화면이 열리지 않았어요. 쿠팡 광고 사이트에 로그인돼 있는지 확인해 주세요.');
     // 이번 수집에 없던 상품을 앱이 알아볼 수 있게, 처음 한 번 비우고 시작합니다.
     if (!run.cleared) {
       await clearBucket(c);
       run.cleared = true;
       await autoSet(run);
     }
+    autoStep = step;
     // 이 화면이 뜨기 전에 온 응답도 받도록 hook.js에 다시 보내 달라고 합니다.
     window.postMessage({ source: PANEL_SOURCE, type: 'GET_BUFFER' }, window.location.origin);
 
     autoStatus = `자동 수집 중 · ${step.label} 불러오는 중`;
     render();
-    const before = await bucketCount(c); // 이 단계에서 새로 담은 게 있는지 비교할 기준
-    const seen = await waitFor(() => pagingSeen[step.api], 30000);
-    if (!seen) return failAuto(run, `${step.label} 목록을 받지 못했어요. 광고 사이트 로그인을 확인해 주세요.`);
+    await touch(run, true);
 
-    const all = Array.from({ length: seen.totalPages }, (_, i) => i + 1);
-    const missing = () => all.filter((p) => !seen.pages.has(p));
-    if (missing().length) {
-      autoStatus = `자동 수집 중 · ${step.label} ${seen.totalPages}페이지`;
-      render();
-      const res = await fetchPages(step.api, missing());
-      if (!res.ok) {
-        for (const p of missing()) {
-          if (clickPage(p)) await waitFor(() => seen.pages.has(p), 10000);
-        }
+    let seen = await waitFor(() => pagingSeen[step.api], 20000);
+    // 목록이 안 오면 탭 이름을 눌러 본다(주소는 맞는데 다른 탭이 열려 있을 수 있다).
+    if (!seen) {
+      const tab = findByText(step.label);
+      if (tab) {
+        autoStatus = `자동 수집 중 · "${step.label}" 탭 누르는 중`;
+        render();
+        logLine(`목록이 안 와서 "${step.label}" 탭을 눌러 봄`);
+        clickEl(tab);
+        seen = await waitFor(() => pagingSeen[step.api], 20000);
+      } else {
+        logLine(`목록이 안 오고 "${step.label}" 탭도 못 찾음`);
       }
-      await waitFor(() => !missing().length, 15000);
-      if (missing().length) return failAuto(run, `${step.label} ${missing().join(', ')}페이지를 가져오지 못했어요.`);
     }
-    await queue(() => sleep(200)); // 저장이 다 끝난 뒤 다음으로
+    if (!seen && !screenHasProducts()) {
+      return failAuto(run, `${step.label} 목록을 받지 못했어요. 광고 사이트 로그인을 확인해 주세요.`);
+    }
 
-    // 한 줄도 못 담았을 때: 진짜로 상품이 없는 탭이면 그냥 넘어가고,
-    // 화면에는 상품이 보이는데 못 담은 것이면 스크롤하며 화면에서 직접 읽어 담는다.
-    if ((await bucketCount(c)) <= before) {
-      if (seen.total === 0 || !screenHasProducts()) {
+    const totalPages = seen ? seen.totalPages : 1;
+    const total = seen ? seen.total : null; // 이 탭의 상품 수(모르면 null)
+    logLine(`전체 ${totalPages}페이지 · 전체상품 ${total == null ? '모름' : total}개`);
+    let pageError = '';
+    for (let p = 2; p <= totalPages; p++) {
+      autoStatus = `자동 수집 중 · ${step.label} ${p}/${totalPages}페이지`;
+      render();
+      await touch(run);
+      const res = await fetchPage(step.api, p);
+      if (!res.ok) {
+        pageError = String(res.error || '');
+        logLine(`${p}페이지 못 받음: ${pageError}`);
+        break;
+      }
+      await queue(() => sleep(0)); // 저장이 끝난 뒤 다음 페이지
+    }
+    await queue(() => sleep(200));
+
+    // 다 담았는지 개수로 확인한다. 상품 수(total)는 응답마다 뜻이 다를 수 있어,
+    // 한 페이지당 개수가 말이 될 때만(1~500개) 믿는다. 모르면 "한 건이라도 담았는지"로 본다.
+    const got = keysFor(step.api).size;
+    const perPage = total != null && totalPages > 0 ? total / totalPages : null;
+    const expected = perPage != null && perPage >= 1 && perPage <= 500 ? total : null;
+    logLine(`${step.label} 담은 상품 ${got}개 (있어야 할 개수 ${expected == null ? '모름' : expected})`);
+    if (pageError || (expected == null ? !got : got < expected)) {
+      if (!got && (total === 0 || !screenHasProducts())) {
         autoStatus = `${step.label}은 없어요 · 다음으로 넘어갑니다`;
+        logLine(`${step.label}에 상품이 없어 넘어감`);
         render();
       } else {
-        await collectByScreen(c, seen.totalPages, step.label);
-        if ((await bucketCount(c)) <= before && screenHasProducts()) {
+        // 요청 다시 보내기가 막혔거나 빠진 게 있으면, 페이지를 넘기며 화면에서 읽어 담는다.
+        logLine(`빠진 게 있어 화면에서 직접 읽기 시작(${totalPages}페이지)`);
+        await collectByScreen(c, totalPages, step.label);
+        logLine(`화면에서 읽은 뒤 ${keysFor(step.api).size}개`);
+        await touch(run, true);
+        if (!keysFor(step.api).size) {
           return failAuto(run, `${step.label}에서 한 건도 담지 못했어요. 광고 화면에 상품이 보이는지 확인해 주세요.`);
         }
       }
     }
+    // 끝내 모자라면 앱에도 알린다. "완료"라고만 하면 빠진 상품을 사장님이 알 수 없다.
+    const after = keysFor(step.api).size;
+    if (expected != null && after < expected) {
+      const note = `${step.label} ${expected}개 중 ${after}개만 가져왔어요`;
+      run.warn = run.warn ? `${run.warn} · ${note}` : note;
+      logLine(`⚠️ ${note}${pageError ? ` (${pageError})` : ''}`);
+    }
+    autoStep = null;
 
     if (idx < AUTO_STEPS.length - 1) {
-      run.step = AUTO_STEPS[idx + 1].id;
-      await autoSet(run);
-      location.href = AUTO_STEPS[idx + 1].page;
+      const next = AUTO_STEPS[idx + 1];
+      run.step = next.id;
+      run.goneTo = next.id;
+      autoStatus = `자동 수집 중 · ${next.label} 화면으로 넘어가는 중`;
+      logLine(`다음 단계 "${next.label}" 화면으로 넘어감 → ${next.page}`);
+      await saveLogNow();
+      autoNavigating = true;
+      await touch(run, true);
+      location.href = next.page;
       return;
     }
     run.done = true;
     run.finishedAt = Date.now();
+    run.status = '';
+    logLine('✅ 두 탭 모두 끝');
+    await saveLogNow();
     await autoSet(run);
     autoStatus = '✅ 자동 수집 완료 · 앱에 반영했어요';
     render();
@@ -431,6 +644,13 @@
   const failReceive = async (run, message) => {
     run.error = message;
     run.finishedAt = Date.now();
+    if (log) {
+      log.error = message;
+      logLine(`❌ 실패: ${message}`);
+      log.lastPage = location.href;
+      log.dateInputs = dateInputs().map((el) => el.value);
+      await saveLogNow();
+    }
     await runSet(RECEIVE_KEY, run);
     receiveStatus(`❌ ${message}`);
     try {
@@ -492,6 +712,8 @@
     const c = collectors.find((x) => x.id === 'receiveDetail');
     if (!c || !c.match()) return;
     const day = run.day || '';
+    await startLog('receive', run);
+    logLine(`물류창고입고 수집 시작 · 찾을 날짜 ${day}`);
     // 지난번에 모은 값은 비우고 시작한다(앱은 새 줄만 골라 저장한다).
     if (!run.cleared) {
       await clearBucket(c);
@@ -518,6 +740,7 @@
     // 표가 그 날짜 것으로 바뀔 때까지 기다린다. 그날 입고가 없으면 빈 표 그대로다.
     // 한 번에 안 되면 달력을 닫고 날짜를 다시 적은 뒤 진짜 클릭으로 한 번 더 눌러 본다.
     let ok = await waitFor(() => rowsAreDay(day), 12000);
+    logLine(`검색 결과 ${ok ? '나옴' : '안 나옴'} · 표 ${receiveItems().length}줄`);
     if (!ok) {
       closePopups();
       await setDay(day, run.range);
@@ -566,6 +789,8 @@
     run.done = true;
     run.pages = page;
     run.finishedAt = Date.now();
+    logLine(`✅ ${page}페이지까지 끝`);
+    await saveLogNow();
     await runSet(RECEIVE_KEY, run);
     receiveStatus('✅ 자동 수집 완료 · 앱에 반영했어요');
     try {
@@ -573,23 +798,83 @@
     } catch (err) {}
   };
 
-  const fresh = (run) => run && !run.done && !run.error && Date.now() - (run.requestedAt || 0) <= AUTO_MAX_AGE_MS;
+  // 소식이 있은 뒤(touchedAt) 5분 안이면 이어간다. 페이지가 많아 오래 걸려도 중간에 멈추지 않는다.
+  const fresh = (run) =>
+    run && !run.done && !run.error && Date.now() - Math.max(run.requestedAt || 0, run.touchedAt || 0) <= AUTO_MAX_AGE_MS;
 
-  autoGet().then((run) => {
-    if (fresh(run)) runAuto(run);
-  });
+  // 내 탭 번호. 확장이 연 수집 창에서만 자동 수집을 돌리려고 쓴다.
+  let myTabId = null;
+  const myTab = () =>
+    new Promise((resolve) => {
+      try {
+        chrome.runtime.sendMessage({ type: 'MY_WINDOW' }, (res) => {
+          void chrome.runtime.lastError;
+          resolve((res && res.tabId) || null);
+        });
+      } catch (err) {
+        resolve(null);
+      }
+    });
+  // 확장이 연 수집 창인지. 사장님이 열어둔 탭에서는 수집을 돌리지 않는다
+  // (저장소 변화 알림은 열려 있는 모든 탭에 오기 때문에 이 검사가 꼭 있어야 한다).
+  const isCollectWindow = async (run) => {
+    if (!run.createdTabId) return true; // 옛 요청(창 번호가 없던 때)은 그대로 진행
+    if (myTabId == null) myTabId = await myTab();
+    return !myTabId || myTabId === run.createdTabId;
+  };
+
+  // 상품 수집은 광고 사이트에서만 돈다. 이 검사가 없으면 서허 탭도 요청을 보고
+  // 자기 주소를 광고 화면 주소로 바꿔 버린다(서허에는 그런 화면이 없다).
+  let autoRunning = false;
+  const startAuto = (run) => {
+    if (location.hostname !== 'advertising.coupang.com') return;
+    if (run && (run.done || run.error)) foreignRun = null;
+    if (!fresh(run) || autoRunning) return;
+    autoRunning = true;
+    (async () => {
+      if (!(await isCollectWindow(run))) {
+        foreignRun = run;
+        return;
+      }
+      await runAuto(run);
+    })()
+      .catch(() => {})
+      .then(() => {
+        // 다른 주소로 옮기는 중이면 잠긴 채로 둔다. 풀어 두면 저장소 변화 알림이 와서
+        // 옮겨지기를 기다리는 동안 이 화면에서 또 시작해 버린다.
+        if (autoNavigating) return;
+        autoRunning = false;
+        autoStep = null;
+      });
+  };
+  autoGet().then(startAuto);
 
   // 이 화면이 이미 열려 있으면 새로고침이 없을 수도 있어, 요청이 저장되는 것도 지켜본다.
   let receiveRunning = false;
   const startReceive = (run) => {
     if (!fresh(run) || receiveRunning) return;
     receiveRunning = true;
-    Promise.resolve(runReceiveAuto(run)).catch(() => {}).then(() => { receiveRunning = false; });
+    (async () => {
+      if (!(await isCollectWindow(run))) {
+        foreignRun = run;
+        return;
+      }
+      await runReceiveAuto(run);
+    })()
+      .catch(() => {})
+      .then(() => { receiveRunning = false; });
   };
   runGet(RECEIVE_KEY).then(startReceive);
   try {
     chrome.storage.onChanged.addListener((changes, area) => {
-      if (area === 'local' && changes[RECEIVE_KEY]) startReceive(changes[RECEIVE_KEY].newValue);
+      if (area !== 'local') return;
+      if (changes[RECEIVE_KEY]) {
+        const r = changes[RECEIVE_KEY].newValue;
+        if (r && (r.done || r.error)) foreignRun = null;
+        startReceive(r);
+      }
+      // 광고 화면이 이미 열려 있어 새로고침이 없을 때도 시작되도록 요청 저장을 지켜본다.
+      if (changes[AUTO_KEY]) startAuto(changes[AUTO_KEY].newValue);
     });
   } catch (err) {}
 

@@ -1,13 +1,10 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { InventoryItem, subscribeInventory, importHubData, setOfficeQty, splitProductName, lastTwoStocks } from '../data/inventoryStore';
+import { InventoryItem, subscribeInventory, setOfficeQty, splitProductName, lastTwoStocks } from '../data/inventoryStore';
+import { formatTime } from './CollectFromExtension';
 
-// 재고 > 상품관리. 쿠팡 광고 화면의 상품마다 사무실 재고(직접 입력)와 로켓센터 재고(광고 화면의
-// 재고량)를 한 줄로 보여준다. 값은 "로켓 서허 연동" 확장(rocket-hub-extension)이 모아온다.
+// 사무실 > 사무실재고. 쿠팡 광고 화면의 상품마다 사무실 재고(직접 입력)와 로켓센터 재고(광고
+// 화면의 재고량)를 한 줄로 보여준다. 로켓센터 값은 "로켓 서허 연동" 확장이 모아온다.
 // 같은 상품명(옵션 앞부분)끼리는 한 묶음으로 보여준다.
-const APP_SOURCE = 'rocket-app-hub';
-const EXT_SOURCE = 'rocket-hub-extension';
-
-const formatTime = (ms?: number) => (ms ? new Date(ms).toLocaleString('ko-KR', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }) : '-');
 
 const OfficeQtyCell: React.FC<{ item: InventoryItem }> = ({ item }) => {
   const [editing, setEditing] = useState(false);
@@ -50,74 +47,9 @@ const OfficeQtyCell: React.FC<{ item: InventoryItem }> = ({ item }) => {
 
 const InventoryPage: React.FC = () => {
   const [items, setItems] = useState<InventoryItem[]>([]);
-  const [extReady, setExtReady] = useState(false);
   const [search, setSearch] = useState('');
-  // 자동 수집: 확장이 광고 화면을 열어 모든 페이지를 모은 뒤 끝나면 바로 가져온다.
-  const [autoRequestedAt, setAutoRequestedAt] = useState<number | null>(null);
-  const [autoStatus, setAutoStatus] = useState('');
-  const itemsRef = React.useRef<InventoryItem[]>([]);
-  itemsRef.current = items;
-  const autoRef = React.useRef<number | null>(null);
-  autoRef.current = autoRequestedAt;
 
   useEffect(() => subscribeInventory(setItems), []);
-
-  // 확장 연결 확인과 자동 수집 진행 상황.
-  useEffect(() => {
-    const onMessage = (event: MessageEvent) => {
-      if (event.source !== window) return;
-      const d = event.data;
-      if (!d || d.source !== EXT_SOURCE) return;
-      if (d.type === 'HUB_READY') {
-        setExtReady(true);
-        window.postMessage({ source: APP_SOURCE, type: 'HUB_REQUEST' }, window.location.origin);
-      }
-      if (d.type === 'HUB_DATA') setExtReady(true);
-      if (d.type === 'HUB_COLLECT_ACK') {
-        if (!d.ok) { setAutoRequestedAt(null); setAutoStatus(''); alert(`자동 수집을 시작하지 못했어요: ${d.error || ''}`); }
-        else setAutoRequestedAt(d.requestedAt);
-      }
-      if (d.type === 'HUB_AUTO' && d.run && autoRef.current && d.run.requestedAt === autoRef.current) {
-        const run = d.run;
-        if (run.error) {
-          setAutoRequestedAt(null);
-          setAutoStatus('');
-          alert(`자동 수집 실패: ${run.error}`);
-        } else if (run.done && d.data) {
-          setAutoRequestedAt(null);
-          setAutoStatus('가져오는 중…');
-          importHubData(d.data, itemsRef.current)
-            .then(n => setAutoStatus(`✅ ${n}개 반영 완료`))
-            .catch(err => { setAutoStatus(''); alert(`가져오기 실패: ${err?.message || err}`); });
-        } else {
-          setAutoStatus(run.step === 'noad' ? '광고하지 않는 상품 모으는 중…' : '광고 중인 상품 모으는 중…');
-        }
-      }
-    };
-    window.addEventListener('message', onMessage);
-    window.postMessage({ source: APP_SOURCE, type: 'HUB_REQUEST' }, window.location.origin);
-    return () => window.removeEventListener('message', onMessage);
-  }, []);
-
-  const lastCollectedAt = items.reduce((max, it) => Math.max(max, it.collectedAt || 0), 0);
-
-  const startAutoCollect = () => {
-    setAutoStatus('광고 화면 여는 중…');
-    setAutoRequestedAt(-1); // 확장이 요청 시각을 알려주기 전까지 버튼을 잠근다
-    window.postMessage({ source: APP_SOURCE, type: 'HUB_COLLECT' }, window.location.origin);
-  };
-
-  // 로그인이 풀려 있으면 광고 화면에서 수집이 시작되지 못하므로, 너무 오래 걸리면 알려준다.
-  useEffect(() => {
-    if (autoRequestedAt == null) return;
-    const t = setTimeout(() => {
-      setAutoRequestedAt(null);
-      setAutoStatus('');
-      alert('자동 수집이 끝나지 않았어요. 쿠팡 광고 사이트(advertising.coupang.com)에 로그인돼 있는지 확인해 주세요.');
-    }, 4 * 60 * 1000);
-    return () => clearTimeout(t);
-  }, [autoRequestedAt]);
-
 
   // 상품명(옵션 앞부분)으로 묶고, 묶음 안에서는 옵션 이름순.
   const groups = useMemo(() => {
@@ -136,31 +68,18 @@ const InventoryPage: React.FC = () => {
 
   // 마지막 수집에 없던 상품도 지우지 않고 그대로 보여준다(수집이 중간에 끊겨도 목록이 줄지 않게).
   const missingCount = items.filter(it => it.inLatest === false).length;
+  const lastCollectedAt = items.reduce((max, it) => Math.max(max, it.collectedAt || 0), 0);
 
   return (
     <div className="p-4 sm:p-6 lg:p-8 text-gray-800">
       <div className="flex flex-wrap items-end justify-between gap-3 mb-4">
         <div>
-          <h1 className="text-xl font-bold text-gray-900">상품관리</h1>
+          <h1 className="text-xl font-bold text-gray-900">사무실재고</h1>
           <p className="text-sm text-gray-500">상품 {items.length}개{missingCount > 0 && <> · 이번 수집에 없던 상품 {missingCount}개 포함</>} · 사무실 재고는 숫자를 눌러 고칠 수 있어요</p>
         </div>
-        <div className="flex items-center gap-2">
-          <div className="text-right text-xs text-gray-500">
-            {extReady
-              ? <>마지막 수집 {formatTime(lastCollectedAt || undefined)}</>
-              : <span className="text-amber-600">"로켓 서허 연동" 확장이 연결되지 않았어요</span>}
-          </div>
-          <div className="flex flex-col items-end gap-1">
-            <button
-              onClick={startAutoCollect}
-              disabled={!extReady || autoRequestedAt != null}
-              className="px-3 py-2 rounded-lg bg-blue-600 text-white text-sm font-semibold hover:bg-blue-700 disabled:bg-gray-300"
-              title="확장이 쿠팡 광고 화면을 열어 모든 페이지를 모은 뒤 바로 반영해요"
-            >
-              {autoRequestedAt != null ? '수집 중…' : '확장에서 가져오기'}
-            </button>
-            {autoStatus && <span className="text-xs text-blue-600">{autoStatus}</span>}
-          </div>
+        <div className="text-right text-xs text-gray-500">
+          마지막 수집 {formatTime(lastCollectedAt || undefined)}
+          <div className="text-gray-400">로켓센터 재고는 로켓 &gt; 로켓재고에서 가져와요</div>
         </div>
       </div>
 

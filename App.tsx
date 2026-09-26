@@ -6,6 +6,8 @@ import ProductGroupSummary from './components/ProductGroupSummary';
 import ProductListPage from './components/ProductListPage';
 import InventoryPage from './components/InventoryPage';
 import StockHistoryPage from './components/StockHistoryPage';
+import ReceiveHistoryPage from './components/ReceiveHistoryPage';
+import CollectHubPage from './components/CollectHubPage';
 import HanjungOrderPage from './components/hanjung/HanjungOrderPage';
 import ImportInPage from './components/hanjung/ImportInPage';
 import WarehouseInPage from './components/hanjung/WarehouseInPage';
@@ -3147,42 +3149,49 @@ const App: React.FC = () => {
             })}
           </div>
 
-          <div className="mt-8 flex flex-wrap justify-center items-center gap-4">
+          {/* 아래 단추는 두 묶음으로 나눈다: 왼쪽은 엑셀 내려받기, 오른쪽은 견적서 일.
+              색을 채우지 않고 흰 바탕으로 두어 화면이 어지럽지 않게 한다. */}
+          <div className="mt-8 flex flex-wrap justify-center items-center gap-2">
               <button
                 onClick={handleGenerateSampleExcel}
                 disabled={isSampleExporting}
-                className="flex items-center justify-center px-4 py-2 bg-blue-500 text-white font-semibold rounded-lg shadow-md hover:bg-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-400 focus:ring-opacity-75 transition-all duration-200 disabled:bg-gray-300 disabled:cursor-not-allowed"
+                title="상품등록 샘플 엑셀을 내려받습니다"
+                className="flex items-center gap-1.5 px-3.5 py-2 bg-white border border-gray-300 text-gray-700 text-sm font-semibold rounded-lg hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-300 transition-colors disabled:text-gray-300 disabled:border-gray-200"
               >
                 <DownloadIcon />
-                <span>{isSampleExporting ? '생성 중...' : '샘플'}</span>
+                <span>{isSampleExporting ? '생성 중…' : '샘플'}</span>
               </button>
               <button
                 onClick={handleGenerateProposalExcel}
                 disabled={isExporting}
-                className="flex items-center justify-center px-4 py-2 bg-emerald-500 text-white font-semibold rounded-lg shadow-md hover:bg-emerald-600 focus:outline-none focus:ring-2 focus:ring-emerald-400 focus:ring-opacity-75 transition-all duration-200 disabled:bg-gray-300 disabled:cursor-not-allowed"
+                title="제안상품목록 엑셀을 내려받습니다"
+                className="flex items-center gap-1.5 px-3.5 py-2 bg-white border border-gray-300 text-gray-700 text-sm font-semibold rounded-lg hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-300 transition-colors disabled:text-gray-300 disabled:border-gray-200"
               >
                 <DownloadIcon />
-                <span className="w-28 text-center">{isExporting ? '생성 중...' : '제안상품목록'}</span>
+                <span>{isExporting ? '생성 중…' : '제안상품목록'}</span>
               </button>
-               <button
+
+              <div className="w-px h-6 bg-gray-200 mx-2" />
+
+              <button
                 onClick={() => setIsQuoteModalOpen(true)}
-                className="flex items-center justify-center px-4 py-2 bg-blue-500 text-white font-semibold rounded-lg shadow-md hover:bg-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-400 focus:ring-opacity-75 transition-all duration-200"
+                className="flex items-center gap-1.5 px-3.5 py-2 bg-white border border-gray-300 text-gray-700 text-sm font-semibold rounded-lg hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-300 transition-colors"
               >
                 <DocumentAddIcon />
                 견적서 생성
               </button>
               <button
                 onClick={() => setIsQuoteTemplateManagerOpen(true)}
-                className="flex items-center justify-center px-4 py-2 bg-blue-700 text-white font-semibold rounded-lg shadow-md hover:bg-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-400 focus:ring-opacity-75 transition-all duration-200"
+                className="flex items-center gap-1.5 px-3.5 py-2 bg-white border border-gray-300 text-gray-700 text-sm font-semibold rounded-lg hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-300 transition-colors"
               >
                 <TagIcon />
-                <span className="ml-2">견적서 등록</span>
+                견적서 등록
               </button>
               <button
                 onClick={() => setIsQuoteSettingsModalOpen(true)}
                 title="견적서 고정값 설정"
                 aria-label="견적서 고정값 설정"
-                className="flex items-center justify-center p-2.5 bg-white border border-gray-300 text-gray-600 rounded-lg shadow-md hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-400 focus:ring-opacity-75 transition-all duration-200"
+                className="flex items-center justify-center p-2 bg-white border border-gray-300 text-gray-500 rounded-lg hover:bg-gray-50 hover:text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-300 transition-colors"
               >
                 <SettingsIcon />
               </button>
@@ -3192,14 +3201,17 @@ const App: React.FC = () => {
       </div>
       </div>
       )}
+      {activeMenu === 'collect' && <CollectHubPage />}
       {activeMenu === 'product-manage' && <InventoryPage />}
-      {activeMenu === 'sales' && <StockHistoryPage />}
+      {activeMenu === 'rocket-stock' && <StockHistoryPage mode="rocket" />}
+      {activeMenu === 'rocket-sales' && <StockHistoryPage mode="sales" />}
+      {activeMenu === 'rocket-in' && <ReceiveHistoryPage />}
       {activeMenu === 'coupang-order' && <CoupangOrderPage onGoShipOut={() => setActiveMenu('coupang-ship')} />}
       {activeMenu === 'coupang-ship' && <CoupangShipPage onGoOrder={() => setActiveMenu('coupang-order')} />}
       {activeMenu === 'cn-order' && <HanjungOrderPage />}
       {activeMenu === 'import-in' && <ImportInPage />}
       {activeMenu === 'warehouse-in' && <WarehouseInPage />}
-      {!['proposal', 'detail', 'product-manage', 'sales', 'coupang-order', 'coupang-ship', 'cn-order', 'import-in', 'warehouse-in'].includes(activeMenu) && <MenuPlaceholder id={activeMenu} />}
+      {!['collect', 'proposal', 'detail', 'product-manage', 'rocket-stock', 'rocket-sales', 'rocket-in', 'coupang-order', 'coupang-ship', 'cn-order', 'import-in', 'warehouse-in'].includes(activeMenu) && <MenuPlaceholder id={activeMenu} />}
       {/* 상세페이지 에디터는 상품 행에서 연 것과 카테고리 탭에서 연 것을 따로 둔다. 둘 다 계속
           떠 있게 두고 숨겨만 둬서, 메뉴·탭을 오가도 작업 중인 내용이 날아가지 않는다.
           카테고리 탭 쪽은 탭마다 key를 달리 줘서 탭을 바꾸면 그 탭의 저장본으로 새로 뜬다. */}

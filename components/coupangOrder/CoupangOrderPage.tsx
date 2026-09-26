@@ -1,5 +1,6 @@
 import React, { useState, useCallback, useEffect, useMemo } from 'react';
 import FileUpload from './components/FileUpload';
+import CollectPurchaseOrders from './CollectPurchaseOrders';
 import OrderTable from './components/OrderTable';
 import {
   parseFile, buildDisplayRows, extractOrderRows, sortOrderRows, boxLabel,
@@ -15,6 +16,7 @@ import { dateKeyYMD, normalizeDateValue, ymdSortKey } from './utils/dateUtils';
 import { InventoryItem, subscribeInventory, makeOfficeLookup } from '../../data/inventoryStore';
 import BundlePanel from './components/BundlePanel';
 import { addShipOut } from './data/shipOutStore';
+import { loadWork, saveWork } from './data/orderWorkStore';
 
 // 화면 한 줄 → 원래 발주 한 건(줄였던 발주번호·물류센터·날짜를 되살림).
 const toOrderRow = (r: DisplayRow): OrderRow => ({
@@ -27,41 +29,6 @@ const toOrderRow = (r: DisplayRow): OrderRow => ({
   쉼먼트: r.쉼먼트,
   묶음: r.묶음 || '',
 });
-
-// 발송 쪽 작업 중인 목록(메모·롯데 표시 포함)을 이 컴퓨터에 남겨 둔다. 다른 메뉴에 다녀오거나 새로고침해도
-// 그대로 다시 뜨고, "전체 비우기"를 누를 때만 비운다. 발주서를 새로 올리면 지우지 않고 아래에 이어 붙인다.
-// 날짜는 'YYYYMMDD' 글자로 저장했다가 되살린다.
-const WORK_KEY = 'coupangOrderWork';
-
-function loadWork(): { rows: DisplayRow[]; fileName: string; done: string[] } {
-  try {
-    const saved = JSON.parse(localStorage.getItem(WORK_KEY) || '');
-    const rows: OrderRow[] = (saved.rows || []).map((r: OrderRow) => ({ ...r, 입고예정일: normalizeDateValue(r.입고예정일) }));
-    // 같은 발주서의 같은 상품이 두 번 들어간 줄은 하나만 남긴다(출고에 보냈다 되돌리는 사이에
-    // 센터·입고일이 바뀌어 두 줄로 남는 일이 있었다). 먼저 들어온 줄을 살린다.
-    const seen = new Set<string>();
-    const unique = rows.filter(r => {
-      const key = `${r.발주번호}│${r.상품이름}│${r.확정수량}`;
-      if (seen.has(key)) return false;
-      seen.add(key);
-      return true;
-    });
-    return { rows: buildDisplayRows(unique), fileName: saved.fileName || '', done: saved.done || [] };
-  } catch {
-    return { rows: [], fileName: '', done: [] };
-  }
-}
-
-function saveWork(rows: DisplayRow[], fileName: string, done: string[]) {
-  try {
-    if (!rows.length) {
-      localStorage.removeItem(WORK_KEY);
-      return;
-    }
-    const plain = extractOrderRows(rows).map(r => ({ ...r, 입고예정일: dateKeyYMD(r.입고예정일).replace(/-/g, '') }));
-    localStorage.setItem(WORK_KEY, JSON.stringify({ rows: plain, fileName, done }));
-  } catch {}
-}
 
 const alertError = (err: unknown) => alert(`예약 저장 실패: ${err instanceof Error ? err.message : String(err)}`);
 
@@ -464,6 +431,10 @@ export default function CoupangOrderPage({ onGoShipOut }: { onGoShipOut?: () => 
 
         {activeTab === 'shipment' && (
           <div>
+            <div style={{ marginBottom: 14 }}>
+              <CollectPurchaseOrders onFile={handleFile} />
+            </div>
+
             {!hasFile && (
               <div style={{ marginBottom: 20 }}>
                 <FileUpload onFile={handleFile} loading={loading} />

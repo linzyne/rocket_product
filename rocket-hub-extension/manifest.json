@@ -1,13 +1,15 @@
 {
   "manifest_version": 3,
   "name": "로켓 서허 연동",
-  "version": "0.9.28",
+  "version": "0.10.0",
   "description": "쿠팡 광고 화면·서플라이어허브에서 상품, 로켓센터 재고, 입고 내역을 모아 로켓 앱으로 보내고, 롯데택배(ALPS)에 택배 예약 엑셀을 올립니다. 로그인은 브라우저에서 직접 하고, 확장은 비밀번호를 다루지 않습니다.",
   "permissions": [
     "storage",
     "unlimitedStorage",
     "contentSettings",
-    "downloads"
+    "downloads",
+    "alarms",
+    "tabs"
   ],
   "content_scripts": [
     {
@@ -72,7 +74,8 @@
         "*://supplier.coupang.com/*"
       ],
       "js": [
-        "shub.js"
+        "shub.js",
+        "po.js"
       ],
       "run_at": "document_idle",
       "all_frames": true

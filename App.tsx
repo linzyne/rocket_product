@@ -730,6 +730,18 @@ const App: React.FC = () => {
     };
   }, []);
 
+  // 클라우드 모드의 상품목록은 "조회 기간"으로 걸러진 Firestore 구독 결과다. 그래서 앱을 켜둔
+  // 채 날이 바뀌었거나 기간을 과거로 좁혀둔 상태에서 새로 저장하면, 저장은 됐는데도 목록에
+  // 나타나지 않아 저장이 안 된 것처럼 보인다. 저장 직전에 오늘이 기간 안에 들어오게 넓혀둔다.
+  const ensureArchiveRangeIncludesToday = useCallback(() => {
+    const today = toLocalDateOnly(new Date());
+    setArchiveDateRange(prev => {
+      const start = prev.start > today ? today : prev.start;
+      const end = prev.end < today ? today : prev.end;
+      return start === prev.start && end === prev.end ? prev : { start, end };
+    });
+  }, []);
+
   const archiveProducts = useCallback((toArchive: Product[]): boolean => {
     const candidates = toArchive.filter(p => !isBlankProductForArchive(p));
     if (candidates.length === 0) return false;
@@ -750,6 +762,7 @@ const App: React.FC = () => {
     }
     const toSave = overwriteDuplicates ? candidates : candidates.filter(p => !isDuplicate(p));
     if (toSave.length === 0) return false;
+    ensureArchiveRangeIncludesToday();
 
     (async () => {
       // 원본 대표 이미지는 크기가 커서(Firestore 문서당 1MB 제한, localStorage 용량) 그대로
@@ -779,7 +792,7 @@ const App: React.FC = () => {
       }
     })();
     return true;
-  }, [archivedProducts]);
+  }, [archivedProducts, ensureArchiveRangeIncludesToday]);
 
   const handleArchiveProduct = useCallback((product: Product): boolean => {
     if (isBlankProductForArchive(product)) {
@@ -844,6 +857,7 @@ const App: React.FC = () => {
   // 저장한다. id/savedAt만 이 함수에서 채우고 나머지 값은 입력 폼에서 그대로 받는다.
   const handleAddManualArchivedProduct = useCallback((input: Omit<ArchivedProduct, 'id' | 'savedAt'>) => {
     const entry: ArchivedProduct = { ...input, id: generateId(), savedAt: new Date().toISOString() };
+    ensureArchiveRangeIncludesToday();
     if (isFirebaseConfigured && db) {
       const firestore = db;
       (async () => {
@@ -853,12 +867,13 @@ const App: React.FC = () => {
         } catch (error) {
           console.error('상품목록 클라우드 저장 실패, 이 기기에만 저장합니다:', error);
           setArchivedProducts(prev => [entry, ...prev]);
+          alert('클라우드에 저장하지 못해 이 컴퓨터에만 저장했습니다. 인터넷 연결을 확인해 주세요.');
         }
       })();
     } else {
       setArchivedProducts(prev => [entry, ...prev]);
     }
-  }, []);
+  }, [ensureArchiveRangeIncludesToday]);
 
   // "전체 삭제"는 지금 화면에 로드된(=선택된 조회 기간 안의) 항목만 지운다. 화면에 보이는
   // 개수와 확인창에 뜬 개수가 어긋나 기간 밖의 과거 데이터까지 통째로 지워지는 일이 없도록,

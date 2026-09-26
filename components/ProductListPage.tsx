@@ -300,6 +300,10 @@ const ProductListPage: React.FC<ProductListPageProps> = ({
           onCancel={() => setShowAddForm(false)}
           onSave={entry => {
             onAddManual(entry);
+            // 검색어나 "승인된 것만" 필터가 켜져 있으면 갓 추가한 항목이 걸러져 보이지 않아
+            // 추가가 안 된 것처럼 보인다. 추가한 항목이 반드시 보이도록 필터를 풀어준다.
+            setQuery('');
+            setApprovedOnly(false);
             setShowAddForm(false);
           }}
         />

@@ -32,13 +32,11 @@ const toOrderRow = (r: DisplayRow): OrderRow => ({
 
 const alertError = (err: unknown) => alert(`예약 저장 실패: ${err instanceof Error ? err.message : String(err)}`);
 
-type Tab = 'shipment' | 'settlement';
 
 // 발주 > 쿠팡발주확인. 쿠팡 발주서(엑셀/CSV)를 올려 발송·예약으로 나누고,
 // 발주서정리 엑셀과 롯데택배 업로드 엑셀을 만든다. (원래 '쉽먼트' 앱을 그대로 옮겨온 것)
 // 예약 패널은 저장소(data/reservationStore)에 계속 쌓이고, 삭제 버튼을 눌러야만 지워진다.
 export default function CoupangOrderPage({ onGoShipOut }: { onGoShipOut?: () => void } = {}) {
-  const [activeTab, setActiveTab] = useState<Tab>('shipment');
   const [initialWork] = useState(loadWork);
   const [leftRows, setLeftRows] = useState<DisplayRow[]>(initialWork.rows);
   const [reservations, setReservations] = useState<OrderRow[]>([]);
@@ -394,25 +392,7 @@ export default function CoupangOrderPage({ onGoShipOut }: { onGoShipOut?: () => 
         <div style={{ maxWidth: 1600, margin: '0 auto', padding: '0 24px', height: 54, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 20 }}>
             <span style={{ fontSize: 17, fontWeight: 700, color: '#1a1a1a', letterSpacing: '-0.3px' }}>📦 쿠팡발주확인</span>
-            <nav style={{ display: 'flex', gap: 2 }}>
-              {(['shipment', 'settlement'] as Tab[]).map(id => (
-                <button
-                  key={id}
-                  onClick={() => setActiveTab(id)}
-                  style={{
-                    padding: '5px 16px', fontSize: 13,
-                    fontWeight: activeTab === id ? 600 : 400,
-                    color: activeTab === id ? '#1a1a1a' : '#999',
-                    background: 'none', border: 'none', cursor: 'pointer',
-                    borderBottom: activeTab === id ? '2px solid #1a1a1a' : '2px solid transparent',
-                    transition: 'all 0.15s',
-                  }}
-                >
-                  {id === 'shipment' ? '쉽먼트' : '정산'}
-                </button>
-              ))}
-            </nav>
-            {activeTab === 'shipment' && fileName && (
+            {fileName && (
               <span style={{ fontSize: 11, color: '#999', background: '#f5f5f5', padding: '3px 10px', borderRadius: 20 }}>
                 {fileName}
               </span>
@@ -422,15 +402,7 @@ export default function CoupangOrderPage({ onGoShipOut }: { onGoShipOut?: () => 
       </header>
 
       <main style={{ maxWidth: 1600, margin: '0 auto', padding: '20px 24px' }}>
-        {activeTab === 'settlement' && (
-          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: 300, gap: 12 }}>
-            <span style={{ fontSize: 32 }}>🧾</span>
-            <p style={{ fontSize: 15, color: '#aaa', margin: 0 }}>정산 기능 준비 중입니다</p>
-          </div>
-        )}
-
-        {activeTab === 'shipment' && (
-          <div>
+        <div>
             <div style={{ marginBottom: 14 }}>
               <CollectPurchaseOrders onFile={handleFile} />
             </div>
@@ -716,7 +688,6 @@ export default function CoupangOrderPage({ onGoShipOut }: { onGoShipOut?: () => 
               </div>
             )}
           </div>
-        )}
       </main>
 
     </div>

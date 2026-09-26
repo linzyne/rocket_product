@@ -2,6 +2,8 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { InventoryItem, subscribeInventory, splitProductName, dateKey } from '../data/inventoryStore';
 import CollectFromExtension from './CollectFromExtension';
 import { useRowOrder, DragHandle } from './useRowOrder';
+import { ReceiveRow, subscribeReceives, sign } from '../data/receiveStore';
+import { SkuLinks, loadLocalSkuLinks, subscribeSkuLinks } from '../data/skuLinkStore';
 
 // 로켓 > 로켓재고·판매량. 둘 다 같은 표(상품 × 날짜)를 모드만 바꿔 쓴다. 확장이 날마다 가져온
 // 로켓센터 재고를 월 단위로 보여주고, 수집한 날만 값이 있다.
@@ -9,7 +11,7 @@ export type StockMode = 'rocket' | 'sales';
 
 const TITLES: Record<StockMode, { title: string; desc: string }> = {
   rocket: { title: '로켓재고', desc: '확장에서 가져온 로켓센터 재고가 날짜별로 쌓여요.' },
-  sales: { title: '판매량', desc: '로켓센터 재고가 직전 수집보다 줄어든 만큼을 판 수량으로 봐요. 입고된 날은 음수(파란색), 수집을 건너뛴 뒤의 칸은 여러 날치가 몰려 점선으로 나와요.' },
+  sales: { title: '판매량', desc: '직전 수집 재고 + 그 사이 입고 − 이 날 재고로 봐요. 입고가 짝지어지지 않은 상품은 입고된 날 음수로 나올 수 있어요.' },
 };
 
 const monthKey = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
@@ -20,8 +22,13 @@ const StockHistoryPage: React.FC<{ mode: StockMode }> = ({ mode }) => {
   const [search, setSearch] = useState('');
   // 상품 진열 순서. "내 순서"로 두면 끌어서 옮길 수 있고, 로켓재고·판매량이 같은 차례를 쓴다.
   const order = useRowOrder('ads');
+  // 판매량은 그 사이 들어온 입고까지 더해야 맞다(입고는 SKU번호라 손으로 정한 짝으로 상품에 붙인다).
+  const [receives, setReceives] = useState<ReceiveRow[]>([]);
+  const [links, setLinks] = useState<SkuLinks>(loadLocalSkuLinks);
 
   useEffect(() => subscribeInventory(setItems), []);
+  useEffect(() => (mode === 'sales' ? subscribeReceives(setReceives) : undefined), [mode]);
+  useEffect(() => (mode === 'sales' ? subscribeSkuLinks(setLinks) : undefined), [mode]);
 
   const days = useMemo(() => {
     const [y, m] = month.split('-').map(Number);
@@ -33,6 +40,31 @@ const StockHistoryPage: React.FC<{ mode: StockMode }> = ({ mode }) => {
   const shiftMonth = (delta: number) => {
     const [y, m] = month.split('-').map(Number);
     setMonth(monthKey(new Date(y, m - 1 + delta, 1)));
+  };
+
+  // 상품(adsId)별 · 날짜별 입고 수량. 짝지어 둔 SKU의 입고만 센다(반출은 빼서 더한다).
+  const inByItem = useMemo(() => {
+    const map = new Map<string, Map<string, number>>();
+    if (mode !== 'sales') return map;
+    for (const r of receives) {
+      const adsId = links[r.sku];
+      if (!adsId) continue;
+      const day = String(r.date || '').slice(0, 10);
+      if (!day) continue;
+      const byDay = map.get(adsId) || new Map<string, number>();
+      byDay.set(day, (byDay.get(day) || 0) + sign(r) * r.qty);
+      map.set(adsId, byDay);
+    }
+    return map;
+  }, [receives, links, mode]);
+
+  // 두 날짜 사이(앞날 다음날 ~ 이 날)에 들어온 입고 합.
+  const inBetween = (adsId: string, prevDay: string, day: string) => {
+    const byDay = inByItem.get(adsId);
+    if (!byDay) return 0;
+    let sum = 0;
+    for (const [d, qty] of byDay) if (d > prevDay && d <= day) sum += qty;
+    return sum;
   };
 
   // 한 상품의 이 달 칸 값과 정렬 기준을 한 번에 구한다.
@@ -50,7 +82,8 @@ const StockHistoryPage: React.FC<{ mode: StockMode }> = ({ mode }) => {
       const prev = i > 0 ? recorded[i - 1] : null;
       if (prev == null) return { day, v: null as number | null, span: 0 };
       const span = Math.round((new Date(day).getTime() - new Date(prev).getTime()) / 86400000);
-      return { day, v: h[prev] - cur, span };
+      // 판매량 = 직전 수집 재고 + 그 사이 입고 − 이 날 재고.
+      return { day, v: h[prev] + inBetween(it.adsId, prev, day) - cur, span };
     });
     // 로켓재고는 이 달 마지막으로 모은 재고, 판매량은 이 달에 판 수량을 다 더한 값이 기준이다.
     let key: number | null = null;
@@ -71,7 +104,7 @@ const StockHistoryPage: React.FC<{ mode: StockMode }> = ({ mode }) => {
       .map(rowOf)
       .filter(r => r.key != null)
       .sort((a, b) => b.key! - a.key! || a.it.productName.localeCompare(b.it.productName, 'ko'));
-  }, [items, search, days, mode, today]);
+  }, [items, search, days, mode, today, inByItem]);
 
   type Row = (typeof rows)[number];
   const sortedRows = order.sort<Row>(rows, (r: Row) => r.it.adsId);

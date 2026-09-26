@@ -3,6 +3,7 @@ import { InventoryItem, subscribeInventory, splitProductName, dateKey } from '..
 import { ReceiveRow, subscribeReceives, sign, norm } from '../data/receiveStore';
 import CollectReceives from './CollectReceives';
 import { useRowOrder, DragHandle } from './useRowOrder';
+import { SkuLinks, loadLocalSkuLinks, setSkuLink, subscribeSkuLinks } from '../data/skuLinkStore';
 
 // 로켓 > 입고. 물류창고입고에 쌓인 쿠팡 입고 내역을 상품 × 날짜 표로 보여준다.
 // 서허 입고 내역은 같은 상품이라도 물류센터마다 줄이 쪼개져 있어서, 여기서는 SKU번호로 묶어
@@ -16,7 +17,10 @@ const ReceiveHistoryPage: React.FC = () => {
   const [search, setSearch] = useState('');
   // 상품 진열 순서. 입고는 서허 SKU번호로 줄을 만들어 로켓재고와 따로 둔다.
   const order = useRowOrder('sku');
+  // 손으로 정해 둔 SKU ↔ 상품 짝. 이름이 서로 달라 못 찾는 상품을 여기서 이어 준다.
+  const [links, setLinks] = useState<SkuLinks>(loadLocalSkuLinks);
 
+  useEffect(() => subscribeSkuLinks(setLinks), []);
   useEffect(() => subscribeReceives(setRows), []);
   useEffect(() => subscribeInventory(setItems), []);
 
@@ -36,15 +40,25 @@ const ReceiveHistoryPage: React.FC = () => {
   // 찾은 것만 사진을 달고 나머지는 SKU명 그대로 둔다.
   const findItem = useMemo(() => {
     const byName = new Map<string, InventoryItem>();
-    items.forEach(it => byName.set(norm(it.productName), it));
-    return (skuName: string) => {
+    const byId = new Map<string, InventoryItem>();
+    items.forEach(it => { byName.set(norm(it.productName), it); byId.set(it.adsId, it); });
+    return (sku: string, skuName: string) => {
+      // 손으로 정한 짝이 먼저다.
+      const picked = links[sku];
+      if (picked) return byId.get(picked) || null;
       const n = norm(skuName);
       const exact = byName.get(n);
       if (exact) return exact;
       for (const [k, it] of byName) if (k && (k.includes(n) || n.includes(k))) return it;
       return null;
     };
-  }, [items]);
+  }, [items, links]);
+
+  // 짝 고르는 칸에 쓸 상품 목록(이름순).
+  const pickList = useMemo(
+    () => items.slice().sort((a, b) => a.productName.localeCompare(b.productName, 'ko')),
+    [items]
+  );
 
   // SKU번호로 묶고, 날짜별로 수량을 합산한다.
   const groups = useMemo(() => {
@@ -75,7 +89,7 @@ const ReceiveHistoryPage: React.FC = () => {
 
   const monthTotal = groups.reduce((s, g) => s + g.total, 0);
   // 이름으로 상품관리 상품을 찾은 개수. 이름이 서로 달라 못 찾은 것이 많으면 여기서 바로 보인다.
-  const matchedCount = groups.filter(g => findItem(g.skuName)).length;
+  const matchedCount = groups.filter(g => findItem(g.sku, g.skuName)).length;
 
   return (
     <div className="p-4 sm:p-6 lg:p-8 text-gray-800">
@@ -102,7 +116,11 @@ const ReceiveHistoryPage: React.FC = () => {
         <order.Toggle />
         <span className="text-sm text-gray-500">
           상품 {groups.length}개 · 이 달 입고 {monthTotal.toLocaleString()}개
-          {groups.length > 0 && <span className="text-gray-400"> · 상품관리와 이름이 맞은 건 {matchedCount}개</span>}
+          {groups.length > 0 && (
+            <span className={matchedCount < groups.length ? 'text-amber-600' : 'text-gray-400'}>
+              {' · '}상품과 짝지은 건 {matchedCount}개{matchedCount < groups.length && ` (${groups.length - matchedCount}개는 아래에서 골라 주세요)`}
+            </span>
+          )}
         </span>
       </div>
 
@@ -124,7 +142,7 @@ const ReceiveHistoryPage: React.FC = () => {
           </thead>
           <tbody>
             {sortedGroups.map((g: Group) => {
-              const it = findItem(g.skuName);
+              const it = findItem(g.sku, g.skuName);
               const { base, option } = splitProductName(it ? it.productName : g.skuName);
               return (
                 <tr
@@ -141,6 +159,21 @@ const ReceiveHistoryPage: React.FC = () => {
                       <div className="min-w-0">
                         <div className="truncate text-gray-900" title={`${g.skuName}${g.sku ? ` · SKU ${g.sku}` : ''}`}>{base}</div>
                         {option && <div className="truncate text-gray-400">{option}</div>}
+                        {/* 어느 상품인지 한 번만 골라 두면 판매량에 입고가 붙는다. */}
+                        <select
+                          value={links[g.sku] || (it ? it.adsId : '')}
+                          onChange={e => {
+                            setLinks(prev => ({ ...prev, [g.sku]: e.target.value }));
+                            setSkuLink(g.sku, e.target.value).catch(err => alert(`짝 저장 실패: ${err?.message || err}`));
+                          }}
+                          title="이 입고가 어느 상품인지 고르세요"
+                          className={`mt-0.5 w-full text-[11px] px-1 py-0.5 border rounded bg-white ${it ? 'border-gray-200 text-gray-400' : 'border-amber-300 text-amber-700'}`}
+                        >
+                          <option value="">{it ? '(이름으로 찾음) 상품 고르기' : '⚠ 어느 상품인지 고르기'}</option>
+                          {pickList.map(p => (
+                            <option key={p.adsId} value={p.adsId}>{p.productName}</option>
+                          ))}
+                        </select>
                       </div>
                     </div>
                   </td>

@@ -4,7 +4,7 @@ import { ReceiveRow, subscribeReceives } from '../data/receiveStore';
 import CollectFromExtension, { formatTime } from './CollectFromExtension';
 import CollectReceives from './CollectReceives';
 import CollectPurchaseOrders from './coupangOrder/CollectPurchaseOrders';
-import { appendOrderFile } from './coupangOrder/data/orderWorkStore';
+import { appendOrderFile, subscribeWork } from './coupangOrder/data/orderWorkStore';
 import { subscribeReservations } from './coupangOrder/data/reservationStore';
 import type { OrderRow } from './coupangOrder/types';
 
@@ -45,6 +45,9 @@ const CollectHubPage: React.FC = () => {
   useEffect(() => subscribeInventory(setItems), []);
   useEffect(() => subscribeReceives(setReceives), []);
   useEffect(() => subscribeReservations(setReservations), []);
+  // 여기서 받은 발주서도 클라우드로 올라가야 한다. 이 화면은 작업 목록을 보여주지는 않지만,
+  // 이어 두어야 올린 것이 바로 다른 컴퓨터로 간다(쿠팡발주확인을 열지 않아도).
+  useEffect(() => subscribeWork(() => {}), []);
 
   const today = dateKey(Date.now());
   const lastCollectedAt = items.reduce((max, it) => Math.max(max, it.collectedAt || 0), 0);

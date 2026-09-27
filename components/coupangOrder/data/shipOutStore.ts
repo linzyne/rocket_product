@@ -1,15 +1,20 @@
 // 쿠팡발주확인의 묶음을 "출고"로 넘겨 두는 곳(발주 > 쉽먼트생성 화면에서 본다).
-// 한 건 = 묶음 하나 + 그 묶음에 담긴 발주서 줄들. 이 컴퓨터의 localStorage에만 저장한다.
+// 한 건 = 묶음 하나 + 그 묶음에 담긴 발주서 줄들.
+//
+//  coupangShipOuts/{출고번호} : ShipOut 한 건 그대로.
+//
+// 클라우드(Firestore)에 두어 다른 컴퓨터에서도 같은 목록을 본다. 이 기기의 localStorage에도
+// 같이 남겨서 화면이 뜨자마자 바로 보이고, Firebase 설정이 없어도 이 기기 안에서는 돌아간다.
+import { collection, deleteDoc, doc, onSnapshot, setDoc } from 'firebase/firestore';
+import { db, ensureSignedIn } from '../../../utils/firebase';
 import type { OrderRow } from '../types';
 import { dateKeyYMD, ymdSortKey } from '../utils/dateUtils';
+import { SHIPOUT_KEY, readWork, writeWork, workLineKey as lineKey } from './orderWorkCloud';
 
-const KEY = 'coupangShipOuts';
-// 쿠팡발주확인이 작업 중인 목록을 담아 두는 곳(그 화면의 localStorage 키와 같아야 한다).
-const WORK_KEY = 'coupangOrderWork';
-
-// 한 줄을 가리키는 열쇠. 센터·입고예정일은 묶음 적용으로 바뀔 수 있어 빼고 본다.
-const lineKey = (r: { 발주번호?: unknown; 상품이름?: unknown; 확정수량?: unknown }) =>
-  `${r.발주번호}│${r.상품이름}│${r.확정수량}`;
+const KEY = SHIPOUT_KEY;
+const COLLECTION = 'coupangShipOuts';
+// 이 기기에 있던 출고를 클라우드 것과 한 번 합쳤는지. 합치기는 기기마다 딱 한 번만 한다.
+const MERGED_KEY = 'coupangShipOuts.merged';
 
 export interface ShipOutLine {
   발주번호: string;
@@ -39,6 +44,15 @@ export interface ShipOut {
   lines: ShipOutLine[];
 }
 
+// 새 것이 위로 오게(발주확인에서 넘긴 차례 그대로).
+const sortList = (list: ShipOut[]) =>
+  list.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0) || b.id.localeCompare(a.id, 'ko', { numeric: true }));
+
+// Firestore는 값이 undefined인 칸을 받지 않는다(완료를 풀 때 doneAt을 지우는 식으로 쓴다).
+const clean = <T extends object>(o: T): T =>
+  Object.fromEntries(Object.entries(o).filter(([, v]) => v !== undefined)) as T;
+const cleanShipOut = (s: ShipOut): ShipOut => ({ ...clean(s), lines: s.lines.map(l => clean(l)) });
+
 function read(): ShipOut[] {
   try {
     const list = JSON.parse(localStorage.getItem(KEY) || '[]');
@@ -48,13 +62,102 @@ function read(): ShipOut[] {
   }
 }
 
-function write(list: ShipOut[]) {
+function writeLocal(list: ShipOut[]) {
   try {
     localStorage.setItem(KEY, JSON.stringify(list));
   } catch {}
-  // 같은 창의 다른 화면(쉽먼트생성)에도 바로 알린다. 다른 탭은 storage 이벤트가 알려준다.
+  // 같은 창의 다른 화면(쿠팡발주확인)에도 바로 알린다. 다른 탭은 storage 이벤트가 알려준다.
   window.dispatchEvent(new CustomEvent('coupang-shipouts-changed'));
 }
+
+// 마지막으로 클라우드에 올린 모양(출고번호 → 내용). 바뀐 건만 올리고, 없어진 건만 지우려고 둔다.
+let lastPushed = new Map<string, string>();
+// 클라우드에서 첫 소식을 받기 전에는 올리지 않는다. 그 전에 올리면 다른 기기에서 해 둔 작업을
+// 이 기기의 묵은 목록으로 덮어쓸 수 있다.
+let ready = !db;
+let pending = false;
+
+const syncToCloud = (list: ShipOut[]) => {
+  if (!db) return;
+  const firestore = db;
+  const next = new Map(list.map(s => [s.id, JSON.stringify(cleanShipOut(s))]));
+  const changed = [...next].filter(([id, json]) => lastPushed.get(id) !== json);
+  const gone = [...lastPushed.keys()].filter(id => !next.has(id));
+  lastPushed = next;
+  if (!changed.length && !gone.length) return;
+  (async () => {
+    await ensureSignedIn();
+    await Promise.all([
+      ...changed.map(([id, json]) => setDoc(doc(firestore, COLLECTION, id), JSON.parse(json))),
+      ...gone.map(id => deleteDoc(doc(firestore, COLLECTION, id))),
+    ]);
+  })().catch(err => console.error('출고 목록 올리기 실패:', err));
+};
+
+function write(list: ShipOut[]) {
+  const sorted = sortList([...list]);
+  writeLocal(sorted);
+  if (ready) syncToCloud(sorted);
+  else pending = true;
+}
+
+// 클라우드 구독은 화면이 몇 개든 하나만 걸어 둔다.
+let watchers = 0;
+let unwatch: (() => void) | undefined;
+let cancelled = false;
+
+const startSync = (): (() => void) => {
+  watchers++;
+  if (watchers === 1 && db) {
+    const firestore = db;
+    cancelled = false;
+    (async () => {
+      await ensureSignedIn();
+      if (cancelled) return;
+      let first = true;
+      unwatch = onSnapshot(
+        collection(firestore, COLLECTION),
+        snap => {
+          const server = sortList(snap.docs.map(d => d.data() as ShipOut));
+          if (first) {
+            first = false;
+            ready = true;
+            // 처음 한 번은 이 기기에만 있던 출고를 잃지 않게 합친다. 그 뒤로는 클라우드가 늘 옳다
+            // (다른 기기에서 지운 출고가 되살아나지 않게).
+            const have = new Set(server.map(s => s.id));
+            const mine = localStorage.getItem(MERGED_KEY) === '1' ? [] : read().filter(s => !have.has(s.id));
+            try {
+              localStorage.setItem(MERGED_KEY, '1');
+            } catch {}
+            const merged = sortList([...server, ...mine]);
+            lastPushed = new Map(server.map(s => [s.id, JSON.stringify(cleanShipOut(s))]));
+            writeLocal(merged);
+            if (mine.length || pending) syncToCloud(merged);
+            pending = false;
+            return;
+          }
+          lastPushed = new Map(server.map(s => [s.id, JSON.stringify(cleanShipOut(s))]));
+          // 내가 올린 것이 그대로 되돌아온 것이면 화면을 다시 그리지 않는다.
+          if (JSON.stringify(server) === JSON.stringify(read())) return;
+          writeLocal(server);
+        },
+        error => {
+          // 못 받아와도 이 기기에 있는 목록으로 계속 일할 수 있게 열어 둔다.
+          ready = true;
+          console.error('출고 목록 동기화 실패(이 기기에 저장된 것을 씁니다):', error);
+        }
+      );
+    })();
+  }
+  return () => {
+    watchers--;
+    if (watchers === 0) {
+      cancelled = true;
+      unwatch?.();
+      unwatch = undefined;
+    }
+  };
+};
 
 // 목록이 바뀔 때마다 알려준다. 돌려주는 함수를 부르면 그만 듣는다.
 export function subscribeShipOuts(cb: (list: ShipOut[]) => void): () => void {
@@ -62,9 +165,11 @@ export function subscribeShipOuts(cb: (list: ShipOut[]) => void): () => void {
   send();
   window.addEventListener('coupang-shipouts-changed', send);
   window.addEventListener('storage', send);
+  const stop = startSync();
   return () => {
     window.removeEventListener('coupang-shipouts-changed', send);
     window.removeEventListener('storage', send);
+    stop();
   };
 }
 
@@ -108,13 +213,9 @@ export function addShipOut(bundle: string, center: string, date: string, rows: O
 
 // 발주확인(발송 목록) 저장소에서 이 줄들을 지운다.
 function removeFromWork(lines: ShipOutLine[]) {
-  try {
-    const work = JSON.parse(localStorage.getItem(WORK_KEY) || '');
-    const rows = Array.isArray(work.rows) ? work.rows : [];
-    const gone = new Set(lines.map(lineKey));
-    const kept = rows.filter((r: Record<string, unknown>) => !gone.has(lineKey(r)));
-    localStorage.setItem(WORK_KEY, JSON.stringify({ ...work, rows: kept }));
-  } catch {}
+  const work = readWork();
+  const gone = new Set(lines.map(lineKey));
+  writeWork({ ...work, rows: work.rows.filter(r => !gone.has(lineKey(r))) });
 }
 
 // 출고 건의 줄 하나를 고친다(예약 표시·박스 번호). 발주확인 표와 같은 버튼을 그대로 쓰기 위한 것.
@@ -152,17 +253,11 @@ export function deleteShipOut(id: string) {
 }
 
 // 출고 줄들을 쿠팡발주확인(발송 목록) 저장소에 되돌려 넣는다. 그 화면이 떠 있지 않아도 되도록
-// localStorage에 바로 써 넣는다. 이미 있는 줄은 건너뛴다.
+// 저장소에 바로 써 넣는다. 이미 있는 줄은 건너뛴다.
 function pushBackToWork(lines: ShipOutLine[], fallbackBundle: string) {
-  let work: { rows: Record<string, unknown>[]; fileName?: string; done?: string[] };
-  try {
-    work = JSON.parse(localStorage.getItem(WORK_KEY) || '{"rows":[]}');
-  } catch {
-    work = { rows: [] };
-  }
-  const rows = Array.isArray(work.rows) ? work.rows : [];
-  const keyOf = lineKey;
-  const seen = new Set(rows.map(keyOf));
+  const work = readWork();
+  const rows = work.rows;
+  const seen = new Set(rows.map(lineKey));
 
   // 발주확인 쪽 저장 모양에 맞춘다(입고예정일은 'YYYYMMDD' 글자).
   const back = lines
@@ -178,12 +273,12 @@ function pushBackToWork(lines: ShipOutLine[], fallbackBundle: string) {
       묶음센터: '',
       묶음일자: '',
     }))
-    .filter(r => !seen.has(keyOf(r)));
+    .filter(r => !seen.has(lineKey(r)));
 
   // 되돌린 줄은 맨 아래가 아니라 원래 자리(입고예정일 → 물류센터 → 발주번호 → 상품이름 순)에 끼워 넣는다.
   const merged = [...rows, ...back].sort((a, b) => {
-    const da = ymdSortKey(a.입고예정일);
-    const db = ymdSortKey(b.입고예정일);
+    const da = ymdSortKey(a.입고예정일 as string);
+    const db = ymdSortKey(b.입고예정일 as string);
     if (da !== db) return da - db;
     const kc = String(a.물류센터 || '').localeCompare(String(b.물류센터 || ''), 'ko', { numeric: true });
     if (kc !== 0) return kc;
@@ -192,13 +287,7 @@ function pushBackToWork(lines: ShipOutLine[], fallbackBundle: string) {
     return String(a.상품이름 || '').localeCompare(String(b.상품이름 || ''), 'ko', { numeric: true });
   });
 
-  try {
-    localStorage.setItem(WORK_KEY, JSON.stringify({
-      rows: merged,
-      fileName: work.fileName || '',
-      done: work.done || [],
-    }));
-  } catch {}
+  writeWork({ ...work, rows: merged });
   return back.length;
 }
 
@@ -242,23 +331,21 @@ export function shipOutLineKeys(): Set<string> {
 // 그래서 그 둘을 통째로 찍어 두었다가 그대로 써넣으면 방금 한 일이 없던 일이 된다.
 export interface ShipSnapshot {
   shipOuts: string;
-  work: string | null;
+  work: string;
 }
 
 export function snapshotShipOuts(): ShipSnapshot {
   return {
-    shipOuts: localStorage.getItem(KEY) || '[]',
-    work: localStorage.getItem(WORK_KEY),
+    shipOuts: JSON.stringify(read()),
+    work: JSON.stringify(readWork()),
   };
 }
 
 export function restoreShipSnapshot(snap: ShipSnapshot) {
   try {
-    localStorage.setItem(KEY, snap.shipOuts);
-    if (snap.work === null) localStorage.removeItem(WORK_KEY);
-    else localStorage.setItem(WORK_KEY, snap.work);
+    write(JSON.parse(snap.shipOuts));
+    writeWork(JSON.parse(snap.work));
   } catch {}
-  window.dispatchEvent(new CustomEvent('coupang-shipouts-changed'));
 }
 
 // 두 스냅샷이 같은지(바뀐 게 없으면 되돌리기 목록에 쌓지 않는다).

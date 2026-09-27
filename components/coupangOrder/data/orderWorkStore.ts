@@ -1,48 +1,36 @@
-// 발송 쪽 작업 중인 목록(메모·롯데 표시 포함)을 이 컴퓨터에 남겨 둔다. 다른 메뉴에 다녀오거나
-// 새로고침해도 그대로 다시 뜨고, "전체 비우기"를 누를 때만 비운다. 발주서를 새로 올리면 지우지
-// 않고 아래에 이어 붙인다. 날짜는 'YYYYMMDD' 글자로 저장했다가 되살린다.
+// 발송 쪽 작업 중인 목록(메모·롯데 표시 포함)을 남겨 둔다. 다른 메뉴에 다녀오거나 새로고침해도
+// 그대로 다시 뜨고, "전체 비우기"를 누를 때만 비운다. 발주서를 새로 올리면 지우지 않고 아래에
+// 이어 붙인다. 날짜는 'YYYYMMDD' 글자로 저장했다가 되살린다.
 // 수집 화면에서도 발주서를 받아 여기에 이어 붙이므로 쿠팡발주확인 화면과 따로 두었다.
+// 저장은 orderWorkCloud가 맡는다(이 기기 + 클라우드). 그래서 다른 컴퓨터에서도 같은 목록을 본다.
 import { parseFile, buildDisplayRows, extractOrderRows, sortOrderRows } from '../utils/dataProcessor';
 import type { DisplayRow } from '../utils/dataProcessor';
 import type { OrderRow } from '../types';
 import { dateKeyYMD, normalizeDateValue } from '../utils/dateUtils';
 import { reservationKey } from './reservationStore';
 import { shipOutLineKeys } from './shipOutStore';
+import { readWork, writeWork, workLineKey } from './orderWorkCloud';
 
-const WORK_KEY = 'coupangOrderWork';
-
-// 쉽먼트생성으로 넘어간 줄과 맞춰 보는 열쇠(그쪽 저장소가 쓰는 것과 같은 모양).
-const workLineKey = (r: { 발주번호?: unknown; 상품이름?: unknown; 확정수량?: unknown }) =>
-  `${r.발주번호}│${r.상품이름}│${r.확정수량}`;
+export { subscribeWork } from './orderWorkCloud';
 
 export function loadWork(): { rows: DisplayRow[]; fileName: string; done: string[] } {
-  try {
-    const saved = JSON.parse(localStorage.getItem(WORK_KEY) || '');
-    const rows: OrderRow[] = (saved.rows || []).map((r: OrderRow) => ({ ...r, 입고예정일: normalizeDateValue(r.입고예정일) }));
-    // 같은 발주서의 같은 상품이 두 번 들어간 줄은 하나만 남긴다(출고에 보냈다 되돌리는 사이에
-    // 센터·입고일이 바뀌어 두 줄로 남는 일이 있었다). 먼저 들어온 줄을 살린다.
-    const seen = new Set<string>();
-    const unique = rows.filter(r => {
-      const key = `${r.발주번호}│${r.상품이름}│${r.확정수량}`;
-      if (seen.has(key)) return false;
-      seen.add(key);
-      return true;
-    });
-    return { rows: buildDisplayRows(unique), fileName: saved.fileName || '', done: saved.done || [] };
-  } catch {
-    return { rows: [], fileName: '', done: [] };
-  }
+  const saved = readWork();
+  const rows: OrderRow[] = saved.rows.map(r => ({ ...(r as unknown as OrderRow), 입고예정일: normalizeDateValue(r.입고예정일) }));
+  // 같은 발주서의 같은 상품이 두 번 들어간 줄은 하나만 남긴다(출고에 보냈다 되돌리는 사이에
+  // 센터·입고일이 바뀌어 두 줄로 남는 일이 있었다). 먼저 들어온 줄을 살린다.
+  const seen = new Set<string>();
+  const unique = rows.filter(r => {
+    const key = workLineKey(r);
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+  return { rows: buildDisplayRows(unique), fileName: saved.fileName, done: saved.done };
 }
 
 export function saveWork(rows: DisplayRow[], fileName: string, done: string[]) {
-  try {
-    if (!rows.length) {
-      localStorage.removeItem(WORK_KEY);
-      return;
-    }
-    const plain = extractOrderRows(rows).map(r => ({ ...r, 입고예정일: dateKeyYMD(r.입고예정일).replace(/-/g, '') }));
-    localStorage.setItem(WORK_KEY, JSON.stringify({ rows: plain, fileName, done }));
-  } catch {}
+  const plain = extractOrderRows(rows).map(r => ({ ...r, 입고예정일: dateKeyYMD(r.입고예정일).replace(/-/g, '') }));
+  writeWork({ rows: plain, fileName, done });
 }
 
 // 발주서 파일 한 개를 저장된 작업 목록 아래에 이어 붙인다(이미 있는 줄과 예약으로 넘긴 줄은 건너뛴다).

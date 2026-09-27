@@ -16,7 +16,7 @@ import { dateKeyYMD, normalizeDateValue, ymdSortKey } from './utils/dateUtils';
 import { InventoryItem, subscribeInventory, makeOfficeLookup } from '../../data/inventoryStore';
 import BundlePanel from './components/BundlePanel';
 import { addShipOut, shipOutLineKeys, subscribeShipOuts } from './data/shipOutStore';
-import { loadWork, saveWork } from './data/orderWorkStore';
+import { loadWork, saveWork, subscribeWork } from './data/orderWorkStore';
 
 // 화면 한 줄 → 원래 발주 한 건(줄였던 발주번호·물류센터·날짜를 되살림).
 const toOrderRow = (r: DisplayRow): OrderRow => ({
@@ -66,6 +66,14 @@ export default function CoupangOrderPage({ onGoShipOut }: { onGoShipOut?: () => 
   // 택배주소는 묶음 카드에서 센터를 고를 때 쓴다(보내는사람·주소 관리는 쉽먼트생성 화면에 있다).
   useEffect(() => subscribeShippingSettings(({ addresses }) => setAddresses(addresses)), []);
   useEffect(() => saveWork(leftRows, fileName, Array.from(doneBundles)), [leftRows, fileName, doneBundles]);
+  // 작업 목록은 클라우드에 있어서 다른 컴퓨터에서 고친 것도 바로 내려온다(쉽먼트생성에서 줄을
+  // 되돌려 보낼 때도 이 길로 들어온다).
+  useEffect(() => subscribeWork(() => {
+    const w = loadWork();
+    setLeftRows(w.rows);
+    setFileName(w.fileName);
+    setDoneBundles(new Set(w.done));
+  }), []);
 
   const hasFile = leftRows.length > 0;
   const hasData = hasFile || rightRows.length > 0;

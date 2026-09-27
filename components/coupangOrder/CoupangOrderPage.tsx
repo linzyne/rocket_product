@@ -15,7 +15,7 @@ import type { OrderRow } from './types';
 import { dateKeyYMD, normalizeDateValue, ymdSortKey } from './utils/dateUtils';
 import { InventoryItem, subscribeInventory, makeOfficeLookup } from '../../data/inventoryStore';
 import BundlePanel from './components/BundlePanel';
-import { addShipOut } from './data/shipOutStore';
+import { addShipOut, shipOutLineKeys, subscribeShipOuts } from './data/shipOutStore';
 import { loadWork, saveWork } from './data/orderWorkStore';
 
 // 화면 한 줄 → 원래 발주 한 건(줄였던 발주번호·물류센터·날짜를 되살림).
@@ -83,7 +83,11 @@ export default function CoupangOrderPage({ onGoShipOut }: { onGoShipOut?: () => 
       } else {
         const existing = extractOrderRows(leftRows);
         const seen = new Set([...existing, ...reservations].map(reservationKey));
-        const fresh = sortOrderRows(rows).filter(r => !seen.has(reservationKey(r)));
+        // 이미 쉽먼트생성으로 넘긴 줄도 건너뛴다(안 그러면 발주확인에 다시 나타난다).
+        // 센터·입고예정일은 묶음 적용으로 바뀔 수 있어 발주번호·상품·수량으로만 맞춰 본다.
+        const shipped = shipOutLineKeys();
+        const fresh = sortOrderRows(rows).filter(r =>
+          !seen.has(reservationKey(r)) && !shipped.has(`${r.발주번호}│${r.상품이름}│${r.확정수량}`));
         setLeftRows(buildDisplayRows([...existing, ...fresh]));
         setFileName(file.name);
         const skipped = rows.length - fresh.length;
@@ -265,12 +269,78 @@ export default function CoupangOrderPage({ onGoShipOut }: { onGoShipOut?: () => 
       .catch(alertError);
   }, [leftRows, reservations]);
 
+  // 예약에서 되돌아온 줄을 지금 발송 목록에 남아 있는 같은 발주서 줄에 맞춘다.
+  // 예약 기록에는 묶음이 없고 센터·입고예정일도 예약 당시 값이라, 그대로 넣으면 원래 덩어리에서 떨어진다.
+  const alignToExisting = useCallback((back: OrderRow[], existing: OrderRow[]): OrderRow[] => {
+    const byOrder = new Map<string, OrderRow[]>();
+    for (const r of existing) {
+      if (!r.발주번호) continue;
+      byOrder.set(r.발주번호, [...(byOrder.get(r.발주번호) || []), r]);
+    }
+    return back.map(r => {
+      const mates = byOrder.get(r.발주번호);
+      if (!mates || !mates.length) return r;
+      const head = mates[0];
+      // 박스는 그 발주서 줄이 모두 같은 번호일 때만 따라간다(섞여 있으면 손대지 않는다).
+      const box = mates.every(m => (m.쉼먼트 || '') === (head.쉼먼트 || '')) ? (head.쉼먼트 || '') : (r.쉼먼트 || '');
+      return {
+        ...r,
+        물류센터: head.물류센터,
+        입고예정일: head.입고예정일,
+        묶음: head.묶음 || '',
+        묶음센터: head.묶음센터 || '',
+        묶음일자: head.묶음일자 || '',
+        쉼먼트: box,
+      };
+    });
+  }, []);
+
+  // 예약 표에서 고른 상품 줄들(줄 id). 고른 것만 발송으로 되돌릴 때 쓴다.
+  const [pickedRes, setPickedRes] = useState<Set<string>>(new Set());
+  const toggleResLine = useCallback((id: string, checked: boolean) => {
+    setPickedRes(prev => {
+      const next = new Set(prev);
+      if (checked) next.add(id); else next.delete(id);
+      return next;
+    });
+  }, []);
+  // 예약 목록이 바뀌면 이제 없는 줄은 고른 데서 뺀다.
+  useEffect(() => {
+    setPickedRes(prev => {
+      const alive = new Set(rightRows.map(r => r.id));
+      const next = new Set(Array.from(prev).filter(id => alive.has(id)));
+      return next.size === prev.size ? prev : next;
+    });
+  }, [rightRows]);
+
+  // 고른 예약 줄만 발송 목록의 원래 자리(발주서 순서)로 되돌린다.
+  const handleRestorePickedReservations = useCallback(() => {
+    const picked = rightRows.filter(r => !r.isBlank && pickedRes.has(r.id));
+    if (!picked.length) return;
+    const orders = picked.map(toOrderRow);
+    if (!confirm(`고른 ${orders.length}줄을 발송 목록으로 되돌릴까요?\n예약 목록에서는 지워져요.`)) return;
+    const existing = extractOrderRows(leftRows);
+    const back = alignToExisting(orders.map(r => ({ ...r, 메모: '' })), existing);
+    const combined = sortOrderRows([...existing, ...back]);
+    deleteReservations(orders)
+      .then(() => {
+        setLeftRows(buildDisplayRows(combined));
+        setPickedRes(new Set());
+        setNotice(`예약 ${orders.length}줄을 발송 목록의 원래 자리로 되돌렸어요.`);
+      })
+      .catch(alertError);
+  }, [rightRows, pickedRes, leftRows]);
+
   // 예약 전체를 발송 패널로 되돌린다. 저장된 예약도 모두 지워지므로 한 번 더 묻는다.
   const handleCancelReservations = useCallback(() => {
     if (reservations.length === 0) return;
     if (!confirm(`저장된 예약 ${reservations.length}건을 모두 발송으로 되돌릴까요?\n예약 목록에서는 삭제돼요.`)) return;
     // 되돌린 줄은 발주서 순서대로 원래 자리에 끼워 넣고, 예약 표시(메모)는 지운다.
-    const combined = sortOrderRows([...extractOrderRows(leftRows), ...reservations.map(r => ({ ...r, 메모: '' }))]);
+    const existing = extractOrderRows(leftRows);
+    const combined = sortOrderRows([
+      ...existing,
+      ...alignToExisting(reservations.map(r => ({ ...r, 메모: '' })), existing),
+    ]);
     deleteReservations(reservations)
       .then(() => setLeftRows(buildDisplayRows(combined)))
       .catch(alertError);
@@ -366,6 +436,27 @@ export default function CoupangOrderPage({ onGoShipOut }: { onGoShipOut?: () => 
     setNotice('발주서 순서(입고예정일 → 센터 → 발주번호)로 다시 정렬했어요.');
   }, [leftRows]);
 
+  // 이미 쉽먼트생성으로 넘어갔는데 발송 목록에 남아 있는 줄(예전 수집 때 다시 들어온 것들).
+  const [shippedKeys, setShippedKeys] = useState<Set<string>>(() => shipOutLineKeys());
+  useEffect(() => subscribeShipOuts(() => setShippedKeys(shipOutLineKeys())), []);
+  const shippedRows = useMemo(
+    () => leftRows.filter(r => !r.isBlank && shippedKeys.has(`${r._발주번호}│${r.상품이름}│${r.확정수량}`)),
+    [leftRows, shippedKeys],
+  );
+  const shippedOrderNos = useMemo(
+    () => Array.from(new Set(shippedRows.map(r => r._발주번호))),
+    [shippedRows],
+  );
+
+  // 그 줄들을 발송 목록에서 걷어낸다(출고 쪽 기록은 그대로 둔다).
+  const handleDropShipped = useCallback(() => {
+    if (!shippedRows.length) return;
+    if (!confirm(`이미 쉽먼트생성으로 넘긴 발주 ${shippedOrderNos.length}건(${shippedRows.length}줄)을 발송 목록에서 지울까요?\n쉽먼트생성 쪽 내용은 그대로 남아요.`)) return;
+    const gone = new Set(shippedRows.map(r => r.id));
+    setLeftRows(prev => buildDisplayRows(extractOrderRows(prev.filter(r => !gone.has(r.id)))));
+    setNotice(`쉽먼트생성으로 넘어간 발주 ${shippedOrderNos.length}건을 발송 목록에서 지웠어요.`);
+  }, [shippedRows, shippedOrderNos]);
+
   // 중복 줄을 먼저 들어온 것만 남기고 지운다.
   const handleDedupe = useCallback(() => {
     if (!dupCount) return;
@@ -417,6 +508,26 @@ export default function CoupangOrderPage({ onGoShipOut }: { onGoShipOut?: () => 
               <div style={{ background: '#eff6ff', border: '1px solid #cfe0ff', color: '#1d4ed8', fontSize: 13, padding: '10px 16px', borderRadius: 8, marginBottom: 14, display: 'flex', alignItems: 'center', gap: 10 }}>
                 <span style={{ flex: 1 }}>{notice}</span>
                 <button onClick={() => setNotice('')} style={{ border: 'none', background: 'transparent', color: '#94a3b8', cursor: 'pointer' }}>×</button>
+              </div>
+            )}
+
+            {shippedRows.length > 0 && (
+              <div style={{ background: '#fff7ed', border: '1px solid #fed7aa', color: '#b45309', fontSize: 13, padding: '10px 16px', borderRadius: 8, marginBottom: 14, display: 'flex', alignItems: 'center', gap: 10 }}>
+                <span style={{ flex: 1 }}>
+                  이미 <strong>쉽먼트생성</strong>으로 넘긴 발주 {shippedOrderNos.length}건({shippedRows.length}줄)이 아직 이 목록에 남아 있어요.
+                  <span style={{ color: '#9a7b4f', marginLeft: 6 }} title={shippedOrderNos.join(', ')}>
+                    {shippedOrderNos.slice(0, 5).join(', ')}{shippedOrderNos.length > 5 ? ` 외 ${shippedOrderNos.length - 5}건` : ''}
+                  </span>
+                </span>
+                <button
+                  onClick={handleDropShipped}
+                  style={{
+                    padding: '5px 12px', fontSize: 12, fontWeight: 700, color: '#fff',
+                    background: '#e67e22', border: '1px solid #e67e22', borderRadius: 6, cursor: 'pointer',
+                  }}
+                >
+                  정리하기
+                </button>
               </div>
             )}
 
@@ -651,11 +762,25 @@ export default function CoupangOrderPage({ onGoShipOut }: { onGoShipOut?: () => 
                         🖨 인쇄
                       </button>
                     )}
+                    {pickedRes.size > 0 && (
+                      <button
+                        onClick={handleRestorePickedReservations}
+                        style={{
+                          marginLeft: 'auto', display: 'inline-flex', alignItems: 'center', gap: 4,
+                          padding: '4px 10px', fontSize: 11, fontWeight: 700, color: '#fff',
+                          background: '#27ae60', border: '1px solid #27ae60',
+                          borderRadius: 6, cursor: 'pointer',
+                        }}
+                        title="고른 상품 줄만 발송 목록의 원래 자리로 되돌립니다"
+                      >
+                        ← 고른 {pickedRes.size}줄 발송으로
+                      </button>
+                    )}
                     {rightRows.length > 0 && (
                       <button
                         onClick={handleCancelReservations}
                         style={{
-                          marginLeft: 'auto', display: 'inline-flex', alignItems: 'center', gap: 4,
+                          marginLeft: pickedRes.size > 0 ? 0 : 'auto', display: 'inline-flex', alignItems: 'center', gap: 4,
                           padding: '4px 10px', fontSize: 11, color: '#999',
                           background: '#fff', border: '1px solid #e0e0e0',
                           borderRadius: 6, cursor: 'pointer',
@@ -674,6 +799,8 @@ export default function CoupangOrderPage({ onGoShipOut }: { onGoShipOut?: () => 
                       onDelete={handleDeleteReservation}
                       colorScheme="green"
                       readOnly={false}
+                      selectedLines={pickedRes}
+                      onToggleLine={toggleResLine}
                     />
                   ) : (
                     <div style={{

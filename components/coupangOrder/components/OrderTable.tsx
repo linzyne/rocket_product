@@ -30,6 +30,9 @@ interface Props {
   bundleColorOf?: (key: string) => string;
   // 'order'(기본): 발주서 머리줄 → 상품. 'box': 덩어리 머리줄 → 박스 머리줄 → 상품(발주번호는 줄 맨 뒤 칸).
   layout?: 'order' | 'box';
+  // 상품 줄 하나하나를 고르는 체크 칸(예약 패널에서 고른 줄만 발송으로 되돌릴 때 쓴다).
+  selectedLines?: Set<string>;
+  onToggleLine?: (id: string, checked: boolean) => void;
 }
 
 // 박스 번호(박스1, 박스2…)마다 다른 색. 어느 상자에 담기는지 한눈에 보이게.
@@ -224,11 +227,18 @@ function OfficeCell({ match, need }: { match: OfficeMatch | null; need: number }
 }
 
 /* ── 메인 테이블 ── */
-export default function OrderTable({ rows, onMemoChange, onShipmentChange, colorScheme = 'pink', readOnly = false, onDelete, officeQtyOf, selectedOrders, onToggleSelect, onBulkOrder, doneOrders, onSortByBox, bundleLabel, bundleColorOf, layout = 'order' }: Props) {
+export default function OrderTable({ rows, onMemoChange, onShipmentChange, colorScheme = 'pink', readOnly = false, onDelete, officeQtyOf, selectedOrders, onToggleSelect, onBulkOrder, doneOrders, onSortByBox, bundleLabel, bundleColorOf, layout = 'order', selectedLines, onToggleLine }: Props) {
   if (rows.length === 0) return null;
 
   const sc = SCHEME[colorScheme];
   const selectable = !!onToggleSelect;
+  const lineSelectable = !!onToggleLine;
+  // 발주서마다 그 발주서에 속한 상품 줄 id들(머리줄 체크 한 번으로 다 고르게).
+  const lineIdsByOrder = new Map<string, string[]>();
+  for (const row of rows) {
+    if (row.isBlank || !row._발주번호) continue;
+    lineIdsByOrder.set(row._발주번호, [...(lineIdsByOrder.get(row._발주번호) || []), row.id]);
+  }
   // 같은 물류센터·입고예정일로 한 덩어리(한 박스)에 묶여 있는 발주번호들. 덩어리 전체선택에 쓴다.
   const ordersByGroup = new Map<string, string[]>();
   // 덩어리별 품목 수와 수량 합계(한 박스에 들어갈 물량이 한눈에 보이게).
@@ -260,6 +270,7 @@ export default function OrderTable({ rows, onMemoChange, onShipmentChange, color
   }
   // 발주번호·센터·입고예정일은 발주서마다 한 줄(머리줄)로 위에 올리고, 표 본문은 상품만 남긴다.
   const headers = [
+    ...(lineSelectable ? ['고름'] : []),
     '상품이름', '확정수량',
     ...(officeQtyOf ? ['사무실'] : []),
     '예약', '박스', ...(onDelete ? ['삭제'] : []),
@@ -552,6 +563,19 @@ export default function OrderTable({ rows, onMemoChange, onShipmentChange, color
                         title="이 발주서를 묶음에 담을 후보로 고릅니다"
                       />
                     )}
+                    {lineSelectable && (() => {
+                      const ids = lineIdsByOrder.get(row._발주번호) || [];
+                      const on = ids.length > 0 && ids.every(id => selectedLines?.has(id));
+                      return (
+                        <input
+                          type="checkbox"
+                          checked={on}
+                          onChange={() => ids.forEach(id => onToggleLine!(id, !on))}
+                          style={{ cursor: 'pointer', margin: 0 }}
+                          title="이 발주서의 상품 줄을 모두 고릅니다"
+                        />
+                      );
+                    })()}
                     <span style={{ fontSize: 13, fontWeight: 700, color: '#333' }}>{row._발주번호}</span>
                     <span style={{ fontSize: 12, fontWeight: 700, color: sc.accent }}>{(row._물류센터 || '').trim()}</span>
                     <span style={{ fontSize: 12, fontWeight: 700, color: '#2c3e50' }}>{formatDateDisplay(row._입고예정일)}</span>
@@ -635,9 +659,20 @@ export default function OrderTable({ rows, onMemoChange, onShipmentChange, color
                 onMouseEnter={e => (e.currentTarget.style.background = done ? DONE_HOVER : sc.rowHover)}
                 onMouseLeave={e => (e.currentTarget.style.background = bg)}
               >
+                {lineSelectable && (
+                  <td style={{ ...cs(32), padding: '4px 4px' }}>
+                    <input
+                      type="checkbox"
+                      checked={!!selectedLines?.has(row.id)}
+                      onChange={e => onToggleLine!(row.id, e.target.checked)}
+                      style={{ cursor: 'pointer', margin: 0 }}
+                      title="이 상품 줄을 고릅니다"
+                    />
+                  </td>
+                )}
                 <td style={{
                   ...cs(0), textAlign: 'left', minWidth: 210, padding: '5px 6px',
-                  borderLeft: edge ? `4px solid ${edge}` : undefined,
+                  borderLeft: lineSelectable ? undefined : (edge ? `4px solid ${edge}` : undefined),
                 }}>{row.상품이름}</td>
                 <td style={narrow(38)}>{row.확정수량 !== '' ? row.확정수량 : ''}</td>
                 {officeQtyOf && <OfficeCell match={officeQtyOf(row.상품이름)} need={Number(row.확정수량) || 0} />}

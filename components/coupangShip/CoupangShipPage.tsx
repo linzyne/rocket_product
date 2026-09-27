@@ -1,5 +1,6 @@
 import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { ShipOut, subscribeShipOuts, deleteShipOut, restoreShipOut, restoreOrders, updateShipOutLine, markShipOuts } from '../coupangOrder/data/shipOutStore';
+import { ShipOut, subscribeShipOuts, deleteShipOut, restoreShipOut, restoreOrders, updateShipOutLine, markShipOuts, snapshotShipOuts, restoreShipSnapshot, sameSnapshot } from '../coupangOrder/data/shipOutStore';
+import type { ShipSnapshot } from '../coupangOrder/data/shipOutStore';
 import { dateKeyYMD } from '../coupangOrder/utils/dateUtils';
 import OrderTable, { bundleColor } from '../coupangOrder/components/OrderTable';
 import { buildDisplayRows, parseBoxNo } from '../coupangOrder/utils/dataProcessor';
@@ -58,12 +59,67 @@ export default function CoupangShipPage({ onGoOrder }: { onGoOrder?: () => void 
 
   // 박스 순으로 세운 줄 차례(눌렀을 때 한 번 정해 두고, 그 뒤로는 그대로 둔다).
   const [boxOrder, setBoxOrder] = useState<string[] | null>(null);
+
+  // 방금 한 일을 되돌리고 다시 할 수 있게, 일을 하기 직전·직후의 상태를 통째로 찍어 쌓아 둔다.
+  interface Step { label: string; before: ShipSnapshot; after: ShipSnapshot; boxBefore: string[] | null; boxAfter: string[] | null }
+  const [undoStack, setUndoStack] = useState<Step[]>([]);
+  const [redoStack, setRedoStack] = useState<Step[]>([]);
+
+  // 목록을 바꾸는 일은 모두 이 함수를 거친다(그래야 되돌릴 수 있다).
+  const step = (label: string, run: () => void | false, boxAfter?: string[] | null) => {
+    const before = snapshotShipOuts();
+    const boxBefore = boxOrder;
+    if (run() === false) return;
+    const after = snapshotShipOuts();
+    const boxNext = boxAfter === undefined ? boxBefore : boxAfter;
+    if (sameSnapshot(before, after) && boxBefore === boxNext) return;
+    // 스무 걸음까지만 기억한다.
+    setUndoStack(prev => [...prev, { label, before, after, boxBefore, boxAfter: boxNext }].slice(-20));
+    setRedoStack([]);
+  };
+
+  const undo = () => {
+    setUndoStack(prev => {
+      const last = prev[prev.length - 1];
+      if (!last) return prev;
+      restoreShipSnapshot(last.before);
+      setBoxOrder(last.boxBefore);
+      setRedoStack(r => [...r, last]);
+      return prev.slice(0, -1);
+    });
+  };
+
+  const redo = () => {
+    setRedoStack(prev => {
+      const last = prev[prev.length - 1];
+      if (!last) return prev;
+      restoreShipSnapshot(last.after);
+      setBoxOrder(last.boxAfter);
+      setUndoStack(u => [...u, last]);
+      return prev.slice(0, -1);
+    });
+  };
+
+  // ⌘Z / ⌘⇧Z(윈도는 Ctrl)로도 되돌리고 다시 한다. 글자를 치는 중일 때는 건드리지 않는다.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (!(e.metaKey || e.ctrlKey) || e.key.toLowerCase() !== 'z') return;
+      const el = e.target as HTMLElement | null;
+      const tag = el?.tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || el?.isContentEditable) return;
+      e.preventDefault();
+      if (e.shiftKey) redo(); else undo();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  });
+
   const sortByBox = () => {
     const keys = ordered.flatMap(item => item.lines
       .slice()
       .sort((a, b) => (parseBoxNo(a.쉼먼트 || '') ?? 9999) - (parseBoxNo(b.쉼먼트 || '') ?? 9999))
       .map(lineKey));
-    setBoxOrder(keys);
+    step('박스순 정렬', () => setBoxOrder(keys), keys);
   };
 
   // 줄이 어느 출고 건에 속하는지 찾는 지도(발주번호 → 출고번호). 표에서 값을 고칠 때 쓴다.
@@ -214,12 +270,14 @@ export default function CoupangShipPage({ onGoOrder }: { onGoOrder?: () => void 
   const editLine = (id: string, patch: { 메모?: string; 쉼먼트?: string }) => {
     const row = rows.find(r => r.id === id);
     if (!row) return;
-    updateShipOutLine(shipIdOf.get(row._발주번호) || '', {
-      발주번호: row._발주번호,
-      상품이름: row.상품이름,
-      확정수량: row.확정수량,
-      입고예정일: dateKeyYMD(row._입고예정일),
-    }, patch);
+    step(patch.쉼먼트 !== undefined ? '박스 지정' : '예약 표시', () => {
+      updateShipOutLine(shipIdOf.get(row._발주번호) || '', {
+        발주번호: row._발주번호,
+        상품이름: row.상품이름,
+        확정수량: row.확정수량,
+        입고예정일: dateKeyYMD(row._입고예정일),
+      }, patch);
+    });
   };
 
   const toggleSelect = (orderNo: string, checked: boolean) =>
@@ -234,7 +292,7 @@ export default function CoupangShipPage({ onGoOrder }: { onGoOrder?: () => void 
     const orderNos: string[] = Array.from(selected);
     if (!orderNos.length) return;
     if (!confirm(`발주 ${orderNos.length}건을 쿠팡발주확인으로 되돌릴까요?`)) return;
-    restoreOrders(orderNos);
+    step(`발주 ${orderNos.length}건 발주확인으로`, () => { restoreOrders(orderNos); });
     setSelected(new Set());
     onGoOrder?.();
   };
@@ -463,20 +521,22 @@ export default function CoupangShipPage({ onGoOrder }: { onGoOrder?: () => void 
   const toggleDone = (item: ShipOut) => {
     const nowDone = progressOf(item).done;
     // 다시 누르면 완료가 풀려서 쉽먼트생성·양식받기 버튼이 되살아난다.
-    markShipOuts([item.id], nowDone
-      ? { doneAt: undefined, undoneAt: Date.now() }
-      : { doneAt: Date.now(), undoneAt: undefined });
+    step(nowDone ? '완료 풀기' : '쉽먼트 완료', () => {
+      markShipOuts([item.id], nowDone
+        ? { doneAt: undefined, undoneAt: Date.now() }
+        : { doneAt: Date.now(), undoneAt: undefined });
+    });
   };
 
   const remove = (item: ShipOut) => {
-    if (!confirm(`${item.id} (${item.bundle} · ${item.center})을 출고 목록에서 지울까요?\n되돌릴 수 없어요.`)) return;
-    deleteShipOut(item.id);
+    if (!confirm(`${item.id} (${item.bundle} · ${item.center})을 출고 목록에서 지울까요?`)) return;
+    step(`${item.bundle} 삭제`, () => { deleteShipOut(item.id); });
   };
 
   // 출고를 취소하고 쿠팡발주확인(발송 목록)으로 되돌린다. 묶음도 그대로 살아난다.
   const restore = (item: ShipOut) => {
     if (!confirm(`${item.id} (${item.bundle} · ${item.center})을 쿠팡발주확인으로 되돌릴까요?`)) return;
-    restoreShipOut(item.id);
+    step(`${item.bundle} 발주확인으로`, () => { restoreShipOut(item.id); });
     onGoOrder?.();
   };
 
@@ -486,6 +546,26 @@ export default function CoupangShipPage({ onGoOrder }: { onGoOrder?: () => void 
         <div style={{ maxWidth: 1600, margin: '0 auto', padding: '0 24px', height: 54, display: 'flex', alignItems: 'center', gap: 12 }}>
           <span style={{ fontSize: 17, fontWeight: 700, letterSpacing: '-0.3px' }}>🚚 쉽먼트생성</span>
           {list.length > 0 && <span style={{ fontSize: 12, color: '#999' }}>출고 {list.length}건 · 발주 {itemCount}줄</span>}
+
+          {/* 방금 한 일 되돌리기 · 다시실행 (⌘Z / ⌘⇧Z) */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+            <button
+              onClick={undo}
+              disabled={undoStack.length === 0}
+              title={undoStack.length ? `되돌리기: ${undoStack[undoStack.length - 1].label} (⌘Z)` : '되돌릴 일이 없어요'}
+              style={stepBtn(undoStack.length > 0)}
+            >
+              ↶ 되돌리기
+            </button>
+            <button
+              onClick={redo}
+              disabled={redoStack.length === 0}
+              title={redoStack.length ? `다시실행: ${redoStack[redoStack.length - 1].label} (⌘⇧Z)` : '다시 할 일이 없어요'}
+              style={stepBtn(redoStack.length > 0)}
+            >
+              ↷ 다시실행
+            </button>
+          </div>
 
           <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 8 }}>
             <button onClick={() => setShowSenderManager(true)} style={plainBtn}>📮 보내는사람 설정</button>
@@ -845,6 +925,17 @@ function Chip({ on, label }: { on: boolean; label: string }) {
     </span>
   );
 }
+
+// 되돌리기·다시실행 단추. 할 일이 없으면 흐리게 두고 누를 수 없게 한다.
+const stepBtn = (on: boolean): React.CSSProperties => ({
+  display: 'inline-flex', alignItems: 'center', gap: 4, padding: '5px 10px',
+  fontSize: 12, fontWeight: 600,
+  color: on ? '#555' : '#c8c8c8',
+  background: '#fff',
+  border: `1px solid ${on ? '#e0e0e0' : '#f2f2f2'}`,
+  borderRadius: 7,
+  cursor: on ? 'pointer' : 'default',
+});
 
 const plainBtn: React.CSSProperties = {
   display: 'flex', alignItems: 'center', gap: 6, padding: '6px 12px',

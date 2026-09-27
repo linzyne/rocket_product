@@ -7,8 +7,13 @@ import type { DisplayRow } from '../utils/dataProcessor';
 import type { OrderRow } from '../types';
 import { dateKeyYMD, normalizeDateValue } from '../utils/dateUtils';
 import { reservationKey } from './reservationStore';
+import { shipOutLineKeys } from './shipOutStore';
 
 const WORK_KEY = 'coupangOrderWork';
+
+// 쉽먼트생성으로 넘어간 줄과 맞춰 보는 열쇠(그쪽 저장소가 쓰는 것과 같은 모양).
+const workLineKey = (r: { 발주번호?: unknown; 상품이름?: unknown; 확정수량?: unknown }) =>
+  `${r.발주번호}│${r.상품이름}│${r.확정수량}`;
 
 export function loadWork(): { rows: DisplayRow[]; fileName: string; done: string[] } {
   try {
@@ -48,7 +53,10 @@ export async function appendOrderFile(file: File, reservations: OrderRow[]): Pro
   const work = loadWork();
   const existing = extractOrderRows(work.rows);
   const seen = new Set([...existing, ...reservations].map(reservationKey));
-  const fresh = sortOrderRows(rows).filter(r => !seen.has(reservationKey(r)));
+  // 이미 쉽먼트생성으로 넘긴 줄도 건너뛴다(안 그러면 다음 수집 때 발주확인에 되살아난다).
+  const shipped = shipOutLineKeys();
+  const fresh = sortOrderRows(rows)
+    .filter(r => !seen.has(reservationKey(r)) && !shipped.has(workLineKey(r)));
   saveWork(buildDisplayRows([...existing, ...fresh]), file.name, work.done);
   return { added: fresh.length, skipped: rows.length - fresh.length };
 }

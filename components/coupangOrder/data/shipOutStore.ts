@@ -230,3 +230,37 @@ export function restoreOrders(orderNos: string[]): number {
   write(next);
   return moved;
 }
+
+// 이미 쉽먼트생성으로 넘어간 줄들의 열쇠. 발주서를 다시 받아올 때 이 줄들이 발주확인에
+// 되살아나지 않게 거르는 데 쓴다. 센터·입고예정일은 묶음 적용으로 바뀔 수 있어 열쇠에서 뺀다.
+export function shipOutLineKeys(): Set<string> {
+  return new Set(read().flatMap(s => s.lines.map(lineKey)));
+}
+
+// ── 되돌리기(실행취소)용 ──
+// 쉽먼트생성 화면에서 한 일은 이 파일의 출고 목록과, 되돌리기로 넘어가는 발주확인 작업 목록만 건드린다.
+// 그래서 그 둘을 통째로 찍어 두었다가 그대로 써넣으면 방금 한 일이 없던 일이 된다.
+export interface ShipSnapshot {
+  shipOuts: string;
+  work: string | null;
+}
+
+export function snapshotShipOuts(): ShipSnapshot {
+  return {
+    shipOuts: localStorage.getItem(KEY) || '[]',
+    work: localStorage.getItem(WORK_KEY),
+  };
+}
+
+export function restoreShipSnapshot(snap: ShipSnapshot) {
+  try {
+    localStorage.setItem(KEY, snap.shipOuts);
+    if (snap.work === null) localStorage.removeItem(WORK_KEY);
+    else localStorage.setItem(WORK_KEY, snap.work);
+  } catch {}
+  window.dispatchEvent(new CustomEvent('coupang-shipouts-changed'));
+}
+
+// 두 스냅샷이 같은지(바뀐 게 없으면 되돌리기 목록에 쌓지 않는다).
+export const sameSnapshot = (a: ShipSnapshot, b: ShipSnapshot) =>
+  a.shipOuts === b.shipOuts && a.work === b.work;

@@ -238,7 +238,7 @@ export function bundleCenters(displayRows: DisplayRow[]): Map<string, string> {
 }
 
 // 한 상자를 가리키는 키: 묶음에 담았으면 묶음 이름, 아니면 센터+입고예정일 묶음(groupKey).
-const boxGroupKey = (row: DisplayRow) => (row.묶음 ? `묶음:${row.묶음}` : row.groupKey);
+export const boxGroupKey = (row: DisplayRow) => (row.묶음 ? `묶음:${row.묶음}` : row.groupKey);
 
 // 물류센터별 상자 개수. 물류센터가 빈칸인 줄은 바로 위 줄과 같은 센터다(buildDisplayRows가 _물류센터에
 // 원래 값을 넣어 둔다). 같은 센터라도 입고예정일 묶음이 다르면 다른 상자로 센다.

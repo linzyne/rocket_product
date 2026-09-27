@@ -1,6 +1,5 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { ShipOut, subscribeShipOuts, deleteShipOut, restoreShipOut, restoreOrders, updateShipOutLine, markShipOuts } from '../coupangOrder/data/shipOutStore';
-import { InventoryItem, subscribeInventory, makeOfficeLookup } from '../../data/inventoryStore';
 import { dateKeyYMD } from '../coupangOrder/utils/dateUtils';
 import OrderTable, { bundleColor } from '../coupangOrder/components/OrderTable';
 import { buildDisplayRows, parseBoxNo } from '../coupangOrder/utils/dataProcessor';
@@ -30,6 +29,9 @@ import ShipmentList from '../coupangOrder/components/ShipmentList';
 const lineKey = (l: { 발주번호: string; 상품이름: string; 확정수량: number | ''; 입고예정일: Date | string }) =>
   `${l.발주번호}│${l.상품이름}│${l.확정수량}│${dateKeyYMD(l.입고예정일)}`;
 
+// 표에서 덩어리 사이를 띄우는 흰 여백. 오른쪽 묶음 카드도 같은 간격을 쓴다.
+const CHUNK_GAP = 26;
+
 export default function CoupangShipPage({ onGoOrder }: { onGoOrder?: () => void } = {}) {
   const [list, setList] = useState<ShipOut[]>([]);
   const [copied, setCopied] = useState('');
@@ -37,8 +39,6 @@ export default function CoupangShipPage({ onGoOrder }: { onGoOrder?: () => void 
   // 되돌릴 발주서 고르기(발주확인의 묶기 체크 칸과 같은 자리).
   const [selected, setSelected] = useState<Set<string>>(new Set());
   // 발주확인 표와 똑같이 보이도록 사무실 재고 칸도 같이 띄운다.
-  const [inventory, setInventory] = useState<InventoryItem[]>([]);
-  const officeQtyOf = useMemo(() => makeOfficeLookup(inventory), [inventory]);
 
   // 쉽먼트생성(롯데택배 예약 → 운송장 → 서허 양식)에 쓰는 것들. 예전에는 쿠팡발주확인에 있었지만
   // 출고 단계에서 하는 일이라 이 화면으로 옮겼다.
@@ -53,7 +53,6 @@ export default function CoupangShipPage({ onGoOrder }: { onGoOrder?: () => void 
   const [waybillBatch, setWaybillBatch] = useState<ShipmentBatch | null>(null);
 
   useEffect(() => subscribeShipOuts(setList), []);
-  useEffect(() => subscribeInventory(setInventory), []);
   useEffect(() => subscribeShipments(setBatches), []);
   useEffect(() => subscribeShippingSettings(({ addresses, sender }) => { setAddresses(addresses); setSender(sender); }), []);
 
@@ -99,8 +98,8 @@ export default function CoupangShipPage({ onGoOrder }: { onGoOrder?: () => void 
     };
   };
 
-  // 완료한 출고 건의 발주번호들. 왼쪽 발주서 표에서도 같이 불을 꺼 준다.
-  const dimmedOrders = useMemo(() => {
+  // 완료한 출고 건의 발주번호들. 왼쪽 발주서 표에도 같은 완료 표시를 찍어 준다.
+  const doneOrders = useMemo(() => {
     const set = new Set<string>();
     for (const item of list) {
       if (!progressOf(item).done) continue;
@@ -148,6 +147,46 @@ export default function CoupangShipPage({ onGoOrder }: { onGoOrder?: () => void 
   }, [ordered, boxOrder]);
 
   const itemCount = rows.filter(r => !r.isBlank).length;
+
+
+  // 오른쪽 묶음 카드는 표에서 제 덩어리가 지나가는 동안만 따라붙게 한다.
+  // 그러려면 덩어리마다 표에서 차지하는 높이를 재서 카드 자리에 그대로 깔아 줘야 한다.
+  const tableRef = useRef<HTMLDivElement>(null);
+  const cardsRef = useRef<HTMLDivElement>(null);
+  const [blockH, setBlockH] = useState<Record<string, number>>({});
+  // 첫 카드를 첫 덩어리 머리줄과 같은 높이에서 시작시키는 여백. 이래야 덩어리마다 간격이 똑같아진다.
+  const [cardsTop, setCardsTop] = useState(0);
+  useLayoutEffect(() => {
+    const el = tableRef.current;
+    if (!el) return;
+    const measure = () => {
+      const heads = Array.from(el.querySelectorAll('[data-chunk]')) as HTMLElement[];
+      const bottom = el.getBoundingClientRect().bottom;
+      const next: Record<string, number> = {};
+      heads.forEach((head, i) => {
+        const top = head.getBoundingClientRect().top;
+        const end = i + 1 < heads.length ? heads[i + 1].getBoundingClientRect().top : bottom;
+        const key = head.dataset.chunk;
+        if (key) next[key] = Math.max(0, Math.round(end - top));
+      });
+      setBlockH(prev => {
+        const same = Object.keys(next).length === Object.keys(prev).length
+          && Object.entries(next).every(([k, v]) => prev[k] === v);
+        return same ? prev : next;
+      });
+
+      // 첫 카드 자리를 첫 덩어리 머리줄에 맞춘다(그 뒤 카드는 덩어리 높이를 그대로 깔아 저절로 맞는다).
+      const firstCard = cardsRef.current?.firstElementChild as HTMLElement | undefined;
+      if (heads[0] && firstCard) {
+        const gap = heads[0].getBoundingClientRect().top - firstCard.getBoundingClientRect().top;
+        if (Math.abs(gap) >= 1) setCardsTop(prev => Math.max(0, Math.round(prev + gap)));
+      }
+    };
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [rows, ordered, opened]);
 
   // 출고 건 하나의 줄만 표 모양으로 만든다(쉽먼트생성을 그 건에만 걸 때 쓴다).
   const rowsOf = (items: ShipOut[]): DisplayRow[] => buildDisplayRows(items.flatMap(item => item.lines.map(l => ({
@@ -528,29 +567,32 @@ export default function CoupangShipPage({ onGoOrder }: { onGoOrder?: () => void 
                   </button>
                 )}
               </div>
+              <div ref={tableRef}>
               <OrderTable
                 rows={rows}
                 onMemoChange={(id, v) => editLine(id, { 메모: v })}
                 onShipmentChange={(id, v) => editLine(id, { 쉼먼트: v })}
                 colorScheme="pink"
-                officeQtyOf={officeQtyOf}
                 selectedOrders={selected}
                 onToggleSelect={toggleSelect}
-                dimmedOrders={dimmedOrders}
+                doneOrders={doneOrders}
                 onSortByBox={sortByBox}
                 bundleLabel={(key) => list.find(i => i.id === key)?.bundle || key}
                 bundleColorOf={colorOf}
+                layout="box"
               />
+              </div>
             </div>
 
             {/* 오른쪽: 묶음(출고 건) 카드 */}
-            <div style={{ position: 'sticky', top: 66, maxHeight: 'calc(100vh - 80px)', overflowY: 'auto', overflowX: 'hidden', paddingRight: 2 }}>
+            {/* overflow를 주면 안쪽 sticky가 죽는다(스크롤 상자가 새로 생겨서). 그래서 넘침 처리는 카드 쪽에서 한다. */}
+            <div style={{ paddingRight: 2 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
                 <span style={{ fontSize: 12, fontWeight: 700, color: '#7c3aed', letterSpacing: '-0.2px' }}>🧺 묶음</span>
                 <span style={{ fontSize: 11, color: '#aaa' }}>{list.length}건</span>
               </div>
 
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              <div ref={cardsRef} style={{ display: 'flex', flexDirection: 'column', gap: 0, paddingTop: cardsTop }}>
                 {ordered.map(item => {
                   // 카드 안에서 발주번호별로 나눈다(쿠팡발주확인의 묶음 카드와 같은 모양).
                   const orders = new Map<string, typeof item.lines>();
@@ -565,12 +607,26 @@ export default function CoupangShipPage({ onGoOrder }: { onGoOrder?: () => void 
                   const color = colorOf(item.id);
 
                   return (
+                    // 바깥 자리는 표에서 이 덩어리가 차지하는 높이만큼. 그 안에서만 카드가 따라 내려온다.
                     <div key={item.id} style={{
-                      border: `1px solid ${color}40`, borderLeft: `4px solid ${color}`,
-                      borderRadius: 10, overflow: 'hidden', background: '#fff',
-                      opacity: pr.done ? 0.5 : 1, transition: 'opacity 0.15s',
+                      // 자리는 표의 덩어리 높이만큼, 아래는 표의 덩어리 사이 여백(26px)만큼 비운다.
+                      minHeight: blockH[item.id] ? Math.max(0, blockH[item.id] - CHUNK_GAP) : undefined,
+                      marginBottom: CHUNK_GAP,
                     }}>
-                      <div style={{ padding: '6px 8px', background: `${color}1c`, borderBottom: `1px solid ${color}2e`, whiteSpace: 'nowrap' }}>
+                    <div style={{ position: 'sticky', top: 66, overflow: 'visible' }}>
+                    <div style={{
+                      // 끝난 건도 내용을 그대로 읽어야 하니 흐리게 하지 않고, 테두리·바탕만 초록으로 물들인다.
+                      border: pr.done ? '1px solid #27ae6055' : `1px solid ${color}40`,
+                      borderLeft: pr.done ? '4px solid #27ae60' : `4px solid ${color}`,
+                      borderRadius: 10, overflow: 'hidden',
+                      background: pr.done ? '#f2fbf6' : '#fff',
+                      transition: 'background 0.15s',
+                    }}>
+                      <div style={{
+                        padding: '6px 8px', whiteSpace: 'nowrap',
+                        background: pr.done ? '#e3f6ec' : `${color}1c`,
+                        borderBottom: pr.done ? '1px solid #27ae6033' : `1px solid ${color}2e`,
+                      }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 8, overflow: 'hidden' }}>
                           <input
                             type="checkbox"
@@ -589,6 +645,17 @@ export default function CoupangShipPage({ onGoOrder }: { onGoOrder?: () => void 
                           <span style={{ fontSize: 12, fontWeight: 800, color }} title={`출고번호 ${item.id} · ${item.bundle}`}>{item.bundle}</span>
                           <span style={{ fontSize: 12, fontWeight: 700, color: '#333', overflow: 'hidden', textOverflow: 'ellipsis' }}>{item.center}</span>
                           <span style={{ fontSize: 11, fontWeight: 700, color: '#2c3e50' }}>{item.date.slice(5).replace('-', '/')}</span>
+                          {pr.done && (
+                            <span
+                              title="이 건은 쉽먼트 생성까지 끝났어요"
+                              style={{
+                                padding: '1px 7px', fontSize: 11, fontWeight: 800, borderRadius: 8,
+                                color: '#fff', background: '#27ae60', letterSpacing: '-0.2px',
+                              }}
+                            >
+                              완료 ✓
+                            </span>
+                          )}
                           <span style={{ marginLeft: 'auto', fontSize: 11, color: '#999' }}>발주 {orders.size} · {qty.toLocaleString()}개</span>
                         </div>
 
@@ -598,7 +665,6 @@ export default function CoupangShipPage({ onGoOrder }: { onGoOrder?: () => void 
                             <Chip on label="예약" />
                             <Chip on={pr.allWaybilled} label={pr.waybills > 0 ? `운송장 ${pr.waybills}건` : '운송장'} />
                             <Chip on={pr.formSaved} label="양식저장" />
-                            {pr.done && <span style={{ color: '#27ae60', fontWeight: 700 }}>쉽먼트 완료</span>}
                           </div>
                         )}
 
@@ -706,6 +772,8 @@ export default function CoupangShipPage({ onGoOrder }: { onGoOrder?: () => void 
                           </div>
                         );
                       })}
+                    </div>
+                    </div>
                     </div>
                   );
                 })}

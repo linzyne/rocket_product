@@ -424,29 +424,6 @@ export default function CoupangOrderPage({ onGoShipOut }: { onGoShipOut?: () => 
     return dup;
   }, [leftRows]);
 
-  // 발주서 머리줄의 "전체예약 · 전체박스": 그 발주서의 상품 줄 전부에 한 번에 적용한다.
-  // 예약은 한 줄씩 넘기던 길(handleLeftMemoChange)을 그대로 쓴다.
-  const handleBulkOrder = useCallback((orderNo: string, patch: { 메모?: string; 쉼먼트?: string }) => {
-    const lines = leftRows.filter(r => !r.isBlank && r._발주번호 === orderNo);
-    if (!lines.length) return;
-    if (patch.메모 !== undefined) {
-      if (!confirm(`발주 ${orderNo}의 상품 ${lines.length}줄을 모두 예약으로 넘길까요?`)) return;
-      const orders = lines.map(r => ({ ...toOrderRow(r), 메모: '예약' }));
-      const ids = new Set(lines.map(r => r.id));
-      setLeftRows(prev => buildDisplayRows(extractOrderRows(prev.filter(r => !ids.has(r.id)))));
-      addReservations(orders, reservations).catch(err => {
-        alertError(err);
-        setLeftRows(prev => buildDisplayRows(sortOrderRows([...extractOrderRows(prev), ...orders.map(o => ({ ...o, 메모: '' }))])));
-      });
-      return;
-    }
-    if (patch.쉼먼트 !== undefined) {
-      // 이미 다 지정돼 있으면 한 번 더 누를 때 해제한다.
-      const already = lines.every(r => r.쉼먼트 === patch.쉼먼트);
-      setLeftRows(prev => prev.map(r => r._발주번호 === orderNo ? { ...r, 쉼먼트: already ? '' : patch.쉼먼트! } : r));
-    }
-  }, [leftRows, reservations]);
-
   // 발송 목록에 있는 모든 발주서(발주번호). 전체선택에 쓴다.
   const allOrderNos = useMemo(
     () => Array.from(new Set(leftRows.filter(r => !r.isBlank).map(r => r._발주번호).filter(Boolean))),
@@ -753,7 +730,6 @@ export default function CoupangOrderPage({ onGoShipOut }: { onGoShipOut?: () => 
                       officeQtyOf={officeQtyOf}
                       selectedOrders={selected}
                       onToggleSelect={toggleSelect}
-                      onBulkOrder={handleBulkOrder}
                       hideBox
                     />
                   ) : (

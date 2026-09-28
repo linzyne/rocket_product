@@ -9,7 +9,7 @@ import { collection, deleteDoc, doc, getDocs, onSnapshot, setDoc } from 'firebas
 import { db, ensureSignedIn } from '../../../utils/firebase';
 import type { OrderRow } from '../types';
 import { dateKeyYMD, ymdSortKey } from '../utils/dateUtils';
-import { SHIPOUT_KEY, readWork, writeWork, workLineKey as lineKey } from './orderWorkCloud';
+import { SHIPOUT_KEY, readWork, writeWork, workLineKey as lineKey, stableStringify } from './orderWorkCloud';
 
 const KEY = SHIPOUT_KEY;
 const COLLECTION = 'coupangShipOuts';
@@ -80,7 +80,7 @@ let pending = false;
 const syncToCloud = (list: ShipOut[]) => {
   if (!db) return;
   const firestore = db;
-  const next = new Map(list.map(s => [s.id, JSON.stringify(cleanShipOut(s))]));
+  const next = new Map(list.map(s => [s.id, stableStringify(cleanShipOut(s))]));
   const changed = [...next].filter(([id, json]) => lastPushed.get(id) !== json);
   const gone = [...lastPushed.keys()].filter(id => !next.has(id));
   lastPushed = next;
@@ -134,15 +134,15 @@ const startSync = (): (() => void) => {
               localStorage.setItem(MERGED_KEY, '1');
             } catch {}
             const merged = sortList([...server, ...mine]);
-            lastPushed = new Map(server.map(s => [s.id, JSON.stringify(cleanShipOut(s))]));
+            lastPushed = new Map(server.map(s => [s.id, stableStringify(cleanShipOut(s))]));
             writeLocal(merged);
             if (mine.length || pending) syncToCloud(merged);
             pending = false;
             return;
           }
-          lastPushed = new Map(server.map(s => [s.id, JSON.stringify(cleanShipOut(s))]));
+          lastPushed = new Map(server.map(s => [s.id, stableStringify(cleanShipOut(s))]));
           // 내가 올린 것이 그대로 되돌아온 것이면 화면을 다시 그리지 않는다.
-          if (JSON.stringify(server) === JSON.stringify(read())) return;
+          if (stableStringify(server) === stableStringify(read())) return;
           writeLocal(server);
         },
         error => {
@@ -340,8 +340,8 @@ export interface ShipSnapshot {
 
 export function snapshotShipOuts(): ShipSnapshot {
   return {
-    shipOuts: JSON.stringify(read()),
-    work: JSON.stringify(readWork()),
+    shipOuts: stableStringify(read()),
+    work: stableStringify(readWork()),
   };
 }
 
@@ -365,7 +365,7 @@ export async function forceUploadShipOuts() {
   const list = read();
   const mine = new Set(list.map(s => s.id));
   const server = await getDocs(collection(firestore, COLLECTION));
-  lastPushed = new Map(list.map(s => [s.id, JSON.stringify(cleanShipOut(s))]));
+  lastPushed = new Map(list.map(s => [s.id, stableStringify(cleanShipOut(s))]));
   ready = true;
   pending = false;
   await Promise.all([

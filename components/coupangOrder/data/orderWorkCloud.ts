@@ -28,7 +28,14 @@ export interface StoredWork {
 }
 
 const EMPTY: StoredWork = { rows: [], fileName: '', done: [] };
-const stamp = (w: StoredWork) => JSON.stringify(w);
+// 칸 이름을 가나다순으로 늘어놓고 글자로 만든다. 클라우드는 받은 칸의 순서를 제멋대로 바꿔 돌려주는데,
+// 그냥 JSON.stringify로 비교하면 내용이 같아도 "바뀌었다"로 보고 다시 올리고, 또 돌아오고… 를 끝없이
+// 되풀이해 하루 저장 한도를 다 써 버렸다. 그래서 비교할 때는 늘 이것을 쓴다.
+export const stableStringify = (v: unknown): string => JSON.stringify(v, (_k, val) =>
+  val && typeof val === 'object' && !Array.isArray(val)
+    ? Object.fromEntries(Object.keys(val).sort().map(k => [k, (val as Record<string, unknown>)[k]]))
+    : val);
+const stamp = (w: StoredWork) => stableStringify({ rows: w.rows, fileName: w.fileName, done: w.done });
 
 export const readWork = (): StoredWork => {
   try {

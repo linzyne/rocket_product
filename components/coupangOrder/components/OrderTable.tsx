@@ -33,6 +33,8 @@ interface Props {
   // 상품 줄 하나하나를 고르는 체크 칸(예약 패널에서 고른 줄만 발송으로 되돌릴 때 쓴다).
   selectedLines?: Set<string>;
   onToggleLine?: (id: string, checked: boolean) => void;
+  // 박스 칸과 "전체박스" 버튼을 숨긴다(박스를 정하지 않는 쿠팡발주확인 화면).
+  hideBox?: boolean;
 }
 
 // 박스 번호(박스1, 박스2…)마다 다른 색. 어느 상자에 담기는지 한눈에 보이게.
@@ -44,6 +46,51 @@ const BUNDLE_COLORS = ['#7c3aed', '#0891b2', '#d97706', '#be185d', '#15803d', '#
 export function bundleColor(name: string): string {
   const no = Number(/\d+/.exec(name || '')?.[0] || 0);
   return BUNDLE_COLORS[(no || 1) - 1] || BUNDLE_COLORS[(no || 1) % BUNDLE_COLORS.length];
+}
+
+// 물류센터 이름표: 패널 색을 바탕으로 칠해 한눈에 들어오게 한다.
+function CenterTag({ name, color }: { name: string; color: string }) {
+  if (!name) return null;
+  return (
+    <span style={{
+      padding: '2px 9px', fontSize: 14, fontWeight: 800, borderRadius: 6,
+      color: '#fff', background: color, letterSpacing: '-0.2px', lineHeight: '18px',
+    }}>
+      {name}
+    </span>
+  );
+}
+
+// 입고예정일 이름표: "10/2 (목)"처럼 크게 쓰고, 옆에 D-day를 붙인다(오늘·지남은 빨강, 1~2일 남으면 주황).
+const WEEK = ['일', '월', '화', '수', '목', '금', '토'];
+function DateTag({ value }: { value: Date | string }) {
+  const ymd = dateKeyYMD(value);
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(ymd);
+  if (!m || ymd === '9999-12-31') {
+    const raw = formatDateDisplay(value);
+    return raw ? <span style={{ fontSize: 13, fontWeight: 700, color: '#2c3e50' }}>{raw}</span> : null;
+  }
+  const day = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const diff = Math.round((day.getTime() - today.getTime()) / 86400000);
+  const dColor = diff <= 0 ? '#dc2626' : diff <= 2 ? '#ea580c' : '#64748b';
+  const dText = diff < 0 ? `${-diff}일 지남` : diff === 0 ? 'D-DAY' : `D-${diff}`;
+  return (
+    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+      <span style={{
+        padding: '1px 8px', fontSize: 14, fontWeight: 800, borderRadius: 6,
+        color: '#1e293b', background: '#fff', border: '1.5px solid #334155', lineHeight: '18px',
+      }}>
+        {Number(m[2])}/{Number(m[3])} ({WEEK[day.getDay()]})
+      </span>
+      <span style={{
+        padding: '1px 6px', fontSize: 11, fontWeight: 800, borderRadius: 10,
+        color: '#fff', background: dColor,
+      }}>
+        {dText}
+      </span>
+    </span>
+  );
 }
 
 const SCHEME = {
@@ -227,7 +274,7 @@ function OfficeCell({ match, need }: { match: OfficeMatch | null; need: number }
 }
 
 /* ── 메인 테이블 ── */
-export default function OrderTable({ rows, onMemoChange, onShipmentChange, colorScheme = 'pink', readOnly = false, onDelete, officeQtyOf, selectedOrders, onToggleSelect, onBulkOrder, doneOrders, onSortByBox, bundleLabel, bundleColorOf, layout = 'order', selectedLines, onToggleLine }: Props) {
+export default function OrderTable({ rows, onMemoChange, onShipmentChange, colorScheme = 'pink', readOnly = false, onDelete, officeQtyOf, selectedOrders, onToggleSelect, onBulkOrder, doneOrders, onSortByBox, bundleLabel, bundleColorOf, layout = 'order', selectedLines, onToggleLine, hideBox = false }: Props) {
   if (rows.length === 0) return null;
 
   const sc = SCHEME[colorScheme];
@@ -273,7 +320,7 @@ export default function OrderTable({ rows, onMemoChange, onShipmentChange, color
     ...(lineSelectable ? ['고름'] : []),
     '상품이름', '확정수량',
     ...(officeQtyOf ? ['사무실'] : []),
-    '예약', '박스', ...(onDelete ? ['삭제'] : []),
+    '예약', ...(hideBox ? [] : ['박스']), ...(onDelete ? ['삭제'] : []),
   ];
 
 
@@ -364,8 +411,8 @@ export default function OrderTable({ rows, onMemoChange, onShipmentChange, color
                             style={{ cursor: 'pointer', margin: 0 }}
                           />
                         )}
-                        <span style={{ fontSize: 13, fontWeight: 700, color: sc.accent }}>{chunk.center}</span>
-                        <span style={{ fontSize: 12, fontWeight: 700, color: '#2c3e50' }}>{formatDateDisplay(chunk.date)}</span>
+                        <CenterTag name={chunk.center} color={sc.accent} />
+                        <DateTag value={chunk.date} />
                         {!!chunk.bundle && (
                           <span style={{
                             padding: '0 6px', fontSize: 11, fontWeight: 700, borderRadius: 8,
@@ -577,8 +624,8 @@ export default function OrderTable({ rows, onMemoChange, onShipmentChange, color
                       );
                     })()}
                     <span style={{ fontSize: 13, fontWeight: 700, color: '#333' }}>{row._발주번호}</span>
-                    <span style={{ fontSize: 12, fontWeight: 700, color: sc.accent }}>{(row._물류센터 || '').trim()}</span>
-                    <span style={{ fontSize: 12, fontWeight: 700, color: '#2c3e50' }}>{formatDateDisplay(row._입고예정일)}</span>
+                    <CenterTag name={(row._물류센터 || '').trim()} color={sc.accent} />
+                    <DateTag value={row._입고예정일} />
                     {row.묶음 && (
                       <span style={{
                         padding: '0 6px', fontSize: 11, fontWeight: 700, borderRadius: 8,
@@ -625,13 +672,13 @@ export default function OrderTable({ rows, onMemoChange, onShipmentChange, color
                         >
                           전체예약
                         </button>
-                        <button
+                        {!hideBox && <button
                           onClick={() => onBulkOrder(row._발주번호, { 쉼먼트: boxLabel(1) })}
                           title="이 발주서의 상품을 모두 박스 1번으로 지정합니다"
                           style={bulkBtn('#e67e22')}
                         >
                           전체박스
-                        </button>
+                        </button>}
                       </span>
                     )}
                     {row.묶음 && (
@@ -687,7 +734,7 @@ export default function OrderTable({ rows, onMemoChange, onShipmentChange, color
                 </td>
 
                 {/* 박스수량(롯데 N박스) */}
-                <td style={{ ...cs(onSortByBox ? 104 : 76), padding: '4px 4px' }}>
+                {!hideBox && <td style={{ ...cs(onSortByBox ? 104 : 76), padding: '4px 4px' }}>
                   {readOnly ? (
                     <span style={{ fontSize: 12, color: '#666' }}>{row.쉼먼트}</span>
                   ) : (
@@ -708,7 +755,7 @@ export default function OrderTable({ rows, onMemoChange, onShipmentChange, color
                     )}
                   </span>
                   )}
-                </td>
+                </td>}
 
                 {onDelete && (
                   <td style={{ ...cs(40), padding: '4px 6px' }}>

@@ -457,8 +457,17 @@ export default function CoupangOrderPage({ onGoShipOut }: { onGoShipOut?: () => 
     setSelected(allSelected ? new Set() : new Set(allOrderNos));
   }, [allSelected, allOrderNos]);
 
-  // 지금 목록을 발주서 순서(입고예정일 → 물류센터 → 발주번호 → 상품이름)로 다시 줄 세운다.
-  // 새 발주서는 아래에 쌓이고 출고에서 되돌린 줄도 자리를 찾아가지만, 이미 섞여 버린 목록은 이걸로 정리한다.
+  // 발송 목록은 늘 발주서 순서(입고예정일 빠른 순 → 물류센터 → 발주번호 → 상품이름)로 둔다.
+  // 새 발주서·되돌린 줄·다른 컴퓨터에서 내려온 목록 모두 순서가 어긋나면 바로 다시 줄 세운다.
+  // 순서가 이미 맞으면 건드리지 않아 메모 입력 중 줄 id가 바뀌지 않는다.
+  useEffect(() => {
+    const rows = extractOrderRows(leftRows);
+    const sorted = sortOrderRows([...rows]);
+    if (sorted.every((r, i) => r === rows[i])) return;
+    setLeftRows(buildDisplayRows(sorted));
+  }, [leftRows]);
+
+  // 혹시 순서가 어긋나 보일 때 손으로 한 번 더 줄 세우는 버튼.
   const handleSort = useCallback(() => {
     setLeftRows(buildDisplayRows(sortOrderRows(extractOrderRows(leftRows))));
     setNotice('발주서 순서(입고예정일 → 센터 → 발주번호)로 다시 정렬했어요.');
@@ -567,9 +576,9 @@ export default function CoupangOrderPage({ onGoShipOut }: { onGoShipOut?: () => 
 
             {!hasData && !loading && !error && (
               <div style={{ textAlign: 'center', padding: '16px 0' }}>
-                <p style={{ fontSize: 13, color: '#aaa', marginBottom: 10 }}>박스수량 열 입력 예시</p>
+                <p style={{ fontSize: 13, color: '#aaa', marginBottom: 10 }}>사용 방법</p>
                 <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'center', gap: 8 }}>
-                  {['같은 상자에 담는 상품은 같은 박스 번호', '센터별 마지막 박스 번호 = 택배 예약 건수', '메모에 예약 → 예약 목록 · 한중발주 대기'].map(hint => (
+                  {['발송 목록은 입고예정일 빠른 순으로 자동 정렬', '메모에 예약 → 예약 목록 · 한중발주 대기'].map(hint => (
                     <span key={hint} style={{ fontSize: 12, background: '#f5f5f5', color: '#666', padding: '5px 12px', borderRadius: 20 }}>{hint}</span>
                   ))}
                 </div>
@@ -745,6 +754,7 @@ export default function CoupangOrderPage({ onGoShipOut }: { onGoShipOut?: () => 
                       selectedOrders={selected}
                       onToggleSelect={toggleSelect}
                       onBulkOrder={handleBulkOrder}
+                      hideBox
                     />
                   ) : (
                     <div style={{ border: '1px dashed #e8e8e8', borderRadius: 10, padding: '48px 0', textAlign: 'center', color: '#ccc', fontSize: 13 }}>
@@ -839,6 +849,7 @@ export default function CoupangOrderPage({ onGoShipOut }: { onGoShipOut?: () => 
                       readOnly={false}
                       selectedLines={pickedRes}
                       onToggleLine={toggleResLine}
+                      hideBox
                     />
                   ) : (
                     <div style={{

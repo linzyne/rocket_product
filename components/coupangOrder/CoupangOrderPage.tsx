@@ -330,13 +330,12 @@ export default function CoupangOrderPage({ onGoShipOut }: { onGoShipOut?: () => 
     const existing = extractOrderRows(leftRows);
     const back = alignToExisting(orders.map(r => ({ ...r, 메모: '' })), existing);
     const combined = sortOrderRows([...existing, ...back]);
-    deleteReservations(orders)
-      .then(() => {
-        setLeftRows(buildDisplayRows(combined));
-        setPickedRes(new Set());
-        setNotice(`예약 ${orders.length}줄을 발송 목록의 원래 자리로 되돌렸어요.`);
-      })
-      .catch(alertError);
+    // 발송 목록에 먼저 넣고 나서 예약을 지운다. 지우기는 화면에서 먼저 사라지고 저장은 늦게 끝날 수
+    // 있어서, 저장이 끝난 뒤에 넣으면 그 사이(또는 저장이 안 끝나면 영영) 양쪽 다 없는 상태가 된다.
+    setLeftRows(buildDisplayRows(combined));
+    setPickedRes(new Set());
+    setNotice(`예약 ${orders.length}줄을 발송 목록의 원래 자리로 되돌렸어요.`);
+    deleteReservations(orders).catch(alertError);
   }, [rightRows, pickedRes, leftRows]);
 
   // 예약 전체를 발송 패널로 되돌린다. 저장된 예약도 모두 지워지므로 한 번 더 묻는다.
@@ -349,9 +348,9 @@ export default function CoupangOrderPage({ onGoShipOut }: { onGoShipOut?: () => 
       ...existing,
       ...alignToExisting(reservations.map(r => ({ ...r, 메모: '' })), existing),
     ]);
-    deleteReservations(reservations)
-      .then(() => setLeftRows(buildDisplayRows(combined)))
-      .catch(alertError);
+    // 발송에 먼저 넣고 지운다(위 "고른 줄 발송으로"와 같은 까닭).
+    setLeftRows(buildDisplayRows(combined));
+    deleteReservations(reservations).catch(alertError);
   }, [leftRows, reservations]);
 
   // 툴바의 "+ 발주서 추가"용 파일 고르기(첫 업로드 화면과 같은 길로 들어간다).

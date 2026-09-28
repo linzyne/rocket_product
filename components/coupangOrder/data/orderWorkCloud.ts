@@ -190,3 +190,16 @@ const startSync = (): (() => void) => {
     }
   };
 };
+
+// 이 기기에 있는 목록을 클라우드에 그대로 덮어쓴다. 컴퓨터끼리 목록이 어긋났을 때 "이 컴퓨터 것이 맞다"며
+// 맞추는 데 쓴다. 다른 컴퓨터는 이 소식을 받아 같은 목록으로 바뀐다. 다 올라가야 끝난다.
+export const forceUploadWork = async () => {
+  if (!db) throw new Error('이 컴퓨터는 클라우드에 연결돼 있지 않아요(.env.local의 Firebase 설정이 없음).');
+  const w = readWork();
+  lastSynced = stamp(w);
+  ready = true;
+  pending = false;
+  await ensureSignedIn();
+  if (!w.rows.length) await deleteDoc(doc(db, ...DOC_PATH));
+  else await setDoc(doc(db, ...DOC_PATH), { ...w, updatedAt: Date.now() });
+};

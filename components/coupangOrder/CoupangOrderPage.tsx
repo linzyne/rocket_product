@@ -17,6 +17,9 @@ import { InventoryItem, subscribeInventory, makeOfficeLookup } from '../../data/
 import BundlePanel from './components/BundlePanel';
 import { addShipOut, shipOutLineKeys, subscribeShipOuts } from './data/shipOutStore';
 import { loadWork, saveWork, subscribeWork } from './data/orderWorkStore';
+import { forceUploadWork } from './data/orderWorkCloud';
+import { forceUploadShipOuts } from './data/shipOutStore';
+import { isFirebaseConfigured, waitAtMost } from '../../utils/firebase';
 
 // 화면 한 줄 → 원래 발주 한 건(줄였던 발주번호·물류센터·날짜를 되살림).
 const toOrderRow = (r: DisplayRow): OrderRow => ({
@@ -353,6 +356,24 @@ export default function CoupangOrderPage({ onGoShipOut }: { onGoShipOut?: () => 
     deleteReservations(reservations).catch(alertError);
   }, [leftRows, reservations]);
 
+  // 컴퓨터끼리 목록이 어긋났을 때: 이 컴퓨터의 발송 목록·출고를 클라우드에 그대로 올려 다른 컴퓨터도 같게 만든다.
+  const [pushing, setPushing] = useState(false);
+  const handleForceUpload = useCallback(async () => {
+    if (!confirm('이 컴퓨터의 발송 목록과 쉽먼트생성 출고를 클라우드에 그대로 올릴까요?\n다른 컴퓨터도 이 컴퓨터와 똑같이 바뀌어요(다른 컴퓨터에만 있던 내용은 사라져요).')) return;
+    setPushing(true);
+    try {
+      saveWork(leftRows, fileName, Array.from(doneBundles));
+      const done = await waitAtMost(Promise.all([forceUploadWork(), forceUploadShipOuts()]).then(() => true));
+      setNotice(done
+        ? '이 컴퓨터 목록을 클라우드에 올렸어요. 다른 컴퓨터에도 곧 똑같이 떠요.'
+        : '인터넷이 느려 아직 올라가는 중이에요. 연결되면 저절로 마저 올라가요.');
+    } catch (err) {
+      alert(`올리기 실패: ${err instanceof Error ? err.message : String(err)}`);
+    } finally {
+      setPushing(false);
+    }
+  }, [leftRows, fileName, doneBundles]);
+
   // 툴바의 "+ 발주서 추가"용 파일 고르기(첫 업로드 화면과 같은 길로 들어간다).
   const pickOrderFile = () => {
     const input = document.createElement('input');
@@ -574,6 +595,16 @@ export default function CoupangOrderPage({ onGoShipOut }: { onGoShipOut?: () => 
                       전체 비우기
                     </button>
                   )}
+                  <button
+                    onClick={handleForceUpload}
+                    disabled={pushing || !isFirebaseConfigured}
+                    title={isFirebaseConfigured
+                      ? '다른 컴퓨터와 목록이 다를 때, 이 컴퓨터 것으로 모두 맞춥니다'
+                      : '이 컴퓨터는 클라우드에 연결돼 있지 않아 다른 컴퓨터와 같이 볼 수 없어요'}
+                    style={btnStyle('#fff', isFirebaseConfigured ? '#bcd7f5' : '#f5c6c6', isFirebaseConfigured ? '#2563eb' : '#c0392b')}
+                  >
+                    {!isFirebaseConfigured ? '⚠ 클라우드 연결 안 됨' : pushing ? '올리는 중…' : '☁ 이 컴퓨터 것으로 맞추기'}
+                  </button>
                   <span style={{ fontSize: 11, color: '#ccc' }}>
                     발송 {leftItemCount}건 / 묶음 {bundleCount}개(발주 {bundledOrderCount}건) / 예약 {rightItemCount}건
                   </span>

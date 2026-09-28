@@ -5,7 +5,7 @@
 //
 // 클라우드(Firestore)에 두어 다른 컴퓨터에서도 같은 목록을 본다. 이 기기의 localStorage에도
 // 같이 남겨서 화면이 뜨자마자 바로 보이고, Firebase 설정이 없어도 이 기기 안에서는 돌아간다.
-import { collection, deleteDoc, doc, onSnapshot, setDoc } from 'firebase/firestore';
+import { collection, deleteDoc, doc, getDocs, onSnapshot, setDoc } from 'firebase/firestore';
 import { db, ensureSignedIn } from '../../../utils/firebase';
 import type { OrderRow } from '../types';
 import { dateKeyYMD, ymdSortKey } from '../utils/dateUtils';
@@ -355,3 +355,21 @@ export function restoreShipSnapshot(snap: ShipSnapshot) {
 // 두 스냅샷이 같은지(바뀐 게 없으면 되돌리기 목록에 쌓지 않는다).
 export const sameSnapshot = (a: ShipSnapshot, b: ShipSnapshot) =>
   a.shipOuts === b.shipOuts && a.work === b.work;
+
+// 이 기기의 출고 목록을 클라우드에 그대로 덮어쓴다(클라우드에만 있는 출고는 지운다). 컴퓨터끼리
+// 어긋났을 때 이 컴퓨터 것으로 맞추는 데 쓴다. 다 올라가야 끝난다.
+export async function forceUploadShipOuts() {
+  if (!db) throw new Error('이 컴퓨터는 클라우드에 연결돼 있지 않아요(.env.local의 Firebase 설정이 없음).');
+  const firestore = db;
+  await ensureSignedIn();
+  const list = read();
+  const mine = new Set(list.map(s => s.id));
+  const server = await getDocs(collection(firestore, COLLECTION));
+  lastPushed = new Map(list.map(s => [s.id, JSON.stringify(cleanShipOut(s))]));
+  ready = true;
+  pending = false;
+  await Promise.all([
+    ...list.map(s => setDoc(doc(firestore, COLLECTION, s.id), cleanShipOut(s))),
+    ...server.docs.filter(d => !mine.has(d.id)).map(d => deleteDoc(d.ref)),
+  ]);
+}

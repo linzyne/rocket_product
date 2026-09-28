@@ -33,6 +33,8 @@ const CollectPurchaseOrders: React.FC<{
   onFileRef.current = onFile;
   // 같은 파일 소식이 두 번 와도 한 번만 반영한다.
   const takenRef = React.useRef('');
+  // 확장이 PO_COLLECT를 받았다는 대답(ACK)이 왔는지. 안 오면 확장이 이 화면에 붙지 않은 것이다.
+  const ackTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
   const finishRef = React.useRef(onFinish);
   finishRef.current = onFinish;
   const doneRef = React.useRef((ok: boolean, message: string) => {});
@@ -45,6 +47,10 @@ const CollectPurchaseOrders: React.FC<{
       if (event.source !== window) return;
       const d = event.data;
       if (!d || d.source !== EXT_SOURCE) return;
+      if (d.type === 'PO_COLLECT_ACK' && ackTimerRef.current) {
+        clearTimeout(ackTimerRef.current);
+        ackTimerRef.current = null;
+      }
       if (d.type === 'PO_COLLECT_ACK' && !d.ok) {
         setRunning(false);
         setStatus('');
@@ -112,6 +118,14 @@ const CollectPurchaseOrders: React.FC<{
     setRunning(true);
     setStatus('서허 여는 중…');
     window.postMessage({ source: APP_SOURCE, type: 'PO_COLLECT', lastOrderNo }, window.location.origin);
+    if (ackTimerRef.current) clearTimeout(ackTimerRef.current);
+    ackTimerRef.current = setTimeout(() => {
+      ackTimerRef.current = null;
+      setRunning(false);
+      setStatus('');
+      doneRef.current(false, '확장이 대답하지 않았어요');
+      alert('확장(로켓 서허 연동)이 대답하지 않았어요.\n\n1. 이 컴퓨터 크롬에 확장이 설치·켜져 있는지 확인\n2. chrome://extensions 에서 확장 새로고침\n3. 이 앱 화면도 새로고침(F5) 후 다시 눌러 주세요\n\n앱 주소가 rocket-product.vercel.app 이어야 해요.');
+    }, 5000);
   };
 
   // 사장님이 직접 적은 기준 발주번호. 숫자만 남긴다(비우면 첫 페이지를 통째로 받는다).

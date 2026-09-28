@@ -117,7 +117,11 @@ const startSync = (): (() => void) => {
       let first = true;
       unwatch = onSnapshot(
         collection(firestore, COLLECTION),
+        // 이 기기 캐시에서 온 묵은 소식은 거르고 서버 소식으로 맞춘다(orderWorkCloud와 같은 까닭).
+        { includeMetadataChanges: true },
         snap => {
+          if (first && snap.metadata.fromCache) return;
+          if (snap.metadata.fromCache && !snap.metadata.hasPendingWrites) return;
           const server = sortList(snap.docs.map(d => d.data() as ShipOut));
           if (first) {
             first = false;

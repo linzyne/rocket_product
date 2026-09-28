@@ -141,7 +141,15 @@ const startSync = (): (() => void) => {
       let first = true;
       unwatch = onSnapshot(
         doc(firestore, ...DOC_PATH),
+        // 이 기기 캐시에서 먼저 오는 소식과 서버에서 오는 소식을 구분해야 해서 메타데이터도 받는다.
+        { includeMetadataChanges: true },
         snap => {
+          // 첫 맞춰보기는 서버에서 온 소식으로만 한다. 이 기기 캐시(어제 받아둔 묵은 목록)로 맞추면
+          // 그 묵은 목록을 클라우드에 도로 올려, 다른 컴퓨터에서 해 둔 최신 작업을 덮어쓴다.
+          if (first && snap.metadata.fromCache) return;
+          // 내가 올리는 중인 것이 되돌아온 것은 아래 lastSynced가 걸러 주지만, 캐시에서 온 묵은 소식은
+          // 여기서 거른다(서버 것이 곧 따라온다).
+          if (snap.metadata.fromCache && !snap.metadata.hasPendingWrites) return;
           const data = snap.data() as StoredWork | undefined;
           const server: StoredWork | null = data
             ? { rows: data.rows || [], fileName: data.fileName || '', done: data.done || [] }

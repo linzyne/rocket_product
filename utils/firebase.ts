@@ -30,6 +30,12 @@ if (isFirebaseConfigured) {
 
 export const db = firestoreInstance;
 
+// Firestore는 서버가 받아줄 때까지 쓰기 약속(Promise)을 지키지 않는다. 인터넷이 잠깐 끊기거나
+// 느리면 그 약속이 영영 끝나지 않아, 화면이 "저장하는 중…"에 멈춰 다음 수집으로 넘어가지 못한다.
+// 쓴 내용은 이 기기에 쌓였다가 다시 이어지면 저절로 올라가므로, 오래 걸리면 기다리지 않고 넘어간다.
+export const waitAtMost = <T,>(work: Promise<T>, ms = 20000): Promise<T | undefined> =>
+  Promise.race([work, new Promise<undefined>(resolve => setTimeout(() => resolve(undefined), ms))]);
+
 let signInPromise: Promise<void> | null = null;
 
 // Firestore 보안 규칙이 "로그인된 사용자만 읽기/쓰기 허용"이라, 실제 쓰기 전에 익명으로 한 번
@@ -51,5 +57,6 @@ export const ensureSignedIn = (): Promise<void> => {
       });
     });
   }
-  return signInPromise;
+  // 로그인도 끝나지 않을 수 있다. 못 해도 쓰기는 기기에 쌓아두고 나중에 올라간다.
+  return waitAtMost(signInPromise, 15000).then(() => {});
 };

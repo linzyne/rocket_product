@@ -71,15 +71,28 @@ const CollectReceives: React.FC<Props> = ({ onBucket, onExtReady, children, runT
           const dropped = all.length - items.length;
           setAutoRequestedAt(null);
           setAutoStatus('저장하는 중…');
+          // 저장이 끝나지 않아도 "저장하는 중…"에 눌러앉지 않게 한 번만 마무리하고 다음 수집으로 넘어간다.
+          let settled = false;
+          const settle = (ok: boolean, message: string, status: string) => {
+            if (settled) return;
+            settled = true;
+            clearTimeout(guard);
+            setAutoStatus(status);
+            doneRef.current(ok, message);
+          };
+          const guard = setTimeout(() => settle(false, '저장이 끝나지 않았어요(인터넷 확인)', ''), 2 * 60 * 1000);
           saveReceives(items)
             .then(n => {
               const text = n
                 ? `${run.day || autoDayRef.current} ${n}건 저장 완료${dropped ? ` (다른 날 ${dropped}건은 건너뜀)` : ''}`
                 : `${run.day || autoDayRef.current} 입고된 내역이 없어요`;
-              setAutoStatus(n ? `✅ ${text}` : text);
-              doneRef.current(true, text);
+              settle(true, text, n ? `✅ ${text}` : text);
             })
-            .catch(err => { setAutoStatus(''); doneRef.current(false, String(err?.message || err)); alert(`가져오기 실패: ${err?.message || err}`); });
+            .catch(err => {
+              const text = String(err?.message || err);
+              settle(false, text, '');
+              alert(`가져오기 실패: ${text}`);
+            });
         } else {
           setAutoStatus(`서허에서 ${run.day || autoDayRef.current} 입고 내역 모으는 중…`);
         }

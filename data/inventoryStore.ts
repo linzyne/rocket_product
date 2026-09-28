@@ -6,7 +6,7 @@
 //
 // Firebase 설정이 없으면 이 기기의 localStorage에만 저장한다.
 import { collection, doc, onSnapshot, writeBatch, setDoc } from 'firebase/firestore';
-import { db, ensureSignedIn } from '../utils/firebase';
+import { db, ensureSignedIn, waitAtMost } from '../utils/firebase';
 
 export interface InventoryItem {
   adsId: string;
@@ -150,7 +150,7 @@ export const importHubData = async (hub: HubData, existing: InventoryItem[]) => 
   for (let i = 0; i < writes.length; i += 450) {
     const batch = writeBatch(firestore);
     writes.slice(i, i + 450).forEach(([id, u]) => batch.set(doc(firestore, COLLECTION, id), u, { merge: true }));
-    await batch.commit();
+    await waitAtMost(batch.commit());
   }
   return incoming.length;
 };

@@ -5,7 +5,7 @@
 //
 // Firebase 설정이 없으면 이 기기의 localStorage에만 저장한다.
 import { collection, doc, onSnapshot, writeBatch, deleteDoc } from 'firebase/firestore';
-import { db, ensureSignedIn } from '../utils/firebase';
+import { db, ensureSignedIn, waitAtMost } from '../utils/firebase';
 import type { HanjungOrder } from './hanjungStore';
 
 export interface ReceiveRow {
@@ -127,7 +127,7 @@ export const saveReceives = async (rows: Omit<ReceiveRow, 'importedAt'>[]) => {
   for (let i = 0; i < list.length; i += 450) {
     const batch = writeBatch(firestore);
     list.slice(i, i + 450).forEach(r => batch.set(doc(firestore, COLLECTION, docId(r.key)), r));
-    await batch.commit();
+    await waitAtMost(batch.commit());
   }
   return list.length;
 };
@@ -146,7 +146,7 @@ export const deleteReceives = async (keys: string[]) => {
   for (let i = 0; i < keys.length; i += 450) {
     const batch = writeBatch(firestore);
     keys.slice(i, i + 450).forEach(k => batch.delete(doc(firestore, COLLECTION, docId(k))));
-    await batch.commit();
+    await waitAtMost(batch.commit());
   }
   return keys.length;
 };

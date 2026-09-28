@@ -5,7 +5,7 @@
 //
 // Firebase 설정이 없으면 이 기기의 localStorage에만 저장한다.
 import { collection, doc, onSnapshot, writeBatch, setDoc, deleteDoc, updateDoc } from 'firebase/firestore';
-import { db, ensureSignedIn } from '../../../utils/firebase';
+import { db, ensureSignedIn, waitAtMost } from '../../../utils/firebase';
 import type { OrderRow } from '../types';
 import { dateKeyYMD, normalizeDateValue, ymdSortKey } from '../utils/dateUtils';
 
@@ -120,7 +120,7 @@ export const addReservations = async (rows: OrderRow[], existing: OrderRow[]) =>
   for (let i = 0; i < fresh.length; i += 450) {
     const batch = writeBatch(firestore);
     fresh.slice(i, i + 450).forEach(r => batch.set(doc(firestore, COLLECTION, r.key), r));
-    await batch.commit();
+    await waitAtMost(batch.commit());
   }
   return fresh.length;
 };
@@ -155,7 +155,7 @@ export const deleteReservations = async (rows: OrderRow[]) => {
   for (let i = 0; i < keys.length; i += 450) {
     const batch = writeBatch(firestore);
     keys.slice(i, i + 450).forEach(k => batch.delete(doc(firestore, COLLECTION, k)));
-    await batch.commit();
+    await waitAtMost(batch.commit());
   }
 };
 

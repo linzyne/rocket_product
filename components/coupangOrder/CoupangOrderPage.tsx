@@ -16,7 +16,7 @@ import { dateKeyYMD, normalizeDateValue, ymdSortKey } from './utils/dateUtils';
 import { InventoryItem, subscribeInventory, makeOfficeLookup } from '../../data/inventoryStore';
 import BundlePanel from './components/BundlePanel';
 import { addShipOut, shipOutLineKeys, subscribeShipOuts, snapshotShipOuts, restoreShipOutsOnly } from './data/shipOutStore';
-import { loadWork, saveWork, subscribeWork } from './data/orderWorkStore';
+import { loadWork, saveWork, subscribeWork, newOrderNos } from './data/orderWorkStore';
 import { forceUploadWork } from './data/orderWorkCloud';
 import { forceUploadShipOuts } from './data/shipOutStore';
 import { isFirebaseConfigured, waitAtMost } from '../../utils/firebase';
@@ -149,7 +149,14 @@ export default function CoupangOrderPage({ onGoShipOut }: { onGoShipOut?: () => 
     setLeftRows(w.rows);
     setFileName(w.fileName);
     setDoneBundles(new Set(w.done));
+    setNewNos(newOrderNos());
   }), []);
+  // 새로 들어온 발주서(24시간 동안 NEW). 시간이 지나면 저절로 꺼지게 1분마다 다시 본다.
+  const [newNos, setNewNos] = useState<Set<string>>(newOrderNos);
+  useEffect(() => {
+    const t = setInterval(() => setNewNos(newOrderNos()), 60 * 1000);
+    return () => clearInterval(t);
+  }, []);
 
   const hasFile = leftRows.length > 0;
   const hasData = hasFile || rightRows.length > 0;
@@ -173,7 +180,10 @@ export default function CoupangOrderPage({ onGoShipOut }: { onGoShipOut?: () => 
         const fresh = sortOrderRows(rows).filter(r =>
           !seen.has(reservationKey(r)) && !shipped.has(`${r.발주번호}│${r.상품이름}│${r.확정수량}`));
         if (fresh.length) record('발주서 추가');
-        setLeftRows(buildDisplayRows([...existing, ...fresh]));
+        const next = buildDisplayRows([...existing, ...fresh]);
+        setLeftRows(next);
+        // 새 발주번호를 NEW로 적어 두려고 바로 저장한다.
+        saveWork(next, file.name, Array.from(nowRef.current.doneBundles), fresh.map(r => r.발주번호));
         setFileName(file.name);
         const skipped = rows.length - fresh.length;
         setNotice(fresh.length
@@ -843,6 +853,7 @@ export default function CoupangOrderPage({ onGoShipOut }: { onGoShipOut?: () => 
                       officeQtyOf={officeQtyOf}
                       selectedOrders={selected}
                       onToggleSelect={toggleSelect}
+                      newOrders={newNos}
                       hideBox
                     />
                   ) : (

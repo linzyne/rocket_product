@@ -28,9 +28,22 @@ export function loadWork(): { rows: DisplayRow[]; fileName: string; done: string
   return { rows: buildDisplayRows(unique), fileName: saved.fileName, done: saved.done };
 }
 
-export function saveWork(rows: DisplayRow[], fileName: string, done: string[]) {
+export const NEW_FOR_MS = 24 * 60 * 60 * 1000;
+
+// newOrderNos: 이번에 새로 들어온 발주번호. 처음 들어온 시각을 적어 두고 24시간 동안 NEW로 보여준다.
+// 24시간이 지난 기록은 저장할 때 걷어낸다.
+export function saveWork(rows: DisplayRow[], fileName: string, done: string[], newOrderNos: string[] = []) {
   const plain = extractOrderRows(rows).map(r => ({ ...r, 입고예정일: dateKeyYMD(r.입고예정일).replace(/-/g, '') }));
-  writeWork({ rows: plain, fileName, done });
+  const now = Date.now();
+  const seen = Object.fromEntries(Object.entries(readWork().seen).filter(([, t]) => now - t < NEW_FOR_MS));
+  newOrderNos.forEach(no => { if (no && !seen[no]) seen[no] = now; });
+  writeWork({ rows: plain, fileName, done, seen });
+}
+
+// 지금 NEW로 보여줄 발주번호들(들어온 지 24시간이 안 된 것).
+export function newOrderNos(): Set<string> {
+  const now = Date.now();
+  return new Set(Object.entries(readWork().seen).filter(([, t]) => now - t < NEW_FOR_MS).map(([no]) => no));
 }
 
 // 발주서 파일 한 개를 저장된 작업 목록 아래에 이어 붙인다(이미 있는 줄과 예약으로 넘긴 줄은 건너뛴다).
@@ -45,6 +58,6 @@ export async function appendOrderFile(file: File, reservations: OrderRow[]): Pro
   const shipped = shipOutLineKeys();
   const fresh = sortOrderRows(rows)
     .filter(r => !seen.has(reservationKey(r)) && !shipped.has(workLineKey(r)));
-  saveWork(buildDisplayRows([...existing, ...fresh]), file.name, work.done);
+  saveWork(buildDisplayRows([...existing, ...fresh]), file.name, work.done, fresh.map(r => r.발주번호));
   return { added: fresh.length, skipped: rows.length - fresh.length };
 }

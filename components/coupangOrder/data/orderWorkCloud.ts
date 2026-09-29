@@ -2,7 +2,7 @@
 // 이 목록은 발주확인 화면(orderWorkStore)과 쉽먼트생성 쪽(shipOutStore)이 둘 다 고치기 때문에,
 // 저장하는 자리를 여기 하나로 모았다. 그래야 어느 쪽에서 고치든 이 기기와 클라우드가 함께 바뀐다.
 //
-//  appState/coupangOrderWork : { rows, fileName, done, updatedAt }
+//  appState/coupangOrderWork : { rows, fileName, done, seen, updatedAt }
 //
 // localStorage에는 클라우드에서 받아온 것을 그대로 남겨 둔다. 그래야 화면이 뜨자마자 바로 보이고,
 // 인터넷이 없거나 Firebase 설정이 없는 환경에서도 이 기기 안에서는 평소처럼 돌아간다.
@@ -25,9 +25,13 @@ export interface StoredWork {
   rows: Record<string, unknown>[];
   fileName: string;
   done: string[];
+  // 발주번호 → 발주서가 처음 들어온 시각(ms). 쿠팡발주확인에서 NEW 표시(24시간)에 쓴다.
+  seen: Record<string, number>;
 }
 
-const EMPTY: StoredWork = { rows: [], fileName: '', done: [] };
+const EMPTY: StoredWork = { rows: [], fileName: '', done: [], seen: {} };
+const asSeen = (v: unknown): Record<string, number> =>
+  v && typeof v === 'object' && !Array.isArray(v) ? v as Record<string, number> : {};
 // 칸 이름을 가나다순으로 늘어놓고 글자로 만든다. 클라우드는 받은 칸의 순서를 제멋대로 바꿔 돌려주는데,
 // 그냥 JSON.stringify로 비교하면 내용이 같아도 "바뀌었다"로 보고 다시 올리고, 또 돌아오고… 를 끝없이
 // 되풀이해 하루 저장 한도를 다 써 버렸다. 그래서 비교할 때는 늘 이것을 쓴다.
@@ -35,7 +39,7 @@ export const stableStringify = (v: unknown): string => JSON.stringify(v, (_k, va
   val && typeof val === 'object' && !Array.isArray(val)
     ? Object.fromEntries(Object.keys(val).sort().map(k => [k, (val as Record<string, unknown>)[k]]))
     : val);
-const stamp = (w: StoredWork) => stableStringify({ rows: w.rows, fileName: w.fileName, done: w.done });
+const stamp = (w: StoredWork) => stableStringify({ rows: w.rows, fileName: w.fileName, done: w.done, seen: w.seen || {} });
 
 export const readWork = (): StoredWork => {
   try {
@@ -44,6 +48,7 @@ export const readWork = (): StoredWork => {
       rows: Array.isArray(saved.rows) ? saved.rows : [],
       fileName: saved.fileName || '',
       done: Array.isArray(saved.done) ? saved.done : [],
+      seen: asSeen(saved.seen),
     };
   } catch {
     return { ...EMPTY };
@@ -112,6 +117,7 @@ const mergeFirst = (server: StoredWork | null): StoredWork => {
       rows: [...server.rows, ...mine],
       fileName: server.fileName || local.fileName,
       done: Array.from(new Set([...server.done, ...local.done])),
+      seen: { ...local.seen, ...server.seen },
     };
   }
   try {
@@ -159,7 +165,7 @@ const startSync = (): (() => void) => {
           if (snap.metadata.fromCache && !snap.metadata.hasPendingWrites) return;
           const data = snap.data() as StoredWork | undefined;
           const server: StoredWork | null = data
-            ? { rows: data.rows || [], fileName: data.fileName || '', done: data.done || [] }
+            ? { rows: data.rows || [], fileName: data.fileName || '', done: data.done || [], seen: asSeen(data.seen) }
             : null;
           if (first) {
             first = false;

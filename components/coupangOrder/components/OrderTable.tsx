@@ -35,6 +35,8 @@ interface Props {
   onToggleLine?: (id: string, checked: boolean) => void;
   // 박스 칸과 "전체박스" 버튼을 숨긴다(박스를 정하지 않는 쿠팡발주확인 화면).
   hideBox?: boolean;
+  // 새로 들어온 발주서(발주번호). 발주서 머리줄에 NEW를 붙인다.
+  newOrders?: Set<string>;
 }
 
 // 박스 번호(박스1, 박스2…)마다 다른 색. 어느 상자에 담기는지 한눈에 보이게.
@@ -308,7 +310,7 @@ function OfficeCell({ match, need }: { match: OfficeMatch | null; need: number }
 }
 
 /* ── 메인 테이블 ── */
-export default function OrderTable({ rows, onMemoChange, onShipmentChange, colorScheme = 'pink', readOnly = false, onDelete, officeQtyOf, selectedOrders, onToggleSelect, onBulkOrder, doneOrders, onSortByBox, bundleLabel, bundleColorOf, layout = 'order', selectedLines, onToggleLine, hideBox = false }: Props) {
+export default function OrderTable({ rows, onMemoChange, onShipmentChange, colorScheme = 'pink', readOnly = false, onDelete, officeQtyOf, selectedOrders, onToggleSelect, onBulkOrder, doneOrders, onSortByBox, bundleLabel, bundleColorOf, layout = 'order', selectedLines, onToggleLine, hideBox = false, newOrders }: Props) {
   if (rows.length === 0) return null;
 
   const sc = SCHEME[colorScheme];
@@ -658,6 +660,17 @@ export default function OrderTable({ rows, onMemoChange, onShipmentChange, color
                       );
                     })()}
                     <span style={{ fontSize: 13, fontWeight: 700, color: '#333' }}>{row._발주번호}</span>
+                    {newOrders?.has(row._발주번호) && (
+                      <span
+                        title="최근 24시간 안에 새로 들어온 발주서"
+                        style={{
+                          padding: '1px 6px', fontSize: 10, fontWeight: 800, borderRadius: 4,
+                          color: '#fff', background: '#ef4444', letterSpacing: '0.5px',
+                        }}
+                      >
+                        NEW
+                      </span>
+                    )}
                     <CenterTag name={(row._물류센터 || '').trim()} color={sc.accent} />
                     <DateTag value={row._입고예정일} />
                     {row.묶음 && (

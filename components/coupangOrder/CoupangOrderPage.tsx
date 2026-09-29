@@ -590,6 +590,17 @@ export default function CoupangOrderPage({ onGoShipOut }: { onGoShipOut?: () => 
     setNotice(`겹친 줄 ${dupCount}개를 지웠어요.`);
   }, [leftRows, dupCount]);
 
+  // 체크한 발주서를 발송 목록에서 지운다(예약·쉽먼트생성 쪽은 그대로). 되돌리기로 살릴 수 있다.
+  const handleDeleteSelected = () => {
+    const orderNos = new Set(leftRows.filter(r => !r.isBlank && selected.has(r._발주번호)).map(r => r._발주번호));
+    if (!orderNos.size) return;
+    if (!confirm(`고른 발주 ${orderNos.size}건을 발송 목록에서 지울까요?\n(되돌리기로 살릴 수 있어요)`)) return;
+    record(`발주 ${orderNos.size}건 삭제`);
+    setLeftRows(buildDisplayRows(extractOrderRows(leftRows).filter(r => !orderNos.has(r.발주번호))));
+    setSelected(new Set());
+    setNotice(`발주 ${orderNos.size}건을 지웠어요.`);
+  };
+
   const selectedCount = new Set(leftRows.filter(r => !r.isBlank && selected.has(r._발주번호)).map(r => r._발주번호)).size;
 
   return (
@@ -727,6 +738,16 @@ export default function CoupangOrderPage({ onGoShipOut }: { onGoShipOut?: () => 
                   >
                     ▶ 새 묶음
                     <span style={{ background: 'rgba(255,255,255,0.25)', padding: '1px 7px', borderRadius: 12, fontSize: 11, marginLeft: 4 }}>
+                      발주 {selectedCount}건
+                    </span>
+                  </button>}
+                  {selectedCount > 0 && <button
+                    onClick={handleDeleteSelected}
+                    title="체크한 발주서를 발송 목록에서 지웁니다(되돌리기로 살릴 수 있어요)"
+                    style={{ ...btnStyle('#fff', '#f0c4c0', '#c0392b'), fontWeight: 600 }}
+                  >
+                    🗑 선택 삭제
+                    <span style={{ background: '#fdecea', padding: '1px 7px', borderRadius: 12, fontSize: 11, marginLeft: 4 }}>
                       발주 {selectedCount}건
                     </span>
                   </button>}

@@ -22,8 +22,15 @@ export const STATUS_LABEL = {
 export const won = (n: number) => `${Math.round(n).toLocaleString()}원`;
 const ymdText = (s: string) => (/^\d{8}$/.test(s) ? `${s.slice(4, 6)}/${s.slice(6, 8)}` : s);
 
+// ── 되돌리기(실행취소) ──
+// 한중발주 화면에서 하는 일(만들기·삭제·메모)마다 되돌리는 법과 다시 하는 법을 같이 적어 둔다.
+// 화면을 옮겨 다녀와도 남도록 컴포넌트 밖에 둔다(새로고침하면 사라진다).
+interface Act { label: string; undo: () => Promise<unknown>; redo: () => Promise<unknown> }
+const history: { undo: Act[]; redo: Act[] } = { undo: [], redo: [] };
+const failed = (err: any) => alert(`되돌리기 실패: ${err?.message || err}`);
+
 // 발주 대기: 예약 중 아직 어느 한중발주에도 들어가지 않은 줄. 체크해서 한중발주 한 건으로 묶는다.
-const PendingPanel: React.FC<{ orders: HanjungOrder[] }> = ({ orders }) => {
+const PendingPanel: React.FC<{ orders: HanjungOrder[]; onRecord: (act: Act) => void }> = ({ orders, onRecord }) => {
   const [reservations, setReservations] = useState<OrderRow[]>([]);
   const [checked, setChecked] = useState<Set<string>>(new Set());
   const [saving, setSaving] = useState(false);
@@ -31,13 +38,23 @@ const PendingPanel: React.FC<{ orders: HanjungOrder[] }> = ({ orders }) => {
 
   const pending = useMemo(() => {
     const used = new Set(orders.flatMap(o => o.lines.map(l => l.key)));
-    return reservations.filter(r => !used.has(reservationKey(r)));
+    // 쿠팡발주확인에서 "대기"로 넘긴 줄은 1688에 주문하지 않으므로 뺀다.
+    return reservations.filter(r => !used.has(reservationKey(r)) && !(r.메모 || '').includes('대기'));
   }, [reservations, orders]);
 
   // 체크했던 줄이 다른 곳에서 한중발주로 넘어가면 선택에서 뺀다.
   useEffect(() => {
     const keys = new Set(pending.map(reservationKey));
     setChecked(prev => new Set(Array.from(prev).filter(k => keys.has(k))));
+  }, [pending]);
+
+  // 같은 상품끼리 묶는다(처음 나온 순서대로). 머리줄에 합산 수량을 보여주고, 그 아래에 발주 줄을 둔다.
+  const groups = useMemo(() => {
+    const m = new Map<string, OrderRow[]>();
+    for (const r of pending) m.set(r.상품이름, [...(m.get(r.상품이름) || []), r]);
+    return Array.from(m, ([name, rows]) => ({
+      name, rows, qty: rows.reduce((s, r) => s + (Number(r.확정수량) || 0), 0),
+    }));
   }, [pending]);
 
   const selected = pending.filter(r => checked.has(reservationKey(r)));
@@ -52,6 +69,14 @@ const PendingPanel: React.FC<{ orders: HanjungOrder[] }> = ({ orders }) => {
     return next;
   });
   const allChecked = pending.length > 0 && selected.length === pending.length;
+  // 상품 머리줄 체크: 그 상품의 발주 줄을 모두 고르거나 모두 뺀다.
+  const toggleGroup = (rows: OrderRow[]) => setChecked(prev => {
+    const keys = rows.map(reservationKey);
+    const on = keys.every(k => prev.has(k));
+    const next = new Set(prev);
+    keys.forEach(k => (on ? next.delete(k) : next.add(k)));
+    return next;
+  });
 
   const create = async () => {
     if (!selected.length) return;
@@ -78,6 +103,13 @@ const PendingPanel: React.FC<{ orders: HanjungOrder[] }> = ({ orders }) => {
       await saveHanjungOrder(order);
       await setReservationMemo(selected, `예약 ${code}`);
       setChecked(new Set());
+      // 되돌리면 한중발주를 지우고, 예약 메모를 만들기 전 값으로 돌린다.
+      const before = selected.map(r => ({ row: r, memo: r.메모 || '예약' }));
+      onRecord({
+        label: `${code} 만들기`,
+        undo: () => deleteHanjungOrder(code).then(() => Promise.all(before.map(b => setReservationMemo([b.row], b.memo)))),
+        redo: () => saveHanjungOrder(order).then(() => setReservationMemo(selected, `예약 ${code}`)),
+      });
     } catch (err: any) {
       alert(`저장 실패: ${err?.message || err}`);
     } finally {
@@ -100,37 +132,64 @@ const PendingPanel: React.FC<{ orders: HanjungOrder[] }> = ({ orders }) => {
           {saving ? '만드는 중…' : `선택한 ${selected.length}건으로 한중발주 만들기`}
         </button>
       </div>
-      <div className="max-h-80 overflow-y-auto">
-        <table className="w-full text-sm">
-          <thead className="text-xs text-gray-500 bg-white sticky top-0">
-            <tr>
-              <th className="w-10 px-3 py-2">
-                <input type="checkbox" checked={allChecked} onChange={() => setChecked(allChecked ? new Set() : new Set(pending.map(reservationKey)))} />
-              </th>
-              <th className="px-2 py-2 text-left font-medium">발주번호</th>
-              <th className="px-2 py-2 text-left font-medium">센터</th>
-              <th className="px-2 py-2 text-left font-medium">입고예정일</th>
-              <th className="px-2 py-2 text-left font-medium">상품</th>
-              <th className="px-3 py-2 text-right font-medium">수량</th>
-            </tr>
-          </thead>
-          <tbody>
-            {pending.map(r => {
-              const k = reservationKey(r);
-              return (
-                <tr key={k} className={`border-t border-gray-50 cursor-pointer ${checked.has(k) ? 'bg-blue-50' : 'hover:bg-gray-50'}`} onClick={() => toggle(k)}>
-                  <td className="px-3 py-1.5 text-center"><input type="checkbox" checked={checked.has(k)} readOnly /></td>
-                  <td className="px-2 py-1.5 font-mono text-gray-500">{r.발주번호}</td>
-                  <td className="px-2 py-1.5 text-gray-500">{r.물류센터}</td>
-                  <td className="px-2 py-1.5 text-gray-500 whitespace-nowrap">{formatDateDisplay(r.입고예정일)}</td>
-                  <td className="px-2 py-1.5">{r.상품이름}</td>
-                  <td className="px-3 py-1.5 text-right font-mono">{r.확정수량}</td>
+      <table className="w-full text-sm">
+        <thead className="text-xs text-gray-500">
+          <tr className="border-b border-gray-100">
+            <th className="w-10 px-3 py-2">
+              <input type="checkbox" checked={allChecked} onChange={() => setChecked(allChecked ? new Set() : new Set(pending.map(reservationKey)))} />
+            </th>
+            <th className="px-2 py-2 text-left font-medium">상품</th>
+            <th className="px-2 py-2 text-left font-medium">발주번호</th>
+            <th className="px-2 py-2 text-left font-medium">입고예정일</th>
+            <th className="px-4 py-2 text-right font-medium">수량</th>
+          </tr>
+        </thead>
+        <tbody>
+          {groups.map(g => {
+            const keys = g.rows.map(reservationKey);
+            const on = keys.every(k => checked.has(k));
+            const some = !on && keys.some(k => checked.has(k));
+            return (
+              <React.Fragment key={g.name}>
+                <tr
+                  className={`border-t border-gray-100 cursor-pointer ${on ? 'bg-blue-50' : 'bg-gray-50/60 hover:bg-gray-100'}`}
+                  onClick={() => toggleGroup(g.rows)}
+                >
+                  <td className="px-3 py-2 text-center">
+                    <input type="checkbox" checked={on} ref={el => { if (el) el.indeterminate = some; }} readOnly />
+                  </td>
+                  <td className="px-2 py-2 font-semibold text-gray-800" colSpan={3}>
+                    {g.name}
+                    {g.rows.length > 1 && <span className="ml-2 text-xs font-normal text-gray-400">발주 {g.rows.length}건</span>}
+                  </td>
+                  <td className="px-4 py-2 text-right font-mono font-bold text-gray-900">{g.qty}</td>
                 </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      </div>
+                {g.rows.length > 1 && g.rows.map(r => {
+                  const k = reservationKey(r);
+                  return (
+                    <tr key={k} className={`cursor-pointer text-xs text-gray-500 ${checked.has(k) ? 'bg-blue-50/60' : 'hover:bg-gray-50'}`} onClick={() => toggle(k)}>
+                      <td className="px-3 py-1 text-center"><input type="checkbox" checked={checked.has(k)} readOnly /></td>
+                      <td className="px-2 py-1 pl-6 text-gray-300">└</td>
+                      <td className="px-2 py-1 font-mono">{r.발주번호}</td>
+                      <td className="px-2 py-1 whitespace-nowrap">{formatDateDisplay(r.입고예정일)}</td>
+                      <td className="px-4 py-1 text-right font-mono">{r.확정수량}</td>
+                    </tr>
+                  );
+                })}
+                {g.rows.length === 1 && (
+                  <tr className="text-xs text-gray-500 cursor-pointer" onClick={() => toggle(keys[0])}>
+                    <td />
+                    <td className="px-2 py-1 pl-6 text-gray-300">└</td>
+                    <td className="px-2 py-1 font-mono">{g.rows[0].발주번호}</td>
+                    <td className="px-2 py-1 whitespace-nowrap">{formatDateDisplay(g.rows[0].입고예정일)}</td>
+                    <td />
+                  </tr>
+                )}
+              </React.Fragment>
+            );
+          })}
+        </tbody>
+      </table>
       {byProduct.length > 0 && (
         <div className="px-4 py-2 border-t border-gray-100 text-xs text-gray-600">
           주문할 수량: {byProduct.map(([name, q]) => <span key={name} className="mr-3">{name} <b>{q}</b>개</span>)}
@@ -147,6 +206,42 @@ const HanjungOrderPage: React.FC = () => {
   const [receives, setReceives] = useState<ReceiveRow[]>([]);
 
   useEffect(() => subscribeHanjung(setOrders), []);
+
+  const ordersRef = React.useRef(orders);
+  ordersRef.current = orders;
+  const [, setHistTick] = useState(0);
+  const record = (act: Act) => {
+    history.undo = [...history.undo, act].slice(-30);
+    history.redo = [];
+    setHistTick(t => t + 1);
+  };
+  const undo = () => {
+    const last = history.undo.pop();
+    if (!last) return;
+    history.redo.push(last);
+    setHistTick(t => t + 1);
+    last.undo().catch(failed);
+  };
+  const redo = () => {
+    const last = history.redo.pop();
+    if (!last) return;
+    history.undo.push(last);
+    setHistTick(t => t + 1);
+    last.redo().catch(failed);
+  };
+  // ⌘Z / ⌘⇧Z(윈도는 Ctrl)로도 되돌리고 다시 한다. 글자를 치는 중일 때는 건드리지 않는다.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (!(e.metaKey || e.ctrlKey) || e.key.toLowerCase() !== 'z') return;
+      const el = e.target as HTMLElement | null;
+      const tag = el?.tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || el?.isContentEditable) return;
+      e.preventDefault();
+      if (e.shiftKey) redo(); else undo();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  });
   useEffect(() => subscribeReceives(setReceives), []);
 
   const list = useMemo(() => {
@@ -158,25 +253,55 @@ const HanjungOrderPage: React.FC = () => {
 
   const handleDelete = (o: HanjungOrder) => {
     const warn = o.receipts.length ? `\n수입입고 기록 ${o.receipts.length}건도 같이 지워져요.` : '';
-    if (!confirm(`한중발주 ${o.code}를 삭제할까요?${warn}\n삭제하면 되돌릴 수 없어요.`)) return;
+    if (!confirm(`한중발주 ${o.code}를 삭제할까요?${warn}`)) return;
     // 삭제하면 그 줄들은 다시 "발주 대기"로 돌아가므로, 예약 메모의 고유번호도 지운다.
     const rows = o.lines.map(l => ({ 발주번호: l.발주번호, 상품이름: l.상품이름, 확정수량: l.확정수량, 입고예정일: l.입고예정일 } as OrderRow));
     deleteHanjungOrder(o.code)
       .then(() => setReservationMemo(rows, '예약'))
       .catch(err => alert(`삭제 실패: ${err?.message || err}`));
+    record({
+      label: `${o.code} 삭제`,
+      undo: () => saveHanjungOrder(o).then(() => setReservationMemo(rows, `예약 ${o.code}`)),
+      redo: () => deleteHanjungOrder(o.code).then(() => setReservationMemo(rows, '예약')),
+    });
   };
 
   const editMemo = (o: HanjungOrder) => {
     const memo = prompt(`${o.code} 메모 (1688 주문번호 등)`, o.memo);
     if (memo == null) return;
     saveHanjungOrder({ ...o, memo }).catch(err => alert(`저장 실패: ${err?.message || err}`));
+    // 되돌릴 때는 그사이 붙은 수입입고 기록을 지우지 않게 지금 저장된 건에서 메모만 바꾼다.
+    const setMemo = (m: string) => {
+      const cur = ordersRef.current.find(x => x.code === o.code);
+      return cur ? saveHanjungOrder({ ...cur, memo: m }) : Promise.resolve();
+    };
+    record({ label: `${o.code} 메모`, undo: () => setMemo(o.memo), redo: () => setMemo(memo) });
   };
 
   return (
     <div className="p-4 sm:p-6 lg:p-8 text-gray-800">
       <div className="flex flex-wrap items-end justify-between gap-3 mb-4">
         <div>
-          <h1 className="text-xl font-bold text-gray-900">한중발주</h1>
+          <div className="flex items-center gap-2">
+            <h1 className="text-xl font-bold text-gray-900">한중발주</h1>
+            {/* 방금 한 일 되돌리기 · 다시실행 (⌘Z / ⌘⇧Z) */}
+            <button
+              onClick={undo}
+              disabled={!history.undo.length}
+              title={history.undo.length ? `되돌리기: ${history.undo[history.undo.length - 1].label} (⌘Z)` : '되돌릴 일이 없어요'}
+              className="px-2.5 py-1 text-xs font-semibold rounded-md border bg-white text-gray-600 border-gray-200 hover:bg-gray-50 disabled:text-gray-300 disabled:border-gray-100 disabled:hover:bg-white"
+            >
+              ↶ 되돌리기
+            </button>
+            <button
+              onClick={redo}
+              disabled={!history.redo.length}
+              title={history.redo.length ? `다시실행: ${history.redo[history.redo.length - 1].label} (⌘⇧Z)` : '다시 할 일이 없어요'}
+              className="px-2.5 py-1 text-xs font-semibold rounded-md border bg-white text-gray-600 border-gray-200 hover:bg-gray-50 disabled:text-gray-300 disabled:border-gray-100 disabled:hover:bg-white"
+            >
+              ↷ 다시실행
+            </button>
+          </div>
           <p className="text-sm text-gray-500">예약 건을 1688에 주문할 때 한중발주를 만들어요. 도착은 수입입고, 쿠팡 입고는 물류창고입고에서 기록돼요.</p>
         </div>
         <input
@@ -187,7 +312,7 @@ const HanjungOrderPage: React.FC = () => {
         />
       </div>
 
-      <PendingPanel orders={orders} />
+      <PendingPanel orders={orders} onRecord={record} />
 
       {!list.length && (
         <div className="bg-white border border-dashed border-gray-200 rounded-xl py-16 text-center text-gray-400 text-sm">

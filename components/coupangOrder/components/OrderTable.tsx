@@ -61,7 +61,7 @@ function CenterTag({ name, color }: { name: string; color: string }) {
   );
 }
 
-// 입고예정일 이름표: "10/2 (목)"처럼 크게 쓰고, 옆에 D-day를 붙인다(오늘·지남은 빨강, 1~2일 남으면 주황).
+// 입고예정일 이름표: "10/2 (목)"처럼 크게 쓰고, 옆에 같은 모양으로 D-day를 붙인다.
 const WEEK = ['일', '월', '화', '수', '목', '금', '토'];
 function DateTag({ value }: { value: Date | string }) {
   const ymd = dateKeyYMD(value);
@@ -73,7 +73,6 @@ function DateTag({ value }: { value: Date | string }) {
   const day = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
   const today = new Date(); today.setHours(0, 0, 0, 0);
   const diff = Math.round((day.getTime() - today.getTime()) / 86400000);
-  const dColor = diff <= 0 ? '#dc2626' : diff <= 2 ? '#ea580c' : '#64748b';
   const dText = diff < 0 ? `${-diff}일 지남` : diff === 0 ? 'D-DAY' : `D-${diff}`;
   return (
     <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
@@ -84,8 +83,8 @@ function DateTag({ value }: { value: Date | string }) {
         {Number(m[2])}/{Number(m[3])} ({WEEK[day.getDay()]})
       </span>
       <span style={{
-        padding: '1px 6px', fontSize: 11, fontWeight: 800, borderRadius: 10,
-        color: '#fff', background: dColor,
+        padding: '1px 8px', fontSize: 14, fontWeight: 800, borderRadius: 6,
+        color: '#1e293b', background: '#fff', border: '1.5px solid #334155', lineHeight: '18px',
       }}>
         {dText}
       </span>
@@ -140,15 +139,50 @@ function MemoToggle({ label, color, bg, active, onClick }: { label: string; colo
   );
 }
 
+// 예약 칸의 두 가지 표시. 예약은 한중발주(1688 주문)로 넘어가고, 대기는 예약 목록에만 머문다.
+const MEMO_KIND = {
+  예약: { color: '#27ae60', bg: '#e8f8f0' },
+  대기: { color: '#d97706', bg: '#fff7e6' },
+} as const;
+const memoKind = (value: string): '예약' | '대기' | '' =>
+  value.includes('대기') ? '대기' : (value.includes('예약') || value.includes('한중')) ? '예약' : '';
+
 function MemoButton({ value, onChange, withHanjung, showCode }: { value: string; onChange: (v: string) => void; withHanjung: boolean; showCode: boolean }) {
   // 예전 "한중" 표시도 예약으로 본다(지금은 예약 하나로 한중발주까지 넘긴다).
-  const reserved = value.includes('예약') || value.includes('한중');
+  const kind = memoKind(value);
   const hanjung = value.includes('한중');
   // 예약 패널에서는 한중발주로 넘어온 건의 고유번호(예: "예약 H260923-01")를 같이 보여준다.
   const code = showCode ? (/\bH\d{6}-\d+\b|(?<=예약\s)\S+/.exec(value) || [])[0] : '';
+  const c = kind ? MEMO_KIND[kind] : null;
   return (
     <span style={{ display: 'inline-flex', gap: 4, alignItems: 'center' }}>
-      <MemoToggle label="예약" color="#27ae60" bg="#e8f8f0" active={reserved} onClick={() => onChange(reserved ? '' : '예약')} />
+      {showCode ? (
+        // 예약 패널: 예약/대기 표시만 보여준다.
+        c && (
+          <span style={{
+            padding: '2px 8px', fontSize: 12, fontWeight: 700, borderRadius: 5,
+            border: `1.5px solid ${c.color}`, background: c.bg, color: c.color, whiteSpace: 'nowrap',
+          }}>
+            {kind}
+          </span>
+        )
+      ) : (
+        // 발송 패널: 예약/대기를 고르면 그 줄이 예약 목록으로 넘어간다.
+        <select
+          value={kind}
+          onChange={e => onChange(e.target.value)}
+          title="예약: 한중발주로 넘김 · 대기: 예약 목록에만 둠"
+          style={{
+            padding: '2px 4px', fontSize: 12, fontWeight: c ? 700 : 400, borderRadius: 5, cursor: 'pointer',
+            border: c ? `1.5px solid ${c.color}` : '1.5px solid #d5d5d5',
+            background: c ? c.bg : '#fafafa', color: c ? c.color : '#999',
+          }}
+        >
+          <option value="">선택</option>
+          <option value="예약">예약</option>
+          <option value="대기">대기</option>
+        </select>
+      )}
       {withHanjung && (
         <MemoToggle label="한중" color="#2563eb" bg="#eff6ff" active={hanjung} onClick={() => onChange(hanjung ? '' : '한중')} />
       )}

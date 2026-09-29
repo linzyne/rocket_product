@@ -352,6 +352,11 @@ export function restoreShipSnapshot(snap: ShipSnapshot) {
   } catch {}
 }
 
+// 출고 목록만 스냅샷 값으로 되돌린다(쿠팡발주확인의 되돌리기가 쓴다. 작업 목록은 그 화면이 따로 되돌린다).
+export function restoreShipOutsOnly(json: string) {
+  try { write(JSON.parse(json)); } catch {}
+}
+
 // 두 스냅샷이 같은지(바뀐 게 없으면 되돌리기 목록에 쌓지 않는다).
 export const sameSnapshot = (a: ShipSnapshot, b: ShipSnapshot) =>
   a.shipOuts === b.shipOuts && a.work === b.work;

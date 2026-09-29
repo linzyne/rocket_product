@@ -38,6 +38,8 @@ const CollectReceives: React.FC<Props> = ({ onBucket, onExtReady, children, runT
   const finishRef = React.useRef(onFinish);
   finishRef.current = onFinish;
   const doneRef = React.useRef((ok: boolean, message: string) => {});
+  // 확장이 RECEIVE_COLLECT를 받았다는 대답(ACK)이 왔는지. 안 오면 확장이 이 화면에 붙지 않은 것이다.
+  const ackTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
   doneRef.current = (ok, message) => finishRef.current && finishRef.current(ok, message);
 
   useEffect(() => {
@@ -52,6 +54,10 @@ const CollectReceives: React.FC<Props> = ({ onBucket, onExtReady, children, runT
       if (d.type === 'HUB_DATA') {
         cbRef.current.onExtReady?.(true);
         cbRef.current.onBucket?.((d.data && d.data.receiveDetail) || null);
+      }
+      if (d.type === 'RECEIVE_COLLECT_ACK' && ackTimerRef.current) {
+        clearTimeout(ackTimerRef.current);
+        ackTimerRef.current = null;
       }
       if (d.type === 'RECEIVE_COLLECT_ACK') {
         if (!d.ok) { setAutoRequestedAt(null); setAutoStatus(''); doneRef.current(false, `시작하지 못했어요: ${d.error || ''}`); alert(`자동 수집을 시작하지 못했어요: ${d.error || ''}`); }
@@ -126,6 +132,14 @@ const CollectReceives: React.FC<Props> = ({ onBucket, onExtReady, children, runT
     setAutoStatus(`서허 입고상세내역 여는 중… (${autoDay})`);
     setAutoRequestedAt(-1); // 확장이 요청 시각을 알려주기 전까지 버튼을 잠근다
     window.postMessage({ source: APP_SOURCE, type: 'RECEIVE_COLLECT', day: autoDay }, window.location.origin);
+    if (ackTimerRef.current) clearTimeout(ackTimerRef.current);
+    ackTimerRef.current = setTimeout(() => {
+      ackTimerRef.current = null;
+      setAutoRequestedAt(null);
+      setAutoStatus('');
+      doneRef.current(false, '확장이 대답하지 않았어요');
+      alert('확장(로켓 서허 연동)이 대답하지 않았어요.\n\n1. 이 컴퓨터 크롬에 확장이 설치·켜져 있는지 확인\n2. chrome://extensions 에서 확장 새로고침\n3. 이 앱 화면도 새로고침(F5) 후 다시 눌러 주세요\n\n앱 주소가 rocket-product.vercel.app 이어야 해요.');
+    }, 5000);
   };
 
   // 수집 화면이 차례로 돌릴 때: runToken이 바뀌면 시작한다.

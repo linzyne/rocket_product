@@ -14,6 +14,9 @@ export interface OrderRow {
   // 묶음에서 새로 잡은 입고예정일('YYYY-MM-DD'). 센터를 바꾸면 날짜도 같이 바뀌는 경우가 많아 함께 둔다.
   // "묶음 적용"을 누르면 이 값이 발주서의 물류센터·입고예정일로 옮겨간다.
   묶음일자?: string;
+  // 쉽먼트생성에서 한 줄을 여러 박스로 나눠 펼친 조각일 때: 몇 번째 조각인지와 나누기 전 원래 수량.
+  조각?: number;
+  원수량?: number | '';
 }
 
 export interface OrderBundle {

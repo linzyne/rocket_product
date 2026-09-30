@@ -37,6 +37,8 @@ interface Props {
   hideBox?: boolean;
   // 새로 들어온 발주서(발주번호). 발주서 머리줄에 NEW를 붙인다.
   newOrders?: Set<string>;
+  // 있으면 'box' 레이아웃의 박스 칸 옆에 나누기(✂) 버튼을 붙인다. 한 상품을 박스 여러 개에 나눠 담을 때 쓴다.
+  onSplitLine?: (id: string) => void;
 }
 
 // 박스 번호(박스1, 박스2…)마다 다른 색. 어느 상자에 담기는지 한눈에 보이게.
@@ -310,7 +312,7 @@ function OfficeCell({ match, need }: { match: OfficeMatch | null; need: number }
 }
 
 /* ── 메인 테이블 ── */
-export default function OrderTable({ rows, onMemoChange, onShipmentChange, colorScheme = 'pink', readOnly = false, onDelete, officeQtyOf, selectedOrders, onToggleSelect, onBulkOrder, doneOrders, onSortByBox, bundleLabel, bundleColorOf, layout = 'order', selectedLines, onToggleLine, hideBox = false, newOrders }: Props) {
+export default function OrderTable({ rows, onMemoChange, onShipmentChange, colorScheme = 'pink', readOnly = false, onDelete, officeQtyOf, selectedOrders, onToggleSelect, onBulkOrder, doneOrders, onSortByBox, bundleLabel, bundleColorOf, layout = 'order', selectedLines, onToggleLine, hideBox = false, newOrders, onSplitLine }: Props) {
   if (rows.length === 0) return null;
 
   const sc = SCHEME[colorScheme];
@@ -528,8 +530,11 @@ export default function OrderTable({ rows, onMemoChange, onShipmentChange, color
                                 ...cs(0), textAlign: 'left', minWidth: 210, padding: '5px 6px',
                                 borderLeft: `4px solid ${bc}`, fontSize: 13,
                               }}>{row.상품이름}</td>
-                              <td style={narrow(38)}>{row.확정수량 !== '' ? row.확정수량 : ''}</td>
-                              {officeQtyOf && <OfficeCell match={officeQtyOf(row.상품이름)} need={Number(row.확정수량) || 0} />}
+                              <td style={narrow(38)} title={row._조각 !== undefined ? `전체 ${row._원수량}개 중 이 박스에 담는 수량` : undefined}>
+                                {row.확정수량 !== '' ? row.확정수량 : ''}
+                                {row._조각 !== undefined && <div style={{ fontSize: 10, color: '#aaa' }}>/{row._원수량}</div>}
+                              </td>
+                              {officeQtyOf && <OfficeCell match={officeQtyOf(row.상품이름)} need={Number(row._원수량 ?? row.확정수량) || 0} />}
                               <td style={{ ...cs(64), padding: '4px 4px' }}>
                                 {readOnly ? (
                                   <span style={{ fontSize: 12, color: '#666' }}>{row.메모}</span>
@@ -537,11 +542,26 @@ export default function OrderTable({ rows, onMemoChange, onShipmentChange, color
                                   <MemoButton value={row.메모} onChange={(v) => onMemoChange(row.id, v)} withHanjung={false} showCode={colorScheme === 'green'} />
                                 )}
                               </td>
-                              <td style={{ ...cs(76), padding: '4px 4px' }}>
+                              <td style={{ ...cs(76), padding: '4px 4px', whiteSpace: 'nowrap' }}>
                                 {readOnly ? (
                                   <span style={{ fontSize: 12, color: '#666' }}>{row.쉼먼트}</span>
                                 ) : (
-                                  <BoxButton value={row.쉼먼트} onChange={(v) => onShipmentChange(row.id, v)} />
+                                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                                    <BoxButton value={row.쉼먼트} onChange={(v) => onShipmentChange(row.id, v)} />
+                                    {onSplitLine && (Number(row.확정수량) || 0) >= 2 && (
+                                      <button
+                                        onClick={() => onSplitLine(row.id)}
+                                        title="이 상품을 박스 여러 개에 나눠 담습니다(일부 수량을 새 박스로)"
+                                        style={{
+                                          padding: '2px 6px', fontSize: 12, lineHeight: 1.3,
+                                          color: '#888', background: '#fff', border: '1px solid #ddd',
+                                          borderRadius: 5, cursor: 'pointer',
+                                        }}
+                                      >
+                                        ✂
+                                      </button>
+                                    )}
+                                  </span>
                                 )}
                               </td>
                               <td style={{ ...cs(92), color: '#8a8f98', fontWeight: 700 }} title="이 상품이 들어 있는 발주서">

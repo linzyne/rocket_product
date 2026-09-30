@@ -113,6 +113,9 @@ export interface DisplayRow {
   _발주번호: string;
   _물류센터: string;
   _입고예정일: Date | string;
+  // 여러 박스로 나눈 줄의 조각이면 몇 번째 조각인지와 나누기 전 수량(쉽먼트생성에서만 쓴다).
+  _조각?: number;
+  _원수량?: number | '';
 }
 
 export function buildDisplayRows(rows: OrderRow[]): DisplayRow[] {
@@ -154,6 +157,8 @@ export function buildDisplayRows(rows: OrderRow[]): DisplayRow[] {
       _발주번호: r.발주번호,
       _물류센터: r.물류센터,
       _입고예정일: r.입고예정일,
+      _조각: r.조각,
+      _원수량: r.원수량,
     });
 
     prevCenterDateKey = centerDateKey;
@@ -222,6 +227,35 @@ export function parseBoxNo(value: string): number | null {
 }
 
 export const boxLabel = (no: number) => `박스${no}`;
+
+// 한 상품을 여러 박스에 나눠 담을 때 박스 칸 값: "박스3:6/박스4:6" = 3번 박스에 6개, 4번 박스에 6개.
+export type BoxPiece = { no: number; qty: number };
+export const isBoxSplit = (value: string) => String(value || '').includes(':');
+export function parseBoxSplit(value: string): BoxPiece[] {
+  return String(value || '').split('/').map(part => {
+    const [box, qty] = part.split(':');
+    return { no: parseBoxNo(box) || 0, qty: Number(qty) || 0 };
+  }).filter(p => p.no && p.qty > 0);
+}
+// 같은 박스 조각은 합치고, 조각이 하나만 남으면 보통 값("박스3")으로 돌린다.
+export function joinBoxSplit(pieces: BoxPiece[]): string {
+  const merged: BoxPiece[] = [];
+  for (const p of pieces) {
+    if (!p.no || p.qty <= 0) continue;
+    const same = merged.find(m => m.no === p.no);
+    if (same) same.qty += p.qty; else merged.push({ ...p });
+  }
+  if (!merged.length) return '';
+  if (merged.length === 1) return boxLabel(merged[0].no);
+  return merged.map(p => `${boxLabel(p.no)}:${p.qty}`).join('/');
+}
+// 나눈 값을 조각 줄로 펼친다. 안 나눈 줄은 그대로 한 줄.
+export function expandBoxSplit<T extends { 쉼먼트: string; 확정수량: number | '' }>(row: T): (T & { 조각?: number; 원수량?: number | '' })[] {
+  if (!isBoxSplit(row.쉼먼트)) return [row];
+  const pieces = parseBoxSplit(row.쉼먼트);
+  if (!pieces.length) return [{ ...row, 쉼먼트: '' }];
+  return pieces.map((p, i) => ({ ...row, 쉼먼트: boxLabel(p.no), 확정수량: p.qty, 조각: i, 원수량: row.확정수량 }));
+}
 
 // 묶음으로 담은 줄은 발주번호·입고예정일이 달라도 한 상자로 본다. 묶음이 걸친 물류센터는
 // 묶음 카드에서 고른 센터(묶음센터)로, 안 골랐으면 그 묶음의 첫 줄 센터로 맞춘다(택배는 한 곳으로만 가므로).

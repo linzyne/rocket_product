@@ -3,7 +3,7 @@ import { ShipOut, subscribeShipOuts, deleteShipOut, restoreShipOut, restoreOrder
 import type { ShipSnapshot } from '../coupangOrder/data/shipOutStore';
 import { dateKeyYMD } from '../coupangOrder/utils/dateUtils';
 import OrderTable, { bundleColor } from '../coupangOrder/components/OrderTable';
-import { buildDisplayRows, parseBoxNo } from '../coupangOrder/utils/dataProcessor';
+import { buildDisplayRows, parseBoxNo, isBoxSplit, parseBoxSplit, joinBoxSplit, expandBoxSplit } from '../coupangOrder/utils/dataProcessor';
 import type { DisplayRow } from '../coupangOrder/utils/dataProcessor';
 import { normalizeDateValue, ymdSortKey } from '../coupangOrder/utils/dateUtils';
 import { printPanel } from '../coupangOrder/utils/printUtils';
@@ -29,6 +29,10 @@ import ShipmentList from '../coupangOrder/components/ShipmentList';
 // 입고예정일은 저장본('2026-09-28')과 화면용(Date)이 섞여 있어 항상 'YYYY-MM-DD'로 맞춰 비교한다.
 const lineKey = (l: { 발주번호: string; 상품이름: string; 확정수량: number | ''; 입고예정일: Date | string }) =>
   `${l.발주번호}│${l.상품이름}│${l.확정수량}│${dateKeyYMD(l.입고예정일)}`;
+
+// 박스순 정렬용: 여러 박스로 나눈 줄은 첫 조각의 박스 번호로 센다.
+const firstBoxNo = (value: string) =>
+  (isBoxSplit(value) ? parseBoxSplit(value)[0]?.no : parseBoxNo(value)) ?? 9999;
 
 // 표에서 덩어리 사이를 띄우는 흰 여백. 오른쪽 묶음 카드도 같은 간격을 쓴다.
 const CHUNK_GAP = 26;
@@ -117,7 +121,7 @@ export default function CoupangShipPage({ onGoOrder }: { onGoOrder?: () => void 
   const sortByBox = () => {
     const keys = ordered.flatMap(item => item.lines
       .slice()
-      .sort((a, b) => (parseBoxNo(a.쉼먼트 || '') ?? 9999) - (parseBoxNo(b.쉼먼트 || '') ?? 9999))
+      .sort((a, b) => firstBoxNo(a.쉼먼트 || '') - firstBoxNo(b.쉼먼트 || ''))
       .map(lineKey));
     step('박스순 정렬', () => setBoxOrder(keys), keys);
   };
@@ -198,7 +202,9 @@ export default function CoupangShipPage({ onGoOrder }: { onGoOrder?: () => void 
         const c = a.물류센터.localeCompare(b.물류센터, 'ko', { numeric: true });
         if (c) return c;
         return a.발주번호.localeCompare(b.발주번호, 'ko', { numeric: true });
-      }));
+      })
+      // 여러 박스로 나눈 줄은 박스마다 조각 줄로 펼친다(택배 예약·쉽먼트 기록도 조각 단위로 센다).
+      .flatMap(expandBoxSplit));
     return buildDisplayRows(all);
   }, [ordered, boxOrder]);
 
@@ -245,7 +251,7 @@ export default function CoupangShipPage({ onGoOrder }: { onGoOrder?: () => void 
   }, [rows, ordered, opened]);
 
   // 출고 건 하나의 줄만 표 모양으로 만든다(쉽먼트생성을 그 건에만 걸 때 쓴다).
-  const rowsOf = (items: ShipOut[]): DisplayRow[] => buildDisplayRows(items.flatMap(item => item.lines.map(l => ({
+  const rowsOf = (items: ShipOut[]): DisplayRow[] => buildDisplayRows(items.flatMap(item => item.lines.flatMap(l => expandBoxSplit({
     발주번호: l.발주번호,
     물류센터: l.물류센터,
     상품이름: l.상품이름,
@@ -267,16 +273,65 @@ export default function CoupangShipPage({ onGoOrder }: { onGoOrder?: () => void 
   const lotteCount = totalBoxCount(pendingRows);
 
   // 표에서 예약·박스를 누르면 그 줄이 속한 출고 건의 값을 고친다(줄의 묶음 값이 출고번호다).
+  // 나눈 줄의 조각이면 원래 줄을 찾아서, 박스 칸은 그 조각의 박스만 바꾼다.
+  const lineMatch = (row: DisplayRow) => ({
+    발주번호: row._발주번호,
+    상품이름: row.상품이름,
+    확정수량: row._조각 !== undefined ? (row._원수량 ?? row.확정수량) : row.확정수량,
+    입고예정일: dateKeyYMD(row._입고예정일),
+  });
+  const lineOf = (row: DisplayRow) => list
+    .find(i => i.id === shipIdOf.get(row._발주번호))?.lines
+    .find(l => l.발주번호 === row._발주번호 && l.상품이름 === row.상품이름
+      && String(l.확정수량) === String(lineMatch(row).확정수량) && l.입고예정일 === lineMatch(row).입고예정일);
+
   const editLine = (id: string, patch: { 메모?: string; 쉼먼트?: string }) => {
     const row = rows.find(r => r.id === id);
     if (!row) return;
+    let next = patch;
+    if (patch.쉼먼트 !== undefined && row._조각 !== undefined) {
+      const pieces = parseBoxSplit(lineOf(row)?.쉼먼트 || '');
+      const me = pieces[row._조각];
+      if (!me) return;
+      const no = parseBoxNo(patch.쉼먼트);
+      if (no) me.no = no;
+      else {
+        // 박스를 빼면 그 조각 수량은 옆 조각에 얹는다.
+        const mate = pieces[row._조각 - 1] || pieces[row._조각 + 1];
+        if (mate) mate.qty += me.qty;
+        pieces.splice(row._조각, 1);
+      }
+      next = { 쉼먼트: joinBoxSplit(pieces) };
+    }
     step(patch.쉼먼트 !== undefined ? '박스 지정' : '예약 표시', () => {
-      updateShipOutLine(shipIdOf.get(row._발주번호) || '', {
-        발주번호: row._발주번호,
-        상품이름: row.상품이름,
-        확정수량: row.확정수량,
-        입고예정일: dateKeyYMD(row._입고예정일),
-      }, patch);
+      updateShipOutLine(shipIdOf.get(row._발주번호) || '', lineMatch(row), next);
+    });
+  };
+
+  // 한 상품을 박스 여러 개에 나눠 담는다. 떼어 낸 수량은 이 덩어리의 새 박스 번호로 간다.
+  const splitLine = (id: string) => {
+    const row = rows.find(r => r.id === id);
+    if (!row) return;
+    const qty = Number(row.확정수량) || 0;
+    if (qty < 2) { alert('수량이 2개 이상이어야 나눌 수 있어요.'); return; }
+    const input = prompt(`${row.상품이름}\n이 박스의 ${qty}개 중 새 박스로 옮길 수량은?`, String(Math.floor(qty / 2)));
+    if (input === null) return;
+    const move = Math.floor(Number(input));
+    if (!(move >= 1 && move < qty)) { alert(`1 ~ ${qty - 1} 사이로 넣어 주세요.`); return; }
+    const used = rows
+      .filter(r => !r.isBlank && r.묶음 === row.묶음)
+      .map(r => parseBoxNo(r.쉼먼트) || 0);
+    const newNo = Math.max(0, ...used) + 1;
+    const line = lineOf(row);
+    const pieces = row._조각 !== undefined
+      ? parseBoxSplit(line?.쉼먼트 || '')
+      : [{ no: parseBoxNo(row.쉼먼트) || 1, qty }];
+    const at = row._조각 ?? 0;
+    if (!pieces[at]) return;
+    pieces[at].qty -= move;
+    pieces.splice(at + 1, 0, { no: newNo, qty: move });
+    step('박스 나누기', () => {
+      updateShipOutLine(shipIdOf.get(row._발주번호) || '', lineMatch(row), { 쉼먼트: joinBoxSplit(pieces) });
     });
   };
 
@@ -652,6 +707,7 @@ export default function CoupangShipPage({ onGoOrder }: { onGoOrder?: () => void 
                 rows={rows}
                 onMemoChange={(id, v) => editLine(id, { 메모: v })}
                 onShipmentChange={(id, v) => editLine(id, { 쉼먼트: v })}
+                onSplitLine={splitLine}
                 colorScheme="pink"
                 selectedOrders={selected}
                 onToggleSelect={toggleSelect}

@@ -42,6 +42,8 @@ export const fillShubForm = (arrayBuffer: ArrayBuffer, batch: ShipmentBatch): Fi
   const used = new Set<string>();
   const missed: string[] = [];
   let filled = 0;
+  // 나눈 박스 조각을 붙일 다음 빈 줄(0부터 센 줄 번호).
+  let extraRow = rows.length;
 
   for (let r = 1; r < rows.length; r++) {
     const po = digits(rows[r][COL_PO]);
@@ -60,11 +62,35 @@ export const fillShubForm = (arrayBuffer: ArrayBuffer, batch: ShipmentBatch): Fi
       missed.push(`${po} · ${name.slice(0, 20)}`);
       continue;
     }
-    const cell = (c: number) => XLSX.utils.encode_cell({ r, c });
-    ws[cell(COL_INVOICE)] = { t: 's', v: invNo(hit.waybill) };
-    ws[cell(COL_SHIPPED)] = { t: 'n', v: hit.line.확정수량 || qty };
-    used.add(hit.waybill);
-    filled += 1;
+    // 한 상품을 박스 여러 개에 나눠 담았으면 같은 줄이 박스마다 하나씩 있다.
+    // 첫 박스는 이 줄에 쓰고, 나머지는 이 줄을 복사해 맨 아래에 붙여 송장번호·납품수량을 따로 쓴다.
+    const pieces = sameOrder.filter(e => norm(e.line.상품이름) === norm(hit.line.상품이름));
+    const parts = pieces.length > 1 ? pieces : [hit];
+    parts.forEach((part, i) => {
+      if (!part.waybill) {
+        missed.push(`${po} · ${name.slice(0, 20)} (박스 ${i + 1}번째 조각)`);
+        return;
+      }
+      const at = i === 0 ? r : extraRow++;
+      const cell = (c: number) => XLSX.utils.encode_cell({ r: at, c });
+      if (i > 0) {
+        for (let c = 0; c < COL_INVOICE; c++) {
+          const src = ws[XLSX.utils.encode_cell({ r, c })];
+          if (src) ws[cell(c)] = { ...src };
+        }
+      }
+      ws[cell(COL_INVOICE)] = { t: 's', v: invNo(part.waybill) };
+      ws[cell(COL_SHIPPED)] = { t: 'n', v: parts.length > 1 ? part.line.확정수량 : (part.line.확정수량 || qty) };
+      used.add(part.waybill);
+      filled += 1;
+    });
+  }
+  // 복사해 붙인 줄까지 시트 범위를 늘린다.
+  if (extraRow > rows.length) {
+    const range = XLSX.utils.decode_range(ws['!ref'] || 'A1');
+    range.e.r = Math.max(range.e.r, extraRow - 1);
+    range.e.c = Math.max(range.e.c, COL_SHIPPED);
+    ws['!ref'] = XLSX.utils.encode_range(range);
   }
 
   // 송장번호입력 시트: 이번에 쓴 운송장번호를 한 줄에 하나씩(중복 없이).

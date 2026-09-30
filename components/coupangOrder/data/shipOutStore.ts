@@ -9,6 +9,7 @@ import { collection, deleteDoc, doc, getDocs, onSnapshot, setDoc } from 'firebas
 import { db, ensureSignedIn } from '../../../utils/firebase';
 import type { OrderRow } from '../types';
 import { dateKeyYMD, ymdSortKey } from '../utils/dateUtils';
+import { isBoxSplit, parseBoxSplit, boxLabel } from '../utils/dataProcessor';
 import { SHIPOUT_KEY, readWork, writeWork, workLineKey as lineKey, stableStringify } from './orderWorkCloud';
 
 const KEY = SHIPOUT_KEY;
@@ -272,7 +273,8 @@ function pushBackToWork(lines: ShipOutLine[], fallbackBundle: string) {
       확정수량: l.확정수량,
       입고예정일: l.입고예정일.replace(/-/g, ''),
       메모: l.메모 || '',
-      쉼먼트: l.쉼먼트 || '',
+      // 여러 박스로 나눈 값("박스3:6/박스4:6")은 발주확인에서 못 읽으므로 첫 박스로 돌린다.
+      쉼먼트: isBoxSplit(l.쉼먼트 || '') ? (parseBoxSplit(l.쉼먼트 || '').map(p => boxLabel(p.no))[0] || '') : (l.쉼먼트 || ''),
       묶음: l.묶음 || fallbackBundle,
       묶음센터: '',
       묶음일자: '',

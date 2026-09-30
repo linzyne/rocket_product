@@ -286,12 +286,14 @@ export default function BundlePanel({ rows, onBoxChange, onUnbundle, onRemoveOrd
                   onClick={() => onShipOut(name)}
                   title="이 묶음을 발주 > 쉽먼트생성으로 보냅니다(발주서와 묶음 정보가 함께 갑니다)"
                   style={{
-                    marginLeft: 'auto',
-                    padding: '2px 10px', fontSize: 11, fontWeight: 700, borderRadius: 5, cursor: 'pointer',
-                    border: `1.5px solid ${color}`, background: '#fff', color,
+                    marginLeft: 'auto', display: 'inline-flex', alignItems: 'center', gap: 4,
+                    padding: '3px 11px', fontSize: 12, fontWeight: 700, lineHeight: 1.5, letterSpacing: '-0.2px',
+                    borderRadius: 999, cursor: 'pointer', whiteSpace: 'nowrap',
+                    border: '1.5px solid #e67e22', background: '#e67e22', color: '#fff',
+                    boxShadow: '0 2px 6px #e67e2240',
                   }}
                 >
-                  쉽먼트 →
+                  📦 쉽먼트생성
                 </button>
               </div>
             </div>

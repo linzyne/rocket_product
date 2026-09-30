@@ -22,6 +22,10 @@ interface StoredReservation {
   입고예정일: string;
   메모: string;
   쉼먼트: string;
+  // 예약 목록 안에서 묶은 묶음(발송 목록의 묶음과 같은 이름 공간을 쓴다)과 그 묶음의 택배 센터·입고예정일.
+  묶음?: string;
+  묶음센터?: string;
+  묶음일자?: string;
   savedAt: number;
 }
 
@@ -38,6 +42,9 @@ const toStored = (r: OrderRow, savedAt: number): StoredReservation => ({
   입고예정일: dateKeyYMD(r.입고예정일).replace(/-/g, ''),
   메모: r.메모,
   쉼먼트: r.쉼먼트,
+  묶음: r.묶음 || '',
+  묶음센터: r.묶음센터 || '',
+  묶음일자: r.묶음일자 || '',
   savedAt,
 });
 
@@ -49,6 +56,9 @@ const fromStored = (s: StoredReservation): OrderRow => ({
   입고예정일: normalizeDateValue(s.입고예정일),
   메모: s.메모,
   쉼먼트: s.쉼먼트 || '',
+  묶음: s.묶음 || '',
+  묶음센터: s.묶음센터 || '',
+  묶음일자: s.묶음일자 || '',
 });
 
 // 발주서를 읽을 때와 같은 순서: 입고예정일 → 물류센터 → 발주번호 → 상품이름.
@@ -136,6 +146,23 @@ export const updateReservationShipment = async (row: OrderRow, 쉼먼트: string
   }
   await ensureSignedIn();
   await setDoc(doc(db, COLLECTION, key), { 쉼먼트 }, { merge: true });
+};
+
+// 예약들의 묶음·박스 값을 한꺼번에 바꾼다(예약 목록에서 묶기·풀기·센터/날짜/박스 지정).
+export type ReservationPatch = Partial<Pick<StoredReservation, '묶음' | '묶음센터' | '묶음일자' | '쉼먼트'>>;
+export const updateReservations = async (rows: OrderRow[], patch: ReservationPatch) => {
+  const keys = rows.map(reservationKey);
+  if (!keys.length) return;
+  if (!db) {
+    const s = readLocal();
+    keys.forEach(k => { if (s[k]) s[k] = { ...s[k], ...patch }; });
+    emitLocal(s);
+    return;
+  }
+  const firestore = db;
+  await ensureSignedIn();
+  // 그사이 지워진 예약을 되살리지 않도록 updateDoc(없으면 실패)을 쓰고, 그 실패는 무시한다.
+  await Promise.all(keys.map(k => updateDoc(doc(firestore, COLLECTION, k), patch).catch(() => {})));
 };
 
 export const deleteReservations = async (rows: OrderRow[]) => {

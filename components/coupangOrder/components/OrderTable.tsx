@@ -44,6 +44,11 @@ interface Props {
   onToggleChunk?: (bundle: string) => void;
   // 있으면 'box' 레이아웃 덩어리 머리줄의 입고예정일을 눌러 바꿀 수 있다. 묶음 값을 받는다.
   onEditChunkDate?: (bundle: string) => void;
+  // 있으면 'box' 레이아웃 박스 머리줄에 그 박스의 운송장번호를 붙인다. 묶음 값과 박스 번호를 받는다.
+  boxWaybill?: (bundle: string, boxNo: number) => string;
+  // 체크한 뒤 바로 누를 버튼들. actionOrder(발주번호) 머리줄의 체크 칸 옆에 띄운다.
+  actionOrder?: string;
+  actions?: React.ReactNode;
 }
 
 // 박스 번호(박스1, 박스2…)마다 다른 색. 어느 상자에 담기는지 한눈에 보이게.
@@ -412,7 +417,7 @@ function OfficeCell({ match, need }: { match: OfficeMatch | null; need: number }
 }
 
 /* ── 메인 테이블 ── */
-export default function OrderTable({ rows, onMemoChange, onShipmentChange, colorScheme = 'pink', readOnly = false, onDelete, officeQtyOf, selectedOrders, onToggleSelect, onBulkOrder, doneOrders, onSortByBox, bundleLabel, bundleColorOf, layout = 'order', selectedLines, onToggleLine, hideBox = false, newOrders, onSplitLine, isChunkCollapsed, onToggleChunk, onEditChunkDate }: Props) {
+export default function OrderTable({ rows, onMemoChange, onShipmentChange, colorScheme = 'pink', readOnly = false, onDelete, officeQtyOf, selectedOrders, onToggleSelect, onBulkOrder, doneOrders, onSortByBox, bundleLabel, bundleColorOf, layout = 'order', selectedLines, onToggleLine, hideBox = false, newOrders, onSplitLine, isChunkCollapsed, onToggleChunk, onEditChunkDate, boxWaybill, actionOrder, actions }: Props) {
   if (rows.length === 0) return null;
 
   const sc = SCHEME[colorScheme];
@@ -622,6 +627,14 @@ export default function OrderTable({ rows, onMemoChange, onShipmentChange, color
                                 title="이 박스에 들어가는 품목 수와 수량 합계">
                                 {box.rows.length}품목 · {box.qty.toLocaleString()}개
                               </span>
+                              {(() => {
+                                const wb = box.no && chunk.bundle && boxWaybill ? boxWaybill(chunk.bundle, box.no) : '';
+                                return wb ? (
+                                  <span style={{ fontSize: 11, fontWeight: 800, color: '#333', fontFamily: 'monospace' }} title="이 박스의 롯데 운송장번호">
+                                    🚚 {wb}
+                                  </span>
+                                ) : null;
+                              })()}
                             </span>
                           </td>
                         </tr>
@@ -785,6 +798,9 @@ export default function OrderTable({ rows, onMemoChange, onShipmentChange, color
                         />
                       );
                     })()}
+                    {!!actions && actionOrder === row._발주번호 && (
+                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>{actions}</span>
+                    )}
                     <span style={{ fontSize: 13, fontWeight: 700, color: '#333' }}>{row._발주번호}</span>
                     {newOrders?.has(row._발주번호) && (
                       <span

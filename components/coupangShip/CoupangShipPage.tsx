@@ -15,7 +15,7 @@ import {
   loadLocalAddresses, loadLocalSender, subscribeShippingSettings, saveAddresses, saveSender,
 } from '../coupangOrder/data/shippingSettingsStore';
 import {
-  ShipmentBatch, subscribeShipments, saveShipmentBatch, batchId, fillWaybills, allBoxes,
+  ShipmentBatch, subscribeShipments, saveShipmentBatch, deleteShipmentBatch, batchId, fillWaybills, allBoxes,
 } from '../../data/shipmentStore';
 import AddressManager from '../coupangOrder/components/AddressManager';
 import SenderManager from '../coupangOrder/components/SenderManager';
@@ -635,6 +635,26 @@ export default function CoupangShipPage({ onGoOrder }: { onGoOrder?: () => void 
     setDatePick(null);
   };
 
+  // 이 출고 건의 n번 박스 운송장번호. 쉽먼트 기록에서 박스 번호가 같고 이 건의 발주가 든 박스를 찾는다
+  // (예전 기록은 여러 건을 한 쉽먼트로 묶어 박스 번호가 겹칠 수 있어서 발주번호로 한 번 더 맞춘다).
+  const waybillOf = (item: ShipOut, no: number) => {
+    const batch = progressOf(item).batch;
+    if (!batch) return '';
+    const mine = new Set(item.lines.map(l => String(l.발주번호 || '').trim()));
+    const box = allBoxes(batch).find(b => b.boxNo === no && b.lines.some(l => mine.has(String(l.발주번호 || '').trim())));
+    const w = (box?.waybill || '').replace(/\D/g, '');
+    return w.length === 12 ? `${w.slice(0, 4)}-${w.slice(4, 8)}-${w.slice(8)}` : (box?.waybill || '');
+  };
+
+  // 운송장번호가 하나도 없는 쉽먼트 기록 지우기.
+  const removeBatches = (targets: ShipmentBatch[]) => {
+    if (!targets.length) return;
+    const names = targets.map(b => b.id);
+    if (!confirm(`운송장번호가 없는 쉽먼트 기록 ${names.length}건을 지울까요?\n${names.slice(0, 10).join(', ')}${names.length > 10 ? ' …' : ''}`)) return;
+    Promise.all(targets.map(b => deleteShipmentBatch(b.id)))
+      .catch(err => alert(`쉽먼트 기록 지우기 실패: ${err instanceof Error ? err.message : String(err)}`));
+  };
+
   // 'YYYY-MM-DD' → '9/30'
   const md = (d: string) => `${Number(d.slice(5, 7))}/${Number(d.slice(8, 10))}`;
   const boxCountOf = (item: ShipOut) => totalBoxCount(rowsOf([item]));
@@ -773,6 +793,10 @@ export default function CoupangShipPage({ onGoOrder }: { onGoOrder?: () => void 
                 bundleColorOf={colorOf}
                 layout="box"
                 isChunkCollapsed={id => !openDone.has(id)}
+                boxWaybill={(id, no) => {
+                  const item = list.find(i => i.id === id);
+                  return item ? waybillOf(item, no) : '';
+                }}
                 onEditChunkDate={id => {
                   const item = list.find(i => i.id === id);
                   if (item) setDatePick({ item, date: item.date });
@@ -949,6 +973,9 @@ export default function CoupangShipPage({ onGoOrder }: { onGoOrder?: () => void 
                               <span style={{ padding: '0 7px', fontWeight: 800, borderRadius: 8, color: '#fff', background: bc }}>
                                 📦 {boxNo ? `박스${boxNo}` : '박스 미지정'}
                               </span>
+                              {!!boxNo && !!waybillOf(item, boxNo) && (
+                                <span style={{ fontWeight: 800, color: '#333', fontFamily: 'monospace' }} title="이 박스의 롯데 운송장번호">🚚 {waybillOf(item, boxNo)}</span>
+                              )}
                               <span style={{ marginLeft: 'auto', color: '#888', fontWeight: 700 }}>발주 {orders.size} · {boxQty.toLocaleString()}개</span>
                             </div>
                             {Array.from(orders.entries()).map(([orderNo, lines]) => {
@@ -1025,6 +1052,7 @@ export default function CoupangShipPage({ onGoOrder }: { onGoOrder?: () => void 
           batches={batches}
           onWaybills={setWaybillBatch}
           onShubForm={handleShubForm}
+          onDelete={removeBatches}
         />
       </main>
 

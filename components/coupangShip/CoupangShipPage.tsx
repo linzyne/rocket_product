@@ -196,6 +196,9 @@ export default function CoupangShipPage({ onGoOrder }: { onGoOrder?: () => void 
         쉼먼트: l.쉼먼트 || '',
         // 상자·센터가 출고 건끼리 섞이지 않게 묶음 값은 출고번호로 둔다(화면에는 묶음 이름으로 보여준다).
         묶음: item.id,
+        // 택배가 갈 센터는 출고 건에 정해 둔 센터다. 줄마다 원래 센터가 남아 있을 수 있어(묶음 적용 전에
+        // 넘어온 줄) 첫 줄 센터를 쓰면 날짜·정렬에 따라 엉뚱한 센터로 보이고 그쪽으로 예약된다.
+        묶음센터: item.center,
       }))
       .sort((a, b) => {
         // 박스 순으로 세워 둔 적이 있으면 그때 정한 자리를 지킨다. 박스 번호를 고치는 동안
@@ -268,6 +271,7 @@ export default function CoupangShipPage({ onGoOrder }: { onGoOrder?: () => void 
     메모: l.메모 || '',
     쉼먼트: l.쉼먼트 || '',
     묶음: item.id,
+    묶음센터: item.center,
   }))));
 
   // 출고 건 색: 목록에 놓인 차례대로 준다(표의 세로줄·배경과 카드가 같은 색을 쓰게).

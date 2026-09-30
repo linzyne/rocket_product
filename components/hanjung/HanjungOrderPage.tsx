@@ -138,11 +138,11 @@ const PendingPanel: React.FC<{ orders: HanjungOrder[]; onRecord: (act: Act) => v
             <th className="w-10 px-3 py-2">
               <input type="checkbox" checked={allChecked} onChange={() => setChecked(allChecked ? new Set() : new Set(pending.map(reservationKey)))} />
             </th>
-            {/* 상품명 칸은 글자 길이만큼만 차지하고(맨 끝 빈 칸이 남는 폭을 가져감), 수량은 바로 옆 칸에 세로로 맞춘다. */}
+            {/* 상품명 칸은 글자 길이만큼만 차지하고(발주번호 앞 빈 칸이 남는 폭을 가져감), 수량은 바로 옆 칸에 세로로 맞춘다. 발주번호는 맨 오른쪽. */}
             <th className="px-2 py-2 text-left font-medium whitespace-nowrap">상품 · 입고예정일</th>
             <th className="px-3 py-2 text-right font-medium whitespace-nowrap">수량</th>
-            <th className="px-2 py-2 text-left font-medium whitespace-nowrap">발주번호</th>
             <th className="w-full" />
+            <th className="px-4 py-2 text-right font-medium whitespace-nowrap">발주번호</th>
           </tr>
         </thead>
         <tbody>
@@ -161,8 +161,8 @@ const PendingPanel: React.FC<{ orders: HanjungOrder[]; onRecord: (act: Act) => v
                   </td>
                   <td className="px-2 py-2 font-semibold text-gray-800 whitespace-nowrap">{g.name}</td>
                   <td className="px-3 py-2 text-right font-mono font-bold text-gray-900 whitespace-nowrap">{g.qty}개</td>
-                  <td className="px-2 py-2 text-xs text-gray-400 whitespace-nowrap">{g.rows.length > 1 ? `발주 ${g.rows.length}건` : ''}</td>
                   <td />
+                  <td className="px-4 py-2 text-right text-xs text-gray-400 whitespace-nowrap">{g.rows.length > 1 ? `발주 ${g.rows.length}건` : ''}</td>
                 </tr>
                 {g.rows.length > 1 && g.rows.map(r => {
                   const k = reservationKey(r);
@@ -171,8 +171,8 @@ const PendingPanel: React.FC<{ orders: HanjungOrder[]; onRecord: (act: Act) => v
                       <td className="px-3 py-1 text-center"><input type="checkbox" checked={checked.has(k)} readOnly /></td>
                       <td className="px-2 py-1 whitespace-nowrap">{formatDateDisplay(r.입고예정일)}</td>
                       <td className="px-3 py-1 text-right font-mono whitespace-nowrap">{r.확정수량}개</td>
-                      <td className="px-2 py-1 font-mono whitespace-nowrap">{r.발주번호}</td>
                       <td />
+                      <td className="px-4 py-1 text-right font-mono whitespace-nowrap">{r.발주번호}</td>
                     </tr>
                   );
                 })}
@@ -181,8 +181,8 @@ const PendingPanel: React.FC<{ orders: HanjungOrder[]; onRecord: (act: Act) => v
                     <td />
                     <td className="px-2 py-1 whitespace-nowrap">{formatDateDisplay(g.rows[0].입고예정일)}</td>
                     <td />
-                    <td className="px-2 py-1 font-mono whitespace-nowrap">{g.rows[0].발주번호}</td>
                     <td />
+                    <td className="px-4 py-1 text-right font-mono whitespace-nowrap">{g.rows[0].발주번호}</td>
                   </tr>
                 )}
               </React.Fragment>

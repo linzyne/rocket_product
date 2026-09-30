@@ -46,6 +46,49 @@ export const batchId = (orders: ShipmentBatch[], now = new Date()) => {
 export const allBoxes = (batch: ShipmentBatch) =>
   batch.centers.flatMap(c => c.boxes.map(b => ({ center: c.center, ...b })));
 
+// 이 출고 건의 쉽먼트 기록들. 출고 건에 붙은 쉽먼트 번호는 믿지 않고(예전 택배예약이 안 끝난 건 전부에 같은 번호를
+// 붙였다) 내용으로 확인한다: 센터가 같고, 박스에 든 발주가 모두 이 건의 발주인 박스가 하나라도 있는 기록.
+// (예전 기록은 다른 건의 발주가 일부 섞인 박스도 있어서, 모든 박스가 딱 맞기를 바라지는 않는다.)
+const batchesForItem = (batches: ShipmentBatch[], item: { center: string; lines: { 발주번호: string }[] }) => {
+  const mine = new Set(item.lines.map(l => String(l.발주번호 || '').trim()).filter(Boolean));
+  return batches.filter(b => allBoxes(b).some(box =>
+    box.center.trim() === item.center.trim() && box.lines.length > 0
+    && box.lines.every(l => mine.has(String(l.발주번호 || '').trim()))));
+};
+
+// 출고 건의 n번 박스 운송장번호. 이 건의 쉽먼트 기록에서 같은 센터·같은 박스 번호의 번호를 쓴다.
+// 그런 기록이 여럿인데 번호가 서로 다르면(같은 건을 여러 번 예약 등) 확실하지 않으니 빈 값을 돌려준다.
+export const waybillForBox = (
+  batches: ShipmentBatch[],
+  item: { center: string; lines: { 발주번호: string }[] },
+  no: number,
+): string => {
+  const mine = new Set(item.lines.map(l => String(l.발주번호 || '').trim()).filter(Boolean));
+  const found = new Set<string>();
+  for (const b of batchesForItem(batches, item)) {
+    for (const box of allBoxes(b)) {
+      if (box.boxNo !== no || box.center.trim() !== item.center.trim()) continue;
+      // 같은 센터의 다른 출고 건 박스(번호가 같을 수 있다)를 잡지 않게, 이 건의 발주가 든 박스만 본다.
+      if (!box.lines.some(l => mine.has(String(l.발주번호 || '').trim()))) continue;
+      const w = String(box.waybill || '').replace(/\D/g, '');
+      if (w) found.add(w);
+    }
+  }
+  if (found.size !== 1) return '';
+  const w = Array.from(found)[0];
+  return w.length === 12 ? `${w.slice(0, 4)}-${w.slice(4, 8)}-${w.slice(8)}` : w;
+};
+
+// 출고 건의 운송장번호를 고칠 쉽먼트 기록 하나: 이 건의 기록 중 운송장번호가 든 것 → 최근 것 순.
+export const batchForItem = (
+  batches: ShipmentBatch[],
+  item: { center: string; lines: { 발주번호: string }[] },
+): ShipmentBatch | undefined => {
+  const hasWaybill = (b: ShipmentBatch) => allBoxes(b).some(box => String(box.waybill || '').trim());
+  return batchesForItem(batches, item)
+    .sort((a, b) => Number(hasWaybill(b)) - Number(hasWaybill(a)) || b.createdAt - a.createdAt)[0];
+};
+
 type Listener = (batches: ShipmentBatch[]) => void;
 const localListeners = new Set<Listener>();
 const readLocal = (): Record<string, ShipmentBatch> => {

@@ -15,7 +15,7 @@ import {
   loadLocalAddresses, loadLocalSender, subscribeShippingSettings, saveAddresses, saveSender,
 } from '../coupangOrder/data/shippingSettingsStore';
 import {
-  ShipmentBatch, subscribeShipments, saveShipmentBatch, deleteShipmentBatch, batchId, fillWaybills, allBoxes,
+  ShipmentBatch, subscribeShipments, saveShipmentBatch, deleteShipmentBatch, batchId, fillWaybills, allBoxes, waybillForBox,
 } from '../../data/shipmentStore';
 import AddressManager from '../coupangOrder/components/AddressManager';
 import SenderManager from '../coupangOrder/components/SenderManager';
@@ -179,12 +179,11 @@ export default function CoupangShipPage({ onGoOrder }: { onGoOrder?: () => void 
     return set;
   }, [list, batches]);
 
-  // 끝난 건은 아래로 내린다. 표도 이 순서를 따라간다.
-  // 할 건은 입고예정일 빠른 순, 끝난 건은 늦은 날이 위(빠른 날이 맨 아래). 같으면 센터 → 먼저 넘어온 순.
+  // 쉽먼트 완료한 건은 발송대기 메뉴로 넘어가므로 여기에는 아직 할 건만 둔다. 표도 이 순서를 따라간다.
+  // 입고예정일 빠른 순, 같으면 센터 → 먼저 넘어온 순.
   const ordered = useMemo(
-    () => list.slice().sort((a, b) =>
-      Number(progressOf(a).done) - Number(progressOf(b).done)
-      || (progressOf(a).done ? -1 : 1) * (ymdSortKey(a.date) - ymdSortKey(b.date))
+    () => list.filter(i => !progressOf(i).done).sort((a, b) =>
+      ymdSortKey(a.date) - ymdSortKey(b.date)
       || a.center.localeCompare(b.center, 'ko', { numeric: true })
       || (a.createdAt || 0) - (b.createdAt || 0)),
     [list, batches],
@@ -630,27 +629,16 @@ export default function CoupangShipPage({ onGoOrder }: { onGoOrder?: () => void 
     handleShubForm(trimmed);
   };
 
-  // 손으로 완료 표시를 켜고 끈다.
-  // 완료를 켤 때는 발송날짜를 고르는 창을 띄운다(기본은 오늘). 끌 때는 바로 푼다.
-  const [sendPick, setSendPick] = useState<{ item: ShipOut; date: string; editOnly: boolean } | null>(null);
-  const today = () => new Date().toLocaleDateString('sv-SE');
+  // 쉽먼트 완료를 누르면 그 건은 발송대기(아직 준비 안 된 상품이 다 준비될 때까지 기다리는 곳)로 넘어간다.
+  // 발송날짜는 발송대기에서 "발송 완료"를 누를 때 고른다. 완료를 푸는 것도 발송대기에서 한다.
   const toggleDone = (item: ShipOut) => {
-    const nowDone = progressOf(item).done;
-    if (!nowDone) { setSendPick({ item, date: item.sentDate || today(), editOnly: false }); return; }
-    // 다시 누르면 완료가 풀려서 쉽먼트생성·양식받기 버튼이 되살아난다.
-    step('완료 풀기', () => {
-      markShipOuts([item.id], { doneAt: undefined, undoneAt: Date.now() });
-    });
-  };
-  const saveSendPick = () => {
-    if (!sendPick || !sendPick.date) return;
-    const { item, date, editOnly } = sendPick;
-    step(editOnly ? '발송날짜 바꾸기' : '쉽먼트 완료', () => {
-      markShipOuts([item.id], editOnly
-        ? { sentDate: date }
-        : { doneAt: Date.now(), undoneAt: undefined, sentDate: date });
-    });
-    setSendPick(null);
+    if (progressOf(item).done) {
+      step('완료 풀기', () => { markShipOuts([item.id], { doneAt: undefined, undoneAt: Date.now() }); });
+      return;
+    }
+    if (!confirm(`${item.bundle}(${item.center} · ${item.date})을 쉽먼트 완료로 표시하고 발송대기로 넘길까요?`)) return;
+    step('쉽먼트 완료', () => { markShipOuts([item.id], { doneAt: Date.now(), undoneAt: undefined }); });
+    setShubStatus(`${item.bundle}(${item.center})을 발송대기로 넘겼어요.`);
   };
   // 입고예정일 바꾸기. 쉽먼트 기록(서허 양식 받을 때 날짜로 목록을 좁힌다)의 이 건 발주 날짜도 같이 맞춘다.
   const [datePick, setDatePick] = useState<{ item: ShipOut; date: string } | null>(null);
@@ -679,14 +667,8 @@ export default function CoupangShipPage({ onGoOrder }: { onGoOrder?: () => void 
 
   // 이 출고 건의 n번 박스 운송장번호. 쉽먼트 기록에서 박스 번호가 같고 이 건의 발주가 든 박스를 찾는다
   // (예전 기록은 여러 건을 한 쉽먼트로 묶어 박스 번호가 겹칠 수 있어서 발주번호로 한 번 더 맞춘다).
-  const waybillOf = (item: ShipOut, no: number) => {
-    const batch = progressOf(item).batch;
-    if (!batch) return '';
-    const mine = new Set(item.lines.map(l => String(l.발주번호 || '').trim()));
-    const box = allBoxes(batch).find(b => b.boxNo === no && b.lines.some(l => mine.has(String(l.발주번호 || '').trim())));
-    const w = (box?.waybill || '').replace(/\D/g, '');
-    return w.length === 12 ? `${w.slice(0, 4)}-${w.slice(4, 8)}-${w.slice(8)}` : (box?.waybill || '');
-  };
+  // 이 출고 건의 n번 박스 운송장번호(쉽먼트 기록을 내용으로 확인해서 확실한 것만).
+  const waybillOf = (item: ShipOut, no: number) => waybillForBox(batches, item, no);
 
   // 운송장번호가 하나도 없는 쉽먼트 기록 지우기.
   const removeBatches = (targets: ShipmentBatch[]) => {
@@ -697,8 +679,6 @@ export default function CoupangShipPage({ onGoOrder }: { onGoOrder?: () => void 
       .catch(err => alert(`쉽먼트 기록 지우기 실패: ${err instanceof Error ? err.message : String(err)}`));
   };
 
-  // 'YYYY-MM-DD' → '9/30'
-  const md = (d: string) => `${Number(d.slice(5, 7))}/${Number(d.slice(8, 10))}`;
   const boxCountOf = (item: ShipOut) => totalBoxCount(rowsOf([item]));
 
   const remove = (item: ShipOut) => {
@@ -718,7 +698,7 @@ export default function CoupangShipPage({ onGoOrder }: { onGoOrder?: () => void 
       <header style={{ background: '#fff', borderBottom: '1px solid #f0f0f0', position: 'sticky', top: 0, zIndex: 10 }}>
         <div style={{ maxWidth: 1600, margin: '0 auto', padding: '0 24px', height: 54, display: 'flex', alignItems: 'center', gap: 12 }}>
           <span style={{ fontSize: 17, fontWeight: 700, letterSpacing: '-0.3px' }}>🚚 쉽먼트생성</span>
-          {list.length > 0 && <span style={{ fontSize: 12, color: '#999' }}>출고 {list.length}건 · 발주 {itemCount}줄</span>}
+          {ordered.length > 0 && <span style={{ fontSize: 12, color: '#999' }}>출고 {ordered.length}건 · 발주 {itemCount}줄</span>}
 
           {/* 방금 한 일 되돌리기 · 다시실행 (⌘Z / ⌘⇧Z) */}
           <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
@@ -770,13 +750,13 @@ export default function CoupangShipPage({ onGoOrder }: { onGoOrder?: () => void 
       </header>
 
       <main style={{ maxWidth: 1600, margin: '0 auto', padding: '20px 24px' }}>
-        {list.length === 0 ? (
+        {ordered.length === 0 ? (
           <div style={{
             border: '1px dashed #e0e0e0', borderRadius: 10,
             padding: '60px 0', textAlign: 'center', color: '#bbb', fontSize: 13,
           }}>
-            아직 넘어온 묶음이 없어요.<br />
-            <span style={{ fontSize: 12 }}>쿠팡발주확인 → 묶음 카드의 <strong style={{ color: '#7c3aed' }}>쉽먼트</strong> 버튼을 눌러주세요.</span>
+            쉽먼트를 만들 건이 없어요.<br />
+            <span style={{ fontSize: 12 }}>쿠팡발주확인에서 발주서를 체크하고 <strong style={{ color: '#e67e22' }}>쉽먼트생성</strong>을 눌러주세요. 쉽먼트 완료한 건은 <strong>발송대기</strong> 메뉴에 있어요.</span>
           </div>
         ) : (
           /* 쿠팡발주확인과 같은 3단 폭(발주서 / 묶음 / 예약 자리). 예약 자리는 여기선 비워 둔다. */
@@ -857,7 +837,7 @@ export default function CoupangShipPage({ onGoOrder }: { onGoOrder?: () => void 
             <div style={{ paddingRight: 2 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
                 <span style={{ fontSize: 12, fontWeight: 700, color: '#7c3aed', letterSpacing: '-0.2px' }}>🧺 묶음</span>
-                <span style={{ fontSize: 11, color: '#aaa' }}>{list.length}건</span>
+                <span style={{ fontSize: 11, color: '#aaa' }}>{ordered.length}건</span>
               </div>
 
               <div ref={cardsRef} style={{ position: 'relative', height: cardPos.total || undefined }}>
@@ -910,18 +890,6 @@ export default function CoupangShipPage({ onGoOrder }: { onGoOrder?: () => void 
                         {/* 센터·날짜·발주 수·수량, 체크 칸과 접기는 왼쪽 표 머리줄에 있어 카드에는 진행 상태만 둔다. */}
                         <div style={{ display: 'flex', alignItems: 'center', gap: 8, overflow: 'hidden' }}>
                           <span style={{ fontSize: 12, fontWeight: 800, color }} title={`출고번호 ${item.id} · ${item.center} · ${item.date}`}>{item.bundle}</span>
-                          {pr.done && (
-                            <button
-                              onClick={() => setSendPick({ item, date: item.sentDate || today(), editOnly: true })}
-                              title="쉽먼트 완료 · 눌러서 발송날짜 바꾸기"
-                              style={{
-                                padding: '1px 7px', fontSize: 11, fontWeight: 800, borderRadius: 8, cursor: 'pointer',
-                                color: '#fff', background: '#27ae60', border: 'none', letterSpacing: '-0.2px',
-                              }}
-                            >
-                              {item.sentDate ? `✓ ${md(item.sentDate)} 발송` : '완료 ✓ · 발송일?'}
-                            </button>
-                          )}
                           <span style={{
                             marginLeft: 'auto', padding: '1px 10px', fontSize: 15, fontWeight: 900, color: '#333',
                             background: '#fff', border: '1.5px solid #d5d5d5', borderRadius: 12, lineHeight: 1.3,
@@ -1134,41 +1102,6 @@ export default function CoupangShipPage({ onGoOrder }: { onGoOrder?: () => void 
                 style={{ padding: '6px 14px', fontSize: 13, fontWeight: 700, color: '#fff', background: '#2980b9', border: 'none', borderRadius: 6, cursor: 'pointer' }}
               >
                 저장
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {sendPick && (
-        <div
-          onClick={() => setSendPick(null)}
-          style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.35)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
-        >
-          <div onClick={e => e.stopPropagation()} style={{ width: 300, background: '#fff', borderRadius: 12, padding: 18, boxShadow: '0 10px 30px rgba(0,0,0,0.2)' }}>
-            <div style={{ fontSize: 14, fontWeight: 800, marginBottom: 4 }}>{sendPick.editOnly ? '발송날짜 바꾸기' : '쉽먼트 완료'}</div>
-            <div style={{ fontSize: 12, color: '#666', marginBottom: 12 }}>
-              {sendPick.item.bundle} · {sendPick.item.center} · {boxCountOf(sendPick.item)}박스
-            </div>
-            <label style={{ fontSize: 12, fontWeight: 700, color: '#333' }}>
-              발송날짜
-              <input
-                type="date"
-                value={sendPick.date}
-                autoFocus
-                onChange={e => setSendPick(prev => prev && { ...prev, date: e.target.value })}
-                onKeyDown={e => { if (e.key === 'Enter') saveSendPick(); }}
-                style={{ display: 'block', width: '100%', marginTop: 6, padding: '7px 10px', fontSize: 14, borderRadius: 8, border: '1px solid #ddd', boxSizing: 'border-box' }}
-              />
-            </label>
-            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 16 }}>
-              <button onClick={() => setSendPick(null)} style={{ padding: '6px 14px', fontSize: 13, background: '#f3f3f3', border: 'none', borderRadius: 6, cursor: 'pointer' }}>취소</button>
-              <button
-                onClick={saveSendPick}
-                disabled={!sendPick.date}
-                style={{ padding: '6px 14px', fontSize: 13, fontWeight: 700, color: '#fff', background: '#27ae60', border: 'none', borderRadius: 6, cursor: 'pointer' }}
-              >
-                {sendPick.editOnly ? '저장' : '완료'}
               </button>
             </div>
           </div>

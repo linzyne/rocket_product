@@ -42,8 +42,10 @@ export interface ShipOut {
   doneAt?: number;
   // 완료를 다시 푼 시각(ms). 자동으로 완료로 잡히는 건이라도 이 값이 있으면 다시 할 일로 본다.
   undoneAt?: number;
-  // 택배를 실제로 보낸 날('YYYY-MM-DD'). 쉽먼트 완료를 누를 때 고른다.
+  // 택배를 실제로 보낸 날('YYYY-MM-DD'). 발송대기에서 "발송 완료"를 누를 때 고른다. 있으면 발송 끝난 건.
   sentDate?: string;
+  // 발송대기에서 "준비됨"으로 체크한 상품 줄들(발주번호│상품이름│확정수량).
+  readyKeys?: string[];
   lines: ShipOutLine[];
 }
 
@@ -253,7 +255,7 @@ export function setShipOutDate(id: string, date: string) {
 }
 
 // 출고 건들에 진행 표시를 붙인다(쉽먼트 번호·양식 저장 시각).
-export function markShipOuts(ids: string[], patch: Partial<Pick<ShipOut, 'batchId' | 'formSavedAt' | 'doneAt' | 'undoneAt' | 'sentDate'>>) {
+export function markShipOuts(ids: string[], patch: Partial<Pick<ShipOut, 'batchId' | 'formSavedAt' | 'doneAt' | 'undoneAt' | 'sentDate' | 'readyKeys'>>) {
   const want = new Set(ids);
   const list = read();
   let touched = false;

@@ -13,11 +13,13 @@ const ShipmentWaybillModal: React.FC<Props> = ({ batch, onClose }) => {
   const [draft, setDraft] = useState(batch);
   const [saving, setSaving] = useState(false);
 
-  const setWaybill = (center: string, boxNo: number, waybill: string) =>
+  // 박스는 몇 번째 센터의 몇 번째 박스인지로 고른다. 같은 센터에 박스 번호가 같은 박스가 둘 있을 수 있어서
+  // (같은 센터의 출고 건 두 개를 한 번에 예약한 경우) 번호로 고르면 두 박스가 함께 바뀐다.
+  const setWaybill = (ci: number, bi: number, waybill: string) =>
     setDraft(prev => ({
       ...prev,
-      centers: prev.centers.map(c =>
-        c.center !== center ? c : { ...c, boxes: c.boxes.map(b => (b.boxNo === boxNo ? { ...b, waybill } : b)) }
+      centers: prev.centers.map((c, i) =>
+        i !== ci ? c : { ...c, boxes: c.boxes.map((b, j) => (j === bi ? { ...b, waybill } : b)) }
       ),
     }));
 
@@ -53,21 +55,31 @@ const ShipmentWaybillModal: React.FC<Props> = ({ batch, onClose }) => {
           박스마다 롯데 운송장번호를 확인해 주세요. 비어 있으면 롯데 통합관리 운송장출력 목록에서 보고 직접 넣으면 돼요.
         </p>
 
-        {draft.centers.map(c => (
-          <div key={c.center} style={{ marginBottom: 14 }}>
+        {draft.centers.map((c, ci) => (
+          <div key={`${c.center}-${ci}`} style={{ marginBottom: 14 }}>
             <div style={{ fontSize: 13, fontWeight: 700, color: '#c0392b', marginBottom: 6 }}>{c.center}</div>
-            {c.boxes.map(b => (
-              <div key={b.boxNo} style={{ display: 'flex', alignItems: 'flex-start', gap: 10, padding: '6px 0', borderTop: '1px solid #f2f2f2' }}>
+            {c.boxes.map((b, bi) => (
+              <div key={`${b.boxNo}-${bi}`} style={{ display: 'flex', alignItems: 'flex-start', gap: 10, padding: '6px 0', borderTop: '1px solid #f2f2f2' }}>
                 <span style={{ width: 62, fontSize: 12, color: '#e67e22', fontWeight: 700, paddingTop: 6 }}>박스 {b.boxNo}번</span>
                 <input
                   value={b.waybill}
-                  onChange={e => setWaybill(c.center, b.boxNo, e.target.value)}
+                  onChange={e => setWaybill(ci, bi, e.target.value)}
                   placeholder="운송장번호"
                   style={{ width: 190, padding: '6px 8px', border: '1px solid #e0e0e0', borderRadius: 6, fontFamily: 'monospace', fontSize: 13 }}
                 />
-                <span style={{ flex: 1, fontSize: 11, color: '#888', lineHeight: 1.5, paddingTop: 4 }}>
-                  {b.lines.map(l => `${l.상품이름} ${l.확정수량}개`).join(' · ')}
-                </span>
+                {/* 박스에 든 상품을 한 줄에 하나씩: 상품이름 · 수량 · 발주번호 */}
+                <div style={{ flex: 1, minWidth: 0, fontSize: 12, lineHeight: 1.45 }}>
+                  <div style={{ fontSize: 11, color: '#aaa', marginBottom: 2 }}>
+                    {b.lines.length}품목 · {b.lines.reduce((s, l) => s + (Number(l.확정수량) || 0), 0).toLocaleString()}개
+                  </div>
+                  {b.lines.map((l, i) => (
+                    <div key={`${l.발주번호}-${l.상품이름}-${i}`} style={{ display: 'flex', alignItems: 'baseline', gap: 8, padding: '2px 0', borderTop: i ? '1px dashed #f0f0f0' : 'none' }}>
+                      <span style={{ flex: 1, minWidth: 0, color: '#333' }}>{l.상품이름}</span>
+                      <b style={{ minWidth: 40, textAlign: 'right', color: '#222' }}>{l.확정수량}개</b>
+                      <span style={{ minWidth: 76, textAlign: 'right', fontSize: 11, color: '#aaa' }}>{l.발주번호}</span>
+                    </div>
+                  ))}
+                </div>
               </div>
             ))}
           </div>

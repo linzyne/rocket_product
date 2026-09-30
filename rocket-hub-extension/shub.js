@@ -266,6 +266,27 @@
     return true;
   };
 
+  // 입고예정일 필터를 비우고 다시 검색한다. 묶음에서 날짜를 바꿔 적용한 건은 앱의 입고예정일이
+  // 쿠팡 발주서 날짜와 달라서, 날짜로 거른 목록에 안 나오기 때문이다.
+  const clearEddFilter = async () => {
+    const input = Array.from(document.querySelectorAll('input')).find((i) => {
+      if (!visible(i)) return false;
+      const hint = `${i.placeholder || ''} ${i.getAttribute('aria-label') || ''} ${i.name || ''}`;
+      return /edd/i.test(hint) || /입고/.test(hint) || /^\d{4}-\d{2}-\d{2}$/.test(i.value || '');
+    });
+    if (!input || !input.value) return false;
+    const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
+    setter.call(input, '');
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    input.dispatchEvent(new Event('change', { bubbles: true }));
+    input.dispatchEvent(new Event('blur', { bubbles: true }));
+    await sleep(400);
+    const search = findAll(/^검색$/).filter((el) => !el.closest('table')).pop();
+    if (search) realClick(search.closest('button') || search);
+    await sleep(1500);
+    return true;
+  };
+
   // 지금 목록에 보이는 발주번호들. 쪽이 실제로 넘어갔는지 이걸로 확인한다.
   const shownOrderNos = () =>
     Array.from(document.querySelectorAll('td, th, span, div, li, a'))
@@ -447,6 +468,20 @@
                 picked: 0,
                 step: 'popup',
                 status: cleared ? '[v4] FC 필터를 풀고 다시 찾는 중…' : '[v4] FC 필터를 풀지 못했어요. 목록을 그대로 훑어요…',
+              });
+              return;
+            }
+            // 그래도 없으면 입고예정일 필터까지 풀고 한 번 더 훑는다.
+            if (!p.eddRetry && String(p.filterOk || '').includes('EDD')) {
+              await clearCenterFilter();
+              const cleared = await clearEddFilter();
+              pickTries = 0;
+              await patch({
+                wideRetry: true,
+                eddRetry: true,
+                picked: 0,
+                step: 'popup',
+                status: cleared ? '[v4] 입고예정일 필터를 풀고 다시 찾는 중…' : '[v4] 입고예정일 필터를 풀지 못했어요. 목록을 그대로 훑어요…',
               });
               return;
             }

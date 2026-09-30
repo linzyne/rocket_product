@@ -453,6 +453,15 @@ export default function CoupangOrderPage({ onGoShipOut }: { onGoShipOut?: () => 
     if (row) updateReservationShipment(toOrderRow(row), value).catch(alertError);
   }, [rightRows]);
 
+  // 예약 줄 하나를 지운다(발송 목록으로 돌아가지 않고 없어진다). 되돌리기로 살릴 수 있다.
+  const handleDeleteReservation = useCallback((id: string) => {
+    const row = rightRows.find(r => r.id === id);
+    if (!row) return;
+    if (!confirm(`"${row.상품이름}" 예약을 삭제할까요?\n발송 목록으로 돌아가지 않고 지워져요(되돌리기로 살릴 수 있어요).`)) return;
+    record('예약 삭제');
+    deleteReservations([toOrderRow(row)]).catch(alertError);
+  }, [rightRows]);
+
   // 메모에 "예약"을 표시한 줄을 예약 목록으로 넘긴다. 한중발주(1688 주문)는 실제로 주문할 때
   // 한중발주 메뉴의 "발주 대기"에서 골라 고유번호와 함께 만든다. (예전 "한중" 표시도 예약으로 본다.)
   // "대기"로 고른 줄도 예약 목록으로 가지만, 한중발주의 발주 대기에는 뜨지 않는다.
@@ -697,30 +706,36 @@ export default function CoupangOrderPage({ onGoShipOut }: { onGoShipOut?: () => 
     : (leftRows.find(r => !r.isBlank && selected.has(r._발주번호))?._발주번호 || '');
   const leftActions = selectedCount > 0 ? (
     <>
-      <button onClick={handleDirectShipOut} style={pillBtn('#e67e22')} title="체크한 발주서를 묶음 없이 바로 쉽먼트생성으로 보냅니다(센터·입고예정일이 같은 것끼리 한 건)">
-        📦 쉽먼트생성 <span style={pillCount}>{selectedCount}</span>
+      <span className="rk-count">발주 {selectedCount}건</span>
+      <span className="rk-sep" />
+      <button onClick={handleDirectShipOut} title="체크한 발주서를 묶음 없이 바로 쉽먼트생성으로 보냅니다(센터·입고예정일이 같은 것끼리 한 건)">
+        <span className="rk-dot" style={{ background: '#fb923c' }} />쉽먼트생성
       </button>
-      <button onClick={handleBundle} style={pillBtn('#7c3aed')} title="체크한 발주서들로 새 묶음(택배 한 상자)을 만듭니다. 이미 있는 묶음에 더 담을 때는 그 묶음 카드의 +담기를 누르세요.">
-        🧺 새 묶음 <span style={pillCount}>{selectedCount}</span>
+      <button onClick={handleBundle} title="체크한 발주서로 새 묶음(택배 한 상자)을 만듭니다. 이미 있는 묶음에 더 담을 때는 그 묶음 카드의 +담기를 누르세요.">
+        <span className="rk-dot" style={{ background: '#a78bfa' }} />새 묶음
       </button>
-      <button onClick={handleDeleteSelected} style={pillBtn('#c0392b', true)} title="체크한 발주서를 발송 목록에서 지웁니다(되돌리기로 살릴 수 있어요)">
-        삭제
-      </button>
+      <span className="rk-sep" />
+      <button className="rk-danger" onClick={handleDeleteSelected} title="체크한 발주서를 발송 목록에서 지웁니다(되돌리기로 살릴 수 있어요)">삭제</button>
+      <button className="rk-close" onClick={() => setSelected(new Set())} title="선택 풀기">✕</button>
     </>
   ) : null;
   const resPickedRows = rightRows.filter(r => !r.isBlank && pickedRes.has(r.id));
   const rightActionOrder = (rightRows.find(r => r.id === lastResPick && pickedRes.has(r.id)) || resPickedRows[0])?._발주번호 || '';
   const rightActions = resPickedRows.length > 0 ? (
     <>
-      <button onClick={handleReservedShipOut} style={pillBtn('#e67e22')} title="고른 예약 줄을 바로 쉽먼트생성으로 보냅니다(예약 목록에서는 빠져요)">
-        📦 쉽먼트생성 <span style={pillCount}>{resPickedRows.length}줄</span>
+      <span className="rk-count">예약 {resPickedRows.length}줄</span>
+      <span className="rk-sep" />
+      <button onClick={handleReservedShipOut} title="고른 예약 줄을 바로 쉽먼트생성으로 보냅니다(예약 목록에서는 빠져요)">
+        <span className="rk-dot" style={{ background: '#fb923c' }} />쉽먼트생성
       </button>
-      <button onClick={handleBundle} style={pillBtn('#7c3aed')} title="고른 예약 줄로 새 묶음을 만듭니다(예약 목록에 그대로 두고 묶음 표시만 붙어요). 이미 있는 묶음에 넣을 때는 묶음 카드의 +담기를 누르세요.">
-        🧺 새 묶음 <span style={pillCount}>{resPickedRows.length}줄</span>
+      <button onClick={handleBundle} title="고른 예약 줄로 새 묶음을 만듭니다(예약 목록에 그대로 두고 묶음 표시만 붙어요). 이미 있는 묶음에 넣을 때는 묶음 카드의 +담기를 누르세요.">
+        <span className="rk-dot" style={{ background: '#a78bfa' }} />새 묶음
       </button>
-      <button onClick={handleRestorePickedReservations} style={pillBtn('#27ae60', true)} title="고른 상품 줄만 발송 목록의 원래 자리로 되돌립니다">
-        ← 발송으로
+      <button onClick={handleRestorePickedReservations} title="고른 상품 줄만 발송 목록의 원래 자리로 되돌립니다">
+        <span className="rk-dot" style={{ background: '#4ade80' }} />발송으로
       </button>
+      <span className="rk-sep" />
+      <button className="rk-close" onClick={() => setPickedRes(new Set())} title="선택 풀기">✕</button>
     </>
   ) : null;
 
@@ -1053,6 +1068,7 @@ export default function CoupangOrderPage({ onGoShipOut }: { onGoShipOut?: () => 
                       rows={rightRows}
                       onMemoChange={() => {}}
                       onShipmentChange={handleRightShipmentChange}
+                      onDelete={handleDeleteReservation}
                       colorScheme="green"
                       readOnly={false}
                       selectedLines={pickedRes}
@@ -1151,22 +1167,6 @@ function btnStyle(bg: string, border: string, color: string): React.CSSPropertie
     borderRadius: 8, cursor: 'pointer', fontWeight: 500,
   };
 }
-
-// 체크 칸 옆에 뜨는 버튼. 채운 알약 모양(outline이면 흰 바탕에 색 테두리).
-function pillBtn(color: string, outline = false): React.CSSProperties {
-  return {
-    display: 'inline-flex', alignItems: 'center', gap: 5,
-    padding: '3px 11px', fontSize: 12, fontWeight: 700, lineHeight: 1.5, letterSpacing: '-0.2px',
-    color: outline ? color : '#fff',
-    background: outline ? '#fff' : color,
-    border: `1.5px solid ${outline ? `${color}66` : color}`,
-    borderRadius: 999, cursor: 'pointer', whiteSpace: 'nowrap',
-    boxShadow: outline ? 'none' : `0 2px 6px ${color}40`,
-  };
-}
-const pillCount: React.CSSProperties = {
-  padding: '0 6px', fontSize: 11, fontWeight: 800, borderRadius: 999, background: 'rgba(255,255,255,0.28)',
-};
 
 const printBtnStyle: React.CSSProperties = {
   display: 'inline-flex', alignItems: 'center', gap: 4,

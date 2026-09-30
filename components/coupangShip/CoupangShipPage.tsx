@@ -2,7 +2,7 @@ import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 're
 import { ShipOut, setShipOutDate, subscribeShipOuts, deleteShipOut, restoreShipOut, restoreOrders, updateShipOutLine, markShipOuts, snapshotShipOuts, restoreShipSnapshot, sameSnapshot } from '../coupangOrder/data/shipOutStore';
 import type { ShipSnapshot } from '../coupangOrder/data/shipOutStore';
 import { dateKeyYMD } from '../coupangOrder/utils/dateUtils';
-import OrderTable, { bundleColor, boxColor, BoxPicker } from '../coupangOrder/components/OrderTable';
+import OrderTable, { BoxPicker } from '../coupangOrder/components/OrderTable';
 import { buildDisplayRows, parseBoxNo, isBoxSplit, parseBoxSplit, joinBoxSplit, expandBoxSplit } from '../coupangOrder/utils/dataProcessor';
 import type { DisplayRow } from '../coupangOrder/utils/dataProcessor';
 import { normalizeDateValue, ymdSortKey } from '../coupangOrder/utils/dateUtils';
@@ -36,6 +36,9 @@ const firstBoxNo = (value: string) =>
 
 // 표에서 덩어리 사이를 띄우는 흰 여백. 오른쪽 묶음 카드도 같은 간격을 쓴다.
 const CHUNK_GAP = 26;
+// 아직 쉽먼트를 안 끝낸 건의 색(끝난 건은 초록).
+const PENDING_COLOR = '#7c3aed';
+const PENDING_BOX = '#e67e22';
 
 export default function CoupangShipPage({ onGoOrder }: { onGoOrder?: () => void } = {}) {
   const [list, setList] = useState<ShipOut[]>([]);
@@ -176,9 +179,14 @@ export default function CoupangShipPage({ onGoOrder }: { onGoOrder?: () => void 
     return set;
   }, [list, batches]);
 
-  // 끝난 건은 아래로 내린다(새로 넘어온 건이 위에 오게). 표도 이 순서를 따라간다.
+  // 끝난 건은 아래로 내린다. 표도 이 순서를 따라간다.
+  // 할 건은 입고예정일 빠른 순, 끝난 건은 늦은 날이 위(빠른 날이 맨 아래). 같으면 센터 → 먼저 넘어온 순.
   const ordered = useMemo(
-    () => list.slice().sort((a, b) => Number(progressOf(a).done) - Number(progressOf(b).done)),
+    () => list.slice().sort((a, b) =>
+      Number(progressOf(a).done) - Number(progressOf(b).done)
+      || (progressOf(a).done ? -1 : 1) * (ymdSortKey(a.date) - ymdSortKey(b.date))
+      || a.center.localeCompare(b.center, 'ko', { numeric: true })
+      || (a.createdAt || 0) - (b.createdAt || 0)),
     [list, batches],
   );
   // 택배 예약 건수 = 물류센터별로 지정된 상자 개수의 합.
@@ -223,41 +231,58 @@ export default function CoupangShipPage({ onGoOrder }: { onGoOrder?: () => void 
 
 
   // 오른쪽 묶음 카드는 표에서 제 덩어리가 지나가는 동안만 따라붙게 한다.
-  // 그러려면 덩어리마다 표에서 차지하는 높이를 재서 카드 자리에 그대로 깔아 줘야 한다.
+  // 카드마다 짝이 되는 덩어리 머리줄의 실제 위치를 재서 그 자리에 바로 놓는다(높이를 차례로 쌓으면
+  // 조금씩 어긋난 게 아래로 갈수록 커진다). 카드가 제 덩어리보다 길면 다음 카드를 그만큼 아래로 민다.
   const tableRef = useRef<HTMLDivElement>(null);
   const cardsRef = useRef<HTMLDivElement>(null);
-  const [blockH, setBlockH] = useState<Record<string, number>>({});
-  // 첫 카드를 첫 덩어리 머리줄과 같은 높이에서 시작시키는 여백. 이래야 덩어리마다 간격이 똑같아진다.
-  const [cardsTop, setCardsTop] = useState(0);
+  const [cardPos, setCardPos] = useState<{ at: Record<string, { top: number; height: number }>; total: number }>({ at: {}, total: 0 });
+  // 카드가 제 덩어리보다 길면 표의 덩어리 아래 여백을 그만큼 늘린다(다음 덩어리와 다음 카드가 같은 높이에서 시작하게).
+  const [chunkPad, setChunkPad] = useState<Record<string, number>>({});
+  const padRef = useRef<Record<string, number>>({});
   useLayoutEffect(() => {
     const el = tableRef.current;
-    if (!el) return;
+    const box = cardsRef.current;
+    if (!el || !box) return;
     const measure = () => {
+      const base = box.getBoundingClientRect().top;
       const heads = Array.from(el.querySelectorAll('[data-chunk]')) as HTMLElement[];
-      const bottom = el.getBoundingClientRect().bottom;
-      const next: Record<string, number> = {};
+      const tableBottom = el.getBoundingClientRect().bottom - base;
+      const want: Record<string, { top: number; h: number }> = {};
       heads.forEach((head, i) => {
-        const top = head.getBoundingClientRect().top;
-        const end = i + 1 < heads.length ? heads[i + 1].getBoundingClientRect().top : bottom;
+        const top = head.getBoundingClientRect().top - base;
+        const end = i + 1 < heads.length ? heads[i + 1].getBoundingClientRect().top - base : tableBottom;
         const key = head.dataset.chunk;
-        if (key) next[key] = Math.max(0, Math.round(end - top));
+        if (key) want[key] = { top, h: end - top };
       });
-      setBlockH(prev => {
-        const same = Object.keys(next).length === Object.keys(prev).length
-          && Object.entries(next).every(([k, v]) => prev[k] === v);
-        return same ? prev : next;
-      });
-
-      // 첫 카드 자리를 첫 덩어리 머리줄에 맞춘다(그 뒤 카드는 덩어리 높이를 그대로 깔아 저절로 맞는다).
-      const firstCard = cardsRef.current?.firstElementChild as HTMLElement | undefined;
-      if (heads[0] && firstCard) {
-        const gap = heads[0].getBoundingClientRect().top - firstCard.getBoundingClientRect().top;
-        if (Math.abs(gap) >= 1) setCardsTop(prev => Math.max(0, Math.round(prev + gap)));
+      const at: Record<string, { top: number; height: number }> = {};
+      const pads: Record<string, number> = {};
+      let prevEnd = -CHUNK_GAP;
+      for (const card of Array.from(box.querySelectorAll('[data-card]')) as HTMLElement[]) {
+        const key = card.dataset.card || '';
+        const w = want[key];
+        const cardH = card.offsetHeight;
+        // 늘려 둔 여백을 빼고 본 덩어리 원래 높이로 모자란 만큼을 잰다(안 그러면 늘렸다 줄였다 되풀이한다).
+        const natural = w ? w.h - (padRef.current[key] || 0) - CHUNK_GAP : 0;
+        const short = Math.max(0, Math.ceil(cardH - natural));
+        if (short > 0) pads[key] = short;
+        const top = Math.round(Math.max(w ? w.top : 0, prevEnd + CHUNK_GAP));
+        const height = Math.round(Math.max(w ? w.h - CHUNK_GAP : 0, cardH));
+        at[key] = { top, height };
+        prevEnd = top + height;
       }
+      if (JSON.stringify(pads) !== JSON.stringify(padRef.current)) {
+        padRef.current = pads;
+        setChunkPad(pads);
+      }
+      const total = Math.round(Math.max(tableBottom, prevEnd));
+      setCardPos(prev => (stableKey(prev) === stableKey({ at, total }) ? prev : { at, total }));
     };
+    const stableKey = (v: { at: Record<string, { top: number; height: number }>; total: number }) =>
+      JSON.stringify([v.total, Object.entries(v.at).sort()]);
     measure();
     const ro = new ResizeObserver(measure);
     ro.observe(el);
+    box.querySelectorAll('[data-card]').forEach(c => ro.observe(c));
     return () => ro.disconnect();
   }, [rows, ordered, opened, openDone]);
 
@@ -275,14 +300,18 @@ export default function CoupangShipPage({ onGoOrder }: { onGoOrder?: () => void 
   }))));
 
   // 출고 건 색: 목록에 놓인 차례대로 준다(표의 세로줄·배경과 카드가 같은 색을 쓰게).
-  const colorOf = (id: string) => bundleColor(`묶음${Math.max(1, ordered.findIndex(i => i.id === id) + 1)}`);
+  // 색은 두 가지만: 아직 할 건은 보라(박스·택배예약은 주황), 끝난 건은 초록(완료 색은 표·카드가 따로 칠한다).
+  const colorOf = (_id: string) => PENDING_COLOR;
 
   // 아직 쉽먼트를 안 만든(= 완료 표시가 없는) 출고 건들. 위쪽 쉽먼트생성 버튼은 이것만 대상으로 한다.
   const pendingItems = list.filter(i => !progressOf(i).done);
   const pendingIds = pendingItems.map(i => i.id);
   const pendingRows = rowsOf(pendingItems);
 
-  const lotteCount = totalBoxCount(pendingRows);
+  // 위쪽 택배예약 버튼은 체크한 출고 건(발주서를 하나라도 체크한 건)만 대상으로 한다.
+  const pickedItems = pendingItems.filter(i => i.lines.some(l => selected.has(l.발주번호)));
+  const pickedRows = rowsOf(pickedItems);
+  const lotteCount = totalBoxCount(pickedRows);
 
   // 표에서 예약·박스를 누르면 그 줄이 속한 출고 건의 값을 고친다(줄의 묶음 값이 출고번호다).
   // 나눈 줄의 조각이면 원래 줄을 찾아서, 박스 칸은 그 조각의 박스만 바꾼다.
@@ -538,17 +567,30 @@ export default function CoupangShipPage({ onGoOrder }: { onGoOrder?: () => void 
         // 운송장번호까지 모아 왔으면 박스에 채워 넣고 확인 창을 띄운다.
         if (d.waybills && d.waybills.length) {
           done();
-          const filled = { ...fillWaybills(batch, d.waybills), status: 'waybilled' as const };
-          saveShipmentBatch(filled).catch(() => {});
-          // 번호는 이미 저장됐다. 박스가 다 채워졌으면 확인 창 없이 바로 B·C(서허 양식)로 넘어간다.
-          // 빠진 게 있을 때만 확인 창을 띄워 직접 넣게 한다.
-          const boxes = allBoxes(filled);
-          if (boxes.length && boxes.every(b => b.waybill.trim())) {
-            setShubStatus(`${filled.id} · 운송장 ${boxes.length}건 저장 완료 → 서허 양식 받는 중…`);
-            setTimeout(() => handleShubForm(filled), 800);
-          } else {
-            setWaybillBatch(filled);
+          // 운송장번호는 절대 틀리면 안 된다. 롯데 목록의 주문번호(이 쉽먼트번호-1, -2 …)와 짝지어 온 번호만
+          // 박스에 넣는다. 주문번호가 없거나 겹치면 추측(센터 순서로 채우기)하지 않고 빈칸으로 두고 직접 넣게 한다.
+          const list = d.waybills as { waybill: string; receiver: string; ordNo?: string }[];
+          const digits = (w: string) => String(w || '').replace(/\D/g, '');
+          const want = new Set(Array.from({ length: allBoxes(batch).length }, (_, i) => `${batch.id}-${i + 1}`));
+          const paired = list.filter(w => w.ordNo && want.has(w.ordNo) && digits(w.waybill).length === 12);
+          const clean = paired.length === list.length
+            && new Set(paired.map(w => w.ordNo)).size === paired.length
+            && new Set(paired.map(w => digits(w.waybill))).size === paired.length;
+          if (!clean) {
+            setWaybillBatch(batch);
+            alert(`가져온 운송장번호를 주문번호와 확실히 짝짓지 못해 넣지 않았어요.\n롯데 화면에서 확인해 직접 넣어 주세요.\n\n가져온 값: ${list.map(w => `${w.ordNo || '(주문번호 없음)'}=${w.waybill}`).join(', ')}`);
+            return;
           }
+          const filled = { ...fillWaybills(batch, paired), status: 'waybilled' as const };
+          saveShipmentBatch(filled).catch(() => {});
+          const boxes = allBoxes(filled);
+          if (!(boxes.length && boxes.every(b => b.waybill.trim()))) {
+            setWaybillBatch(filled);
+            return;
+          }
+          // 확장이 롯데 목록을 주문번호마다 다시 조회해 대조까지 마친 번호만 여기로 온다.
+          setShubStatus(`${filled.id} · 운송장 ${boxes.length}건(롯데 목록과 대조 완료) → 서허 양식 받는 중…`);
+          setTimeout(() => handleShubForm(filled), 800);
         } else if (d.step === 'error') {
           done();
           setWaybillBatch(batch);
@@ -702,9 +744,11 @@ export default function CoupangShipPage({ onGoOrder }: { onGoOrder?: () => void 
             <button onClick={() => setShowSenderManager(true)} style={plainBtn}>📮 보내는사람 설정</button>
             <button onClick={() => setShowAddressManager(true)} style={plainBtn}>🗺️ 택배주소 관리</button>
             <button
-              onClick={() => handleLotte()}
+              onClick={() => handleLotte(pickedRows, pickedItems.map(i => i.id))}
               disabled={lotteCount === 0}
-              title="아직 끝나지 않은 출고 건만 모아 롯데택배 예약 엑셀을 만들고, 원하면 택배사 사이트에 올려 예약까지 합니다."
+              title={lotteCount > 0
+                ? `체크한 출고 건 ${pickedItems.length}개만 모아 롯데택배 예약 엑셀을 만들고, 원하면 택배사 사이트에 올려 예약까지 합니다.`
+                : '예약할 출고 건을 표에서 체크하세요.'}
               style={{
                 display: 'inline-flex', alignItems: 'center', gap: 4,
                 padding: '7px 14px', fontSize: 13, fontWeight: 600, borderRadius: 8,
@@ -792,7 +836,9 @@ export default function CoupangShipPage({ onGoOrder }: { onGoOrder?: () => void 
                 bundleLabel={(key) => list.find(i => i.id === key)?.bundle || key}
                 bundleColorOf={colorOf}
                 layout="box"
+                monoBoxes={PENDING_BOX}
                 isChunkCollapsed={id => !openDone.has(id)}
+                chunkPad={chunkPad}
                 boxWaybill={(id, no) => {
                   const item = list.find(i => i.id === id);
                   return item ? waybillOf(item, no) : '';
@@ -814,7 +860,7 @@ export default function CoupangShipPage({ onGoOrder }: { onGoOrder?: () => void 
                 <span style={{ fontSize: 11, color: '#aaa' }}>{list.length}건</span>
               </div>
 
-              <div ref={cardsRef} style={{ display: 'flex', flexDirection: 'column', gap: 0, paddingTop: cardsTop }}>
+              <div ref={cardsRef} style={{ position: 'relative', height: cardPos.total || undefined }}>
                 {ordered.map(item => {
                   // 카드 안에서 발주번호별로 나눈다(쿠팡발주확인의 묶음 카드와 같은 모양).
                   const orders = new Map<string, typeof item.lines>();
@@ -835,17 +881,18 @@ export default function CoupangShipPage({ onGoOrder }: { onGoOrder?: () => void 
 
                   const pr = progressOf(item);
 
-                  const color = colorOf(item.id);
+                  const color = PENDING_COLOR;
                   const folded = pr.done && !openDone.has(item.id);
 
                   return (
                     // 바깥 자리는 표에서 이 덩어리가 차지하는 높이만큼. 그 안에서만 카드가 따라 내려온다.
+                    // 자리(바깥)는 표에서 이 덩어리 머리줄과 같은 높이에서 시작해 덩어리 끝까지. 카드는 그 안에서만 따라온다.
                     <div key={item.id} style={{
-                      // 자리는 표의 덩어리 높이만큼, 아래는 표의 덩어리 사이 여백(26px)만큼 비운다.
-                      minHeight: blockH[item.id] ? Math.max(0, blockH[item.id] - CHUNK_GAP) : undefined,
-                      marginBottom: CHUNK_GAP,
+                      position: 'absolute', left: 0, right: 0,
+                      top: cardPos.at[item.id]?.top ?? 0,
+                      height: cardPos.at[item.id]?.height,
                     }}>
-                    <div style={{ position: 'sticky', top: 66, overflow: 'visible' }}>
+                    <div data-card={item.id} style={{ position: 'sticky', top: 66, overflow: 'visible' }}>
                     <div style={{
                       // 끝난 건도 내용을 그대로 읽어야 하니 흐리게 하지 않고, 테두리·바탕만 초록으로 물들인다.
                       border: pr.done ? '1px solid #27ae6055' : `1px solid ${color}40`,
@@ -892,31 +939,19 @@ export default function CoupangShipPage({ onGoOrder }: { onGoOrder?: () => void 
                           </div>
                         )}
 
-                        {/* 일하는 차례대로: 택배예약 → 쉽먼트업로드 → 완료 */}
+                        {/* 일하는 차례대로: (위쪽 택배예약) → 쉽먼트업로드 → 완료 */}
                         {!folded && (<>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginTop: 5, flexWrap: 'wrap' }}>
-                          {!pr.done && (
-                            <button
-                              onClick={() => handleLotte(rowsOf([item]), [item.id])}
-                              title={`${item.bundle}(${item.center}) 만 따로 롯데택배에 예약합니다`}
-                              style={{
-                                padding: '2px 8px', fontSize: 11, fontWeight: 700, borderRadius: 5, cursor: 'pointer',
-                                border: '1.5px solid #e67e22', background: '#e67e22', color: '#fff',
-                              }}
-                            >
-                              ① 택배예약 {totalBoxCount(rowsOf([item]))}박스
-                            </button>
-                          )}
                           {pr.reserved && !pr.done && (
                             <button
                               onClick={() => shubForItem(item)}
                               title="이 건의 발주건만으로 서허 쉽먼트 양식을 받아 채웁니다"
                               style={{
                                 padding: '2px 8px', fontSize: 11, fontWeight: 700, borderRadius: 5, cursor: 'pointer',
-                                border: '1.5px solid #2980b9', background: '#fff', color: '#2980b9',
+                                border: '1.5px solid #e67e22', background: '#fff', color: '#e67e22',
                               }}
                             >
-                              ② 쉽먼트업로드
+                              쉽먼트업로드
                             </button>
                           )}
                           <button
@@ -962,7 +997,7 @@ export default function CoupangShipPage({ onGoOrder }: { onGoOrder?: () => void 
                       </div>
 
                       {!folded && boxList.map(([boxNo, orders]) => {
-                        const bc = boxNo ? boxColor(boxNo) : '#b0b4bb';
+                        const bc = pr.done ? '#27ae60' : PENDING_BOX;
                         const boxQty = Array.from(orders.values()).flat().reduce((s, l) => s + (Number(l.확정수량) || 0), 0);
                         return (
                           <div key={boxNo}>

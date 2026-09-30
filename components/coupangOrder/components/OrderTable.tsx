@@ -49,6 +49,10 @@ interface Props {
   // 체크한 뒤 바로 누를 버튼들. actionOrder(발주번호) 머리줄의 체크 칸 옆에 띄운다.
   actionOrder?: string;
   actions?: React.ReactNode;
+  // 'box' 레이아웃에서 덩어리 아래 여백을 더 벌릴 양(px). 옆 카드가 덩어리보다 길 때 줄을 맞추려고 쓴다.
+  chunkPad?: Record<string, number>;
+  // 'box' 레이아웃에서 박스를 번호별 색 대신 이 한 색으로 칠한다(완료 덩어리는 초록). 화면 색을 줄이려고.
+  monoBoxes?: string;
 }
 
 // 박스 번호(박스1, 박스2…)마다 다른 색. 어느 상자에 담기는지 한눈에 보이게.
@@ -75,7 +79,7 @@ function CenterTag({ name, color }: { name: string; color: string }) {
   );
 }
 
-// 입고예정일 이름표: "10/2 (목)"처럼 크게 쓰고, 옆에 같은 모양으로 D-day를 붙인다.
+// 입고예정일 이름표: "10/2 (목)"처럼 크게 쓰고, 옆에 같은 모양으로 D-day를 붙인다(날짜가 지나면 D-day는 뺀다).
 const WEEK = ['일', '월', '화', '수', '목', '금', '토'];
 function DateTag({ value }: { value: Date | string }) {
   const ymd = dateKeyYMD(value);
@@ -87,7 +91,7 @@ function DateTag({ value }: { value: Date | string }) {
   const day = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
   const today = new Date(); today.setHours(0, 0, 0, 0);
   const diff = Math.round((day.getTime() - today.getTime()) / 86400000);
-  const dText = diff < 0 ? `${-diff}일 지남` : diff === 0 ? 'D-DAY' : `D-${diff}`;
+  const dText = diff < 0 ? '' : diff === 0 ? 'D-DAY' : `D-${diff}`;
   return (
     <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
       <span style={{
@@ -96,12 +100,14 @@ function DateTag({ value }: { value: Date | string }) {
       }}>
         {Number(m[2])}/{Number(m[3])} ({WEEK[day.getDay()]})
       </span>
-      <span style={{
-        padding: '1px 8px', fontSize: 14, fontWeight: 800, borderRadius: 6,
-        color: '#1e293b', background: '#fff', border: '1.5px solid #334155', lineHeight: '18px',
-      }}>
-        {dText}
-      </span>
+      {dText && (
+        <span style={{
+          padding: '1px 8px', fontSize: 14, fontWeight: 800, borderRadius: 6,
+          color: '#1e293b', background: '#fff', border: '1.5px solid #334155', lineHeight: '18px',
+        }}>
+          {dText}
+        </span>
+      )}
     </span>
   );
 }
@@ -274,12 +280,66 @@ function BoxButton({ value, onChange }: { value: string; onChange: (v: string) =
   );
 }
 
+/* ── 체크하면 뜨는 작업 툴바 ── */
+// 표 안에 끼우면 줄 높이·폭이 바뀌어서, 체크 칸 자리에 크기 없는 표시만 두고 툴바는 화면 위(fixed)에 띄운다.
+// 그 줄 바로 위에 붙고, 위가 모자라면 아래에 붙는다. 스크롤하면 따라간다.
+function ActionLayer({ children }: { children: React.ReactNode }) {
+  const markRef = React.useRef<HTMLSpanElement>(null);
+  const barRef = React.useRef<HTMLDivElement>(null);
+  const [pos, setPos] = React.useState<{ left: number; top: number } | null>(null);
+  React.useLayoutEffect(() => {
+    const place = () => {
+      const m = markRef.current?.getBoundingClientRect();
+      const h = barRef.current?.offsetHeight || 36;
+      if (!m) return;
+      // 그 줄이 화면 밖으로 나가면 툴바도 숨긴다.
+      if (m.bottom < 60 || m.top > window.innerHeight) { setPos(null); return; }
+      const above = m.top - h - 8;
+      setPos({ left: Math.max(8, m.left - 10), top: above > 60 ? above : m.bottom + 12 });
+    };
+    place();
+    window.addEventListener('scroll', place, true);
+    window.addEventListener('resize', place);
+    return () => { window.removeEventListener('scroll', place, true); window.removeEventListener('resize', place); };
+  }, []);
+  return (
+    <>
+      <span ref={markRef} style={{ display: 'inline-block', width: 0, height: 12, verticalAlign: 'middle' }} />
+      <style>{`
+        .rk-actbar button { all: unset; box-sizing: border-box; display: inline-flex; align-items: center; gap: 6px;
+          height: 28px; padding: 0 10px; border-radius: 7px; font-size: 12.5px; font-weight: 600; color: #f3f4f6;
+          cursor: pointer; white-space: nowrap; transition: background .12s; }
+        .rk-actbar button:hover { background: rgba(255,255,255,0.12); }
+        .rk-actbar button.rk-danger { color: #fca5a5; }
+        .rk-actbar button.rk-close { padding: 0 8px; color: #9ca3af; }
+        .rk-actbar .rk-sep { width: 1px; height: 16px; background: rgba(255,255,255,0.16); margin: 0 3px; }
+        .rk-actbar .rk-count { padding: 0 8px 0 6px; font-size: 12px; font-weight: 700; color: #fff; }
+        .rk-actbar .rk-dot { width: 7px; height: 7px; border-radius: 50%; display: inline-block; }
+      `}</style>
+      <div
+        ref={barRef}
+        className="rk-actbar"
+        style={{
+          position: 'fixed', left: pos?.left ?? -9999, top: pos?.top ?? -9999, zIndex: 50,
+          display: 'flex', alignItems: 'center', gap: 2, padding: 4,
+          background: '#1f2937', borderRadius: 10,
+          boxShadow: '0 10px 28px rgba(15,23,42,0.28), 0 2px 6px rgba(15,23,42,0.18)',
+        }}
+      >
+        {children}
+      </div>
+    </>
+  );
+}
+
 /* ── 박스 번호 고르기(드롭다운) ── */
 // 쉽먼트생성 표에서 쓴다. 목록에는 이 덩어리에 이미 있는 박스(1 ~ maxNo번)만 나오고,
 // 맨 아래 "새 박스"로 다음 번호를 연다. 택배는 센터·입고예정일마다 9박스까지라 9번이 끝이다.
 // 표가 가로로 스크롤되는 상자 안에 있어 메뉴가 잘리지 않게 화면 기준(fixed)으로 띄운다.
-export function BoxPicker({ value, maxNo, onChange, allowNone = true }: {
+export function BoxPicker({ value, maxNo, onChange, allowNone = true, color }: {
   value: string; maxNo: number; onChange: (v: string) => void; allowNone?: boolean;
+  // 있으면 박스 번호마다 다른 색 대신 이 한 색만 쓴다.
+  color?: string;
 }) {
   const no = parseBoxNo(value);
   const [menu, setMenu] = React.useState<{ left: number; top: number; up: boolean } | null>(null);
@@ -295,7 +355,7 @@ export function BoxPicker({ value, maxNo, onChange, allowNone = true }: {
   const top = Math.max(maxNo, no || 0);
   const nos = Array.from({ length: top }, (_, i) => i + 1);
   const next = top + 1;
-  const c = no ? boxColor(no) : '#b0b4bb';
+  const c = no ? (color || boxColor(no)) : '#b0b4bb';
   const pick = (v: string) => { setMenu(null); onChange(v); };
   const open = () => {
     const r = btnRef.current?.getBoundingClientRect();
@@ -350,7 +410,7 @@ export function BoxPicker({ value, maxNo, onChange, allowNone = true }: {
           }}>
             {nos.map(n => item(`b${n}`, (
               <>
-                <span style={{ width: 8, height: 8, borderRadius: '50%', background: boxColor(n) }} />
+                <span style={{ width: 8, height: 8, borderRadius: '50%', background: color || boxColor(n) }} />
                 박스 {n}번
                 {n === no && <span style={{ marginLeft: 'auto', color: '#2563eb' }}>✓</span>}
               </>
@@ -417,7 +477,7 @@ function OfficeCell({ match, need }: { match: OfficeMatch | null; need: number }
 }
 
 /* ── 메인 테이블 ── */
-export default function OrderTable({ rows, onMemoChange, onShipmentChange, colorScheme = 'pink', readOnly = false, onDelete, officeQtyOf, selectedOrders, onToggleSelect, onBulkOrder, doneOrders, onSortByBox, bundleLabel, bundleColorOf, layout = 'order', selectedLines, onToggleLine, hideBox = false, newOrders, onSplitLine, isChunkCollapsed, onToggleChunk, onEditChunkDate, boxWaybill, actionOrder, actions }: Props) {
+export default function OrderTable({ rows, onMemoChange, onShipmentChange, colorScheme = 'pink', readOnly = false, onDelete, officeQtyOf, selectedOrders, onToggleSelect, onBulkOrder, doneOrders, onSortByBox, bundleLabel, bundleColorOf, layout = 'order', selectedLines, onToggleLine, hideBox = false, newOrders, onSplitLine, isChunkCollapsed, onToggleChunk, onEditChunkDate, boxWaybill, actionOrder, actions, chunkPad, monoBoxes }: Props) {
   if (rows.length === 0) return null;
 
   const sc = SCHEME[colorScheme];
@@ -534,8 +594,9 @@ export default function OrderTable({ rows, onMemoChange, onShipmentChange, color
                   {ci > 0 && (
                     <tr>
                       <td colSpan={boxHeaders.length} style={{
-                        // 덩어리끼리는 한눈에 끊겨 보이게 흰 여백으로 띄운다.
-                        height: 26, background: '#fff', border: 'none', padding: 0,
+                        // 덩어리끼리는 한눈에 끊겨 보이게 흰 여백으로 띄운다(옆 카드가 길면 그만큼 더).
+                        height: 26 + (chunkPad?.[chunks[ci - 1].bundle || chunks[ci - 1].key] || 0),
+                        background: '#fff', border: 'none', padding: 0,
                       }} />
                     </tr>
                   )}
@@ -607,7 +668,7 @@ export default function OrderTable({ rows, onMemoChange, onShipmentChange, color
                   </tr>
 
                   {!folded && chunk.boxes.map(box => {
-                    const bc = box.no ? boxColor(box.no) : '#b0b4bb';
+                    const bc = monoBoxes ? (chunkDone ? DONE : monoBoxes) : box.no ? boxColor(box.no) : '#b0b4bb';
                     return (
                       <React.Fragment key={`${chunk.key}-${box.no}`}>
                         {/* 박스 머리줄: 이 박스에 들어갈 품목 수와 수량 */}
@@ -663,7 +724,7 @@ export default function OrderTable({ rows, onMemoChange, onShipmentChange, color
                                   <span style={{ fontSize: 12, color: '#666' }}>{row.쉼먼트}</span>
                                 ) : (
                                   <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-                                    <BoxPicker value={row.쉼먼트} maxNo={chunkMaxBox} onChange={(v) => onShipmentChange(row.id, v)} />
+                                    <BoxPicker value={row.쉼먼트} maxNo={chunkMaxBox} color={monoBoxes ? bc : undefined} onChange={(v) => onShipmentChange(row.id, v)} />
                                     {/* 나눌 수 없는 줄(1개)도 자리는 비워 둬서 드롭다운 줄이 맞게 한다. */}
                                     {onSplitLine && (
                                       <button
@@ -710,6 +771,13 @@ export default function OrderTable({ rows, onMemoChange, onShipmentChange, color
                 </React.Fragment>
               );
             })}
+            {(() => {
+              const last = chunks[chunks.length - 1];
+              const pad = last ? chunkPad?.[last.bundle || last.key] || 0 : 0;
+              return pad > 0 ? (
+                <tr><td colSpan={boxHeaders.length} style={{ height: pad, background: '#fff', border: 'none', padding: 0 }} /></tr>
+              ) : null;
+            })()}
           </tbody>
         </table>
       </div>
@@ -798,9 +866,7 @@ export default function OrderTable({ rows, onMemoChange, onShipmentChange, color
                         />
                       );
                     })()}
-                    {!!actions && actionOrder === row._발주번호 && (
-                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>{actions}</span>
-                    )}
+                    {!!actions && actionOrder === row._발주번호 && <ActionLayer>{actions}</ActionLayer>}
                     <span style={{ fontSize: 13, fontWeight: 700, color: '#333' }}>{row._발주번호}</span>
                     {newOrders?.has(row._발주번호) && (
                       <span

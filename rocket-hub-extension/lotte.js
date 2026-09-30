@@ -75,7 +75,7 @@
   // 한 번 올리기 시작했으면(uploading) 다시는 올리지 않습니다. 파일을 올리면 그 창이 새로 뜨는데,
   // 새로 뜬 창이 "아직 안 올렸다"고 보고 또 올리는 일을 막기 위해서입니다.
   // 파일을 한 번 올린 뒤에는 다시 올리지 않게 막는 단계들(올리기 이후 단계 포함).
-  const UPLOADED_STEPS = ['uploading', 'uploaded', 'waybillMenu', 'waybillPage', 'preview', 'waybillDone', 'manual', 'waybills', 'error'];
+  const UPLOADED_STEPS = ['uploading', 'uploaded', 'waybillMenu', 'waybillPage', 'preview', 'waybillDone', 'verify', 'manual', 'waybills', 'error'];
   const DONE_STEPS = ['waybills', 'error'];
   const CRED_KEY = 'lotteCredentials';
   const getCreds = () =>
@@ -656,6 +656,9 @@
   // 이 화면의 목록은 캔버스로 그려져 DOM에서 읽을 수 없다. 그래서 화면이 서버에서 받아오는 목록 데이터를
   // lotte-hook.js가 넘겨주면 거기서 운송장번호·수하인명을 읽는다.
   let gridRows = [];
+  // 주문번호(S260930-02-1) → 목록에서 마지막으로 본 그 줄의 운송장번호. 앱이 올린 주문번호 모양만 모은다.
+  const ORD_RE = /^S\d{6}-\d{2}-\d+$/;
+  const byOrder = new Map();
   // 운송장번호는 12자리(2617-2863-6993). 관리번호(8083607009, 10자리)와 헷갈리지 않게 12자리만 인정한다.
   const WAYBILL_RE = /^\d{4}-?\d{4}-?\d{4}$/;
   const asWaybill = (v) => {
@@ -675,6 +678,28 @@
     }
     return '';
   };
+  // 한 줄 안의 운송장 모양 번호를 칸 이름과 함께 모두 꺼낸다. 롯데 데이터에는 이 건의 번호 말고
+  // "다음에 발급할 번호" 같은 칸도 같이 오는 것으로 보여서(앱에 늘 한 칸 뒤 번호가 들어왔다),
+  // 이 건의 번호를 고를 때는 정확한 칸 이름(invNo 등)을 먼저 믿고, 없으면 가장 작은 번호를 쓴다
+  // (다음 발급 번호는 늘 이미 발급된 번호보다 크다).
+  const waybillCandidates = (raw) => {
+    const out = [];
+    for (const [k, v] of Object.entries(raw || {})) {
+      const w = asWaybill(v);
+      if (w && !out.some((c) => c.w.replace(/-/g, '') === w.replace(/-/g, ''))) out.push({ k, w });
+    }
+    return out;
+  };
+  const pickOwnWaybill = (raw) => {
+    const cands = waybillCandidates(raw);
+    if (cands.length <= 1) return { w: cands[0] ? cands[0].w : '', why: cands[0] ? cands[0].k : '' };
+    // 여러 개면 칸 이름이 정확히 "운송장번호"(invNo·INV_NO 등)인 것만 믿는다. 그런 칸이 없으면
+    // 이전운송장번호 같은 칸과 헷갈릴 수 있으니 추측하지 않고 비워 둔다(사람이 확인하게).
+    const exact = cands.filter((c) => /^(inv|invc|invoice)_?no$/i.test(c.k));
+    const list = cands.map((c) => `${c.k}=${c.w}`).join(', ');
+    if (exact.length === 1) return { w: exact[0].w, why: `${exact[0].k} (후보 ${list})` };
+    return { w: '', why: `번호가 여러 개라 못 고름 (${list})` };
+  };
   const pickRows = (json) => {
     const found = [];
     const walk = (node, depth) => {
@@ -689,7 +714,7 @@
             rows.forEach((r) => {
               const waybill = rowWaybill(r);
               const receiver = String((recvKey && r[recvKey]) || '').trim();
-              if (receiver || waybill) found.push({ waybill, receiver });
+              if (receiver || waybill) found.push({ waybill, receiver, raw: r });
             });
           }
         }
@@ -709,6 +734,13 @@
       try {
         const rows = pickRows(JSON.parse(d.text));
         if (rows.length) gridRows = rows;
+        // 목록 줄(주문번호 S260930-02-1 이 적힌 줄)은 따로 모아 둔다. 화면에는 "다음에 발급할 운송장번호"
+        // 칸 같은 다른 데이터도 오는데, 그게 gridRows를 덮어써도 주문번호별 번호는 여기서 정확히 읽는다.
+        const at = Date.now();
+        for (const r of rows) {
+          const ord = Object.values(r.raw || {}).map((v) => String(v == null ? '' : v).trim()).find((v) => ORD_RE.test(v));
+          if (ord) byOrder.set(ord, { waybill: pickOwnWaybill(r.raw), receiver: r.receiver, at });
+        }
       } catch (err) {}
     }
     if (d.type === 'CHECK_LAST_RESULT') {
@@ -959,7 +991,7 @@
 
       // 운송장 목록 화면: 조회 → 맨 아래 예약분 체크 → 출력(미리보기 창이 뜸). 미리보기가 끝나면 번호를 읽는다.
       const isWaybillList = isWaybillScreen();
-      if (isWaybillList && ['waybillPage', 'preview', 'waybillDone'].includes(p.step)) {
+      if (isWaybillList && ['waybillPage', 'preview', 'waybillDone', 'verify'].includes(p.step)) {
         if (p.step === 'waybillDone') {
           const idx = Number(p.boxIdx) || 1;
           const need = Number(p.boxCount) || 1;
@@ -971,10 +1003,29 @@
             await patch({ searchedAt2: Date.now(), status: `${ordNo} 운송장번호 가져오는 중…` });
             return;
           }
-          const pre = new Set(p.preWaybills || []);
-          const row = gridRows.find((r) => r.waybill && !pre.has(r.waybill));
-          if (!row) return;
-          const collected = [...(p.collected || []), { ordNo, waybill: row.waybill, receiver: row.receiver || '' }];
+          // 목록(통합관리 운송장출력 표)에서 이 박스의 주문번호 줄에 적힌 운송장번호만 쓴다.
+          // 화면 가운데 "운송장번호" 칸은 롯데가 다음에 발급할 번호라서(예전에 앱이 이걸 읽어 늘 한 칸 뒤
+          // 번호가 들어갔다) 절대 쓰지 않는다. 다시 조회한 뒤에 들어온 목록만 믿는다.
+          const seen = byOrder.get(ordNo);
+          if (seen && seen.at >= (p.searchedAt2 || 0) && !seen.waybill.w && /여러 개/.test(seen.waybill.why)) {
+            await patch({ step: 'manual', status: `${ordNo} 줄에 ${seen.waybill.why}. 롯데 화면의 운송장번호를 확인해 운송장 확인 창에 직접 넣어 주세요.` });
+            return;
+          }
+          const fresh = seen && seen.at >= (p.searchedAt2 || 0) && seen.waybill.w;
+          const usedByOthers = new Set((p.collected || []).map((c) => String(c.waybill).replace(/-/g, '')));
+          if (!fresh || usedByOthers.has(seen.waybill.w.replace(/-/g, ''))) {
+            // 오래 기다려도 이 주문번호 줄의 번호가 안 보이면 추측해서 넣지 않고 사람에게 넘긴다.
+            if (Date.now() - (p.printedAt || 0) > 60000) {
+              await patch({ step: 'manual', status: `${ordNo} 줄의 운송장번호를 목록에서 찾지 못했어요. 롯데 화면에서 확인해 운송장 확인 창에 직접 넣어 주세요.` });
+              return;
+            }
+            // 조회 결과가 아직 안 왔다. 조금 뒤 다시 조회한다.
+            if (Date.now() - (p.searchedAt2 || 0) > 4000) await patch({ searchedAt2: 0, status: `${ordNo} 줄을 찾는 중…` });
+            return;
+          }
+          const own = seen.waybill;
+          const row = { waybill: own.w, receiver: seen.receiver };
+          const collected = [...(p.collected || []), { ordNo, waybill: row.waybill, receiver: row.receiver || '', from: own.why }];
 
           // 아직 남은 박스가 있으면 다음 박스로. 없으면 끝.
           if (idx < need) {
@@ -985,11 +1036,65 @@
               previewPrintedAt: null,
               printedAt: null,
               searchedAt2: 0,
-              status: `박스 ${idx}/${need} 완료(${row.waybill}). 다음 박스 시작…`,
+              status: `박스 ${idx}/${need} 완료(${row.waybill} · ${own.why}). 다음 박스 시작…`,
             });
             return;
           }
-          await patch({ step: 'waybills', waybills: collected, collected, status: `✅ 운송장번호 ${collected.length}건을 가져왔어요.` });
+          // 다 모았으면 바로 넘기지 않고, 주문번호마다 목록을 한 번 더 조회해 같은 번호인지 스스로 대조한다.
+          await patch({
+            step: 'verify', verifyIdx: 1, verifySearchedAt: 0, verifyStartedAt: Date.now(), collected,
+            status: `운송장번호 ${collected.length}건을 모았어요. 롯데 목록과 한 번 더 대조하는 중…`,
+          });
+          return;
+        }
+
+        // 대조: 주문번호로 다시 조회 → 그 줄의 운송장번호가 모아 둔 번호와 같은지 본다. 모두 같아야만 앱으로 넘긴다.
+        if (p.step === 'verify') {
+          const need = Number(p.boxCount) || 1;
+          const vIdx = Number(p.verifyIdx) || 1;
+          const collected = p.collected || [];
+          const ordNo = `${p.batchId || ''}-${vIdx}`;
+          const mine = collected.find((c) => c.ordNo === ordNo);
+          const digitsOf = (w) => String(w || '').replace(/\D/g, '');
+          if (!mine) {
+            await patch({ step: 'manual', status: `대조 실패: ${ordNo}의 운송장번호를 모으지 못했어요. 롯데 화면에서 확인해 직접 넣어 주세요.` });
+            return;
+          }
+          if (Date.now() - (p.verifyStartedAt || 0) > 90000) {
+            await patch({ step: 'manual', status: `대조 실패: ${ordNo}를 다시 조회했는데 목록을 읽지 못했어요. 롯데 화면에서 확인해 직접 넣어 주세요.` });
+            return;
+          }
+          if (!p.verifySearchedAt) {
+            const box = document.querySelector('input[name="edtSrchCondVal"]');
+            const search = find(TEXT.search);
+            if (!box || !search) return;
+            setVal(box, ordNo);
+            await sleep(300);
+            realClick(search);
+            await patch({ verifySearchedAt: Date.now(), status: `대조 중 ${vIdx}/${need} · ${ordNo} 다시 조회…` });
+            return;
+          }
+          const seen = byOrder.get(ordNo);
+          if (!seen || seen.at < p.verifySearchedAt || !seen.waybill.w) {
+            // 조회 결과가 아직 안 왔다. 조금 뒤 한 번 더 누른다.
+            if (Date.now() - p.verifySearchedAt > 5000) await patch({ verifySearchedAt: 0 });
+            return;
+          }
+          if (digitsOf(seen.waybill.w) !== digitsOf(mine.waybill)) {
+            await patch({
+              step: 'manual',
+              status: `대조 실패: ${ordNo}가 처음엔 ${mine.waybill}, 다시 조회하니 ${seen.waybill.w}예요. 넣지 않았어요. 롯데 화면에서 확인해 직접 넣어 주세요.`,
+            });
+            return;
+          }
+          if (vIdx < need) {
+            await patch({ verifyIdx: vIdx + 1, verifySearchedAt: 0, status: `대조 ${vIdx}/${need} 일치(${ordNo}=${mine.waybill}). 다음…` });
+            return;
+          }
+          await patch({
+            step: 'waybills', waybills: collected, collected,
+            status: `✅ 운송장번호 ${collected.length}건을 가져와 롯데 목록과 대조까지 마쳤어요. ${collected.map((c) => `${c.ordNo}=${c.waybill}`).join(' / ')}`,
+          });
           return;
         }
 
@@ -1110,12 +1215,22 @@
 
 
         // 사람이 직접 체크·출력하는 동안 기다렸다가, 운송장번호가 채워지면 가져간다.
+        // 이때도 목록에서 이 쉽먼트의 주문번호(S…-1, -2 …) 줄마다 적힌 번호만, 박스가 다 모였을 때 가져간다.
         if (p.step === 'manual') {
-          const pre = new Set(p.preWaybills || []);
-          const done = gridRows.filter((r) => r.waybill && !pre.has(r.waybill));
-          if (done.length) {
-            await patch({ step: 'waybills', waybills: done, status: `✅ 운송장번호 ${done.length}건을 가져왔어요.` });
+          const need = Number(p.boxCount) || 0;
+          const batch = String(p.batchId || '');
+          if (!need || !batch) return;
+          const done = [];
+          for (let i = 1; i <= need; i++) {
+            const ordNo = `${batch}-${i}`;
+            const seen = byOrder.get(ordNo);
+            if (!seen || !seen.waybill.w) return;
+            done.push({ ordNo, waybill: seen.waybill.w, receiver: seen.receiver || '', from: seen.waybill.why });
           }
+          await patch({
+            step: 'waybills', waybills: done,
+            status: `✅ 운송장번호 ${done.length}건을 가져왔어요. ${done.map((c) => `${c.ordNo}=${c.waybill}`).join(' / ')}`,
+          });
           return;
         }
 

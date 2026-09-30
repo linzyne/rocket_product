@@ -85,8 +85,28 @@ const upload = (w: StoredWork) => {
   })().catch(err => console.error('발주 작업 목록 올리기 실패:', err));
 };
 
+// 이미 쉽먼트생성으로 넘어간 줄의 열쇠(이 기기에 받아 둔 출고 목록 기준).
+const shippedKeys = (): Set<string> => {
+  try {
+    const list = JSON.parse(localStorage.getItem(SHIPOUT_KEY) || '[]');
+    if (Array.isArray(list)) {
+      return new Set(list.flatMap((s: { lines?: Record<string, unknown>[] }) => (s.lines || []).map(workLineKey)));
+    }
+  } catch {}
+  return new Set();
+};
+
 // 목록을 고친다. 이 기기에 바로 남기고 클라우드에도 올린다.
+// 쉽먼트생성에 있는 줄은 발주확인 목록에 절대 저장하지 않는다. 어느 컴퓨터든 넘기기 전의 묵은
+// 목록을 들고 있다가 저장하면 넘어간 발주가 발주확인에 되살아나서(두 곳에 동시에 보임) 여기서 막는다.
 export const writeWork = (w: StoredWork) => {
+  const shipped = shippedKeys();
+  const rows = w.rows.filter(r => !shipped.has(workLineKey(r)));
+  if (rows.length !== w.rows.length) {
+    w = { ...w, rows };
+    // 화면이 묵은 줄을 들고 있으니 저장본으로 다시 그리게 알린다.
+    setTimeout(notify, 0);
+  }
   // 내용이 그대로면 아무 일도 하지 않는다. 화면은 저장할 때마다 이 함수를 부르는데, 여기서
   // 안 멈추면 "저장 → 알림 → 다시 저장"이 끝없이 돈다.
   if (stamp(w) === stamp(readWork())) return;
@@ -105,13 +125,7 @@ const mergeFirst = (server: StoredWork | null): StoredWork => {
   if (localStorage.getItem(MERGED_KEY) !== '1') {
     const have = new Set(server.rows.map(workLineKey));
     // 이미 출고(쉽먼트생성)로 넘긴 줄은 도로 올리지 않는다. 안 그러면 발주확인에 되살아난다.
-    let shipped = new Set<string>();
-    try {
-      const list = JSON.parse(localStorage.getItem(SHIPOUT_KEY) || '[]');
-      if (Array.isArray(list)) {
-        shipped = new Set(list.flatMap((s: { lines?: Record<string, unknown>[] }) => (s.lines || []).map(workLineKey)));
-      }
-    } catch {}
+    const shipped = shippedKeys();
     const mine = local.rows.filter(r => !have.has(workLineKey(r)) && !shipped.has(workLineKey(r)));
     merged = {
       rows: [...server.rows, ...mine],

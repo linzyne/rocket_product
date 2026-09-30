@@ -301,8 +301,9 @@ function pushBackToWork(lines: ShipOutLine[], fallbackBundle: string) {
 export function restoreShipOut(id: string): boolean {
   const item = read().find(s => s.id === id);
   if (!item) return false;
-  pushBackToWork(item.lines, item.bundle);
+  // 출고 목록에서 먼저 빼야 발주확인 저장이 이 줄들을 "이미 넘어간 줄"로 걸러내지 않는다.
   write(read().filter(s => s.id !== id));
+  pushBackToWork(item.lines, item.bundle);
   return true;
 }
 
@@ -310,20 +311,21 @@ export function restoreShipOut(id: string): boolean {
 export function restoreOrders(orderNos: string[]): number {
   const want = new Set(orderNos);
   const list = read();
-  let moved = 0;
   const next: ShipOut[] = [];
+  const backs: { lines: ShipOutLine[]; bundle: string }[] = [];
   for (const item of list) {
     const back = item.lines.filter(l => want.has(l.발주번호));
     const stay = item.lines.filter(l => !want.has(l.발주번호));
     if (back.length) {
-      moved += pushBackToWork(back, item.bundle);
+      backs.push({ lines: back, bundle: item.bundle });
       if (stay.length) next.push({ ...item, lines: stay });
     } else {
       next.push(item);
     }
   }
+  // 출고 목록에서 먼저 빼야 발주확인 저장이 이 줄들을 "이미 넘어간 줄"로 걸러내지 않는다.
   write(next);
-  return moved;
+  return backs.reduce((n, b) => n + pushBackToWork(b.lines, b.bundle), 0);
 }
 
 // 이미 쉽먼트생성으로 넘어간 줄들의 열쇠. 발주서를 다시 받아올 때 이 줄들이 발주확인에

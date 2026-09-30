@@ -42,6 +42,8 @@ export interface ShipOut {
   doneAt?: number;
   // 완료를 다시 푼 시각(ms). 자동으로 완료로 잡히는 건이라도 이 값이 있으면 다시 할 일로 본다.
   undoneAt?: number;
+  // 택배를 실제로 보낸 날('YYYY-MM-DD'). 쉽먼트 완료를 누를 때 고른다.
+  sentDate?: string;
   lines: ShipOutLine[];
 }
 
@@ -240,8 +242,18 @@ export function updateShipOutLine(
   write(list);
 }
 
+// 출고 건의 입고예정일을 바꾼다(건과 그 안의 줄 모두). 묶음에서 날짜를 잘못 골랐을 때 쿠팡 날짜로 맞춘다.
+export function setShipOutDate(id: string, date: string) {
+  const list = read();
+  const item = list.find(s => s.id === id);
+  if (!item) return;
+  item.date = date;
+  item.lines = item.lines.map(l => ({ ...l, 입고예정일: date }));
+  write(list);
+}
+
 // 출고 건들에 진행 표시를 붙인다(쉽먼트 번호·양식 저장 시각).
-export function markShipOuts(ids: string[], patch: Partial<Pick<ShipOut, 'batchId' | 'formSavedAt' | 'doneAt' | 'undoneAt'>>) {
+export function markShipOuts(ids: string[], patch: Partial<Pick<ShipOut, 'batchId' | 'formSavedAt' | 'doneAt' | 'undoneAt' | 'sentDate'>>) {
   const want = new Set(ids);
   const list = read();
   let touched = false;

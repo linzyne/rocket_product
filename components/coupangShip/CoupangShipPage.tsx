@@ -1,8 +1,8 @@
 import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { ShipOut, subscribeShipOuts, deleteShipOut, restoreShipOut, restoreOrders, updateShipOutLine, markShipOuts, snapshotShipOuts, restoreShipSnapshot, sameSnapshot } from '../coupangOrder/data/shipOutStore';
+import { ShipOut, setShipOutDate, subscribeShipOuts, deleteShipOut, restoreShipOut, restoreOrders, updateShipOutLine, markShipOuts, snapshotShipOuts, restoreShipSnapshot, sameSnapshot } from '../coupangOrder/data/shipOutStore';
 import type { ShipSnapshot } from '../coupangOrder/data/shipOutStore';
 import { dateKeyYMD } from '../coupangOrder/utils/dateUtils';
-import OrderTable, { bundleColor } from '../coupangOrder/components/OrderTable';
+import OrderTable, { bundleColor, boxColor, BoxPicker } from '../coupangOrder/components/OrderTable';
 import { buildDisplayRows, parseBoxNo, isBoxSplit, parseBoxSplit, joinBoxSplit, expandBoxSplit } from '../coupangOrder/utils/dataProcessor';
 import type { DisplayRow } from '../coupangOrder/utils/dataProcessor';
 import { normalizeDateValue, ymdSortKey } from '../coupangOrder/utils/dateUtils';
@@ -41,6 +41,14 @@ export default function CoupangShipPage({ onGoOrder }: { onGoOrder?: () => void 
   const [list, setList] = useState<ShipOut[]>([]);
   const [copied, setCopied] = useState('');
   const [opened, setOpened] = useState<Set<string>>(new Set());
+  // 쉽먼트 완료한 건은 접어 두고, 펼친 것만 여기 적어 둔다.
+  const [openDone, setOpenDone] = useState<Set<string>>(new Set());
+  const toggleDoneOpen = (id: string) =>
+    setOpenDone(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
   // 되돌릴 발주서 고르기(발주확인의 묶기 체크 칸과 같은 자리).
   const [selected, setSelected] = useState<Set<string>>(new Set());
   // 발주확인 표와 똑같이 보이도록 사무실 재고 칸도 같이 띄운다.
@@ -248,7 +256,7 @@ export default function CoupangShipPage({ onGoOrder }: { onGoOrder?: () => void 
     const ro = new ResizeObserver(measure);
     ro.observe(el);
     return () => ro.disconnect();
-  }, [rows, ordered, opened]);
+  }, [rows, ordered, opened, openDone]);
 
   // 출고 건 하나의 줄만 표 모양으로 만든다(쉽먼트생성을 그 건에만 걸 때 쓴다).
   const rowsOf = (items: ShipOut[]): DisplayRow[] => buildDisplayRows(items.flatMap(item => item.lines.flatMap(l => expandBoxSplit({
@@ -308,31 +316,35 @@ export default function CoupangShipPage({ onGoOrder }: { onGoOrder?: () => void 
     });
   };
 
-  // 한 상품을 박스 여러 개에 나눠 담는다. 떼어 낸 수량은 이 덩어리의 새 박스 번호로 간다.
+  // 한 상품을 박스 여러 개에 나눠 담는다. 창에서 박스 번호를 고르고 박스마다 수량을 직접 넣는다.
+  const [splitting, setSplitting] = useState<{ row: DisplayRow; total: number; pieces: { no: number; qty: string }[] } | null>(null);
   const splitLine = (id: string) => {
     const row = rows.find(r => r.id === id);
     if (!row) return;
-    const qty = Number(row.확정수량) || 0;
-    if (qty < 2) { alert('수량이 2개 이상이어야 나눌 수 있어요.'); return; }
-    const input = prompt(`${row.상품이름}\n이 박스의 ${qty}개 중 새 박스로 옮길 수량은?`, String(Math.floor(qty / 2)));
-    if (input === null) return;
-    const move = Math.floor(Number(input));
-    if (!(move >= 1 && move < qty)) { alert(`1 ~ ${qty - 1} 사이로 넣어 주세요.`); return; }
-    const used = rows
-      .filter(r => !r.isBlank && r.묶음 === row.묶음)
-      .map(r => parseBoxNo(r.쉼먼트) || 0);
-    const newNo = Math.max(0, ...used) + 1;
-    const line = lineOf(row);
-    const pieces = row._조각 !== undefined
-      ? parseBoxSplit(line?.쉼먼트 || '')
-      : [{ no: parseBoxNo(row.쉼먼트) || 1, qty }];
-    const at = row._조각 ?? 0;
-    if (!pieces[at]) return;
-    pieces[at].qty -= move;
-    pieces.splice(at + 1, 0, { no: newNo, qty: move });
+    const total = Number(row._조각 !== undefined ? row._원수량 : row.확정수량) || 0;
+    const now = row._조각 !== undefined
+      ? parseBoxSplit(lineOf(row)?.쉼먼트 || '')
+      : [{ no: parseBoxNo(row.쉼먼트) || 1, qty: total }];
+    // 새로 담을 박스 칸을 하나 붙여 둔다(이 묶음에서 아직 안 쓴 다음 번호).
+    const used = rows.filter(r => !r.isBlank && r.묶음 === row.묶음).map(r => parseBoxNo(r.쉼먼트) || 0);
+    const nextNo = Math.min(9, Math.max(0, ...used, ...now.map(p => p.no)) + 1);
+    setSplitting({
+      row, total,
+      pieces: [...now.map(p => ({ no: p.no, qty: String(p.qty) })), { no: nextNo, qty: '' }],
+    });
+  };
+  const saveSplit = () => {
+    if (!splitting) return;
+    const { row, total } = splitting;
+    const pieces = splitting.pieces
+      .map(p => ({ no: p.no, qty: Math.floor(Number(p.qty) || 0) }))
+      .filter(p => p.qty > 0);
+    const sum = pieces.reduce((n, p) => n + p.qty, 0);
+    if (sum !== total) { alert(`박스별 수량 합계(${sum}개)가 전체 수량(${total}개)과 같아야 해요.`); return; }
     step('박스 나누기', () => {
       updateShipOutLine(shipIdOf.get(row._발주번호) || '', lineMatch(row), { 쉼먼트: joinBoxSplit(pieces) });
     });
+    setSplitting(null);
   };
 
   const toggleSelect = (orderNo: string, checked: boolean) =>
@@ -573,15 +585,55 @@ export default function CoupangShipPage({ onGoOrder }: { onGoOrder?: () => void 
   };
 
   // 손으로 완료 표시를 켜고 끈다.
+  // 완료를 켤 때는 발송날짜를 고르는 창을 띄운다(기본은 오늘). 끌 때는 바로 푼다.
+  const [sendPick, setSendPick] = useState<{ item: ShipOut; date: string; editOnly: boolean } | null>(null);
+  const today = () => new Date().toLocaleDateString('sv-SE');
   const toggleDone = (item: ShipOut) => {
     const nowDone = progressOf(item).done;
+    if (!nowDone) { setSendPick({ item, date: item.sentDate || today(), editOnly: false }); return; }
     // 다시 누르면 완료가 풀려서 쉽먼트생성·양식받기 버튼이 되살아난다.
-    step(nowDone ? '완료 풀기' : '쉽먼트 완료', () => {
-      markShipOuts([item.id], nowDone
-        ? { doneAt: undefined, undoneAt: Date.now() }
-        : { doneAt: Date.now(), undoneAt: undefined });
+    step('완료 풀기', () => {
+      markShipOuts([item.id], { doneAt: undefined, undoneAt: Date.now() });
     });
   };
+  const saveSendPick = () => {
+    if (!sendPick || !sendPick.date) return;
+    const { item, date, editOnly } = sendPick;
+    step(editOnly ? '발송날짜 바꾸기' : '쉽먼트 완료', () => {
+      markShipOuts([item.id], editOnly
+        ? { sentDate: date }
+        : { doneAt: Date.now(), undoneAt: undefined, sentDate: date });
+    });
+    setSendPick(null);
+  };
+  // 입고예정일 바꾸기. 쉽먼트 기록(서허 양식 받을 때 날짜로 목록을 좁힌다)의 이 건 발주 날짜도 같이 맞춘다.
+  const [datePick, setDatePick] = useState<{ item: ShipOut; date: string } | null>(null);
+  const saveDatePick = () => {
+    if (!datePick || !datePick.date) return;
+    const { item, date } = datePick;
+    step('입고예정일 바꾸기', () => { setShipOutDate(item.id, date); });
+    const batch = progressOf(item).batch;
+    if (batch) {
+      const mine = new Set(item.lines.map(l => String(l.발주번호 || '').trim()));
+      const ymd = date.replace(/-/g, '');
+      const next: ShipmentBatch = {
+        ...batch,
+        centers: batch.centers.map(c => ({
+          ...c,
+          boxes: c.boxes.map(b => ({
+            ...b,
+            lines: b.lines.map(l => (mine.has(String(l.발주번호 || '').trim()) ? { ...l, 입고예정일: ymd } : l)),
+          })),
+        })),
+      };
+      saveShipmentBatch(next).catch(err => alert(`쉽먼트 기록 저장 실패: ${err instanceof Error ? err.message : String(err)}`));
+    }
+    setDatePick(null);
+  };
+
+  // 'YYYY-MM-DD' → '9/30'
+  const md = (d: string) => `${Number(d.slice(5, 7))}/${Number(d.slice(8, 10))}`;
+  const boxCountOf = (item: ShipOut) => totalBoxCount(rowsOf([item]));
 
   const remove = (item: ShipOut) => {
     if (!confirm(`${item.id} (${item.bundle} · ${item.center})을 출고 목록에서 지울까요?`)) return;
@@ -716,6 +768,12 @@ export default function CoupangShipPage({ onGoOrder }: { onGoOrder?: () => void 
                 bundleLabel={(key) => list.find(i => i.id === key)?.bundle || key}
                 bundleColorOf={colorOf}
                 layout="box"
+                isChunkCollapsed={id => !openDone.has(id)}
+                onEditChunkDate={id => {
+                  const item = list.find(i => i.id === id);
+                  if (item) setDatePick({ item, date: item.date });
+                }}
+                onToggleChunk={toggleDoneOpen}
               />
               </div>
             </div>
@@ -736,11 +794,21 @@ export default function CoupangShipPage({ onGoOrder }: { onGoOrder?: () => void 
                     const key = line.발주번호 || '(번호없음)';
                     orders.set(key, [...(orders.get(key) || []), line]);
                   }
-                  const qty = item.lines.reduce((sum, l) => sum + (Number(l.확정수량) || 0), 0);
+                  // 박스별로 다시 묶는다(박스 → 발주번호). 나눠 담은 줄은 박스마다 조각으로 들어간다.
+                  const byBox = new Map<number, Map<string, typeof item.lines>>();
+                  for (const line of item.lines.flatMap(l => expandBoxSplit({ ...l, 쉼먼트: l.쉼먼트 || '' }))) {
+                    const no = parseBoxNo(line.쉼먼트) || 0;
+                    const box = byBox.get(no) || new Map<string, typeof item.lines>();
+                    const key = line.발주번호 || '(번호없음)';
+                    box.set(key, [...(box.get(key) || []), line]);
+                    byBox.set(no, box);
+                  }
+                  const boxList = Array.from(byBox.entries()).sort((a, b) => (a[0] || 9999) - (b[0] || 9999));
 
                   const pr = progressOf(item);
 
                   const color = colorOf(item.id);
+                  const folded = pr.done && !openDone.has(item.id);
 
                   return (
                     // 바깥 자리는 표에서 이 덩어리가 차지하는 높이만큼. 그 안에서만 카드가 따라 내려온다.
@@ -759,43 +827,35 @@ export default function CoupangShipPage({ onGoOrder }: { onGoOrder?: () => void 
                       transition: 'background 0.15s',
                     }}>
                       <div style={{
-                        padding: '6px 8px', whiteSpace: 'nowrap',
+                        // 접힌 카드는 표의 접힌 덩어리 머리줄과 높이를 맞춘다.
+                        padding: folded ? '5px 8px' : '6px 8px', whiteSpace: 'nowrap',
                         background: pr.done ? '#e3f6ec' : `${color}1c`,
-                        borderBottom: pr.done ? '1px solid #27ae6033' : `1px solid ${color}2e`,
+                        borderBottom: folded ? 'none' : pr.done ? '1px solid #27ae6033' : `1px solid ${color}2e`,
                       }}>
+                        {/* 센터·날짜·발주 수·수량, 체크 칸과 접기는 왼쪽 표 머리줄에 있어 카드에는 진행 상태만 둔다. */}
                         <div style={{ display: 'flex', alignItems: 'center', gap: 8, overflow: 'hidden' }}>
-                          <input
-                            type="checkbox"
-                            checked={orders.size > 0 && Array.from(orders.keys()).every(no => selected.has(no))}
-                            onChange={e => {
-                              const on = e.target.checked;
-                              setSelected(prev => {
-                                const next = new Set(prev);
-                                for (const no of orders.keys()) { if (on) next.add(no); else next.delete(no); }
-                                return next;
-                              });
-                            }}
-                            title="이 묶음의 발주서를 모두 고릅니다"
-                            style={{ cursor: 'pointer', margin: 0 }}
-                          />
-                          <span style={{ fontSize: 12, fontWeight: 800, color }} title={`출고번호 ${item.id} · ${item.bundle}`}>{item.bundle}</span>
-                          <span style={{ fontSize: 12, fontWeight: 700, color: '#333', overflow: 'hidden', textOverflow: 'ellipsis' }}>{item.center}</span>
-                          <span style={{ fontSize: 11, fontWeight: 700, color: '#2c3e50' }}>{item.date.slice(5).replace('-', '/')}</span>
+                          <span style={{ fontSize: 12, fontWeight: 800, color }} title={`출고번호 ${item.id} · ${item.center} · ${item.date}`}>{item.bundle}</span>
                           {pr.done && (
-                            <span
-                              title="이 건은 쉽먼트 생성까지 끝났어요"
+                            <button
+                              onClick={() => setSendPick({ item, date: item.sentDate || today(), editOnly: true })}
+                              title="쉽먼트 완료 · 눌러서 발송날짜 바꾸기"
                               style={{
-                                padding: '1px 7px', fontSize: 11, fontWeight: 800, borderRadius: 8,
-                                color: '#fff', background: '#27ae60', letterSpacing: '-0.2px',
+                                padding: '1px 7px', fontSize: 11, fontWeight: 800, borderRadius: 8, cursor: 'pointer',
+                                color: '#fff', background: '#27ae60', border: 'none', letterSpacing: '-0.2px',
                               }}
                             >
-                              완료 ✓
-                            </span>
+                              {item.sentDate ? `✓ ${md(item.sentDate)} 발송` : '완료 ✓ · 발송일?'}
+                            </button>
                           )}
-                          <span style={{ marginLeft: 'auto', fontSize: 11, color: '#999' }}>발주 {orders.size} · {qty.toLocaleString()}개</span>
+                          <span style={{
+                            marginLeft: 'auto', padding: '1px 10px', fontSize: 15, fontWeight: 900, color: '#333',
+                            background: '#fff', border: '1.5px solid #d5d5d5', borderRadius: 12, lineHeight: 1.3,
+                          }} title="이 건의 택배 박스 수">
+                            📦 {boxCountOf(item)}박스
+                          </span>
                         </div>
 
-                        {pr.reserved && (
+                        {!folded && pr.reserved && (
                           <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginTop: 5, flexWrap: 'wrap', fontSize: 11 }}>
                             <span style={{ color: '#666', fontWeight: 700 }}>{item.batchId}</span>
                             <Chip on label="예약" />
@@ -805,6 +865,7 @@ export default function CoupangShipPage({ onGoOrder }: { onGoOrder?: () => void 
                         )}
 
                         {/* 일하는 차례대로: 택배예약 → 쉽먼트업로드 → 완료 */}
+                        {!folded && (<>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginTop: 5, flexWrap: 'wrap' }}>
                           {!pr.done && (
                             <button
@@ -869,42 +930,60 @@ export default function CoupangShipPage({ onGoOrder }: { onGoOrder?: () => void 
                             삭제
                           </button>
                         </div>
+                        </>)}
                       </div>
 
-                      {Array.from(orders.entries()).map(([orderNo, lines]) => {
-                        const key = `${item.id}|${orderNo}`;
-                        const open = opened.has(key);
-                        const sum = lines.reduce((s, l) => s + (Number(l.확정수량) || 0), 0);
+                      {!folded && boxList.map(([boxNo, orders]) => {
+                        const bc = boxNo ? boxColor(boxNo) : '#b0b4bb';
+                        const boxQty = Array.from(orders.values()).flat().reduce((s, l) => s + (Number(l.확정수량) || 0), 0);
                         return (
-                          <div key={key} style={{ borderTop: '1px solid #f3f3f3' }}>
-                            <div
-                              onClick={() => toggle(key)}
-                              title="눌러서 상품 목록 보기"
-                              style={{
-                                display: 'flex', alignItems: 'center', gap: 6, padding: '5px 8px',
-                                cursor: 'pointer', whiteSpace: 'nowrap', fontSize: 11,
-                              }}
-                            >
-                              <span style={{ width: 8, color: '#ccc', fontSize: 9 }}>{open ? '▾' : '▸'}</span>
-                              <span style={{ fontWeight: 700, color: '#333' }}>{orderNo}</span>
-                              <span style={{ color: '#aaa' }}>{lines[0].입고예정일.slice(5).replace('-', '/')}</span>
-                              <span style={{ marginLeft: 'auto', color: '#bbb' }}>{lines.length}품목</span>
-                              <span style={{ fontWeight: 700, color: '#333', minWidth: 36, textAlign: 'right' }}>{sum.toLocaleString()}개</span>
+                          <div key={boxNo}>
+                            <div style={{
+                              display: 'flex', alignItems: 'center', gap: 6, padding: '3px 8px',
+                              background: `${bc}12`, borderTop: `1px solid ${bc}33`, borderLeft: `3px solid ${bc}`, fontSize: 11,
+                            }}>
+                              <span style={{ padding: '0 7px', fontWeight: 800, borderRadius: 8, color: '#fff', background: bc }}>
+                                📦 {boxNo ? `박스${boxNo}` : '박스 미지정'}
+                              </span>
+                              <span style={{ marginLeft: 'auto', color: '#888', fontWeight: 700 }}>발주 {orders.size} · {boxQty.toLocaleString()}개</span>
                             </div>
-                            {open && (
-                              <div style={{ padding: '2px 8px 6px 26px', background: '#fcfcfd' }}>
-                                {lines.map((line, i) => (
-                                  <div key={`${line.상품이름}-${i}`} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '1px 0', fontSize: 11 }}>
-                                    <span title={line.상품이름} style={{ flex: 1, color: '#666', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                                      {line.상품이름}
-                                    </span>
-                                    <span style={{ color: '#333', fontWeight: 700, minWidth: 28, textAlign: 'right' }}>
-                                      {line.확정수량 !== '' ? line.확정수량 : ''}
-                                    </span>
+                            {Array.from(orders.entries()).map(([orderNo, lines]) => {
+                              const key = `${item.id}|${boxNo}|${orderNo}`;
+                              const open = opened.has(key);
+                              const sum = lines.reduce((s, l) => s + (Number(l.확정수량) || 0), 0);
+                              return (
+                                <div key={key} style={{ borderTop: '1px solid #f3f3f3' }}>
+                                  <div
+                                    onClick={() => toggle(key)}
+                                    title="눌러서 상품 목록 보기"
+                                    style={{
+                                      display: 'flex', alignItems: 'center', gap: 6, padding: '5px 8px',
+                                      cursor: 'pointer', whiteSpace: 'nowrap', fontSize: 11,
+                                    }}
+                                  >
+                                    <span style={{ width: 8, color: '#ccc', fontSize: 9 }}>{open ? '▾' : '▸'}</span>
+                                    <span style={{ fontWeight: 700, color: '#333' }}>{orderNo}</span>
+                                    <span style={{ color: '#aaa' }}>{lines[0].입고예정일.slice(5).replace('-', '/')}</span>
+                                    <span style={{ marginLeft: 'auto', color: '#bbb' }}>{lines.length}품목</span>
+                                    <span style={{ fontWeight: 700, color: '#333', minWidth: 36, textAlign: 'right' }}>{sum.toLocaleString()}개</span>
                                   </div>
-                                ))}
-                              </div>
-                            )}
+                                  {open && (
+                                    <div style={{ padding: '2px 8px 6px 26px', background: '#fcfcfd' }}>
+                                      {lines.map((line, i) => (
+                                        <div key={`${line.상품이름}-${i}`} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '1px 0', fontSize: 11 }}>
+                                          <span title={line.상품이름} style={{ flex: 1, color: '#666', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                            {line.상품이름}
+                                          </span>
+                                          <span style={{ color: '#333', fontWeight: 700, minWidth: 28, textAlign: 'right' }}>
+                                            {line.확정수량 !== '' ? line.확정수량 : ''}
+                                          </span>
+                                        </div>
+                                      ))}
+                                    </div>
+                                  )}
+                                </div>
+                            );
+                          })}
                           </div>
                         );
                       })}
@@ -960,6 +1039,147 @@ export default function CoupangShipPage({ onGoOrder }: { onGoOrder?: () => void 
           onClose={() => setShowSenderManager(false)}
         />
       )}
+
+      {datePick && (
+        <div
+          onClick={() => setDatePick(null)}
+          style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.35)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+        >
+          <div onClick={e => e.stopPropagation()} style={{ width: 300, background: '#fff', borderRadius: 12, padding: 18, boxShadow: '0 10px 30px rgba(0,0,0,0.2)' }}>
+            <div style={{ fontSize: 14, fontWeight: 800, marginBottom: 4 }}>입고예정일 바꾸기</div>
+            <div style={{ fontSize: 12, color: '#666', marginBottom: 12 }}>
+              {datePick.item.bundle} · {datePick.item.center} · 발주 {new Set(datePick.item.lines.map(l => l.발주번호)).size}건
+              <br />서허(쿠팡)에 나오는 입고예정일과 같게 맞춰 주세요.
+            </div>
+            <input
+              type="date"
+              value={datePick.date}
+              autoFocus
+              onChange={e => setDatePick(prev => prev && { ...prev, date: e.target.value })}
+              onKeyDown={e => { if (e.key === 'Enter') saveDatePick(); }}
+              style={{ display: 'block', width: '100%', padding: '7px 10px', fontSize: 14, borderRadius: 8, border: '1px solid #ddd', boxSizing: 'border-box' }}
+            />
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 16 }}>
+              <button onClick={() => setDatePick(null)} style={{ padding: '6px 14px', fontSize: 13, background: '#f3f3f3', border: 'none', borderRadius: 6, cursor: 'pointer' }}>취소</button>
+              <button
+                onClick={saveDatePick}
+                disabled={!datePick.date}
+                style={{ padding: '6px 14px', fontSize: 13, fontWeight: 700, color: '#fff', background: '#2980b9', border: 'none', borderRadius: 6, cursor: 'pointer' }}
+              >
+                저장
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {sendPick && (
+        <div
+          onClick={() => setSendPick(null)}
+          style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.35)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+        >
+          <div onClick={e => e.stopPropagation()} style={{ width: 300, background: '#fff', borderRadius: 12, padding: 18, boxShadow: '0 10px 30px rgba(0,0,0,0.2)' }}>
+            <div style={{ fontSize: 14, fontWeight: 800, marginBottom: 4 }}>{sendPick.editOnly ? '발송날짜 바꾸기' : '쉽먼트 완료'}</div>
+            <div style={{ fontSize: 12, color: '#666', marginBottom: 12 }}>
+              {sendPick.item.bundle} · {sendPick.item.center} · {boxCountOf(sendPick.item)}박스
+            </div>
+            <label style={{ fontSize: 12, fontWeight: 700, color: '#333' }}>
+              발송날짜
+              <input
+                type="date"
+                value={sendPick.date}
+                autoFocus
+                onChange={e => setSendPick(prev => prev && { ...prev, date: e.target.value })}
+                onKeyDown={e => { if (e.key === 'Enter') saveSendPick(); }}
+                style={{ display: 'block', width: '100%', marginTop: 6, padding: '7px 10px', fontSize: 14, borderRadius: 8, border: '1px solid #ddd', boxSizing: 'border-box' }}
+              />
+            </label>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 16 }}>
+              <button onClick={() => setSendPick(null)} style={{ padding: '6px 14px', fontSize: 13, background: '#f3f3f3', border: 'none', borderRadius: 6, cursor: 'pointer' }}>취소</button>
+              <button
+                onClick={saveSendPick}
+                disabled={!sendPick.date}
+                style={{ padding: '6px 14px', fontSize: 13, fontWeight: 700, color: '#fff', background: '#27ae60', border: 'none', borderRadius: 6, cursor: 'pointer' }}
+              >
+                {sendPick.editOnly ? '저장' : '완료'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {splitting && (() => {
+        const sum = splitting.pieces.reduce((n, p) => n + (Math.floor(Number(p.qty) || 0)), 0);
+        const left = splitting.total - sum;
+        // 이 묶음에 있는 박스 + 창에서 고른 박스까지만 목록에 보여준다.
+        const boxMax = Math.max(0, ...rows.filter(r => !r.isBlank && r.묶음 === splitting.row.묶음).map(r => parseBoxNo(r.쉼먼트) || 0), ...splitting.pieces.map(p => p.no));
+        const setPiece = (i: number, patch: Partial<{ no: number; qty: string }>) =>
+          setSplitting(prev => prev && { ...prev, pieces: prev.pieces.map((p, j) => (j === i ? { ...p, ...patch } : p)) });
+        return (
+          <div
+            onClick={() => setSplitting(null)}
+            style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.35)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+          >
+            <div onClick={e => e.stopPropagation()} style={{ width: 380, background: '#fff', borderRadius: 12, padding: 18, boxShadow: '0 10px 30px rgba(0,0,0,0.2)' }}>
+              <div style={{ fontSize: 14, fontWeight: 800, marginBottom: 4 }}>박스 나누기</div>
+              <div style={{ fontSize: 12, color: '#666', marginBottom: 12 }}>
+                {splitting.row.상품이름} · 전체 <b>{splitting.total}개</b>
+              </div>
+              {splitting.pieces.map((p, i) => (
+                <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+                  <BoxPicker
+                    value={`박스${p.no}`}
+                    maxNo={boxMax}
+                    allowNone={false}
+                    onChange={v => setPiece(i, { no: parseBoxNo(v) || p.no })}
+                  />
+                  <input
+                    type="number"
+                    min={0}
+                    value={p.qty}
+                    placeholder="수량"
+                    autoFocus={i === splitting.pieces.length - 1}
+                    onChange={e => setPiece(i, { qty: e.target.value })}
+                    onKeyDown={e => { if (e.key === 'Enter') saveSplit(); }}
+                    style={{ width: 90, padding: '5px 8px', fontSize: 13, borderRadius: 6, border: '1px solid #ddd', textAlign: 'right' }}
+                  />
+                  <span style={{ fontSize: 12, color: '#888' }}>개</span>
+                  <button
+                    onClick={() => setSplitting(prev => prev && { ...prev, pieces: prev.pieces.filter((_, j) => j !== i) })}
+                    disabled={splitting.pieces.length <= 1}
+                    title="이 박스 줄 빼기"
+                    style={{ marginLeft: 'auto', padding: '2px 8px', fontSize: 12, color: '#c0392b', background: '#fff', border: '1px solid #f0c4c0', borderRadius: 5, cursor: 'pointer' }}
+                  >
+                    ×
+                  </button>
+                </div>
+              ))}
+              <button
+                onClick={() => setSplitting(prev => prev && {
+                  ...prev,
+                  pieces: [...prev.pieces, { no: Math.min(9, Math.max(0, ...prev.pieces.map(p => p.no)) + 1), qty: left > 0 ? String(left) : '' }],
+                })}
+                style={{ padding: '4px 10px', fontSize: 12, color: '#2980b9', background: '#fff', border: '1px dashed #2980b9', borderRadius: 6, cursor: 'pointer' }}
+              >
+                + 박스 추가
+              </button>
+              <div style={{ marginTop: 12, fontSize: 12, fontWeight: 700, color: left === 0 ? '#27ae60' : '#c0392b' }}>
+                합계 {sum}개 / {splitting.total}개{left > 0 ? ` · ${left}개 남음` : left < 0 ? ` · ${-left}개 넘침` : ' ✓'}
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 14 }}>
+                <button onClick={() => setSplitting(null)} style={{ padding: '6px 14px', fontSize: 13, background: '#f3f3f3', border: 'none', borderRadius: 6, cursor: 'pointer' }}>취소</button>
+                <button
+                  onClick={saveSplit}
+                  disabled={left !== 0}
+                  style={{ padding: '6px 14px', fontSize: 13, fontWeight: 700, color: '#fff', background: left === 0 ? '#2980b9' : '#a9c6dc', border: 'none', borderRadius: 6, cursor: left === 0 ? 'pointer' : 'default' }}
+                >
+                  저장
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {waybillBatch && (
         <ShipmentWaybillModal batch={waybillBatch} onClose={() => setWaybillBatch(null)} />

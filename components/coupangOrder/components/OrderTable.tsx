@@ -39,6 +39,11 @@ interface Props {
   newOrders?: Set<string>;
   // 있으면 'box' 레이아웃의 박스 칸 옆에 나누기(✂) 버튼을 붙인다. 한 상품을 박스 여러 개에 나눠 담을 때 쓴다.
   onSplitLine?: (id: string) => void;
+  // 'box' 레이아웃에서 쉽먼트까지 끝난 덩어리를 머리줄만 남기고 접는다. 묶음 값을 받아 접혔는지 돌려준다.
+  isChunkCollapsed?: (bundle: string) => boolean;
+  onToggleChunk?: (bundle: string) => void;
+  // 있으면 'box' 레이아웃 덩어리 머리줄의 입고예정일을 눌러 바꿀 수 있다. 묶음 값을 받는다.
+  onEditChunkDate?: (bundle: string) => void;
 }
 
 // 박스 번호(박스1, 박스2…)마다 다른 색. 어느 상자에 담기는지 한눈에 보이게.
@@ -264,6 +269,101 @@ function BoxButton({ value, onChange }: { value: string; onChange: (v: string) =
   );
 }
 
+/* ── 박스 번호 고르기(드롭다운) ── */
+// 쉽먼트생성 표에서 쓴다. 목록에는 이 덩어리에 이미 있는 박스(1 ~ maxNo번)만 나오고,
+// 맨 아래 "새 박스"로 다음 번호를 연다. 택배는 센터·입고예정일마다 9박스까지라 9번이 끝이다.
+// 표가 가로로 스크롤되는 상자 안에 있어 메뉴가 잘리지 않게 화면 기준(fixed)으로 띄운다.
+export function BoxPicker({ value, maxNo, onChange, allowNone = true }: {
+  value: string; maxNo: number; onChange: (v: string) => void; allowNone?: boolean;
+}) {
+  const no = parseBoxNo(value);
+  const [menu, setMenu] = React.useState<{ left: number; top: number; up: boolean } | null>(null);
+  const btnRef = React.useRef<HTMLButtonElement>(null);
+  React.useEffect(() => {
+    if (!menu) return;
+    const close = () => setMenu(null);
+    window.addEventListener('scroll', close, true);
+    window.addEventListener('resize', close);
+    return () => { window.removeEventListener('scroll', close, true); window.removeEventListener('resize', close); };
+  }, [menu]);
+
+  const top = Math.max(maxNo, no || 0);
+  const nos = Array.from({ length: top }, (_, i) => i + 1);
+  const next = top + 1;
+  const c = no ? boxColor(no) : '#b0b4bb';
+  const pick = (v: string) => { setMenu(null); onChange(v); };
+  const open = () => {
+    const r = btnRef.current?.getBoundingClientRect();
+    if (!r) return;
+    const height = (nos.length + 2) * 32 + 12;
+    const up = r.bottom + height > window.innerHeight - 8;
+    setMenu({ left: r.left, top: up ? r.top - 4 : r.bottom + 4, up });
+  };
+
+  const item = (key: string, label: React.ReactNode, onClick: () => void, active = false, color = '#333') => (
+    <button
+      key={key}
+      onClick={onClick}
+      onMouseEnter={e => { if (!active) e.currentTarget.style.background = '#f4f5f7'; }}
+      onMouseLeave={e => { if (!active) e.currentTarget.style.background = 'transparent'; }}
+      style={{
+        display: 'flex', alignItems: 'center', gap: 8, width: '100%', height: 30, padding: '0 10px',
+        fontSize: 12.5, fontWeight: active ? 800 : 600, color, textAlign: 'left',
+        background: active ? '#eef4ff' : 'transparent', border: 'none', borderRadius: 6, cursor: 'pointer',
+      }}
+    >
+      {label}
+    </button>
+  );
+
+  return (
+    <>
+      <button
+        ref={btnRef}
+        onClick={() => (menu ? setMenu(null) : open())}
+        title="이 상품을 담을 박스 번호"
+        style={{
+          display: 'inline-flex', alignItems: 'center', gap: 6, minWidth: 82, justifyContent: 'space-between',
+          padding: '3px 8px 3px 9px', fontSize: 12, fontWeight: 800, borderRadius: 14, cursor: 'pointer',
+          border: `1.5px solid ${no ? c : '#d5d5d5'}`, background: no ? `${c}14` : '#fafafa', color: no ? c : '#aaa',
+        }}
+      >
+        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+          <span style={{ width: 7, height: 7, borderRadius: '50%', background: c }} />
+          {no ? `박스 ${no}번` : '박스'}
+        </span>
+        <span style={{ fontSize: 9, opacity: 0.8 }}>▼</span>
+      </button>
+      {menu && (
+        <>
+          <div onClick={() => setMenu(null)} style={{ position: 'fixed', inset: 0, zIndex: 2000 }} />
+          <div style={{
+            position: 'fixed', left: menu.left, zIndex: 2001, minWidth: 150, padding: 5,
+            ...(menu.up ? { bottom: window.innerHeight - menu.top } : { top: menu.top }),
+            background: '#fff', border: '1px solid #e5e7eb', borderRadius: 10,
+            boxShadow: '0 8px 24px rgba(0,0,0,0.14)',
+          }}>
+            {nos.map(n => item(`b${n}`, (
+              <>
+                <span style={{ width: 8, height: 8, borderRadius: '50%', background: boxColor(n) }} />
+                박스 {n}번
+                {n === no && <span style={{ marginLeft: 'auto', color: '#2563eb' }}>✓</span>}
+              </>
+            ), () => pick(boxLabel(n)), n === no))}
+            {next <= 9 && item('new', <>＋ 새 박스 ({next}번)</>, () => pick(boxLabel(next)), false, '#2563eb')}
+            {allowNone && no && (
+              <>
+                <div style={{ height: 1, background: '#f0f0f0', margin: '4px 2px' }} />
+                {item('none', '박스 빼기', () => pick(''), false, '#999')}
+              </>
+            )}
+          </div>
+        </>
+      )}
+    </>
+  );
+}
+
 // 발주서 머리줄의 일괄 적용 버튼(전체예약·전체박스).
 function bulkBtn(color: string): React.CSSProperties {
   return {
@@ -312,7 +412,7 @@ function OfficeCell({ match, need }: { match: OfficeMatch | null; need: number }
 }
 
 /* ── 메인 테이블 ── */
-export default function OrderTable({ rows, onMemoChange, onShipmentChange, colorScheme = 'pink', readOnly = false, onDelete, officeQtyOf, selectedOrders, onToggleSelect, onBulkOrder, doneOrders, onSortByBox, bundleLabel, bundleColorOf, layout = 'order', selectedLines, onToggleLine, hideBox = false, newOrders, onSplitLine }: Props) {
+export default function OrderTable({ rows, onMemoChange, onShipmentChange, colorScheme = 'pink', readOnly = false, onDelete, officeQtyOf, selectedOrders, onToggleSelect, onBulkOrder, doneOrders, onSortByBox, bundleLabel, bundleColorOf, layout = 'order', selectedLines, onToggleLine, hideBox = false, newOrders, onSplitLine, isChunkCollapsed, onToggleChunk, onEditChunkDate }: Props) {
   if (rows.length === 0) return null;
 
   const sc = SCHEME[colorScheme];
@@ -393,7 +493,7 @@ export default function OrderTable({ rows, onMemoChange, onShipmentChange, color
     const boxHeaders = [
       '상품이름', '확정수량',
       ...(officeQtyOf ? ['사무실'] : []),
-      '예약', '박스', '발주번호', ...(onDelete ? ['삭제'] : []),
+      '박스', '발주번호', ...(onDelete ? ['삭제'] : []),
     ];
 
     return (
@@ -420,6 +520,10 @@ export default function OrderTable({ rows, onMemoChange, onShipmentChange, color
               const chunkDone = chunk.orders.length > 0 && chunk.orders.every(no => doneOrders?.has(no));
               const edge = chunkDone ? DONE : (tint || sc.accentBorder);
               const allOn = selectable && chunk.orders.every(no => selectedOrders?.has(no));
+              const canFold = chunkDone && !!chunk.bundle && !!onToggleChunk;
+              // 이 덩어리에 만들어진 박스 중 가장 큰 번호. 드롭다운은 여기까지만 보여준다.
+              const chunkMaxBox = Math.max(0, ...chunk.boxes.map(b => b.no));
+              const folded = canFold && !!isChunkCollapsed?.(chunk.bundle);
               return (
                 <React.Fragment key={chunk.key}>
                   {ci > 0 && (
@@ -440,6 +544,19 @@ export default function OrderTable({ rows, onMemoChange, onShipmentChange, color
                       borderLeft: `4px solid ${edge}`,
                     }}>
                       <span style={{ display: 'inline-flex', alignItems: 'center', gap: 7 }}>
+                        {canFold && (
+                          <button
+                            onClick={() => onToggleChunk!(chunk.bundle)}
+                            title={folded ? '펼쳐서 박스·상품 보기' : '접기'}
+                            style={{
+                              width: 20, padding: 0, fontSize: 11, lineHeight: '18px',
+                              color: DONE, background: '#fff', border: `1px solid ${DONE}55`,
+                              borderRadius: 4, cursor: 'pointer',
+                            }}
+                          >
+                            {folded ? '▸' : '▾'}
+                          </button>
+                        )}
                         {selectable && (
                           <input
                             type="checkbox"
@@ -450,31 +567,24 @@ export default function OrderTable({ rows, onMemoChange, onShipmentChange, color
                           />
                         )}
                         <CenterTag name={chunk.center} color={sc.accent} />
-                        <DateTag value={chunk.date} />
-                        {!!chunk.bundle && (
-                          <span style={{
-                            padding: '0 6px', fontSize: 11, fontWeight: 700, borderRadius: 8,
-                            color: tint, background: `${tint}22`,
-                          }}>
-                            {bundleLabel ? bundleLabel(chunk.bundle) : chunk.bundle}
+                        {onEditChunkDate && chunk.bundle ? (
+                          <span
+                            onClick={() => onEditChunkDate(chunk.bundle)}
+                            title="눌러서 입고예정일 바꾸기"
+                            style={{ cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 3 }}
+                          >
+                            <DateTag value={chunk.date} />
+                            <span style={{ fontSize: 11, color: '#999' }}>✎</span>
                           </span>
+                        ) : (
+                          <DateTag value={chunk.date} />
                         )}
+                        {/* 묶음 이름·완료·박스 수는 오른쪽 카드에 있어 여기서는 뺀다(같은 정보가 두 번 보이지 않게). */}
                         <span style={{ fontSize: 11, color: '#777', fontWeight: 700 }}
                           title="이 덩어리의 발주서 수 · 품목 수 · 수량 합계">
                           발주 {chunk.orders.length} · {chunk.lines}품목 · {chunk.qty.toLocaleString()}개
                         </span>
-                        {chunkDone && (
-                          <span
-                            title="이 덩어리는 쉽먼트 생성까지 끝났어요"
-                            style={{
-                              padding: '1px 7px', fontSize: 11, fontWeight: 800, borderRadius: 8,
-                              color: '#fff', background: DONE, letterSpacing: '-0.2px',
-                            }}
-                          >
-                            쉽먼트 완료 ✓
-                          </span>
-                        )}
-                        {onSortByBox && (
+                        {onSortByBox && !folded && (
                           <button
                             onClick={onSortByBox}
                             title="박스 번호 순(1번 → 2번 → …)으로 줄을 다시 세웁니다"
@@ -491,7 +601,7 @@ export default function OrderTable({ rows, onMemoChange, onShipmentChange, color
                     </td>
                   </tr>
 
-                  {chunk.boxes.map(box => {
+                  {!folded && chunk.boxes.map(box => {
                     const bc = box.no ? boxColor(box.no) : '#b0b4bb';
                     return (
                       <React.Fragment key={`${chunk.key}-${box.no}`}>
@@ -535,27 +645,23 @@ export default function OrderTable({ rows, onMemoChange, onShipmentChange, color
                                 {row._조각 !== undefined && <div style={{ fontSize: 10, color: '#aaa' }}>/{row._원수량}</div>}
                               </td>
                               {officeQtyOf && <OfficeCell match={officeQtyOf(row.상품이름)} need={Number(row._원수량 ?? row.확정수량) || 0} />}
-                              <td style={{ ...cs(64), padding: '4px 4px' }}>
-                                {readOnly ? (
-                                  <span style={{ fontSize: 12, color: '#666' }}>{row.메모}</span>
-                                ) : (
-                                  <MemoButton value={row.메모} onChange={(v) => onMemoChange(row.id, v)} withHanjung={false} showCode={colorScheme === 'green'} />
-                                )}
-                              </td>
                               <td style={{ ...cs(76), padding: '4px 4px', whiteSpace: 'nowrap' }}>
                                 {readOnly ? (
                                   <span style={{ fontSize: 12, color: '#666' }}>{row.쉼먼트}</span>
                                 ) : (
                                   <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-                                    <BoxButton value={row.쉼먼트} onChange={(v) => onShipmentChange(row.id, v)} />
-                                    {onSplitLine && (Number(row.확정수량) || 0) >= 2 && (
+                                    <BoxPicker value={row.쉼먼트} maxNo={chunkMaxBox} onChange={(v) => onShipmentChange(row.id, v)} />
+                                    {/* 나눌 수 없는 줄(1개)도 자리는 비워 둬서 드롭다운 줄이 맞게 한다. */}
+                                    {onSplitLine && (
                                       <button
                                         onClick={() => onSplitLine(row.id)}
-                                        title="이 상품을 박스 여러 개에 나눠 담습니다(일부 수량을 새 박스로)"
+                                        disabled={(Number(row.확정수량) || 0) < 2 && row._조각 === undefined}
+                                        title="이 상품을 박스 여러 개에 나눠 담습니다(박스마다 수량 입력)"
                                         style={{
                                           padding: '2px 6px', fontSize: 12, lineHeight: 1.3,
                                           color: '#888', background: '#fff', border: '1px solid #ddd',
                                           borderRadius: 5, cursor: 'pointer',
+                                          visibility: (Number(row.확정수량) || 0) >= 2 || row._조각 !== undefined ? 'visible' : 'hidden',
                                         }}
                                       >
                                         ✂

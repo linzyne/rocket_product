@@ -5,6 +5,7 @@ export type AppMenuId =
   | 'collect'
   | 'proposal'
   | 'detail'
+  | 'order-search'
   | 'coupang-order'
   | 'coupang-ship'
   | 'coupang-send'
@@ -47,8 +48,9 @@ export const MENU_GROUPS: { title: string; items: MenuItem[] }[] = [
   {
     title: '발주',
     items: [
+      { id: 'order-search', label: '발주서 검색', ready: true, icon: icon('M21 21l-4.35-4.35M11 18a7 7 0 100-14 7 7 0 000 14z') },
       { id: 'coupang-order', label: '쿠팡발주확인', ready: true, icon: icon('M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4') },
-      { id: 'coupang-ship', label: '쉽먼트생성', ready: true, icon: icon('M13 16V6a1 1 0 00-1-1H4a1 1 0 00-1 1v10a1 1 0 001 1h1m8-1a1 1 0 01-1 1H9m4-1V8a1 1 0 011-1h2.586a1 1 0 01.707.293l3.414 3.414a1 1 0 01.293.707V16a1 1 0 01-1 1h-1m-6-1a1 1 0 001 1h1M5 17a2 2 0 104 0m-4 0a2 2 0 114 0m6 0a2 2 0 104 0m-4 0a2 2 0 114 0') },
+      { id: 'coupang-ship', label: '쉽먼트생성대기', ready: true, icon: icon('M13 16V6a1 1 0 00-1-1H4a1 1 0 00-1 1v10a1 1 0 001 1h1m8-1a1 1 0 01-1 1H9m4-1V8a1 1 0 011-1h2.586a1 1 0 01.707.293l3.414 3.414a1 1 0 01.293.707V16a1 1 0 01-1 1h-1m-6-1a1 1 0 001 1h1M5 17a2 2 0 104 0m-4 0a2 2 0 114 0m6 0a2 2 0 104 0m-4 0a2 2 0 114 0') },
       { id: 'coupang-send', label: '발송대기/완료', ready: true, icon: icon('M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z') },
       { id: 'cn-order', label: '한중발주', ready: true, icon: icon('M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17m0 0a2 2 0 100 4 2 2 0 000-4zm-8 2a2 2 0 11-4 0 2 2 0 014 0z') },
     ],
@@ -77,6 +79,12 @@ export const MENU_GROUPS: { title: string; items: MenuItem[] }[] = [
 ];
 
 const ALL_ITEMS = MENU_GROUPS.flatMap(g => g.items);
+
+// 개발 중 메뉴 목록을 고치면 화면 일부만 바뀌어(왼쪽 메뉴만 새것, 앱 본체는 옛것) 새 메뉴를 누르면 엉뚱한 화면으로
+// 가는 일이 있었다. 이 파일이 바뀌면 페이지를 통째로 새로 불러오게 한다.
+// Vite는 글자 그대로 import.meta.hot 이 있어야 이 기능을 붙여 주므로 형 검사만 건너뛴다.
+// @ts-ignore
+if (import.meta.hot) import.meta.hot.decline();
 
 export const isAppMenuId = (value: string): value is AppMenuId => ALL_ITEMS.some(item => item.id === value);
 

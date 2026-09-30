@@ -12,7 +12,10 @@ import { db, ensureSignedIn } from '../../../utils/firebase';
 export const WORK_KEY = 'coupangOrderWork';
 // 출고로 넘어간 줄을 가려내야 해서 그쪽 저장소 이름도 여기 둔다(shipOutStore가 이 상수를 쓴다).
 export const SHIPOUT_KEY = 'coupangShipOuts';
-const DOC_PATH = ['appState', 'coupangOrderWork'] as const;
+// 개발 중 동기화를 시험할 때만 이 기기 localStorage의 'coupangOrderWork.testDoc'에 적은 문서를 쓴다
+// (진짜 목록을 건드리지 않고 두 창으로 재현하려고). 평소에는 비어 있어 appState/coupangOrderWork를 쓴다.
+const TEST_DOC = (() => { try { return localStorage.getItem('coupangOrderWork.testDoc') || ''; } catch { return ''; } })();
+const DOC_PATH = ['appState', TEST_DOC || 'coupangOrderWork'] as const;
 // 이 기기에 있던 목록을 클라우드 것과 한 번 합쳤는지. 합치기는 기기마다 딱 한 번만 한다.
 const MERGED_KEY = 'coupangOrderWork.merged';
 const CHANGED = 'coupang-work-changed';
@@ -39,7 +42,12 @@ export const stableStringify = (v: unknown): string => JSON.stringify(v, (_k, va
   val && typeof val === 'object' && !Array.isArray(val)
     ? Object.fromEntries(Object.keys(val).sort().map(k => [k, (val as Record<string, unknown>)[k]]))
     : val);
-const stamp = (w: StoredWork) => stableStringify({ rows: w.rows, fileName: w.fileName, done: w.done, seen: w.seen || {} });
+// 줄 순서는 비교하지 않는다(화면이 알아서 발주서 순서로 줄 세운다). 순서만 다른 목록을 "바뀜"으로 보면, 정렬 방식이
+// 다른 두 창(옛 코드 등)이 서로 끝없이 다시 저장하며 덮어쓰기를 주고받는다(묶음 적용이 깜빡이다 되돌아간 일).
+const stamp = (w: StoredWork) => stableStringify({
+  rows: w.rows.map(r => stableStringify(r)).sort(),
+  fileName: w.fileName, done: [...(w.done || [])].sort(), seen: w.seen || {},
+});
 
 export const readWork = (): StoredWork => {
   try {
@@ -160,8 +168,12 @@ const upload = (w: StoredWork) => {
     base = merged;
     lastSynced = stamp(merged);
     // 다른 컴퓨터가 바꾼 것이 섞였으면 이 기기 목록도 합친 것으로 바꾼다.
-    if (stamp(merged) !== stamp(readWork())) {
-      writeLocal(merged);
+    // 단, 올리는 사이에 이 기기에서 또 고쳤으면(예: ×를 연달아 누름) 그걸 덮어쓰면 안 된다.
+    // 그때는 그사이 고친 것(mine → 지금)을 합친 결과 위에 다시 얹는다. 다음 올리기가 이걸 올린다.
+    const now = readWork();
+    const next = stamp(now) === stamp(mine) ? merged : mergeWork(mine, now, merged);
+    if (stamp(next) !== stamp(now)) {
+      writeLocal(next);
       notify();
     }
   }).catch(err => console.error('발주 작업 목록 올리기 실패:', err))
@@ -255,12 +267,14 @@ export const subscribeWork = (cb: () => void): (() => void) => {
 
 // 클라우드 구독은 화면이 몇 개든 하나만 걸어 둔다.
 let watchers = 0;
+let started = false;
 let unwatch: (() => void) | undefined;
 let cancelled = false;
 
 const startSync = (): (() => void) => {
   watchers++;
-  if (watchers === 1 && db) {
+  if (!started && db) {
+    started = true;
     const firestore = db;
     cancelled = false;
     (async () => {
@@ -313,13 +327,10 @@ const startSync = (): (() => void) => {
       );
     })();
   }
+  // 보는 화면이 없어져도 클라우드 연결은 끊지 않는다. 끊었다 다시 이으면 첫 소식(아직 방금 고친 게 안 올라간
+  // 클라우드 목록)으로 이 기기 목록을 덮어써서, 방금 한 일이 사라졌다(쉽먼트생성대기 → 발주확인으로 되돌린 줄이 없어짐).
   return () => {
     watchers--;
-    if (watchers === 0) {
-      cancelled = true;
-      unwatch?.();
-      unwatch = undefined;
-    }
   };
 };
 
@@ -336,3 +347,8 @@ export const forceUploadWork = async () => {
   else await setDoc(doc(db, ...DOC_PATH), { ...w, updatedAt: Date.now() });
   base = w;
 };
+
+// 클라우드 구독·올리기 상태를 모듈에 들고 있어서, 개발 중 이 파일만 바뀌면 옛것과 새것 두 벌이 같이 돌며
+// 목록을 번갈아 덮어쓴다(지운 줄이 사라졌다 생겼다 함). 바뀌면 페이지를 통째로 새로 불러오게 한다.
+// @ts-ignore
+if (import.meta.hot) import.meta.hot.decline();

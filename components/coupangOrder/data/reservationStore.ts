@@ -26,6 +26,7 @@ interface StoredReservation {
   묶음?: string;
   묶음센터?: string;
   묶음일자?: string;
+  SKU?: string;
   savedAt: number;
 }
 
@@ -45,6 +46,7 @@ const toStored = (r: OrderRow, savedAt: number): StoredReservation => ({
   묶음: r.묶음 || '',
   묶음센터: r.묶음센터 || '',
   묶음일자: r.묶음일자 || '',
+  SKU: r.SKU || '',
   savedAt,
 });
 
@@ -59,6 +61,7 @@ const fromStored = (s: StoredReservation): OrderRow => ({
   묶음: s.묶음 || '',
   묶음센터: s.묶음센터 || '',
   묶음일자: s.묶음일자 || '',
+  SKU: s.SKU || '',
 });
 
 // 발주서를 읽을 때와 같은 순서: 입고예정일 → 물류센터 → 발주번호 → 상품이름.

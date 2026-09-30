@@ -1,7 +1,9 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { ShipOut, ShipOutLine, subscribeShipOuts, markShipOuts } from '../coupangOrder/data/shipOutStore';
+import { ShipOut, ShipOutLine, subscribeShipOuts, markShipOuts, shipOutBatch, shipOutDone } from '../coupangOrder/data/shipOutStore';
 import { ShipmentBatch, subscribeShipments, allBoxes, waybillForBox, batchForItem } from '../../data/shipmentStore';
 import ShipmentWaybillModal from '../coupangOrder/components/ShipmentWaybillModal';
+import { useHanjungBadge } from '../coupangOrder/data/useHanjungBadge';
+import { useReady } from '../coupangOrder/data/readyStore';
 import { InventoryItem, subscribeInventory, makeOfficeLookup } from '../../data/inventoryStore';
 import { expandBoxSplit, parseBoxNo } from '../coupangOrder/utils/dataProcessor';
 import { ymdSortKey } from '../coupangOrder/utils/dateUtils';
@@ -10,20 +12,9 @@ import { ymdSortKey } from '../coupangOrder/utils/dateUtils';
 // 아직 준비 안 된 상품(입고 기다리는 것 등)이 다 준비될 때까지 기다리는 곳이다.
 // 상품 줄마다 "준비됨"을 체크하고, 다 되면 "발송 완료"를 눌러 발송날짜를 고르면 아래 발송 완료 기록으로 내려간다.
 
-// 쉽먼트생성과 같은 기준으로 끝난 건인지 본다(사람이 켠 완료가 우선, 없으면 예약·운송장·양식이 다 됐는지).
-const batchOf = (item: ShipOut, batches: ShipmentBatch[]) => {
-  const mine = new Set(item.lines.map(l => String(l.발주번호 || '').trim()).filter(Boolean));
-  return batches.find(b => b.id === item.batchId)
-    || batches
-      .filter(b => allBoxes(b).some(box => box.lines.some(l => mine.has(String(l.발주번호 || '').trim()))))
-      .sort((a, b) => b.createdAt - a.createdAt)[0];
-};
-const isShipDone = (item: ShipOut, batch?: ShipmentBatch) => {
-  if (item.doneAt) return true;
-  if (item.undoneAt) return false;
-  const boxes = batch ? allBoxes(batch) : [];
-  return boxes.length > 0 && boxes.every(b => (b.waybill || '').trim()) && !!item.formSavedAt;
-};
+// 쉽먼트생성과 같은 기준으로 끝난 건인지 본다(shipOutStore의 shipOutDone).
+const batchOf = shipOutBatch;
+const isShipDone = (item: ShipOut, batch?: ShipmentBatch) => shipOutDone(item, batch ? [batch] : []);
 
 // 준비 표시는 상품 줄 단위(여러 박스로 나눈 줄도 한 번에 체크).
 const readyKey = (l: Pick<ShipOutLine, '발주번호' | '상품이름' | '확정수량'>) => `${l.발주번호}│${l.상품이름}│${l.확정수량}`;
@@ -46,6 +37,9 @@ const ORANGE = '#e67e22';
 
 export default function CoupangSendPage({ onGoShip }: { onGoShip?: () => void } = {}) {
   const [list, setList] = useState<ShipOut[]>([]);
+  const hanjungBadge = useHanjungBadge();
+  // 준비 체크: 쿠팡발주확인부터 쓰는 공통 기록 + 예전에 이 출고 건에 적어 둔 표시.
+  const readyStore = useReady();
   const [batches, setBatches] = useState<ShipmentBatch[]>([]);
   const [inventory, setInventory] = useState<InventoryItem[]>([]);
   const [sendPick, setSendPick] = useState<{ item: ShipOut; date: string } | null>(null);
@@ -91,15 +85,17 @@ export default function CoupangSendPage({ onGoShip }: { onGoShip?: () => void } 
     return Array.from(byBox.entries()).sort((a, b) => (a[0] || 9999) - (b[0] || 9999));
   };
 
-  const readyCount = (item: ShipOut) => {
-    const ready = new Set(item.readyKeys || []);
-    return { done: item.lines.filter(l => ready.has(readyKey(l))).length, total: item.lines.length };
-  };
+  const isLineReady = (item: ShipOut, l: ShipOutLine) => readyStore.isReady(l, item.readyKeys);
+  const readyCount = (item: ShipOut) => ({ done: item.lines.filter(l => isLineReady(item, l)).length, total: item.lines.length });
 
-  const toggleReady = (item: ShipOut, keys: string[], on: boolean) => {
-    const next = new Set(item.readyKeys || []);
-    keys.forEach(k => (on ? next.add(k) : next.delete(k)));
-    markShipOuts([item.id], { readyKeys: Array.from(next) });
+  const toggleReady = (item: ShipOut, lines: ShipOutLine[], on: boolean) => {
+    readyStore.setReady(lines, on).catch(err => alert(`준비 체크 저장 실패: ${err?.message || err}`));
+    // 끌 때는 예전 방식으로 출고 건에 적혀 있던 표시도 지운다.
+    if (!on && item.readyKeys?.length) {
+      const drop = new Set(lines.map(readyKey));
+      const rest = item.readyKeys.filter(k => !drop.has(k));
+      if (rest.length !== item.readyKeys.length) markShipOuts([item.id], { readyKeys: rest });
+    }
   };
 
   const backToShip = (item: ShipOut) => {
@@ -123,11 +119,14 @@ export default function CoupangSendPage({ onGoShip }: { onGoShip?: () => void } 
     markShipOuts([item.id], { sentDate: undefined });
   };
 
+
   const btn = (color: string, solid = false): React.CSSProperties => ({
     display: 'inline-flex', alignItems: 'center', gap: 4, height: 28, padding: '0 11px',
     fontSize: 12, fontWeight: 700, borderRadius: 7, cursor: 'pointer', whiteSpace: 'nowrap',
     border: `1.5px solid ${solid ? color : `${color}66`}`, background: solid ? color : '#fff', color: solid ? '#fff' : color,
   });
+
+
 
   return (
     <div style={{ minHeight: '100vh', background: '#fff', color: '#1a1a1a', fontFamily: "'Apple SD Gothic Neo', 'Malgun Gothic', 'Noto Sans KR', sans-serif" }}>
@@ -145,98 +144,97 @@ export default function CoupangSendPage({ onGoShip }: { onGoShip?: () => void } 
             <span style={{ fontSize: 12 }}>쉽먼트생성에서 <strong>쉽먼트 완료</strong>를 누르면 여기로 와요.</span>
           </div>
         ) : (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+          // 카드 목록(격자). 카드 안에서 바로 박스별 상품 준비 체크 · 운송장 · 발송 완료까지 한다.
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(340px, 1fr))', gap: 16, alignItems: 'start' }}>
             {waiting.map(item => {
               const { done, total } = readyCount(item);
               const allReady = total > 0 && done === total;
-              const ready = new Set(item.readyKeys || []);
               const boxes = boxesOf(item);
               const boxCount = boxes.filter(([no]) => no > 0).length;
               return (
                 <div key={item.id} style={{
-                  border: `1px solid ${allReady ? `${GREEN}55` : '#e5e7eb'}`, borderLeft: `4px solid ${allReady ? GREEN : ORANGE}`,
-                  borderRadius: 10, overflow: 'hidden', background: '#fff',
+                  border: `1.5px solid ${allReady ? `${GREEN}88` : '#e5e7eb'}`, borderRadius: 14, overflow: 'hidden',
+                  background: '#fff', boxShadow: '0 1px 4px rgba(0,0,0,0.05)',
                 }}>
-                  {/* 머리줄: 센터 · 입고예정일 · 이름 · 박스 수 · 준비 현황 · 버튼 */}
-                  <div style={{
-                    display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', padding: '10px 12px',
-                    background: allReady ? '#f2fbf6' : '#fafafa', borderBottom: '1px solid #f0f0f0',
-                  }}>
-                    <span style={{ padding: '2px 10px', fontSize: 14, fontWeight: 800, borderRadius: 6, color: '#fff', background: '#b04a3e' }}>{item.center}</span>
-                    <span style={{ padding: '1px 8px', fontSize: 14, fontWeight: 800, borderRadius: 6, color: '#1e293b', border: '1.5px solid #334155' }}>{dayText(item.date)}</span>
-                    <span style={{ fontSize: 12, fontWeight: 700, color: '#666' }} title={`출고번호 ${item.id}`}>{item.bundle}</span>
-                    <span style={{ fontSize: 13, fontWeight: 800, color: '#333' }}>📦 {boxCount}박스</span>
-                    <span
-                      title="준비됨으로 체크한 상품 줄 수"
-                      style={{
-                        padding: '2px 9px', fontSize: 12, fontWeight: 800, borderRadius: 999,
-                        color: allReady ? '#fff' : ORANGE, background: allReady ? GREEN : `${ORANGE}14`, border: `1px solid ${allReady ? GREEN : `${ORANGE}55`}`,
-                      }}
-                    >
-                      {allReady ? '✓ 모두 준비됨' : `준비 ${done}/${total}`}
-                    </span>
-                    <span style={{ flex: 1 }} />
-                    <button onClick={() => toggleReady(item, item.lines.map(readyKey), !allReady)} style={btn('#555')}>
-                      {allReady ? '준비 모두 풀기' : '모두 준비됨'}
-                    </button>
-                    <button onClick={() => openSend(item)} style={btn(GREEN, allReady)} title="택배를 보냈으면 누르고 발송날짜를 고르세요">
-                      🚚 발송 완료
-                    </button>
-                    <button onClick={() => backToShip(item)} style={btn('#999')} title="쉽먼트 완료를 풀고 쉽먼트생성으로 되돌립니다">
-                      ← 쉽먼트생성으로
-                    </button>
+                  {/* 머리: 센터 · 입고예정일 · 박스 수 */}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 12px', background: allReady ? '#f2fbf6' : '#fafafa', borderBottom: '1px solid #f0f0f0' }}>
+                    <span style={{ padding: '2px 9px', fontSize: 13, fontWeight: 800, borderRadius: 6, color: '#fff', background: '#b04a3e' }}>{item.center}</span>
+                    <b style={{ fontSize: 14, color: '#1e293b' }}>{dayText(item.date)}</b>
+                    <span style={{ fontSize: 11, color: '#999' }} title={`출고번호 ${item.id}`}>{item.bundle}</span>
+                    <span style={{ marginLeft: 'auto', fontSize: 13, fontWeight: 800, color: '#333' }}>📦 {boxCount}박스</span>
                   </div>
 
-                  {/* 박스별 상품 줄 */}
+                  {/* 박스별 상품 줄: 체크하면 준비됨. 상품이 많으면 이 안에서만 스크롤해 카드 높이를 맞춘다. */}
+                  <div style={{ maxHeight: 300, overflowY: 'auto' }}>
                   {boxes.map(([no, pieces]) => {
                     const wb = no ? waybillOf(item, no) : '';
                     return (
                       <div key={no}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '4px 12px', background: `${ORANGE}0d`, borderBottom: '1px solid #f5f5f5', fontSize: 12 }}>
-                          <span style={{ padding: '0 8px', fontWeight: 800, borderRadius: 8, color: '#fff', background: ORANGE }}>📦 {no ? `박스${no}` : '박스 미지정'}</span>
-                          {wb && <span style={{ fontWeight: 800, color: '#333', fontFamily: 'monospace' }} title="롯데 운송장번호">🚚 {wb}</span>}
+                        <div style={{ position: 'sticky', top: 0, zIndex: 1, display: 'flex', alignItems: 'center', gap: 6, padding: '4px 12px', background: '#fdf5ec', fontSize: 11.5 }}>
+                          <span style={{ padding: '0 7px', fontWeight: 800, borderRadius: 8, color: '#fff', background: ORANGE }}>{no ? `박스${no}` : '박스 미지정'}</span>
+                          {wb
+                            ? <span style={{ fontWeight: 700, color: '#333', fontFamily: 'monospace' }} title="롯데 운송장번호">🚚 {wb}</span>
+                            : no > 0 && <span style={{ color: '#bbb' }}>운송장 없음</span>}
                           {no > 0 && (
-                            <button onClick={() => editWaybills(item)} style={{ ...btn('#888'), height: 22, padding: '0 8px', fontSize: 11 }} title="이 건의 운송장번호를 고칩니다">
-                              {wb ? '수정' : '번호 넣기'}
+                            <button onClick={() => editWaybills(item)} style={{ ...btn('#888'), height: 20, padding: '0 7px', fontSize: 10.5 }} title="이 건의 운송장번호를 고칩니다">
+                              {wb ? '수정' : '넣기'}
                             </button>
                           )}
-                          <span style={{ marginLeft: 'auto', color: '#999', fontWeight: 700 }}>
-                            {pieces.length}품목 · {pieces.reduce((s, p) => s + p.qty, 0).toLocaleString()}개
-                          </span>
                         </div>
                         {pieces.map(({ line, qty }, i) => {
                           const key = readyKey(line);
-                          const on = ready.has(key);
+                          const on = isLineReady(item, line);
                           const office = officeQtyOf(line.상품이름);
                           const need = Number(line.확정수량) || 0;
                           const short = office?.qty != null && office.qty < need;
                           return (
                             <label
                               key={`${key}-${i}`}
-                              style={{
-                                display: 'flex', alignItems: 'center', gap: 10, padding: '7px 12px', cursor: 'pointer',
-                                borderBottom: '1px solid #f5f5f5', background: on ? '#f6fcf8' : '#fff',
-                              }}
+                              title={`${line.상품이름} · 발주 ${line.발주번호}`}
+                              style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '5px 12px', cursor: 'pointer', borderTop: '1px solid #f5f5f5', background: on ? '#f6fcf8' : '#fff' }}
                             >
-                              <input type="checkbox" checked={on} onChange={e => toggleReady(item, [key], e.target.checked)} style={{ width: 16, height: 16, margin: 0, cursor: 'pointer' }} />
-                              <span style={{ flex: 1, fontSize: 13, color: on ? '#7a8a80' : '#222', textDecoration: on ? 'line-through' : 'none' }}>{line.상품이름}</span>
-                              <span style={{ minWidth: 48, textAlign: 'right', fontSize: 13, fontWeight: 700 }} title={qty !== need ? `전체 ${need}개 중 이 박스` : undefined}>
-                                {qty.toLocaleString()}개
+                              <input type="checkbox" checked={on} onChange={e => toggleReady(item, [line], e.target.checked)} style={{ width: 15, height: 15, margin: 0, cursor: 'pointer', flexShrink: 0 }} />
+                              <span style={{ flex: 1, minWidth: 0, fontSize: 12.5, lineHeight: 1.35, color: on ? '#8a9a90' : '#222', textDecoration: on ? 'line-through' : 'none' }}>
+                                {line.상품이름.replace(/^주노엘\s*/, '')}
+                                {hanjungBadge(line)}
                               </span>
+                              <b style={{ fontSize: 12.5, whiteSpace: 'nowrap' }} title={qty !== need ? `전체 ${need}개 중 이 박스` : undefined}>{qty.toLocaleString()}개</b>
                               <span
-                                style={{ minWidth: 70, textAlign: 'right', fontSize: 11, color: office?.qty == null ? '#ccc' : short ? '#c0392b' : '#888', fontWeight: short ? 800 : 500 }}
+                                style={{ minWidth: 44, textAlign: 'right', fontSize: 10.5, whiteSpace: 'nowrap', color: office?.qty == null ? '#ccc' : short ? '#c0392b' : '#999', fontWeight: short ? 800 : 500 }}
                                 title={office ? `사무실 재고 · ${office.names.join(' / ')}` : '사무실재고에서 같은 상품을 못 찾았어요'}
                               >
                                 사무실 {office?.qty == null ? '-' : office.qty}
                               </span>
-                              <span style={{ minWidth: 86, textAlign: 'right', fontSize: 12, color: '#8a8f98', fontWeight: 700 }}>{line.발주번호}</span>
-                              {on && <span style={{ fontSize: 11, fontWeight: 800, color: GREEN }}>준비됨</span>}
                             </label>
                           );
                         })}
                       </div>
                     );
                   })}
+                  </div>
+
+                  {/* 아래: 준비 진행 막대 · 버튼 */}
+                  <div style={{ padding: '10px 12px 12px', borderTop: '1px solid #f0f0f0' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <div style={{ flex: 1, height: 7, borderRadius: 999, background: '#eef0f3', overflow: 'hidden' }}>
+                        <div style={{ width: `${total ? (done / total) * 100 : 0}%`, height: '100%', borderRadius: 999, background: allReady ? GREEN : ORANGE, transition: 'width .2s' }} />
+                      </div>
+                      <span style={{ fontSize: 12, fontWeight: 800, color: allReady ? GREEN : ORANGE, whiteSpace: 'nowrap' }}>
+                        {allReady ? '✓ 모두 준비됨' : `준비 ${done}/${total}`}
+                      </span>
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 10 }}>
+                      <button onClick={() => toggleReady(item, item.lines, !allReady)} style={btn('#555')}>
+                        {allReady ? '준비 풀기' : '모두 준비'}
+                      </button>
+                      <button onClick={() => openSend(item)} style={btn(GREEN, allReady)} title="택배를 보냈으면 누르고 발송날짜를 고르세요">
+                        🚚 발송 완료
+                      </button>
+                      <button onClick={() => backToShip(item)} style={{ ...btn('#999'), marginLeft: 'auto' }} title="쉽먼트 완료를 풀고 쉽먼트생성으로 되돌립니다">
+                        ← 쉽먼트생성
+                      </button>
+                    </div>
+                  </div>
                 </div>
               );
             })}

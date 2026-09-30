@@ -21,6 +21,8 @@ import AddressManager from '../coupangOrder/components/AddressManager';
 import SenderManager from '../coupangOrder/components/SenderManager';
 import ShipmentWaybillModal from '../coupangOrder/components/ShipmentWaybillModal';
 import ShipmentList from '../coupangOrder/components/ShipmentList';
+import { useHanjungBadge } from '../coupangOrder/data/useHanjungBadge';
+import { useReady } from '../coupangOrder/data/readyStore';
 
 // 발주 > 쉽먼트생성. 쿠팡발주확인의 묶음 패널에서 "쉽먼트"를 누른 건들이 여기로 옮겨 온다.
 // 화면 모양은 쿠팡발주확인과 같게: 왼쪽은 발주서 표, 오른쪽은 묶음(출고 건) 카드.
@@ -34,6 +36,12 @@ const lineKey = (l: { 발주번호: string; 상품이름: string; 확정수량: 
 const firstBoxNo = (value: string) =>
   (isBoxSplit(value) ? parseBoxSplit(value)[0]?.no : parseBoxNo(value)) ?? 9999;
 
+// 표의 줄 → 원래 발주 줄(준비 체크는 이걸로 찾는다). 여러 박스로 나눈 줄은 원래 수량으로.
+const lineOfRow = (row: DisplayRow) => ({
+  발주번호: row._발주번호, 상품이름: row.상품이름,
+  확정수량: row._조각 !== undefined ? (row._원수량 ?? row.확정수량) : row.확정수량,
+});
+
 // 표에서 덩어리 사이를 띄우는 흰 여백. 오른쪽 묶음 카드도 같은 간격을 쓴다.
 const CHUNK_GAP = 26;
 // 아직 쉽먼트를 안 끝낸 건의 색(끝난 건은 초록).
@@ -42,6 +50,19 @@ const PENDING_BOX = '#e67e22';
 
 export default function CoupangShipPage({ onGoOrder }: { onGoOrder?: () => void } = {}) {
   const [list, setList] = useState<ShipOut[]>([]);
+  const hanjungBadge = useHanjungBadge();
+  const ready = useReady();
+  // 준비 체크 한 줄: 쿠팡발주확인부터 쓰는 공통 기록 + 예전에 이 출고 건에 적어 둔 표시.
+  const lineReady = (item: ShipOut | undefined, l: { 발주번호: string; 상품이름: string; 확정수량: number | '' }) =>
+    ready.isReady(l, item?.readyKeys);
+  const toggleLineReady = (item: ShipOut | undefined, l: { 발주번호: string; 상품이름: string; 확정수량: number | '' }, on: boolean) => {
+    ready.setReady([l], on).catch(err => alert(`준비 체크 저장 실패: ${err instanceof Error ? err.message : String(err)}`));
+    // 끌 때는 예전 방식으로 출고 건에 적혀 있던 표시도 지운다(안 그러면 계속 준비됨으로 보인다).
+    if (!on && item?.readyKeys?.length) {
+      const k = `${l.발주번호}│${l.상품이름}│${l.확정수량}`;
+      if (item.readyKeys.includes(k)) markShipOuts([item.id], { readyKeys: item.readyKeys.filter(x => x !== k) });
+    }
+  };
   const [copied, setCopied] = useState('');
   const [opened, setOpened] = useState<Set<string>>(new Set());
   // 쉽먼트 완료한 건은 접어 두고, 펼친 것만 여기 적어 둔다.
@@ -697,7 +718,7 @@ export default function CoupangShipPage({ onGoOrder }: { onGoOrder?: () => void 
     <div style={{ minHeight: '100vh', background: '#fff', color: '#1a1a1a', fontFamily: "'Apple SD Gothic Neo', 'Malgun Gothic', 'Noto Sans KR', sans-serif" }}>
       <header style={{ background: '#fff', borderBottom: '1px solid #f0f0f0', position: 'sticky', top: 0, zIndex: 10 }}>
         <div style={{ maxWidth: 1600, margin: '0 auto', padding: '0 24px', height: 54, display: 'flex', alignItems: 'center', gap: 12 }}>
-          <span style={{ fontSize: 17, fontWeight: 700, letterSpacing: '-0.3px' }}>🚚 쉽먼트생성</span>
+          <span style={{ fontSize: 17, fontWeight: 700, letterSpacing: '-0.3px' }}>🚚 쉽먼트생성대기</span>
           {ordered.length > 0 && <span style={{ fontSize: 12, color: '#999' }}>출고 {ordered.length}건 · 발주 {itemCount}줄</span>}
 
           {/* 방금 한 일 되돌리기 · 다시실행 (⌘Z / ⌘⇧Z) */}
@@ -819,6 +840,9 @@ export default function CoupangShipPage({ onGoOrder }: { onGoOrder?: () => void 
                 monoBoxes={PENDING_BOX}
                 isChunkCollapsed={id => !openDone.has(id)}
                 chunkPad={chunkPad}
+                lineBadge={row => hanjungBadge({ 발주번호: row._발주번호, 상품이름: row.상품이름, 확정수량: row._조각 !== undefined ? (row._원수량 ?? row.확정수량) : row.확정수량 })}
+                isReady={row => lineReady(list.find(i => i.id === row.묶음), lineOfRow(row))}
+                onToggleReady={(row, on) => toggleLineReady(list.find(i => i.id === row.묶음), lineOfRow(row), on)}
                 boxWaybill={(id, no) => {
                   const item = list.find(i => i.id === id);
                   return item ? waybillOf(item, no) : '';
@@ -890,6 +914,18 @@ export default function CoupangShipPage({ onGoOrder }: { onGoOrder?: () => void 
                         {/* 센터·날짜·발주 수·수량, 체크 칸과 접기는 왼쪽 표 머리줄에 있어 카드에는 진행 상태만 둔다. */}
                         <div style={{ display: 'flex', alignItems: 'center', gap: 8, overflow: 'hidden' }}>
                           <span style={{ fontSize: 12, fontWeight: 800, color }} title={`출고번호 ${item.id} · ${item.center} · ${item.date}`}>{item.bundle}</span>
+                          {(() => {
+                            const doneN = item.lines.filter(l => lineReady(item, l)).length;
+                            const all = item.lines.length > 0 && doneN === item.lines.length;
+                            return (
+                              <span title="준비됨으로 체크한 상품 줄 수" style={{
+                                padding: '1px 8px', fontSize: 11, fontWeight: 800, borderRadius: 999,
+                                color: all ? '#fff' : '#e67e22', background: all ? '#27ae60' : '#fff4e8', border: `1px solid ${all ? '#27ae60' : '#f5c89a'}`,
+                              }}>
+                                {all ? '✓ 준비 끝' : `준비 ${doneN}/${item.lines.length}`}
+                              </span>
+                            );
+                          })()}
                           <span style={{
                             marginLeft: 'auto', padding: '1px 10px', fontSize: 15, fontWeight: 900, color: '#333',
                             background: '#fff', border: '1.5px solid #d5d5d5', borderRadius: 12, lineHeight: 1.3,

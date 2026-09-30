@@ -14,6 +14,8 @@ import WarehouseInPage from './components/hanjung/WarehouseInPage';
 import CoupangOrderPage from './components/coupangOrder/CoupangOrderPage';
 import CoupangShipPage from './components/coupangShip/CoupangShipPage';
 import CoupangSendPage from './components/coupangSend/CoupangSendPage';
+import OrderSearchPage from './components/coupangOrder/OrderSearchPage';
+import { installOrderNoCopy } from './utils/copyOrderNo';
 import { PlusIcon, DownloadIcon, CloseIcon, BroomIcon, SearchIcon, DocumentAddIcon, SaveIcon, CameraIcon, SettingsIcon, TagIcon, CheckIcon, ArchiveIcon } from './components/Icons';
 import ProductLabel from './components/ProductLabel';
 import BarcodeLabel from './components/BarcodeLabel';
@@ -2632,12 +2634,19 @@ const App: React.FC = () => {
     setActiveMenu('detail');
   }, []);
 
+  // 앱 어디서든 발주번호를 누르면 클립보드에 복사한다.
+  useEffect(() => installOrderNoCopy(), []);
+
   // 메뉴는 주소창 해시에 남겨서 새로고침·뒤로가기에도 같은 메뉴가 열리게 한다.
   useEffect(() => {
     if (window.location.hash !== `#/${activeMenu}`) window.location.hash = `/${activeMenu}`;
   }, [activeMenu]);
   useEffect(() => {
-    const onHashChange = () => setActiveMenu(readMenuFromHash());
+    // 모르는 메뉴 주소면 로켓제안서로 보내지 않고 지금 메뉴에 그대로 둔다(새 메뉴를 막 추가했을 때 등).
+    const onHashChange = () => {
+      const id = window.location.hash.replace(/^#\/?/, '');
+      if (isAppMenuId(id)) setActiveMenu(id);
+    };
     window.addEventListener('hashchange', onHashChange);
     return () => window.removeEventListener('hashchange', onHashChange);
   }, []);
@@ -3210,10 +3219,11 @@ const App: React.FC = () => {
       {activeMenu === 'coupang-order' && <CoupangOrderPage onGoShipOut={() => setActiveMenu('coupang-ship')} />}
       {activeMenu === 'coupang-ship' && <CoupangShipPage onGoOrder={() => setActiveMenu('coupang-order')} />}
       {activeMenu === 'coupang-send' && <CoupangSendPage onGoShip={() => setActiveMenu('coupang-ship')} />}
+      {activeMenu === 'order-search' && <OrderSearchPage onNavigate={setActiveMenu} />}
       {activeMenu === 'cn-order' && <HanjungOrderPage />}
       {activeMenu === 'import-in' && <ImportInPage />}
       {activeMenu === 'warehouse-in' && <WarehouseInPage />}
-      {!['collect', 'proposal', 'detail', 'product-manage', 'rocket-stock', 'rocket-sales', 'rocket-in', 'coupang-order', 'coupang-ship', 'coupang-send', 'cn-order', 'import-in', 'warehouse-in'].includes(activeMenu) && <MenuPlaceholder id={activeMenu} />}
+      {!['collect', 'proposal', 'detail', 'product-manage', 'rocket-stock', 'rocket-sales', 'rocket-in', 'order-search', 'coupang-order', 'coupang-ship', 'coupang-send', 'cn-order', 'import-in', 'warehouse-in'].includes(activeMenu) && <MenuPlaceholder id={activeMenu} />}
       {/* 상세페이지 에디터는 상품 행에서 연 것과 카테고리 탭에서 연 것을 따로 둔다. 둘 다 계속
           떠 있게 두고 숨겨만 둬서, 메뉴·탭을 오가도 작업 중인 내용이 날아가지 않는다.
           카테고리 탭 쪽은 탭마다 key를 달리 줘서 탭을 바꾸면 그 탭의 저장본으로 새로 뜬다. */}

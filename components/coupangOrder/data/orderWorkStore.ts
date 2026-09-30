@@ -3,12 +3,11 @@
 // 이어 붙인다. 날짜는 'YYYYMMDD' 글자로 저장했다가 되살린다.
 // 수집 화면에서도 발주서를 받아 여기에 이어 붙이므로 쿠팡발주확인 화면과 따로 두었다.
 // 저장은 orderWorkCloud가 맡는다(이 기기 + 클라우드). 그래서 다른 컴퓨터에서도 같은 목록을 본다.
-import { parseFile, buildDisplayRows, extractOrderRows, sortOrderRows } from '../utils/dataProcessor';
+import { parseFile, buildDisplayRows, extractOrderRows, sortOrderRows, pickNewByCount } from '../utils/dataProcessor';
 import type { DisplayRow } from '../utils/dataProcessor';
 import type { OrderRow } from '../types';
 import { dateKeyYMD, normalizeDateValue } from '../utils/dateUtils';
-import { reservationKey } from './reservationStore';
-import { shipOutLineKeys } from './shipOutStore';
+import { allShipOutLines } from './shipOutStore';
 import { readWork, writeWork, workLineKey } from './orderWorkCloud';
 
 export { subscribeWork } from './orderWorkCloud';
@@ -53,11 +52,9 @@ export async function appendOrderFile(file: File, reservations: OrderRow[]): Pro
   if (!rows.length) throw new Error('데이터를 찾을 수 없습니다. 헤더가 올바른지 확인해주세요.');
   const work = loadWork();
   const existing = extractOrderRows(work.rows);
-  const seen = new Set([...existing, ...reservations].map(reservationKey));
-  // 이미 쉽먼트생성으로 넘긴 줄도 건너뛴다(안 그러면 다음 수집 때 발주확인에 되살아난다).
-  const shipped = shipOutLineKeys();
-  const fresh = sortOrderRows(rows)
-    .filter(r => !seen.has(reservationKey(r)) && !shipped.has(workLineKey(r)));
+  // 발송 목록·예약·쉽먼트(발송 완료 포함)에 이미 있는 줄은 발주번호 + 상품이름의 개수로 맞춰 거른다
+  // (날짜·센터·수량은 앱과 서허에서 따로 바뀔 수 있어 보지 않는다).
+  const fresh = pickNewByCount(sortOrderRows(rows), [...existing, ...reservations, ...allShipOutLines()]);
   saveWork(buildDisplayRows([...existing, ...fresh]), file.name, work.done, fresh.map(r => r.발주번호));
   return { added: fresh.length, skipped: rows.length - fresh.length };
 }

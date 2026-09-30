@@ -6,10 +6,14 @@ import { ReceiveRow, subscribeReceives, settlementOf, sign } from '../../data/re
 import { nextHanjungCode } from '../../data/hanjungStore';
 import { subscribeReservations, reservationKey, setReservationMemo } from '../coupangOrder/data/reservationStore';
 import type { OrderRow } from '../coupangOrder/types';
+import {
+  HanjungQueueItem, subscribeHanjungQueue, removeFromHanjungQueue, addToHanjungQueue, hanjungQueueKey, queueItemToRow,
+} from '../coupangOrder/data/hanjungQueueStore';
 import { dateKeyYMD, formatDateDisplay } from '../coupangOrder/utils/dateUtils';
 
-// 발주 > 한중발주. 위쪽 "발주 대기"는 쿠팡발주확인에서 예약으로 넘긴 건 중 아직 1688에 주문하지 않은 것.
-// 실제로 주문할 때 골라서 고유번호와 함께 한중발주를 만들고, 아래 목록에서 고유번호별로 추적한다.
+// 발주 > 한중발주. 위쪽 "발주 대기"는 쿠팡발주확인 발송 목록에서 "한중"을 누른 줄(예약과 따로 저장해서, 그 줄이
+// 예약·쉽먼트 등 다른 단계로 넘어가도 여기서는 안 사라진다) + 예전 방식으로 예약에 넘겨 둔 줄 중 아직 주문 안 한 것.
+// 1688에 주문했으면 골라서 "주문완료"를 누른다 → 고유번호와 함께 한중발주가 되고, 아래 목록에서 고유번호별로 추적한다.
 // 한 건 = 1688에 한 번에 주문하는 묶음(같은 상품 여러 발주 줄을 합친 것).
 // 수입입고(사무실 도착)와 물류창고입고(쿠팡 입고 = 정산)를 건별로 합쳐, 얼마나 정산됐는지 보여준다.
 //  정산률 = 쿠팡 입고 수량 ÷ 수입입고 수량, 차익 = 정산 공급가(부가세 제외) − 총원가
@@ -29,35 +33,52 @@ interface Act { label: string; undo: () => Promise<unknown>; redo: () => Promise
 const history: { undo: Act[]; redo: Act[] } = { undo: [], redo: [] };
 const failed = (err: any) => alert(`되돌리기 실패: ${err?.message || err}`);
 
-// 발주 대기: 예약 중 아직 어느 한중발주에도 들어가지 않은 줄. 체크해서 한중발주 한 건으로 묶는다.
+// 발주 대기: 한중 대기 줄 + 예전 예약 줄 중 아직 어느 한중발주에도 들어가지 않은 줄. 체크해서 한중발주 한 건으로 묶는다.
+// 줄을 가리키는 열쇠는 발주번호·상품이름·수량(hanjungQueueKey). 날짜·센터는 바뀔 수 있어 뺀다.
+type PendingRow = OrderRow & { qkey: string; fromQueue: boolean };
 const PendingPanel: React.FC<{ orders: HanjungOrder[]; onRecord: (act: Act) => void }> = ({ orders, onRecord }) => {
   const [reservations, setReservations] = useState<OrderRow[]>([]);
+  const [queue, setQueue] = useState<HanjungQueueItem[]>([]);
   const [checked, setChecked] = useState<Set<string>>(new Set());
   const [saving, setSaving] = useState(false);
   useEffect(() => subscribeReservations(setReservations), []);
+  useEffect(() => subscribeHanjungQueue(setQueue), []);
 
-  const pending = useMemo(() => {
-    const used = new Set(orders.flatMap(o => o.lines.map(l => l.key)));
-    // 쿠팡발주확인에서 "대기"로 넘긴 줄은 1688에 주문하지 않으므로 뺀다.
-    return reservations.filter(r => !used.has(reservationKey(r)) && !(r.메모 || '').includes('대기'));
-  }, [reservations, orders]);
+  const pending: PendingRow[] = useMemo(() => {
+    const used = new Set(orders.flatMap(o => o.lines.map(l => hanjungQueueKey(l))));
+    const out: PendingRow[] = [];
+    const seen = new Set<string>();
+    for (const q of queue) {
+      if (used.has(q.key) || seen.has(q.key)) continue;
+      seen.add(q.key);
+      out.push({ ...queueItemToRow(q), qkey: q.key, fromQueue: true });
+    }
+    // 예전 방식: 예약으로 넘긴 줄(대기 제외) 중 아직 주문 안 한 것.
+    for (const r of reservations) {
+      const k = hanjungQueueKey(r);
+      if (used.has(k) || seen.has(k) || (r.메모 || '').includes('대기') || /H\d{6}-\d+/.test(r.메모 || '')) continue;
+      seen.add(k);
+      out.push({ ...r, qkey: k, fromQueue: false });
+    }
+    return out;
+  }, [reservations, queue, orders]);
 
   // 체크했던 줄이 다른 곳에서 한중발주로 넘어가면 선택에서 뺀다.
   useEffect(() => {
-    const keys = new Set(pending.map(reservationKey));
-    setChecked(prev => new Set(Array.from(prev).filter(k => keys.has(k))));
+    const keys = new Set<string>(pending.map(r => r.qkey));
+    setChecked(prev => new Set(Array.from(prev).filter((k: string) => keys.has(k))));
   }, [pending]);
 
   // 같은 상품끼리 묶는다(처음 나온 순서대로). 머리줄에 합산 수량을 보여주고, 그 아래에 발주 줄을 둔다.
   const groups = useMemo(() => {
-    const m = new Map<string, OrderRow[]>();
+    const m = new Map<string, PendingRow[]>();
     for (const r of pending) m.set(r.상품이름, [...(m.get(r.상품이름) || []), r]);
     return Array.from(m, ([name, rows]) => ({
       name, rows, qty: rows.reduce((s, r) => s + (Number(r.확정수량) || 0), 0),
     }));
   }, [pending]);
 
-  const selected = pending.filter(r => checked.has(reservationKey(r)));
+  const selected = pending.filter(r => checked.has(r.qkey));
   // 선택한 줄을 상품별로 합친 수량(1688에 주문할 수량).
   const byProduct = Array.from(
     selected.reduce((m, r) => m.set(r.상품이름, (m.get(r.상품이름) || 0) + (Number(r.확정수량) || 0)), new Map<string, number>())
@@ -70,8 +91,8 @@ const PendingPanel: React.FC<{ orders: HanjungOrder[]; onRecord: (act: Act) => v
   });
   const allChecked = pending.length > 0 && selected.length === pending.length;
   // 상품 머리줄 체크: 그 상품의 발주 줄을 모두 고르거나 모두 뺀다.
-  const toggleGroup = (rows: OrderRow[]) => setChecked(prev => {
-    const keys = rows.map(reservationKey);
+  const toggleGroup = (rows: PendingRow[]) => setChecked(prev => {
+    const keys = rows.map(r => r.qkey);
     const on = keys.every(k => prev.has(k));
     const next = new Set(prev);
     keys.forEach(k => (on ? next.delete(k) : next.add(k)));
@@ -80,7 +101,7 @@ const PendingPanel: React.FC<{ orders: HanjungOrder[]; onRecord: (act: Act) => v
 
   const create = async () => {
     if (!selected.length) return;
-    const input = prompt(`선택한 ${selected.length}건으로 한중발주를 만들어요.\n고유번호를 입력해주세요.`, nextHanjungCode(orders));
+    const input = prompt(`1688에 주문한 ${selected.length}건을 주문완료로 해요(한중발주가 만들어져요).\n고유번호를 입력해주세요.`, nextHanjungCode(orders));
     const code = input?.trim();
     if (!code) return;
     if (orders.some(o => o.code === code)) return alert(`고유번호 ${code}는 이미 있어요.`);
@@ -98,22 +119,50 @@ const PendingPanel: React.FC<{ orders: HanjungOrder[]; onRecord: (act: Act) => v
       })),
       receipts: [],
     };
+    // 한중 대기에서 온 줄은 대기에서 빼고, 예전 예약 줄은 예약 메모에 고유번호를 적는다.
+    const fromQueue = selected.filter(r => r.fromQueue);
+    const fromRes = selected.filter(r => !r.fromQueue);
+    const queued = queue.filter(q => fromQueue.some(r => r.qkey === q.key));
     setSaving(true);
     try {
       await saveHanjungOrder(order);
-      await setReservationMemo(selected, `예약 ${code}`);
+      if (fromQueue.length) await removeFromHanjungQueue(fromQueue.map(r => r.qkey));
+      if (fromRes.length) await setReservationMemo(fromRes, `예약 ${code}`);
       setChecked(new Set());
-      // 되돌리면 한중발주를 지우고, 예약 메모를 만들기 전 값으로 돌린다.
-      const before = selected.map(r => ({ row: r, memo: r.메모 || '예약' }));
+      // 되돌리면 한중발주를 지우고, 대기 줄은 다시 넣고, 예약 메모는 만들기 전 값으로 돌린다.
+      const before = fromRes.map(r => ({ row: r, memo: r.메모 || '예약' }));
       onRecord({
-        label: `${code} 만들기`,
-        undo: () => deleteHanjungOrder(code).then(() => Promise.all(before.map(b => setReservationMemo([b.row], b.memo)))),
-        redo: () => saveHanjungOrder(order).then(() => setReservationMemo(selected, `예약 ${code}`)),
+        label: `${code} 주문완료`,
+        undo: () => deleteHanjungOrder(code)
+          .then(() => addToHanjungQueue(queued.map(queueItemToRow), []))
+          .then(() => Promise.all(before.map(b => setReservationMemo([b.row], b.memo)))),
+        redo: () => saveHanjungOrder(order)
+          .then(() => removeFromHanjungQueue(queued.map(q => q.key)))
+          .then(() => setReservationMemo(fromRes, `예약 ${code}`)),
       });
     } catch (err: any) {
       alert(`저장 실패: ${err?.message || err}`);
     } finally {
       setSaving(false);
+    }
+  };
+
+  // 주문하지 않을 줄을 대기에서 뺀다(한중 대기에서 온 줄만. 예전 예약 줄은 예약 목록에서 다룬다).
+  const removeSelected = async () => {
+    const rows = selected.filter(r => r.fromQueue);
+    if (!rows.length) return;
+    if (!confirm(`고른 ${rows.length}줄을 발주 대기에서 뺄까요?`)) return;
+    const items = queue.filter(q => rows.some(r => r.qkey === q.key));
+    try {
+      await removeFromHanjungQueue(rows.map(r => r.qkey));
+      setChecked(new Set());
+      onRecord({
+        label: `발주 대기 ${rows.length}줄 빼기`,
+        undo: () => addToHanjungQueue(items.map(queueItemToRow), []),
+        redo: () => removeFromHanjungQueue(items.map(q => q.key)),
+      });
+    } catch (err: any) {
+      alert(`저장 실패: ${err?.message || err}`);
     }
   };
 
@@ -123,20 +172,28 @@ const PendingPanel: React.FC<{ orders: HanjungOrder[]; onRecord: (act: Act) => v
     <div className="bg-white border border-amber-200 rounded-xl mb-5 overflow-hidden">
       <div className="flex flex-wrap items-center gap-3 px-4 py-3 bg-amber-50 border-b border-amber-100">
         <span className="font-semibold text-amber-800">발주 대기 {pending.length}건</span>
-        <span className="text-xs text-amber-700">예약으로 넘긴 건 중 아직 1688에 주문하지 않은 것이에요. 주문할 건을 골라 한중발주를 만드세요.</span>
+        <span className="text-xs text-amber-700">쿠팡발주확인에서 "한중"을 누른 줄이에요. 1688에 주문했으면 골라서 주문완료를 누르세요.</span>
+        <button
+          onClick={removeSelected}
+          disabled={!selected.some(r => r.fromQueue) || saving}
+          className="ml-auto px-3 py-1.5 rounded-lg border border-gray-200 bg-white text-gray-500 text-sm hover:bg-gray-50 disabled:opacity-40"
+          title="고른 줄을 발주 대기에서 뺍니다(주문 안 할 때)"
+        >
+          선택 빼기
+        </button>
         <button
           onClick={create}
           disabled={!selected.length || saving}
-          className="ml-auto px-3 py-1.5 rounded-lg bg-blue-600 text-white text-sm font-semibold hover:bg-blue-700 disabled:bg-gray-300"
+          className="px-3 py-1.5 rounded-lg bg-blue-600 text-white text-sm font-semibold hover:bg-blue-700 disabled:bg-gray-300"
         >
-          {saving ? '만드는 중…' : `선택한 ${selected.length}건으로 한중발주 만들기`}
+          {saving ? '저장 중…' : `선택한 ${selected.length}건 주문완료`}
         </button>
       </div>
       <table className="w-full text-sm">
         <thead className="text-xs text-gray-500">
           <tr className="border-b border-gray-100">
             <th className="w-10 px-3 py-2">
-              <input type="checkbox" checked={allChecked} onChange={() => setChecked(allChecked ? new Set() : new Set(pending.map(reservationKey)))} />
+              <input type="checkbox" checked={allChecked} onChange={() => setChecked(allChecked ? new Set() : new Set(pending.map(r => r.qkey)))} />
             </th>
             {/* 상품명 칸은 글자 길이만큼만 차지하고(발주번호 앞 빈 칸이 남는 폭을 가져감), 수량은 바로 옆 칸에 세로로 맞춘다. 발주번호는 맨 오른쪽. */}
             <th className="px-2 py-2 text-left font-medium whitespace-nowrap">상품 · 입고예정일</th>
@@ -147,7 +204,7 @@ const PendingPanel: React.FC<{ orders: HanjungOrder[]; onRecord: (act: Act) => v
         </thead>
         <tbody>
           {groups.map(g => {
-            const keys = g.rows.map(reservationKey);
+            const keys = g.rows.map(r => r.qkey);
             const on = keys.every(k => checked.has(k));
             const some = !on && keys.some(k => checked.has(k));
             return (
@@ -165,7 +222,7 @@ const PendingPanel: React.FC<{ orders: HanjungOrder[]; onRecord: (act: Act) => v
                   <td className="px-4 py-2 text-right text-xs text-gray-400 whitespace-nowrap">{g.rows.length > 1 ? `발주 ${g.rows.length}건` : ''}</td>
                 </tr>
                 {g.rows.length > 1 && g.rows.map(r => {
-                  const k = reservationKey(r);
+                  const k = r.qkey;
                   return (
                     <tr key={k} className={`cursor-pointer text-xs text-gray-500 ${checked.has(k) ? 'bg-blue-50/60' : 'hover:bg-gray-50'}`} onClick={() => toggle(k)}>
                       <td className="px-3 py-1 text-center"><input type="checkbox" checked={checked.has(k)} readOnly /></td>

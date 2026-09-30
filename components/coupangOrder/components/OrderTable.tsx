@@ -51,6 +51,20 @@ interface Props {
   actions?: React.ReactNode;
   // 'box' 레이아웃에서 덩어리 아래 여백을 더 벌릴 양(px). 옆 카드가 덩어리보다 길 때 줄을 맞추려고 쓴다.
   chunkPad?: Record<string, number>;
+  // 있으면 예약/대기를 발주서 통째로만 고른다: 상품 줄의 예약 칸을 없애고 발주서 머리줄에 고르는 칸을 둔다.
+  onOrderMemoChange?: (orderNo: string, value: string) => void;
+  // 예약/대기 고르는 칸을 아예 두지 않는다(쿠팡발주확인에서 예약을 쓰지 않을 때).
+  hideMemo?: boolean;
+  // 상품 줄 고르기(onToggleLine)를 발주서 머리줄 체크로만 한다(상품 줄마다의 체크 칸을 숨긴다).
+  lineSelectByOrder?: boolean;
+  // 있으면 상품 줄마다 "한중" 버튼을 둔다(1688 주문 대기로 보내기). isHanjung은 그 줄이 이미 대기에 있는지.
+  onToggleHanjung?: (id: string) => void;
+  isHanjung?: (row: DisplayRow) => boolean;
+  // 있으면 'box' 레이아웃 상품 줄 맨 앞에 "준비" 체크 칸을 둔다(상품이 준비됐는지).
+  isReady?: (row: DisplayRow) => boolean;
+  onToggleReady?: (row: DisplayRow, on: boolean) => void;
+  // 있으면 'box' 레이아웃 상품이름 옆에 붙일 뱃지(한중 등).
+  lineBadge?: (row: DisplayRow) => React.ReactNode;
   // 'box' 레이아웃에서 박스를 번호별 색 대신 이 한 색으로 칠한다(완료 덩어리는 초록). 화면 색을 줄이려고.
   monoBoxes?: string;
 }
@@ -129,6 +143,9 @@ const SCHEME = {
     accentBorder: '#5bbf82',
   },
 };
+
+// 한 덩어리(같은 센터·입고예정일) 안의 발주서마다 돌아가며 쓰는 색.
+const PO_COLORS = ['#3b82f6', '#f59e0b', '#10b981', '#ec4899', '#8b5cf6', '#06b6d4', '#ef4444', '#84cc16'];
 
 // 쉽먼트까지 끝난 줄에 쓰는 색. 불을 꺼서 흐리게 하지 않고, 바탕을 연한 초록으로 물들여 표시한다.
 const DONE = '#27ae60';
@@ -477,12 +494,14 @@ function OfficeCell({ match, need }: { match: OfficeMatch | null; need: number }
 }
 
 /* ── 메인 테이블 ── */
-export default function OrderTable({ rows, onMemoChange, onShipmentChange, colorScheme = 'pink', readOnly = false, onDelete, officeQtyOf, selectedOrders, onToggleSelect, onBulkOrder, doneOrders, onSortByBox, bundleLabel, bundleColorOf, layout = 'order', selectedLines, onToggleLine, hideBox = false, newOrders, onSplitLine, isChunkCollapsed, onToggleChunk, onEditChunkDate, boxWaybill, actionOrder, actions, chunkPad, monoBoxes }: Props) {
+export default function OrderTable({ rows, onMemoChange, onShipmentChange, colorScheme = 'pink', readOnly = false, onDelete, officeQtyOf, selectedOrders, onToggleSelect, onBulkOrder, doneOrders, onSortByBox, bundleLabel, bundleColorOf, layout = 'order', selectedLines, onToggleLine, hideBox = false, newOrders, onSplitLine, isChunkCollapsed, onToggleChunk, onEditChunkDate, boxWaybill, actionOrder, actions, chunkPad, monoBoxes, onOrderMemoChange, hideMemo, lineSelectByOrder, onToggleHanjung, isHanjung, isReady, onToggleReady, lineBadge }: Props) {
   if (rows.length === 0) return null;
 
   const sc = SCHEME[colorScheme];
   const selectable = !!onToggleSelect;
-  const lineSelectable = !!onToggleLine;
+  // 상품 줄마다 체크 칸을 두는지(발주서 단위로만 고르면 머리줄 체크만 둔다).
+  const lineSelectable = !!onToggleLine && !lineSelectByOrder;
+  const orderMemo = !!onOrderMemoChange;
   // 발주서마다 그 발주서에 속한 상품 줄 id들(머리줄 체크 한 번으로 다 고르게).
   const lineIdsByOrder = new Map<string, string[]>();
   for (const row of rows) {
@@ -521,9 +540,10 @@ export default function OrderTable({ rows, onMemoChange, onShipmentChange, color
   // 발주번호·센터·입고예정일은 발주서마다 한 줄(머리줄)로 위에 올리고, 표 본문은 상품만 남긴다.
   const headers = [
     ...(lineSelectable ? ['고름'] : []),
+    ...(onToggleReady ? ['준비'] : []),
     '상품이름', '확정수량',
     ...(officeQtyOf ? ['사무실'] : []),
-    '예약', ...(hideBox ? [] : ['박스']), ...(onDelete ? ['삭제'] : []),
+    ...(orderMemo || hideMemo ? [] : ['예약']), ...(onToggleHanjung ? ['한중'] : []), ...(hideBox ? [] : ['박스']), ...(onDelete ? ['삭제'] : []),
   ];
 
 
@@ -556,6 +576,7 @@ export default function OrderTable({ rows, onMemoChange, onShipmentChange, color
     for (const chunk of chunks) chunk.boxes.sort((a, b) => (a.no || 9999) - (b.no || 9999));
 
     const boxHeaders = [
+      ...(onToggleReady ? ['준비'] : []),
       '상품이름', '확정수량',
       ...(officeQtyOf ? ['사무실'] : []),
       '박스', '발주번호', ...(onDelete ? ['삭제'] : []),
@@ -702,7 +723,8 @@ export default function OrderTable({ rows, onMemoChange, onShipmentChange, color
 
                         {box.rows.map(row => {
                           const done = !!doneOrders?.has(row._발주번호);
-                          const bg = done ? DONE_BG : (tint ? `${tint}0f` : '#fff');
+                          const ready = !!isReady?.(row);
+                          const bg = done ? DONE_BG : ready ? '#f3fbf6' : (tint ? `${tint}0f` : '#fff');
                           return (
                             <tr
                               key={row.id}
@@ -710,10 +732,22 @@ export default function OrderTable({ rows, onMemoChange, onShipmentChange, color
                               onMouseEnter={e => (e.currentTarget.style.background = done ? DONE_HOVER : sc.rowHover)}
                               onMouseLeave={e => (e.currentTarget.style.background = bg)}
                             >
+                              {onToggleReady && (
+                                <td style={{ ...cs(40), padding: '4px 4px', borderLeft: `4px solid ${bc}` }}>
+                                  <input
+                                    type="checkbox"
+                                    checked={ready}
+                                    onChange={e => onToggleReady(row, e.target.checked)}
+                                    title="상품이 준비됐으면 체크하세요(발송대기에서도 그대로 보여요)"
+                                    style={{ width: 16, height: 16, margin: 0, cursor: 'pointer', accentColor: '#27ae60' }}
+                                  />
+                                </td>
+                              )}
                               <td style={{
                                 ...cs(0), textAlign: 'left', minWidth: 210, padding: '5px 6px',
-                                borderLeft: `4px solid ${bc}`, fontSize: 13,
-                              }}>{row.상품이름}</td>
+                                borderLeft: onToggleReady ? undefined : `4px solid ${bc}`, fontSize: 13,
+                                color: ready ? '#6b8f78' : undefined,
+                              }}>{row.상품이름}{lineBadge?.(row)}{ready && <span style={{ marginLeft: 6, fontSize: 11, fontWeight: 800, color: '#27ae60' }}>준비됨</span>}</td>
                               <td style={narrow(38)} title={row._조각 !== undefined ? `전체 ${row._원수량}개 중 이 박스에 담는 수량` : undefined}>
                                 {row.확정수량 !== '' ? row.확정수량 : ''}
                                 {row._조각 !== undefined && <div style={{ fontSize: 10, color: '#aaa' }}>/{row._원수량}</div>}
@@ -824,7 +858,10 @@ export default function OrderTable({ rows, onMemoChange, onShipmentChange, color
               );
             }
 
-            const tint = row.묶음 ? (bundleColorOf ? bundleColorOf(row.묶음) : bundleColor(row.묶음)) : '';
+            const bundleTint = row.묶음 ? (bundleColorOf ? bundleColorOf(row.묶음) : bundleColor(row.묶음)) : '';
+            // 묶음이 아니면 같은 센터·입고예정일 덩어리 안에서 발주서마다 다른 색을 준다(발주서끼리 한눈에 나뉘게).
+            const poIdx = (ordersByGroup.get(row.groupKey) || []).indexOf(row._발주번호);
+            const tint = bundleTint || (poIdx >= 0 ? PO_COLORS[poIdx % PO_COLORS.length] : '');
             // 쉽먼트까지 끝난 줄: 글자는 그대로 읽히게 두고 바탕만 연한 초록으로, 왼쪽 띠도 초록으로 바꾼다.
             const done = !!doneOrders?.has(row._발주번호);
             const edge = done ? DONE : tint;
@@ -853,7 +890,7 @@ export default function OrderTable({ rows, onMemoChange, onShipmentChange, color
                         title="이 발주서를 묶음에 담을 후보로 고릅니다"
                       />
                     )}
-                    {lineSelectable && (() => {
+                    {!!onToggleLine && (() => {
                       const ids = lineIdsByOrder.get(row._발주번호) || [];
                       const on = ids.length > 0 && ids.every(id => selectedLines?.has(id));
                       return (
@@ -866,6 +903,9 @@ export default function OrderTable({ rows, onMemoChange, onShipmentChange, color
                         />
                       );
                     })()}
+                    {orderMemo && !readOnly && (
+                      <MemoButton value={row.메모} onChange={(v) => onOrderMemoChange!(row._발주번호, v)} withHanjung={false} showCode={false} />
+                    )}
                     {!!actions && actionOrder === row._발주번호 && <ActionLayer>{actions}</ActionLayer>}
                     <span style={{ fontSize: 13, fontWeight: 700, color: '#333' }}>{row._발주번호}</span>
                     {newOrders?.has(row._발주번호) && (
@@ -972,21 +1012,55 @@ export default function OrderTable({ rows, onMemoChange, onShipmentChange, color
                     />
                   </td>
                 )}
+                {onToggleReady && (() => {
+                  const ready = !!isReady?.(row);
+                  return (
+                    <td style={{ ...cs(40), padding: '4px 4px', borderLeft: lineSelectable ? undefined : (edge ? `4px solid ${edge}` : undefined), background: ready ? '#eaf8ef' : undefined }}>
+                      <input
+                        type="checkbox"
+                        checked={ready}
+                        onChange={e => onToggleReady(row, e.target.checked)}
+                        title="상품이 준비됐으면 체크하세요(쉽먼트생성대기·발송대기에서도 그대로 보여요)"
+                        style={{ width: 16, height: 16, margin: 0, cursor: 'pointer', accentColor: '#27ae60' }}
+                      />
+                    </td>
+                  );
+                })()}
                 <td style={{
                   ...cs(0), textAlign: 'left', minWidth: 210, padding: '5px 6px',
-                  borderLeft: lineSelectable ? undefined : (edge ? `4px solid ${edge}` : undefined),
-                }}>{row.상품이름}</td>
+                  borderLeft: lineSelectable || onToggleReady ? undefined : (edge ? `4px solid ${edge}` : undefined),
+                  color: isReady?.(row) ? '#6b8f78' : undefined,
+                }}>{row.상품이름}{isReady?.(row) && <span style={{ marginLeft: 6, fontSize: 11, fontWeight: 800, color: '#27ae60' }}>준비됨</span>}</td>
                 <td style={narrow(38)}>{row.확정수량 !== '' ? row.확정수량 : ''}</td>
                 {officeQtyOf && <OfficeCell match={officeQtyOf(row.상품이름)} need={Number(row.확정수량) || 0} />}
 
-                {/* 예약(예전 이름은 메모 칸) */}
-                <td style={{ ...cs(64), padding: '4px 4px' }}>
+                {/* 예약(예전 이름은 메모 칸). 발주서 단위로 고를 때는 머리줄에 있다. */}
+                {!orderMemo && !hideMemo && <td style={{ ...cs(64), padding: '4px 4px' }}>
                   {readOnly ? (
                     <span style={{ fontSize: 12, color: '#666' }}>{row.메모}</span>
                   ) : (
                     <MemoButton value={row.메모} onChange={(v) => onMemoChange(row.id, v)} withHanjung={false} showCode={colorScheme === 'green'} />
                   )}
-                </td>
+                </td>}
+
+                {/* 한중: 누르면 한중발주의 발주 대기로 보낸다(이 줄은 발송 목록에 그대로 남는다). */}
+                {onToggleHanjung && (() => {
+                  const on = !!isHanjung?.(row);
+                  return (
+                    <td style={{ ...cs(58), padding: '4px 4px' }}>
+                      <button
+                        onClick={() => onToggleHanjung(row.id)}
+                        title={on ? '한중발주 대기에 들어가 있어요. 누르면 대기에서 뺍니다.' : '1688 주문할 상품이면 누르세요. 한중발주의 발주 대기로 갑니다.'}
+                        style={{
+                          padding: '2px 8px', fontSize: 12, fontWeight: 700, borderRadius: 5, cursor: 'pointer', whiteSpace: 'nowrap',
+                          border: `1.5px solid ${on ? '#2563eb' : '#d5d5d5'}`, background: on ? '#eff6ff' : '#fafafa', color: on ? '#2563eb' : '#999',
+                        }}
+                      >
+                        {on ? '한중 ✓' : '한중'}
+                      </button>
+                    </td>
+                  );
+                })()}
 
                 {/* 박스수량(롯데 N박스) */}
                 {!hideBox && <td style={{ ...cs(onSortByBox ? 104 : 76), padding: '4px 4px' }}>
@@ -1016,7 +1090,7 @@ export default function OrderTable({ rows, onMemoChange, onShipmentChange, color
                   <td style={{ ...cs(40), padding: '4px 6px' }}>
                     <button
                       onClick={() => onDelete(row.id)}
-                      title="이 예약 삭제"
+                      title="이 줄 삭제"
                       style={{
                         width: 24, height: 24, fontSize: 14, lineHeight: '20px',
                         color: '#c0392b', background: '#fff',

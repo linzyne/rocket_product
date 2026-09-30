@@ -10,6 +10,8 @@ import { db, ensureSignedIn } from '../../../utils/firebase';
 import type { OrderRow } from '../types';
 import { dateKeyYMD, ymdSortKey } from '../utils/dateUtils';
 import { isBoxSplit, parseBoxSplit, boxLabel } from '../utils/dataProcessor';
+import { allBoxes } from '../../../data/shipmentStore';
+import type { ShipmentBatch } from '../../../data/shipmentStore';
 import { SHIPOUT_KEY, readWork, writeWork, workLineKey as lineKey, stableStringify } from './orderWorkCloud';
 
 const KEY = SHIPOUT_KEY;
@@ -26,6 +28,8 @@ export interface ShipOutLine {
   메모?: string;
   쉼먼트?: string;
   묶음?: string;
+  // 쿠팡 상품번호(SKU ID). 예전 줄에는 없다.
+  SKU?: string;
 }
 
 export interface ShipOut {
@@ -108,12 +112,14 @@ function write(list: ShipOut[]) {
 
 // 클라우드 구독은 화면이 몇 개든 하나만 걸어 둔다.
 let watchers = 0;
+let started = false;
 let unwatch: (() => void) | undefined;
 let cancelled = false;
 
 const startSync = (): (() => void) => {
   watchers++;
-  if (watchers === 1 && db) {
+  if (!started && db) {
+    started = true;
     const firestore = db;
     cancelled = false;
     (async () => {
@@ -158,13 +164,10 @@ const startSync = (): (() => void) => {
       );
     })();
   }
+  // 보는 화면이 없어져도 클라우드 연결은 끊지 않는다. 끊었다 다시 이으면 첫 소식(아직 방금 고친 게 안 올라간
+  // 클라우드 목록)으로 이 기기 목록을 덮어써서, 방금 한 일이 사라졌다(쉽먼트생성대기 → 발주확인으로 되돌린 줄이 없어짐).
   return () => {
     watchers--;
-    if (watchers === 0) {
-      cancelled = true;
-      unwatch?.();
-      unwatch = undefined;
-    }
   };
 };
 
@@ -211,6 +214,7 @@ export function addShipOut(bundle: string, center: string, date: string, rows: O
       메모: r.메모 || '',
       쉼먼트: r.쉼먼트 || '',
       묶음: r.묶음 || '',
+      SKU: r.SKU || '',
     })),
   };
   write([item, ...list]);
@@ -242,6 +246,28 @@ export function updateShipOutLine(
   if (!line) return;
   Object.assign(line, patch);
   write(list);
+}
+
+// 출고 건의 단계: 쉽먼트생성(할 일) → 발송대기(쉽먼트 완료, 아직 안 보냄) → 발송 완료(발송날짜 있음).
+// 쉽먼트 완료는 사람이 켠 표시가 우선이고, 없으면 예약·운송장·서허 양식이 다 끝났는지로 본다(쉽먼트생성과 같은 기준).
+export function shipOutBatch(item: ShipOut, batches: ShipmentBatch[]): ShipmentBatch | undefined {
+  const mine = new Set(item.lines.map(l => String(l.발주번호 || '').trim()).filter(Boolean));
+  return batches.find(b => b.id === item.batchId)
+    || batches
+      .filter(b => allBoxes(b).some(box => box.lines.some(l => mine.has(String(l.발주번호 || '').trim()))))
+      .sort((a, b) => b.createdAt - a.createdAt)[0];
+}
+export function shipOutDone(item: ShipOut, batches: ShipmentBatch[]): boolean {
+  if (item.doneAt) return true;
+  if (item.undoneAt) return false;
+  const batch = shipOutBatch(item, batches);
+  const boxes = batch ? allBoxes(batch) : [];
+  return boxes.length > 0 && boxes.every(b => (b.waybill || '').trim()) && !!item.formSavedAt;
+}
+export type ShipStage = 'ship' | 'waiting' | 'sent';
+export function shipOutStage(item: ShipOut, batches: ShipmentBatch[]): ShipStage {
+  if (item.sentDate) return 'sent';
+  return shipOutDone(item, batches) ? 'waiting' : 'ship';
 }
 
 // 출고 건의 입고예정일을 바꾼다(건과 그 안의 줄 모두). 묶음에서 날짜를 잘못 골랐을 때 쿠팡 날짜로 맞춘다.
@@ -292,6 +318,7 @@ function pushBackToWork(lines: ShipOutLine[], fallbackBundle: string) {
       묶음: l.묶음 || fallbackBundle,
       묶음센터: '',
       묶음일자: '',
+      SKU: l.SKU || '',
     }))
     .filter(r => !seen.has(lineKey(r)));
 
@@ -340,6 +367,11 @@ export function restoreOrders(orderNos: string[]): number {
   // 출고 목록에서 먼저 빼야 발주확인 저장이 이 줄들을 "이미 넘어간 줄"로 걸러내지 않는다.
   write(next);
   return backs.reduce((n, b) => n + pushBackToWork(b.lines, b.bundle), 0);
+}
+
+// 쉽먼트생성·발송대기·발송 완료에 있는 모든 줄(발주서를 새로 받을 때 이미 있는 줄을 세는 데 쓴다).
+export function allShipOutLines(): ShipOutLine[] {
+  return read().flatMap(s => s.lines);
 }
 
 // 이미 쉽먼트생성으로 넘어간 줄들의 열쇠. 발주서를 다시 받아올 때 이 줄들이 발주확인에
@@ -396,3 +428,8 @@ export async function forceUploadShipOuts() {
     ...server.docs.filter(d => !mine.has(d.id)).map(d => deleteDoc(d.ref)),
   ]);
 }
+
+// 클라우드 구독·올리기 상태를 모듈에 들고 있어서, 개발 중 이 파일만 바뀌면 옛것과 새것 두 벌이 같이 돌며
+// 목록을 번갈아 덮어쓴다(지운 줄이 사라졌다 생겼다 함). 바뀌면 페이지를 통째로 새로 불러오게 한다.
+// @ts-ignore
+if (import.meta.hot) import.meta.hot.decline();

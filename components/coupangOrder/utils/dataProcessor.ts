@@ -60,6 +60,7 @@ function mapRawToOrderRows(rawData: unknown[][]): OrderRow[] {
     const pName   = r['Product Name'] ?? r['상품이름'] ?? '';
     const qty     = r['Confirmed Quantity'] ?? r['확정수량'] ?? 0;
     const pDate   = r['Receiving Date'] ?? r['입고예정일'] ?? r['Expected Receiving Date'] ?? '';
+    const sku     = r['상품번호'] ?? r['SKU ID'] ?? r['Product ID'] ?? '';
 
     const parsedQty = parseNumber(qty);
     return {
@@ -73,6 +74,7 @@ function mapRawToOrderRows(rawData: unknown[][]): OrderRow[] {
       묶음: '',
       묶음센터: '',
       묶음일자: '',
+      SKU: String(sku ?? '').trim(),
     };
   });
 
@@ -116,6 +118,7 @@ export interface DisplayRow {
   // 여러 박스로 나눈 줄의 조각이면 몇 번째 조각인지와 나누기 전 수량(쉽먼트생성에서만 쓴다).
   _조각?: number;
   _원수량?: number | '';
+  SKU?: string;
 }
 
 export function buildDisplayRows(rows: OrderRow[]): DisplayRow[] {
@@ -159,6 +162,7 @@ export function buildDisplayRows(rows: OrderRow[]): DisplayRow[] {
       _입고예정일: r.입고예정일,
       _조각: r.조각,
       _원수량: r.원수량,
+      SKU: r.SKU || '',
     });
 
     prevCenterDateKey = centerDateKey;
@@ -183,6 +187,7 @@ export function extractOrderRows(displayRows: DisplayRow[]): OrderRow[] {
       묶음: r.묶음 || '',
       묶음센터: r.묶음센터 || '',
       묶음일자: r.묶음일자 || '',
+      SKU: r.SKU || '',
     }));
 }
 
@@ -207,6 +212,7 @@ export function splitByReservation(displayRows: DisplayRow[]): {
       묶음: row.묶음 || '',
       묶음센터: row.묶음센터 || '',
       묶음일자: row.묶음일자 || '',
+      SKU: row.SKU || '',
     };
     if (row.메모.includes('예약') || row.쉼먼트.includes('예약')) {
       reservedRows.push(orderRow);
@@ -216,6 +222,25 @@ export function splitByReservation(displayRows: DisplayRow[]): {
   }
 
   return { normalRows, reservedRows };
+}
+
+// 발주서를 새로 받을 때 이미 앱에 있는 줄을 거른다. 날짜·센터·수량은 앱(묶음 적용)과 서허(날짜 변경)에서
+// 따로 바뀔 수 있어 보지 않고, 발주번호 + 상품이름이 같은 줄을 "개수로" 맞춘다: 파일에 2줄, 앱에 1줄이면 1줄만 넣는다
+// (같은 발주에 같은 상품이 여러 줄일 수 있어서). have에는 발송 목록·예약·쉽먼트(발송 완료 포함)의 줄을 모두 넣는다.
+export const lineCountKey = (r: { 발주번호?: unknown; 상품이름?: unknown }) =>
+  `${String(r.발주번호 ?? '').trim()}│${String(r.상품이름 ?? '').trim()}`;
+export function pickNewByCount<T extends { 발주번호: string; 상품이름: string }>(
+  incoming: T[],
+  have: { 발주번호?: unknown; 상품이름?: unknown }[],
+): T[] {
+  const count = new Map<string, number>();
+  have.forEach(r => { const k = lineCountKey(r); count.set(k, (count.get(k) || 0) + 1); });
+  return incoming.filter(r => {
+    const k = lineCountKey(r);
+    const n = count.get(k) || 0;
+    if (n > 0) { count.set(k, n - 1); return false; }
+    return true;
+  });
 }
 
 // 박스수량 칸의 값: "박스3" = 이 상품이 3번 상자에 들어간다는 뜻. 여러 상품이 같은 상자에 들어가면 같은 번호를

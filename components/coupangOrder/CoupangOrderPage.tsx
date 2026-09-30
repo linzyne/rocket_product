@@ -682,6 +682,22 @@ export default function CoupangOrderPage({ onGoShipOut }: { onGoShipOut?: () => 
     setNotice(`겹친 줄 ${dupCount}개를 지웠어요.`);
   }, [leftRows, dupCount]);
 
+  // 체크한 발주서를 통째로 예약 목록으로 넘긴다. 발송 목록에서는 곧바로 빼고, 저장에 실패하면 되돌린다.
+  const handleReserveSelected = () => {
+    const picked = leftRows.filter(r => !r.isBlank && selected.has(r._발주번호));
+    if (!picked.length) return;
+    const orderNos = new Set(picked.map(r => r._발주번호));
+    const pickedIds = new Set(picked.map(r => r.id));
+    record(`발주 ${orderNos.size}건 예약으로 넘기기`);
+    const orders = picked.map(r => ({ ...toOrderRow(r), 메모: '예약' }));
+    setLeftRows(buildDisplayRows(extractOrderRows(leftRows.filter(r => !pickedIds.has(r.id)))));
+    setSelected(new Set());
+    addReservations(orders, reservations).catch(err => {
+      alertError(err);
+      setLeftRows(prev => buildDisplayRows(sortOrderRows([...extractOrderRows(prev), ...orders.map(o => ({ ...o, 메모: '' }))])));
+    });
+  };
+
   // 체크한 발주서를 발송 목록에서 지운다(예약·쉽먼트생성 쪽은 그대로). 되돌리기로 살릴 수 있다.
   const handleDeleteSelected = () => {
     const orderNos = new Set(leftRows.filter(r => !r.isBlank && selected.has(r._발주번호)).map(r => r._발주번호));
@@ -713,6 +729,9 @@ export default function CoupangOrderPage({ onGoShipOut }: { onGoShipOut?: () => 
       </button>
       <button onClick={handleBundle} title="체크한 발주서로 새 묶음(택배 한 상자)을 만듭니다. 이미 있는 묶음에 더 담을 때는 그 묶음 카드의 +담기를 누르세요.">
         <span className="rk-dot" style={{ background: '#a78bfa' }} />새 묶음
+      </button>
+      <button onClick={handleReserveSelected} title="체크한 발주서를 통째로 예약 목록으로 넘깁니다">
+        <span className="rk-dot" style={{ background: '#60a5fa' }} />예약
       </button>
       <span className="rk-sep" />
       <button className="rk-danger" onClick={handleDeleteSelected} title="체크한 발주서를 발송 목록에서 지웁니다(되돌리기로 살릴 수 있어요)">삭제</button>

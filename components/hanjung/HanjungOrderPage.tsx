@@ -138,10 +138,7 @@ const PendingPanel: React.FC<{ orders: HanjungOrder[]; onRecord: (act: Act) => v
             <th className="w-10 px-3 py-2">
               <input type="checkbox" checked={allChecked} onChange={() => setChecked(allChecked ? new Set() : new Set(pending.map(reservationKey)))} />
             </th>
-            <th className="px-2 py-2 text-left font-medium">상품</th>
-            <th className="px-2 py-2 text-left font-medium">입고예정일</th>
-            <th className="px-4 py-2 text-right font-medium">수량</th>
-            <th className="px-2 py-2 text-left font-medium">발주번호</th>
+            <th className="px-2 py-2 text-left font-medium">상품 · 수량 / 입고예정일 · 수량 · 발주번호</th>
           </tr>
         </thead>
         <tbody>
@@ -158,32 +155,35 @@ const PendingPanel: React.FC<{ orders: HanjungOrder[]; onRecord: (act: Act) => v
                   <td className="px-3 py-2 text-center">
                     <input type="checkbox" checked={on} ref={el => { if (el) el.indeterminate = some; }} readOnly />
                   </td>
-                  <td className="px-2 py-2 font-semibold text-gray-800" colSpan={2}>
+                  {/* 상품명 바로 옆에 합산 수량 */}
+                  <td className="px-2 py-2 font-semibold text-gray-800">
                     {g.name}
+                    <span className="ml-2 font-mono font-bold text-gray-900">{g.qty}개</span>
                     {g.rows.length > 1 && <span className="ml-2 text-xs font-normal text-gray-400">발주 {g.rows.length}건</span>}
                   </td>
-                  <td className="px-4 py-2 text-right font-mono font-bold text-gray-900">{g.qty}</td>
-                  <td />
                 </tr>
                 {g.rows.length > 1 && g.rows.map(r => {
                   const k = reservationKey(r);
                   return (
                     <tr key={k} className={`cursor-pointer text-xs text-gray-500 ${checked.has(k) ? 'bg-blue-50/60' : 'hover:bg-gray-50'}`} onClick={() => toggle(k)}>
                       <td className="px-3 py-1 text-center"><input type="checkbox" checked={checked.has(k)} readOnly /></td>
-                      <td className="px-2 py-1 pl-6 text-gray-300">└</td>
-                      <td className="px-2 py-1 whitespace-nowrap">{formatDateDisplay(r.입고예정일)}</td>
-                      <td className="px-4 py-1 text-right font-mono">{r.확정수량}</td>
-                      <td className="px-2 py-1 font-mono">{r.발주번호}</td>
+                      {/* 입고예정일을 왼쪽 여백 없이 붙이고, 수량 · 발주번호를 바로 이어서 */}
+                      <td className="px-2 py-1 whitespace-nowrap">
+                        <span className="inline-block w-24">{formatDateDisplay(r.입고예정일)}</span>
+                        <span className="inline-block w-14 text-right font-mono">{r.확정수량}개</span>
+                        <span className="ml-4 font-mono">{r.발주번호}</span>
+                      </td>
                     </tr>
                   );
                 })}
                 {g.rows.length === 1 && (
                   <tr className="text-xs text-gray-500 cursor-pointer" onClick={() => toggle(keys[0])}>
                     <td />
-                    <td className="px-2 py-1 pl-6 text-gray-300">└</td>
-                    <td className="px-2 py-1 whitespace-nowrap">{formatDateDisplay(g.rows[0].입고예정일)}</td>
-                    <td />
-                    <td className="px-2 py-1 font-mono">{g.rows[0].발주번호}</td>
+                    <td className="px-2 py-1 whitespace-nowrap">
+                      <span className="inline-block w-24">{formatDateDisplay(g.rows[0].입고예정일)}</span>
+                      <span className="inline-block w-14" />
+                      <span className="ml-4 font-mono">{g.rows[0].발주번호}</span>
+                    </td>
                   </tr>
                 )}
               </React.Fragment>

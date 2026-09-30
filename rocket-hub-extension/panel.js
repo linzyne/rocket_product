@@ -435,9 +435,39 @@
     await autoSet(run);
   };
 
+  // 로그인 화면 위에 띄우는 안내. 크롬이 다른 계정을 자동으로 채워 넣을 수 있어 계정을 확인하라고 알린다.
+  const LOGIN_WAIT_MS = 10 * 60 * 1000;
+  const waitLogin = async (run) => {
+    await startLog('ads', run);
+    logLine(`광고 사이트 로그인 화면 · 로그인 기다림`);
+    await saveLogNow();
+    const note = document.createElement('div');
+    note.style.cssText =
+      'position:fixed;left:50%;top:12px;transform:translateX(-50%);z-index:2147483647;max-width:520px;padding:12px 16px;' +
+      'background:#fef3c7;border:1px solid #f59e0b;border-radius:10px;box-shadow:0 6px 20px rgba(0,0,0,.15);' +
+      'font:14px/1.5 -apple-system,sans-serif;color:#78350f;';
+    note.innerHTML =
+      '<b>🚀 쿠팡 광고 로그인이 풀려 있어요</b><br>' +
+      '<b>로켓 서허와 같은 계정</b>으로 로그인해 주세요. 아이디 칸에 크롬이 다른 계정을 채워 넣었으면 지우고 맞는 아이디를 적어 주세요.<br>' +
+      '로그인하면 재고 수집을 알아서 이어갑니다.';
+    document.body.appendChild(note);
+    autoStatus = '쿠팡 광고 로그인 기다리는 중 · 수집 창에서 로그인해 주세요';
+    const t0 = Date.now();
+    // 로그인하면 화면이 넘어가 이 반복은 저절로 끝난다. 그동안 앱이 끊긴 것으로 보지 않게 소식을 보낸다.
+    while (Date.now() - t0 < LOGIN_WAIT_MS) {
+      await touch(run, true);
+      await sleep(20000);
+    }
+    note.remove();
+    return failAuto(run, '쿠팡 광고 사이트 로그인을 10분 동안 기다렸지만 로그인되지 않았어요.');
+  };
+
   const runAuto = async (run) => {
     const idx = Math.max(0, AUTO_STEPS.findIndex((s) => s.id === run.step));
     const step = AUTO_STEPS[idx];
+    // 광고 사이트 로그인이 풀려 로그인 화면이 떴으면, 옮기거나 실패하지 않고 사장님이 로그인하기를 기다린다.
+    // 로그인하면 원래 화면으로 돌아오고, 거기서 이 요청을 이어받는다.
+    if (location.pathname.startsWith('/user/login')) return waitLogin(run);
     // 이 단계의 탭으로 옮긴다. 화면이 스스로 다른 주소로 바꿔 놓는 경우가 있어 한 번만 옮긴다
     // (주소가 다르다고 계속 옮기면 새로고침만 되풀이한다).
     if (location.pathname.replace(/\/$/, '') !== step.page && run.goneTo !== step.id) {
@@ -904,6 +934,7 @@
     setTimeout(() => URL.revokeObjectURL(a.href), 5000);
   };
 
+  let lastHtml = '';
   const render = async (dataArg) => {
     const c = activeCollector();
     if (!c) {
@@ -932,7 +963,7 @@
     const total = bucket ? Object.keys(bucket.items).length : 0;
     const updated = bucket && bucket.updatedAt ? new Date(bucket.updatedAt).toLocaleTimeString() : '-';
     const btn = 'border:1px solid #d0d7e2;background:#f8fafc;border-radius:6px;padding:4px 8px;cursor:pointer;font-size:12px;';
-    panel.innerHTML = collapsed
+    const html = collapsed
       ? `<div data-act="toggle" style="padding:8px 12px;cursor:pointer;font-weight:600">🚀 ${c.label} ${total}개</div>`
       : `<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 12px;border-bottom:1px solid #eef1f5">
            <b>🚀 ${c.label}</b><span data-act="toggle" style="cursor:pointer;color:#94a3b8">접기</span>
@@ -950,6 +981,11 @@
            ${c.id === 'adsStock' ? '<div style="color:#94a3b8;font-size:11px;margin-top:8px">앱의 재고 › 상품관리에서 "확장에서 가져오기"를 누르면 이 화면을 알아서 넘기며 모아 갑니다.</div>' : ''}
            ${c.id === 'receiveDetail' ? '<div style="color:#94a3b8;font-size:11px;margin-top:8px">앱의 물류 › 물류창고입고에서 날짜를 고르고 "자동으로 가져오기"를 누르면 그 날짜로 검색해 알아서 모아 갑니다.</div>' : ''}
          </div>`;
+    // 같은 내용이면 다시 그리지 않는다. 화면이 조금만 바뀌어도 불려서, 매번 새로 그리면 패널이 깜빡인다.
+    if (html !== lastHtml) {
+      lastHtml = html;
+      panel.innerHTML = html;
+    }
   };
 
   // 화면 구조 저장(Alt+D). 새 화면(예: 서허 쉽먼트 일괄등록)을 자동화하려면 그 화면이 어떻게 생겼는지 알아야 해서,

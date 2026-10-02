@@ -50,6 +50,8 @@ export interface ShipOut {
   sentDate?: string;
   // 발송대기에서 "준비됨"으로 체크한 상품 줄들(발주번호│상품이름│확정수량).
   readyKeys?: string[];
+  // 쿠팡에 센터·입고예정일 변경을 요청해 둔 상태(요청등록중). 승인을 누르면 이 값으로 바뀐다.
+  request?: { center: string; date: string };
   lines: ShipOutLine[];
 }
 
@@ -280,8 +282,21 @@ export function setShipOutDate(id: string, date: string) {
   write(list);
 }
 
+// 요청등록중에 적어 둔 센터·입고예정일을 실제 값으로 옮기고 요청은 지운다.
+export function applyShipOutRequest(id: string) {
+  const list = read();
+  const item = list.find(s => s.id === id);
+  if (!item?.request) return;
+  const { center, date } = item.request;
+  if (center) item.center = center;
+  if (date) item.date = date;
+  item.lines = item.lines.map(l => ({ ...l, ...(center ? { 물류센터: center } : {}), ...(date ? { 입고예정일: date } : {}) }));
+  item.request = undefined;
+  write(list);
+}
+
 // 출고 건들에 진행 표시를 붙인다(쉽먼트 번호·양식 저장 시각).
-export function markShipOuts(ids: string[], patch: Partial<Pick<ShipOut, 'batchId' | 'formSavedAt' | 'doneAt' | 'undoneAt' | 'sentDate' | 'readyKeys'>>) {
+export function markShipOuts(ids: string[], patch: Partial<Pick<ShipOut, 'batchId' | 'formSavedAt' | 'doneAt' | 'undoneAt' | 'sentDate' | 'readyKeys' | 'request'>>) {
   const want = new Set(ids);
   const list = read();
   let touched = false;

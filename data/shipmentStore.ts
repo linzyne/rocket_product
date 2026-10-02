@@ -79,6 +79,44 @@ export const waybillForBox = (
   return w.length === 12 ? `${w.slice(0, 4)}-${w.slice(4, 8)}-${w.slice(8)}` : w;
 };
 
+// 출고 건의 센터·입고예정일이 바뀌었을 때(요청등록 완료 등) 그 건의 쉽먼트 기록도 같이 옮긴다.
+// 이 건의 발주만 든 박스는 새 센터로 옮기고(안 그러면 센터로 찾는 운송장번호가 안 보인다), 이 건 발주 줄의 날짜를 바꾼다.
+// 바뀐 기록만 돌려준다. extra: 출고 건에 붙은 쉽먼트 번호로 찾은 기록(센터가 달라 내용으로 못 찾는 예전 기록).
+export const retargetBatches = (
+  batches: ShipmentBatch[],
+  item: { center: string; lines: { 발주번호: string }[] },
+  to: { center?: string; date?: string },
+  extra?: ShipmentBatch,
+): ShipmentBatch[] => {
+  const mine = new Set(item.lines.map(l => String(l.발주번호 || '').trim()).filter(Boolean));
+  const isMine = (l: { 발주번호: string }) => mine.has(String(l.발주번호 || '').trim());
+  const from = item.center.trim();
+  const center = (to.center || '').trim();
+  const ymd = (to.date || '').replace(/-/g, '');
+  const targets = batchesForItem(batches, item);
+  if (extra && !targets.some(b => b.id === extra.id)) targets.push(extra);
+  return targets.map(batch => {
+    const moved: ShipmentBox[] = [];
+    const centers = batch.centers.map(c => ({
+      ...c,
+      boxes: c.boxes
+        .map(b => ({ ...b, lines: ymd ? b.lines.map(l => (isMine(l) ? { ...l, 입고예정일: ymd } : l)) : b.lines }))
+        .filter(b => {
+          const go = !!center && center !== from && c.center.trim() === from
+            && b.lines.length > 0 && b.lines.every(isMine);
+          if (go) moved.push(b);
+          return !go;
+        }),
+    }));
+    if (moved.length) {
+      const dest = centers.find(c => c.center.trim() === center);
+      if (dest) dest.boxes = [...dest.boxes, ...moved].sort((a, b) => a.boxNo - b.boxNo);
+      else centers.push({ center, boxes: moved });
+    }
+    return { ...batch, centers: centers.filter(c => c.boxes.length) };
+  }).filter((next, i) => JSON.stringify(next) !== JSON.stringify(targets[i]));
+};
+
 // 출고 건의 운송장번호를 고칠 쉽먼트 기록 하나: 이 건의 기록 중 운송장번호가 든 것 → 최근 것 순.
 export const batchForItem = (
   batches: ShipmentBatch[],

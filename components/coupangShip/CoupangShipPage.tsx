@@ -1,5 +1,5 @@
 import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { ShipOut, setShipOutDate, subscribeShipOuts, deleteShipOut, restoreShipOut, restoreOrders, updateShipOutLine, markShipOuts, snapshotShipOuts, restoreShipSnapshot, sameSnapshot } from '../coupangOrder/data/shipOutStore';
+import { ShipOut, setShipOutDate, subscribeShipOuts, deleteShipOut, restoreShipOut, restoreOrders, updateShipOutLine, markShipOuts, applyShipOutRequest, snapshotShipOuts, restoreShipSnapshot, sameSnapshot } from '../coupangOrder/data/shipOutStore';
 import type { ShipSnapshot } from '../coupangOrder/data/shipOutStore';
 import { dateKeyYMD } from '../coupangOrder/utils/dateUtils';
 import OrderTable, { BoxPicker } from '../coupangOrder/components/OrderTable';
@@ -15,7 +15,7 @@ import {
   loadLocalAddresses, loadLocalSender, subscribeShippingSettings, saveAddresses, saveSender,
 } from '../coupangOrder/data/shippingSettingsStore';
 import {
-  ShipmentBatch, subscribeShipments, saveShipmentBatch, deleteShipmentBatch, batchId, fillWaybills, allBoxes, waybillForBox,
+  ShipmentBatch, subscribeShipments, saveShipmentBatch, deleteShipmentBatch, batchId, fillWaybills, allBoxes, waybillForBox, retargetBatches,
 } from '../../data/shipmentStore';
 import AddressManager from '../coupangOrder/components/AddressManager';
 import SenderManager from '../coupangOrder/components/SenderManager';
@@ -667,23 +667,39 @@ export default function CoupangShipPage({ onGoOrder }: { onGoOrder?: () => void 
     if (!datePick || !datePick.date) return;
     const { item, date } = datePick;
     step('입고예정일 바꾸기', () => { setShipOutDate(item.id, date); });
-    const batch = progressOf(item).batch;
-    if (batch) {
-      const mine = new Set(item.lines.map(l => String(l.발주번호 || '').trim()));
-      const ymd = date.replace(/-/g, '');
-      const next: ShipmentBatch = {
-        ...batch,
-        centers: batch.centers.map(c => ({
-          ...c,
-          boxes: c.boxes.map(b => ({
-            ...b,
-            lines: b.lines.map(l => (mine.has(String(l.발주번호 || '').trim()) ? { ...l, 입고예정일: ymd } : l)),
-          })),
-        })),
-      };
-      saveShipmentBatch(next).catch(err => alert(`쉽먼트 기록 저장 실패: ${err instanceof Error ? err.message : String(err)}`));
-    }
+    syncBatch(item, { date });
     setDatePick(null);
+  };
+  const syncBatch = (item: ShipOut, to: { center?: string; date?: string }) => {
+    for (const next of retargetBatches(batches, item, to, progressOf(item).batch))
+      saveShipmentBatch(next).catch(err => alert(`쉽먼트 기록 저장 실패: ${err instanceof Error ? err.message : String(err)}`));
+  };
+
+  // 요청등록중: 쿠팡에 센터·입고예정일 변경을 요청해 둔 건. 고른 값은 머리줄에 보여주고, 승인을 누르면 실제로 바뀐다.
+  const [reqPick, setReqPick] = useState<{ item: ShipOut; center: string; date: string } | null>(null);
+  const saveReqPick = () => {
+    if (!reqPick || !reqPick.center.trim() || !reqPick.date) return;
+    const { item, center, date } = reqPick;
+    step('요청등록', () => { markShipOuts([item.id], { request: { center: center.trim(), date } }); });
+    setReqPick(null);
+  };
+  // 쿠팡이 요청을 승인하면: 창에 적힌 센터·입고예정일로 실제로 바꾸고 요청등록중을 끈다.
+  // 쉽먼트 기록(운송장·서허 양식)도 새 센터·날짜로 옮긴다.
+  const approveReq = () => {
+    if (!reqPick || !reqPick.center.trim() || !reqPick.date) return;
+    const { item, date } = reqPick;
+    const center = reqPick.center.trim();
+    if (!confirm(`${item.bundle}을 ${center} · ${date}(으)로 바꿀까요?\n(지금 ${item.center} · ${item.date})`)) return;
+    step('요청 승인', () => {
+      markShipOuts([item.id], { request: { center, date } });
+      applyShipOutRequest(item.id);
+    });
+    syncBatch(item, { center, date });
+    setReqPick(null);
+  };
+  const clearReq = (item: ShipOut) => {
+    step('요청등록 취소', () => { markShipOuts([item.id], { request: undefined }); });
+    setReqPick(null);
   };
 
   // 이 출고 건의 n번 박스 운송장번호. 쉽먼트 기록에서 박스 번호가 같고 이 건의 발주가 든 박스를 찾는다
@@ -852,6 +868,27 @@ export default function CoupangShipPage({ onGoOrder }: { onGoOrder?: () => void 
                   if (item) setDatePick({ item, date: item.date });
                 }}
                 onToggleChunk={toggleDoneOpen}
+                chunkExtra={id => {
+                  const item = list.find(i => i.id === id);
+                  if (!item) return null;
+                  const req = item.request;
+                  return (
+                    <span
+                      onClick={() => setReqPick({ item, center: req?.center || item.center, date: req?.date || item.date })}
+                      title={req ? '눌러서 요청한 센터·입고예정일을 고치거나, 승인됐으면 승인을 눌러 바꾸기' : '쿠팡에 센터·입고예정일 변경을 요청했으면 눌러서 적어 두세요'}
+                      style={{
+                        display: 'inline-flex', alignItems: 'center', gap: 5, cursor: 'pointer',
+                        padding: '1px 8px', fontSize: 11, fontWeight: 800, borderRadius: 5, lineHeight: 1.5,
+                        border: `1.5px solid ${req ? '#dc2626' : '#e5e5e5'}`,
+                        background: req ? '#fef2f2' : '#fff',
+                        color: req ? '#dc2626' : '#bbb',
+                      }}
+                    >
+                      {req ? '● 요청등록중' : '○ 요청등록중'}
+                      {req && <span style={{ color: '#333' }}>→ {req.center} · {req.date.slice(5).replace('-', '/')}</span>}
+                    </span>
+                  );
+                }}
               />
               </div>
             </div>
@@ -1136,6 +1173,68 @@ export default function CoupangShipPage({ onGoOrder }: { onGoOrder?: () => void 
                 onClick={saveDatePick}
                 disabled={!datePick.date}
                 style={{ padding: '6px 14px', fontSize: 13, fontWeight: 700, color: '#fff', background: '#2980b9', border: 'none', borderRadius: 6, cursor: 'pointer' }}
+              >
+                저장
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {reqPick && (
+        <div
+          onClick={() => setReqPick(null)}
+          style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.35)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+        >
+          <div onClick={e => e.stopPropagation()} style={{ width: 320, background: '#fff', borderRadius: 12, padding: 18, boxShadow: '0 10px 30px rgba(0,0,0,0.2)' }}>
+            <div style={{ fontSize: 14, fontWeight: 800, marginBottom: 4 }}>요청등록중</div>
+            <div style={{ fontSize: 12, color: '#666', marginBottom: 12 }}>
+              {reqPick.item.bundle} · 지금 {reqPick.item.center} · {reqPick.item.date}
+              <br />쿠팡에 요청한 센터·입고예정일을 골라 저장하세요. 승인되면 <b>승인</b>을 눌러 이 값으로 바꿔요.
+            </div>
+            <div style={{ fontSize: 12, fontWeight: 700, color: '#555', marginBottom: 4 }}>센터</div>
+            <input
+              list="req-centers"
+              value={reqPick.center}
+              autoFocus
+              onChange={e => setReqPick(prev => prev && { ...prev, center: e.target.value })}
+              onKeyDown={e => { if (e.key === 'Enter') saveReqPick(); }}
+              style={{ display: 'block', width: '100%', padding: '7px 10px', fontSize: 14, borderRadius: 8, border: '1px solid #ddd', boxSizing: 'border-box', marginBottom: 10 }}
+            />
+            <datalist id="req-centers">
+              {Array.from(new Set([...addresses.map(a => a.key), ...list.map(i => i.center)].map(c => c.trim()).filter(Boolean)))
+                .sort((a, b) => a.localeCompare(b, 'ko', { numeric: true }))
+                .map(c => <option key={c} value={c} />)}
+            </datalist>
+            <div style={{ fontSize: 12, fontWeight: 700, color: '#555', marginBottom: 4 }}>입고예정일</div>
+            <input
+              type="date"
+              value={reqPick.date}
+              onChange={e => setReqPick(prev => prev && { ...prev, date: e.target.value })}
+              onKeyDown={e => { if (e.key === 'Enter') saveReqPick(); }}
+              style={{ display: 'block', width: '100%', padding: '7px 10px', fontSize: 14, borderRadius: 8, border: '1px solid #ddd', boxSizing: 'border-box' }}
+            />
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 16 }}>
+              {reqPick.item.request && (
+                <button onClick={() => clearReq(reqPick.item)} style={{ padding: '6px 10px', fontSize: 12, color: '#dc2626', background: '#fff', border: '1px solid #f5c2c2', borderRadius: 6, cursor: 'pointer' }}>
+                  요청 끄기
+                </button>
+              )}
+              {reqPick.item.request && (
+                <button
+                  onClick={approveReq}
+                  disabled={!reqPick.center.trim() || !reqPick.date}
+                  title="쿠팡이 요청을 승인했으면 눌러서 센터·입고예정일을 이 값으로 바꿉니다"
+                  style={{ padding: '6px 12px', fontSize: 13, fontWeight: 700, color: '#fff', background: '#27ae60', border: 'none', borderRadius: 6, cursor: 'pointer' }}
+                >
+                  ✓ 승인
+                </button>
+              )}
+              <button onClick={() => setReqPick(null)} style={{ marginLeft: 'auto', padding: '6px 14px', fontSize: 13, background: '#f3f3f3', border: 'none', borderRadius: 6, cursor: 'pointer' }}>취소</button>
+              <button
+                onClick={saveReqPick}
+                disabled={!reqPick.center.trim() || !reqPick.date}
+                style={{ padding: '6px 14px', fontSize: 13, fontWeight: 700, color: '#fff', background: '#dc2626', border: 'none', borderRadius: 6, cursor: 'pointer' }}
               >
                 저장
               </button>

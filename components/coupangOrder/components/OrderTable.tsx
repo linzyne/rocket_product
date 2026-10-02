@@ -44,6 +44,8 @@ interface Props {
   onToggleChunk?: (bundle: string) => void;
   // 있으면 'box' 레이아웃 덩어리 머리줄의 입고예정일을 눌러 바꿀 수 있다. 묶음 값을 받는다.
   onEditChunkDate?: (bundle: string) => void;
+  // 있으면 'box' 레이아웃 덩어리 머리줄 끝에 붙일 것(쉽먼트생성대기의 요청등록중 버튼). 묶음 값을 받는다.
+  chunkExtra?: (bundle: string) => React.ReactNode;
   // 있으면 'box' 레이아웃 박스 머리줄에 그 박스의 운송장번호를 붙인다. 묶음 값과 박스 번호를 받는다.
   boxWaybill?: (bundle: string, boxNo: number) => string;
   // 체크한 뒤 바로 누를 버튼들. actionOrder(발주번호) 머리줄의 체크 칸 옆에 띄운다.
@@ -494,7 +496,7 @@ function OfficeCell({ match, need }: { match: OfficeMatch | null; need: number }
 }
 
 /* ── 메인 테이블 ── */
-export default function OrderTable({ rows, onMemoChange, onShipmentChange, colorScheme = 'pink', readOnly = false, onDelete, officeQtyOf, selectedOrders, onToggleSelect, onBulkOrder, doneOrders, onSortByBox, bundleLabel, bundleColorOf, layout = 'order', selectedLines, onToggleLine, hideBox = false, newOrders, onSplitLine, isChunkCollapsed, onToggleChunk, onEditChunkDate, boxWaybill, actionOrder, actions, chunkPad, monoBoxes, onOrderMemoChange, hideMemo, lineSelectByOrder, onToggleHanjung, isHanjung, isReady, onToggleReady, lineBadge }: Props) {
+export default function OrderTable({ rows, onMemoChange, onShipmentChange, colorScheme = 'pink', readOnly = false, onDelete, officeQtyOf, selectedOrders, onToggleSelect, onBulkOrder, doneOrders, onSortByBox, bundleLabel, bundleColorOf, layout = 'order', selectedLines, onToggleLine, hideBox = false, newOrders, onSplitLine, isChunkCollapsed, onToggleChunk, onEditChunkDate, chunkExtra, boxWaybill, actionOrder, actions, chunkPad, monoBoxes, onOrderMemoChange, hideMemo, lineSelectByOrder, onToggleHanjung, isHanjung, isReady, onToggleReady, lineBadge }: Props) {
   if (rows.length === 0) return null;
 
   const sc = SCHEME[colorScheme];
@@ -684,6 +686,7 @@ export default function OrderTable({ rows, onMemoChange, onShipmentChange, color
                             ↕ 박스순
                           </button>
                         )}
+                        {chunkExtra && chunk.bundle && chunkExtra(chunk.bundle)}
                       </span>
                     </td>
                   </tr>

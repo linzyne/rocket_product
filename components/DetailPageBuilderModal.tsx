@@ -23,6 +23,7 @@ import {
 import { saveFilesInProductFolder, productFolderName, detailSliceFileNames } from '../utils/fileSave';
 import { generateId } from '../utils/id';
 import { saveDetailPageDraft, loadDetailPageDraft, deleteDetailPageDraft } from '../data/detailPageDrafts';
+import { loadDetailText, saveDetailText } from '../data/detailTextCloud';
 import { withTimeout, stripClonedScripts, stripEmptySections, withInlineImageMetrics } from '../utils/html2canvasHelpers';
 import ImageCropModal from './ImageCropModal';
 import EditableText from './EditableText';
@@ -221,6 +222,8 @@ const captureBandHeight = (fullWidth: number, scale: number): number => {
 export const STANDALONE_DRAFT_ID = 'standalone-kimchi';
 // 마지막 입력에서 이만큼 쉬면 한 번 저장한다. 글자마다 쓰면 사진까지 통째로 다시 굽게 된다.
 const DRAFT_SAVE_DELAY_MS = 1200;
+// 클라우드 저장은 쓰기마다 비용이 들어서 로컬 저장보다 길게 쉬었다가 올린다.
+const CLOUD_TEXT_SAVE_DELAY_MS = 3000;
 // Numbered feature blocks (01~0N) that share the uploaded photos left over after the fixed
 // hero/closing slots — see distributePhotos below. Count is user-adjustable (see featureBlockCount).
 
@@ -322,6 +325,15 @@ interface KimchiDraft {
   kimchiAccents: Record<KimchiSkin, string>;
   kimchiTypeScale: KimchiTypeScale;
   templateStyle: TemplateStyleSettings;
+}
+
+// 기본 템플릿에서 클라우드에 올리는 "글만" 모음. 사진은 빠진다(detailTextCloud.ts).
+interface BasicTextDraft {
+  copy: DetailPageCopy;
+  sellingPoints: string;
+  pastedText: string;
+  textBoxes: DetailTextBox[];
+  drawObjects: DrawObject[];
 }
 
 const DetailPageBuilderModal: React.FC<DetailPageBuilderModalProps> = ({ isOpen, onClose, product, groupProducts, onSave, onSaveThumbnail, templateId = 'basic', importedPhotos, onImportedPhotosUsed, embedded = false, draftId = STANDALONE_DRAFT_ID }) => {
@@ -658,6 +670,67 @@ const DetailPageBuilderModal: React.FC<DetailPageBuilderModalProps> = ({ isOpen,
     // Only react to the product actually changing — reopening the same product must not reset it.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [product?.id]);
+
+  // 기본 템플릿(상품 상세페이지)은 글만 상품 URL별로 클라우드에 둔다(detailTextCloud.ts). 그래서
+  // 다른 컴퓨터에서 같은 상품을 열어도 글은 그대로 오고, 사진만 다시 올리면 된다.
+  // 불러오기를 마치기 전에는 저장하지 않는다 — 먼저 저장하면 클라우드의 글을 빈 글로 덮어쓴다.
+  const productUrl = product?.url.trim() ?? '';
+  const [cloudText, setCloudText] = useState<{ savedAt: number; photoCount: number } | null>(null);
+  const cloudReadyUrlRef = useRef<string | null>(null);
+  const lastCloudJsonRef = useRef('');
+  const collectBasicTextDraft = (): BasicTextDraft => ({ copy, sellingPoints, pastedText, textBoxes, drawObjects });
+
+  useEffect(() => {
+    cloudReadyUrlRef.current = null;
+    setCloudText(null);
+    if (isKimchi || !productUrl || !product) return;
+    // 이번 실행에서 이미 작업하던 상품으로 돌아온 경우엔 화면에 있는 게 최신이다.
+    if (draftsRef.current.has(product.id)) {
+      cloudReadyUrlRef.current = productUrl;
+      return;
+    }
+    let cancelled = false;
+    void loadDetailText<BasicTextDraft>(productUrl).then(saved => {
+      if (cancelled) return;
+      if (saved) {
+        const d = saved.data;
+        if (d.copy) setCopy({ ...d.copy, productName: product.productName || d.copy.productName });
+        setSellingPoints(d.sellingPoints ?? '');
+        setPastedText(d.pastedText ?? '');
+        setTextBoxes(d.textBoxes ?? []);
+        setDrawObjects(d.drawObjects ?? []);
+        setCloudText({ savedAt: saved.savedAt, photoCount: saved.photoCount });
+        lastCloudJsonRef.current = JSON.stringify(d);
+      } else {
+        lastCloudJsonRef.current = '';
+      }
+      cloudReadyUrlRef.current = productUrl;
+    });
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isKimchi, product?.id, productUrl]);
+
+  // 글이 바뀌면 잠깐 쉬었다가 클라우드에 올린다. 내용이 그대로면 올리지 않는다(쓰기 횟수 아끼기).
+  useEffect(() => {
+    if (isKimchi || !productUrl) return;
+    const timer = setTimeout(() => {
+      if (cloudReadyUrlRef.current !== productUrl) return;
+      const data = collectBasicTextDraft();
+      const hasText = data.sellingPoints.trim() !== '' || data.pastedText.trim() !== ''
+        || data.copy.hookCopy.trim() !== '' || data.copy.closing.trim() !== ''
+        || data.copy.highlights.some(h => h.trim() !== '')
+        || data.copy.features.some(f => f.title.trim() !== '' || f.description.trim() !== '')
+        || data.textBoxes.length > 0 || data.drawObjects.length > 0;
+      if (!hasText) return;
+      const json = JSON.stringify(data);
+      if (json === lastCloudJsonRef.current) return;
+      lastCloudJsonRef.current = json;
+      // 다른 컴퓨터에서 사진을 아직 안 올린 채 글만 고친 경우엔, 원래 사진 장수를 그대로 둔다.
+      void saveDetailText(productUrl, photos.length || cloudText?.photoCount || 0, data);
+    }, CLOUD_TEXT_SAVE_DELAY_MS);
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isKimchi, productUrl, copy, sellingPoints, pastedText, textBoxes, drawObjects]);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -3330,6 +3403,11 @@ const DetailPageBuilderModal: React.FC<DetailPageBuilderModalProps> = ({ isOpen,
             ) : (
               <div className="space-y-2 pt-2 border-t border-slate-700">
                 <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">사진 업로드 (순서: 히어로 → 특징01~{String(featureBlockCount).padStart(2, '0')} → 마무리)</p>
+                {cloudText && photos.length < cloudText.photoCount && (
+                  <p className="text-xs text-amber-300 bg-amber-900/30 border border-amber-700/50 rounded-md px-2 py-1.5">
+                    저장해둔 글을 불러왔습니다. 사진 {cloudText.photoCount}장을 처음과 같은 순서로 다시 올려주세요 (지금 {photos.length}장).
+                  </p>
+                )}
                 <label className="text-xs px-2 py-1.5 bg-blue-600 rounded-md text-white hover:bg-blue-500 cursor-pointer inline-flex items-center gap-1">
                   <UploadIcon className="h-3.5 w-3.5" /> 파일 업로드
                   <input type="file" accept="image/*" multiple className="sr-only" onChange={handleFilesSelect} />

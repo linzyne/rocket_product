@@ -31,6 +31,8 @@ interface ProductListPageProps {
   onClearAll: () => void;
   onUpdate: (id: string, updates: Partial<ArchivedProduct>) => void;
   onAddManual: (entry: Omit<ArchivedProduct, 'id' | 'savedAt'>) => void;
+  // 이 상품의 상세페이지 에디터를 연다. 글은 URL로 클라우드에서 불러온다(사진은 다시 올림).
+  onOpenDetail: (entry: ArchivedProduct) => void;
   dateRange: { start: string; end: string };
   onDateRangeChange: (range: { start: string; end: string }) => void;
   lookbackDays: number;
@@ -68,6 +70,7 @@ const ProductListPage: React.FC<ProductListPageProps> = ({
   onClearAll,
   onUpdate,
   onAddManual,
+  onOpenDetail,
   dateRange,
   onDateRangeChange,
   lookbackDays,
@@ -264,6 +267,7 @@ const ProductListPage: React.FC<ProductListPageProps> = ({
               onDelete={() => handleDelete(entry.id)}
               onEnlargeBarcode={setEnlargedEntry}
               onUpdate={updates => onUpdate(entry.id, updates)}
+              onOpenDetail={() => onOpenDetail(entry)}
             />
           ))}
         </div>
@@ -511,11 +515,12 @@ interface ProductListRowProps {
   onDelete: () => void;
   onEnlargeBarcode: (entry: ArchivedProduct) => void;
   onUpdate: (updates: Partial<ArchivedProduct>) => void;
+  onOpenDetail: () => void;
 }
 
 type EditableAmountField = 'supplyPrice' | 'sellingPrice' | 'margin';
 
-const ProductListRow: React.FC<ProductListRowProps> = ({ entry, isExpanded, onToggle, onDelete, onEnlargeBarcode, onUpdate }) => {
+const ProductListRow: React.FC<ProductListRowProps> = ({ entry, isExpanded, onToggle, onDelete, onEnlargeBarcode, onUpdate, onOpenDetail }) => {
   const costPrice = Number(entry.costPrice) || 0;
   const supplyPrice = Number(entry.supplyPrice) || 0;
   const sellingPrice = Number(entry.sellingPrice) || 0;
@@ -720,6 +725,17 @@ const ProductListRow: React.FC<ProductListRowProps> = ({ entry, isExpanded, onTo
           />
           <span className="hidden sm:inline">승인</span>
         </label>
+
+        {entry.url && (
+          <button
+            type="button"
+            onClick={e => { e.stopPropagation(); onOpenDetail(); }}
+            className="flex-shrink-0 px-2 py-1 rounded-md text-xs font-medium whitespace-nowrap bg-white text-blue-700 border border-blue-200 hover:bg-blue-50 transition-colors"
+            title="저장해둔 글로 상세페이지 에디터를 엽니다. 사진은 다시 올려주세요."
+          >
+            상페 수정
+          </button>
+        )}
 
         <button
           type="button"

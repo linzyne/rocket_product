@@ -494,6 +494,9 @@ const App: React.FC = () => {
     // 헤더의 "상페작업" 버튼으로 연 경우 — 상품 목록에 없는 임시 상품이라 저장 결과를 되돌려
     // 넣을 행이 없다. 그래서 저장은 목록 반영 대신 파일로 바로 내려받는 것으로 끝낸다.
     standalone: boolean;
+    // 상품목록(등록 이력)에서 "상페 수정"으로 연 경우. 로켓제안서 행이 없으니 저장은 파일 내려받기로
+    // 끝내고(standalone과 같다), 닫으면 상품목록으로 돌아간다. 글은 URL로 클라우드에서 불러온다.
+    fromArchive?: boolean;
   }>({ isOpen: false, product: null, standalone: false });
 
   const labelRef = useRef<HTMLDivElement>(null);
@@ -2824,10 +2827,32 @@ const App: React.FC = () => {
   }, []);
 
   // 에디터의 "로켓제안서로" 버튼. 독립 상세페이지는 id가 고정이라 닫아도 작업이 남는다.
+  // 상품목록에서 열었으면 상품목록으로 돌아간다.
   const leaveDetailPageBuilder = useCallback(() => {
+    const backToList = detailPageBuilderState.fromArchive;
     closeDetailPageBuilder();
     setActiveMenu('proposal');
-  }, [closeDetailPageBuilder]);
+    if (backToList) setCurrentView('productList');
+  }, [closeDetailPageBuilder, detailPageBuilderState.fromArchive]);
+
+  // 상품목록의 "상페 수정". 등록 이력에 남은 값으로 임시 상품을 만들어 상품 에디터를 연다.
+  // id를 이력 id로 고정해서, 같은 상품을 다시 열면 이번 실행 중 하던 작업이 그대로 남는다.
+  const openDetailPageFromArchive = useCallback((entry: ArchivedProduct) => {
+    setDetailPageBuilderState({
+      isOpen: true,
+      product: {
+        ...createNewProduct(),
+        id: `archive-${entry.id}`,
+        url: entry.url,
+        productName: entry.productName,
+        color: entry.color,
+        thumbnailDataUrl: entry.thumbnailDataUrl,
+      },
+      standalone: false,
+      fromArchive: true,
+    });
+    setActiveMenu('detail');
+  }, []);
 
   // 상페작업 메뉴에 열린 상품이 없으면 독립 상세페이지를 연다.
   useEffect(() => {
@@ -2852,7 +2877,7 @@ const App: React.FC = () => {
     value: string | string[],
   ) => {
     // 임시 상품이면 값을 되돌려 넣을 행이 없으므로, 저장 = 완성된 상세페이지를 파일로 내려받기.
-    if (detailPageBuilderState.standalone) {
+    if (detailPageBuilderState.standalone || detailPageBuilderState.fromArchive) {
       if (field !== 'detailDataUrls') return;
       const dataUrls = value as string[];
       const product = detailPageBuilderState.product;
@@ -2862,7 +2887,12 @@ const App: React.FC = () => {
         dataUrls.map(async (url, idx) => ({ name: names[idx], blob: await (await fetch(url)).blob() }))
       );
       await saveFilesInProductFolder(productFolderName(product), files);
+      const backToList = detailPageBuilderState.fromArchive;
       closeDetailPageBuilder();
+      if (backToList) {
+        setActiveMenu('proposal');
+        setCurrentView('productList');
+      }
       return;
     }
     if (detailPageBuilderState.product) {
@@ -2897,13 +2927,13 @@ const App: React.FC = () => {
       closeDetailPageBuilder();
       setActiveMenu('proposal');
     }
-  }, [detailPageBuilderState.product, detailPageBuilderState.standalone, handleProductChange, closeDetailPageBuilder, getGroupProducts]);
+  }, [detailPageBuilderState.product, detailPageBuilderState.standalone, detailPageBuilderState.fromArchive, handleProductChange, closeDetailPageBuilder, getGroupProducts]);
 
   // 사진 갤러리에서 특정 사진을 특정 옵션의 대표이미지로 지정한다(옵션마다 다른 사진을 쓸 수 있게).
   // 대표이미지 지정은 상세페이지를 계속 작업 중인 상태에서의 부수 동작이라 모달을 닫지 않는다.
   const handleSaveThumbnailFromDetailPageBuilder = useCallback((productId: string, dataUrl: string) => {
     // 임시 상품은 products에 없으니 모달이 들고 있는 사본을 직접 갱신해야 지정 표시가 뜬다.
-    if (detailPageBuilderState.standalone) {
+    if (detailPageBuilderState.standalone || detailPageBuilderState.fromArchive) {
       setDetailPageBuilderState(prev =>
         prev.product && prev.product.id === productId
           ? { ...prev, product: { ...prev.product, thumbnailDataUrl: dataUrl } }
@@ -2912,7 +2942,7 @@ const App: React.FC = () => {
       return;
     }
     handleProductChange(productId, 'thumbnailDataUrl', dataUrl);
-  }, [detailPageBuilderState.standalone, handleProductChange]);
+  }, [detailPageBuilderState.standalone, detailPageBuilderState.fromArchive, handleProductChange]);
 
   const filteredProducts = products.filter(product => {
     if (!searchQuery.trim()) return true;
@@ -2987,6 +3017,7 @@ const App: React.FC = () => {
           onClearAll={handleClearArchivedProducts}
           onUpdate={handleUpdateArchivedProduct}
           onAddManual={handleAddManualArchivedProduct}
+          onOpenDetail={openDetailPageFromArchive}
           dateRange={archiveDateRange}
           onDateRangeChange={setArchiveDateRange}
           lookbackDays={archiveLookbackDays}
@@ -3242,7 +3273,9 @@ const App: React.FC = () => {
             isOpen={detailPageBuilderState.isOpen && !detailPageBuilderState.standalone}
             onClose={leaveDetailPageBuilder}
             product={detailPageBuilderState.standalone ? null : (products.find(p => p.id === detailPageBuilderState.product?.id) ?? detailPageBuilderState.product)}
-            groupProducts={!detailPageBuilderState.standalone && detailPageBuilderState.product ? getGroupProducts(detailPageBuilderState.product) : []}
+            groupProducts={detailPageBuilderState.standalone || !detailPageBuilderState.product
+              ? []
+              : detailPageBuilderState.fromArchive ? [detailPageBuilderState.product] : getGroupProducts(detailPageBuilderState.product)}
             onSave={handleSaveFromDetailPageBuilder}
             onSaveThumbnail={handleSaveThumbnailFromDetailPageBuilder}
             templateId="basic"

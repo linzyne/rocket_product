@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { markCollected } from '../../data/collectStatusStore';
 import { loadLocalPoCursor, subscribePoCursor, setPoCursor } from './data/poCursorStore';
 
 // 서허 발주서 목록에서 새 발주서만 골라 업로드 양식을 받아오는 단추(확장 rocket-hub-extension의 po.js).
@@ -38,7 +39,10 @@ const CollectPurchaseOrders: React.FC<{
   const finishRef = React.useRef(onFinish);
   finishRef.current = onFinish;
   const doneRef = React.useRef((ok: boolean, message: string) => {});
-  doneRef.current = (ok, message) => finishRef.current && finishRef.current(ok, message);
+  doneRef.current = (ok, message) => {
+    if (ok) markCollected('po', message);
+    finishRef.current && finishRef.current(ok, message);
+  };
 
   useEffect(() => subscribePoCursor(no => { if (!editingRef.current) setLastOrderNo(no); }), []);
 

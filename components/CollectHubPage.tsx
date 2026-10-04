@@ -7,6 +7,7 @@ import CollectPurchaseOrders from './coupangOrder/CollectPurchaseOrders';
 import { appendOrderFile, subscribeWork } from './coupangOrder/data/orderWorkStore';
 import { subscribeReservations } from './coupangOrder/data/reservationStore';
 import type { OrderRow } from './coupangOrder/types';
+import { CollectStatus, subscribeCollectStatus } from '../data/collectStatusStore';
 
 // 매일 > 수집. 날마다 하는 세 가지 수집(발주·입고·재고)을 한 화면에서 한다.
 // "오늘 수집 다 하기"를 누르면 발주 → 입고 → 재고 차례로 돈다. 한꺼번에 돌리지 않는 까닭은
@@ -45,6 +46,9 @@ const CollectHubPage: React.FC = () => {
   useEffect(() => subscribeInventory(setItems), []);
   useEffect(() => subscribeReceives(setReceives), []);
   useEffect(() => subscribeReservations(setReservations), []);
+  // 수집마다 마지막으로 끝난 때(다른 컴퓨터에서 한 것도 보인다).
+  const [lastDone, setLastDone] = useState<CollectStatus>({});
+  useEffect(() => subscribeCollectStatus(setLastDone), []);
   // 여기서 받은 발주서도 클라우드로 올라가야 한다. 이 화면은 작업 목록을 보여주지는 않지만,
   // 이어 두어야 올린 것이 바로 다른 컴퓨터로 간다(쿠팡발주확인을 열지 않아도).
   useEffect(() => subscribeWork(() => {}), []);
@@ -181,6 +185,12 @@ const CollectHubPage: React.FC = () => {
                 </div>
                 <p className="text-sm text-gray-500 mt-1.5">{step.desc}</p>
                 <p className="text-xs text-gray-400 mt-0.5">{doneHint(step.id)}</p>
+                <p className="text-xs text-gray-600 mt-0.5">
+                  마지막 완료{' '}
+                  {lastDone[step.id]
+                    ? <><b>{formatTime(lastDone[step.id]!.at)}</b>{lastDone[step.id]!.message && <span className="text-gray-400"> · {lastDone[step.id]!.message}</span>}</>
+                    : <span className="text-gray-400">기록 없음</span>}
+                </p>
               </div>
               <div className="flex-shrink-0 flex items-center justify-end">
                 {step.id === 'po' && (

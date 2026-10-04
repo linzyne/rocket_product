@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { markCollected } from '../data/collectStatusStore';
 import { ReceiveRow, saveReceives } from '../data/receiveStore';
 
 // 서허 "입고상세내역"을 확장으로 가져오는 단추. 물류 > 물류창고입고와 로켓 > 입고가 같이 쓴다.
@@ -40,7 +41,10 @@ const CollectReceives: React.FC<Props> = ({ onBucket, onExtReady, children, runT
   const doneRef = React.useRef((ok: boolean, message: string) => {});
   // 확장이 RECEIVE_COLLECT를 받았다는 대답(ACK)이 왔는지. 안 오면 확장이 이 화면에 붙지 않은 것이다.
   const ackTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
-  doneRef.current = (ok, message) => finishRef.current && finishRef.current(ok, message);
+  doneRef.current = (ok, message) => {
+    if (ok) markCollected('receive', message);
+    finishRef.current && finishRef.current(ok, message);
+  };
 
   useEffect(() => {
     const onMessage = (event: MessageEvent) => {

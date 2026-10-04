@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { markCollected } from '../data/collectStatusStore';
 import { InventoryItem, importHubData } from '../data/inventoryStore';
 
 // "로켓 서허 연동" 확장(rocket-hub-extension)에서 로켓센터 재고를 가져오는 단추.
@@ -44,7 +45,10 @@ const CollectFromExtension: React.FC<{ items: InventoryItem[]; runToken?: number
   const failTextRef = React.useRef('');
   const finishRef = React.useRef(onFinish);
   finishRef.current = onFinish;
-  const done = (ok: boolean, message: string) => finishRef.current && finishRef.current(ok, message);
+  const done = (ok: boolean, message: string) => {
+    if (ok) markCollected('stock', message);
+    finishRef.current && finishRef.current(ok, message);
+  };
   const doneRef = React.useRef(done);
   doneRef.current = done;
 

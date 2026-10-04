@@ -114,7 +114,14 @@ export function buildLabelFormatBlock(
     lines.push(`특별한점 ${String(i).padStart(2, '0')}`, '(짧은 특징 한 줄)', '');
   }
   for (let i = 1; i <= featureBlockCount; i++) {
-    lines.push(String(i).padStart(2, '0'), '(특징 소제목 한 줄)', '', '(특징 설명 2~3문장)', '<사진>', '');
+    lines.push(
+      String(i).padStart(2, '0'),
+      '(특징 제목 한 줄. "꾸밈말 / 핵심 제목" 형식, 예: 나만의 비밀을 지켜줄 / 3자리 잠금장치)',
+      '',
+      '(특징 설명 1~2문장, 40자 안팎)',
+      '<사진>',
+      '',
+    );
   }
   lines.push('마무리 문구', '(마무리 한 줄)');
   return lines.join('\n');
@@ -126,7 +133,7 @@ export function buildJsonFormatBlock(
   highlightCount: number = DEFAULT_HIGHLIGHT_COUNT,
   featureBlockCount: number = DEFAULT_FEATURE_BLOCK_COUNT,
 ): string {
-  return `highlights(특별한점, 짧은 한 줄 특징)는 정확히 ${highlightCount}개, features(제목+2~3문장 설명)는 정확히 ${featureBlockCount}개 작성해줘.`;
+  return `highlights(특별한점, 짧은 한 줄 특징)는 정확히 ${highlightCount}개, features는 정확히 ${featureBlockCount}개 작성해줘. features의 title은 "꾸밈말 / 핵심 제목" 형식(예: 나만의 비밀을 지켜줄 / 3자리 잠금장치), description은 1~2문장 40자 안팎으로 써줘.`;
 }
 
 // 사용자가 고쳐 쓴 프롬프트에 실제 값을 채워 넣는다.

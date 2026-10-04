@@ -249,6 +249,18 @@ const DEFAULT_TEMPLATE_STYLE: TemplateStyleSettings = {
   fontScale: 1,
 };
 
+// 특징 제목은 "꾸밈말 / 핵심 제목" 한 줄로 받는다(예: "나만의 비밀을 지켜줄 / 3자리 잠금장치").
+// 꾸밈말은 위에 작게, 핵심 제목은 크게 그린다. " / "가 없으면 전부 핵심 제목.
+const FEATURE_TITLE_SEP = ' / ';
+function splitFeatureTitle(title: string): { subtitle: string; main: string } {
+  const at = title.indexOf(FEATURE_TITLE_SEP);
+  if (at < 0) return { subtitle: '', main: title };
+  return { subtitle: title.slice(0, at).trim(), main: title.slice(at + FEATURE_TITLE_SEP.length).trim() };
+}
+function joinFeatureTitle(subtitle: string, main: string): string {
+  return subtitle.trim() ? `${subtitle.trim()}${FEATURE_TITLE_SEP}${main}` : main;
+}
+
 // Splits `items` into `groupCount` roughly equal chunks, front-loading the remainder so earlier
 // groups get one extra item first (e.g. 4 items / 3 groups → [2, 1, 1]).
 function distributeEvenly<T>(items: T[], groupCount: number): T[][] {
@@ -301,9 +313,11 @@ const BASE_FONT_SIZE = {
   heroSubtitle: 50,
   sectionHeading: 55,
   highlight: 34,
-  featureNumber: 89,
-  featureTitle: 62,
-  featureDesc: 46,
+  // 특징 블록(POINT.1 → 꾸밈말 → 제목 → 사진 → 설명)은 흔히 쓰는 상세페이지 모양에 맞춘 크기.
+  featureNumber: 24,
+  featureSubtitle: 29,
+  featureTitle: 48,
+  featureDesc: 29,
   closingTitle: 55,
   productInfo: 46,
 };
@@ -955,9 +969,12 @@ const DetailPageBuilderModal: React.FC<DetailPageBuilderModalProps> = ({ isOpen,
       heroSubtitle: { ...base(size(BASE_FONT_SIZE.heroSubtitle)), fontWeight: 700, lineHeight: 1.6, textAlign: 'center', padding: `0 ${PADDING_X}px` } as React.CSSProperties,
       sectionHeading: { ...base(size(BASE_FONT_SIZE.sectionHeading)), fontWeight: 700, textAlign: 'center' } as React.CSSProperties,
       highlight: { ...base(size(BASE_FONT_SIZE.highlight)), fontWeight: 400, lineHeight: 1.6, textAlign: 'center' } as React.CSSProperties,
-      featureNumber: { ...base(size(BASE_FONT_SIZE.featureNumber)), fontWeight: 700, textAlign: 'left', padding: `0 ${PADDING_X}px` } as React.CSSProperties,
-      featureTitle: { ...base(size(BASE_FONT_SIZE.featureTitle)), fontWeight: 700, lineHeight: 1.3, textAlign: 'left', padding: `0 ${PADDING_X}px` } as React.CSSProperties,
-      featureDesc: { ...base(size(BASE_FONT_SIZE.featureDesc)), fontWeight: 400, lineHeight: 1.6, textAlign: 'left', padding: `0 ${PADDING_X}px` } as React.CSSProperties,
+      // 특징 블록은 글꼴 설정과 상관없이 Pretendard로 고정 — 이 모양은 그 글꼴 기준으로 맞춘 것.
+      // 설명은 한 줄 20자 안팎에서 어절 단위로 꺾이도록 폭을 좁힌다.
+      featureNumber: { ...base(size(BASE_FONT_SIZE.featureNumber)), fontFamily: 'Pretendard', fontWeight: 800, letterSpacing: '-0.01em', textAlign: 'center' } as React.CSSProperties,
+      featureSubtitle: { ...base(size(BASE_FONT_SIZE.featureSubtitle)), fontFamily: 'Pretendard', fontWeight: 400, lineHeight: 1.4, textAlign: 'center', padding: `0 ${PADDING_X}px` } as React.CSSProperties,
+      featureTitle: { ...base(size(BASE_FONT_SIZE.featureTitle)), fontFamily: 'Pretendard', fontWeight: 700, lineHeight: 1.3, letterSpacing: '-0.02em', textAlign: 'center', padding: `0 ${PADDING_X}px`, wordBreak: 'keep-all' } as React.CSSProperties,
+      featureDesc: { ...base(size(BASE_FONT_SIZE.featureDesc)), fontFamily: 'Pretendard', fontWeight: 400, lineHeight: 1.75, letterSpacing: '-0.01em', textAlign: 'center', maxWidth: 560, margin: '0 auto', wordBreak: 'keep-all' } as React.CSSProperties,
       closingTitle: { ...base(size(BASE_FONT_SIZE.closingTitle)), fontWeight: 700, lineHeight: 1.4, textAlign: 'center', padding: `0 ${PADDING_X}px` } as React.CSSProperties,
       productInfo: base(size(BASE_FONT_SIZE.productInfo)),
     };
@@ -2935,21 +2952,30 @@ const DetailPageBuilderModal: React.FC<DetailPageBuilderModalProps> = ({ isOpen,
                   const title = feature?.title || '';
                   const description = feature?.description || '';
                   if (groupPhotos.length === 0 && !title.trim() && !description.trim()) return null;
+                  const titleParts = splitFeatureTitle(title);
                   return (
                     <div key={idx}>
                       {hasCopyText && (
                         <>
-                          <div style={{ ...styles.featureNumber, marginTop: SPACE.lg, marginBottom: SPACE.xs }}>{number}</div>
-                          <div style={{ marginBottom: SPACE.sm }}>
-                            <EditableText value={title} onChange={v => updateFeatureField(number, 'title', v)} placeholder="특징 소제목" style={styles.featureTitle} />
-                          </div>
-                          <div style={{ marginBottom: SPACE.md }}>
-                            <EditableText value={description} onChange={v => updateFeatureField(number, 'description', v)} placeholder="특징 설명" style={styles.featureDesc} />
+                          <div style={{ ...styles.featureNumber, marginTop: SPACE.lg, marginBottom: SPACE.md }}>POINT.{idx + 1}</div>
+                          {titleParts.subtitle && (
+                            <div style={{ marginBottom: SPACE.xs }}>
+                              <EditableText value={titleParts.subtitle} onChange={v => updateFeatureField(number, 'title', joinFeatureTitle(v, titleParts.main))} placeholder="꾸밈말" style={styles.featureSubtitle} />
+                            </div>
+                          )}
+                          <div style={{ marginBottom: SPACE.xl }}>
+                            <EditableText value={titleParts.main} onChange={v => updateFeatureField(number, 'title', joinFeatureTitle(titleParts.subtitle, v))} placeholder="특징 제목" style={styles.featureTitle} />
                           </div>
                         </>
                       )}
+                      {/* 사진 → 설명 순서. 설명이 없으면 사진 아래 간격만 섹션 간격으로 둔다. */}
                       {groupPhotos.map((photo, pIdx) =>
-                        renderPhoto(photo, pIdx === groupPhotos.length - 1 ? SPACE.xs + SECTION_GAP : SPACE.sm)
+                        renderPhoto(photo, pIdx === groupPhotos.length - 1 ? (hasCopyText ? SPACE.xl : SPACE.xs + SECTION_GAP) : SPACE.sm)
+                      )}
+                      {hasCopyText && (
+                        <div style={{ marginBottom: SPACE.xs + SECTION_GAP }}>
+                          <EditableText value={description} onChange={v => updateFeatureField(number, 'description', v)} placeholder="특징 설명" style={styles.featureDesc} />
+                        </div>
                       )}
                     </div>
                   );

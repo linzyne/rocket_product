@@ -804,7 +804,8 @@ export default function CoupangShipPage({ onGoOrder }: { onGoOrder?: () => void 
           // 휴대폰에서는 발주서 표만 화면 폭에 꽉 차게(묶음 카드는 숨김).
           <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'minmax(0, 1fr)' : '1.25fr 0.7fr 1.1fr', gap: 20, alignItems: 'start' }}>
             {/* 왼쪽: 발주서 표(쿠팡발주확인의 발송 패널과 같은 표) */}
-            <div style={{ minWidth: 0 }}>
+            {/* PC에서는 표 폭만큼 칸이 늘어나야 잘리지 않는다(minWidth 0은 휴대폰에서만). */}
+            <div style={{ minWidth: isMobile ? 0 : undefined }}>
               <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 8, marginBottom: 8 }}>
                 <span style={{ fontSize: 12, fontWeight: 700, color: '#c0392b', letterSpacing: '-0.2px' }}>📤 발주서</span>
                 <span style={{ fontSize: 11, color: '#aaa' }}>{itemCount}건</span>

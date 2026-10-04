@@ -637,7 +637,7 @@ export default function OrderTable({ rows, onMemoChange, onShipmentChange, color
                       borderTop: '1px solid #e8e8e8', borderBottom: '1px solid #f0f0f0',
                       borderLeft: `4px solid ${edge}`,
                     }}>
-                      <span style={{ display: 'inline-flex', alignItems: 'center', flexWrap: 'wrap', gap: 7 }}>
+                      <span style={{ display: 'inline-flex', alignItems: 'center', flexWrap: isMobile ? 'wrap' : 'nowrap', gap: 7 }}>
                         {canFold && (
                           <button
                             onClick={() => onToggleChunk!(chunk.bundle)}
@@ -888,7 +888,7 @@ export default function OrderTable({ rows, onMemoChange, onShipmentChange, color
                   borderLeft: edge ? `4px solid ${edge}` : undefined,
                   whiteSpace: headWrap,
                 }}>
-                  <span style={{ display: 'inline-flex', alignItems: 'center', flexWrap: 'wrap', gap: 7 }}>
+                  <span style={{ display: 'inline-flex', alignItems: 'center', flexWrap: isMobile ? 'wrap' : 'nowrap', gap: 7 }}>
                     {selectable && (
                       <input
                         type="checkbox"

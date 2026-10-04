@@ -1,4 +1,6 @@
 import React, { useState, useCallback, useEffect, useMemo } from 'react';
+import ProductQtySummary from './components/ProductQtySummary';
+import { useIsMobile } from '../../utils/useIsMobile';
 import FileUpload from './components/FileUpload';
 import CollectPurchaseOrders from './CollectPurchaseOrders';
 import OrderTable from './components/OrderTable';
@@ -61,6 +63,7 @@ const alertError = (err: unknown) => alert(`예약 저장 실패: ${err instance
 // 발주서정리 엑셀과 롯데택배 업로드 엑셀을 만든다. (원래 '쉽먼트' 앱을 그대로 옮겨온 것)
 // 예약 패널은 저장소(data/reservationStore)에 계속 쌓이고, 삭제 버튼을 눌러야만 지워진다.
 export default function CoupangOrderPage({ onGoShipOut }: { onGoShipOut?: () => void } = {}) {
+  const isMobile = useIsMobile();
   const [initialWork] = useState(loadWork);
   const [leftRows, setLeftRows] = useState<DisplayRow[]>(initialWork.rows);
   const [reservations, setReservations] = useState<OrderRow[]>([]);
@@ -846,8 +849,8 @@ export default function CoupangOrderPage({ onGoShipOut }: { onGoShipOut?: () => 
         background: '#fff', borderBottom: '1px solid #f0f0f0',
         position: 'sticky', top: 0, zIndex: 10,
       }}>
-        <div style={{ maxWidth: 1600, margin: '0 auto', padding: '0 24px', height: 54, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 20 }}>
+        <div style={{ maxWidth: 1600, margin: '0 auto', padding: isMobile ? '6px 12px' : '0 24px', minHeight: 54, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: isMobile ? 8 : 20, flexWrap: 'wrap' }}>
             <span style={{ fontSize: 17, fontWeight: 700, color: '#1a1a1a', letterSpacing: '-0.3px' }}>📦 쿠팡발주확인</span>
             {fileName && (
               <span style={{ fontSize: 11, color: '#999', background: '#f5f5f5', padding: '3px 10px', borderRadius: 20 }}>
@@ -877,8 +880,9 @@ export default function CoupangOrderPage({ onGoShipOut }: { onGoShipOut?: () => 
         </div>
       </header>
 
-      <main style={{ maxWidth: 1600, margin: '0 auto', padding: '20px 24px' }}>
+      <main style={{ maxWidth: 1600, margin: '0 auto', padding: isMobile ? '12px 10px 70px' : '20px 24px' }}>
         <div>
+            <ProductQtySummary lines={leftRows.filter(r => !r.isBlank).map(r => ({ 상품이름: r.상품이름, 확정수량: r.확정수량, ready: ready.isReady({ 발주번호: r._발주번호, 상품이름: r.상품이름, 확정수량: r.확정수량 }) }))} />
             <div style={{ marginBottom: 14 }}>
               <CollectPurchaseOrders onFile={handleFile} />
             </div>
@@ -934,8 +938,8 @@ export default function CoupangOrderPage({ onGoShipOut }: { onGoShipOut?: () => 
             )}
 
             {hasData && (
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8, marginBottom: 14 }}>
+                <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
                   <button
                     onClick={pickOrderFile}
                     title="발주서를 하나 더 올려 지금 목록 아래에 이어 붙입니다"
@@ -967,7 +971,7 @@ export default function CoupangOrderPage({ onGoShipOut }: { onGoShipOut?: () => 
                   </span>
                 </div>
 
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
                   {pendingCount > 0 && <button
                     onClick={handleReserve}
                     disabled={!pendingCount}
@@ -1000,7 +1004,7 @@ export default function CoupangOrderPage({ onGoShipOut }: { onGoShipOut?: () => 
               </div>
             )}
 
-            {hasData && (
+            {hasData && !isMobile && (
               <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'flex-end', gap: '2px 10px', marginTop: -8, marginBottom: 14 }}>
                 <span style={{ fontSize: 11, color: '#bbb' }}>발주서 체크 → 새 묶음 만들기 / 이미 있는 묶음의 +담기로 추가</span>
                 <span style={{ fontSize: 11, color: '#ddd' }}>·</span>
@@ -1016,22 +1020,23 @@ export default function CoupangOrderPage({ onGoShipOut }: { onGoShipOut?: () => 
               <div style={{
                 display: 'grid',
                 // 예약 패널은 쓰지 않는다(예전에 넘겨 둔 예약이 남아 있을 때만 보여준다). 묶음 카드는 잘리지 않게 넉넉히.
-                gridTemplateColumns: [
+                // 휴대폰에서는 발송 패널 하나만 화면 폭에 꽉 차게 보여준다(묶음 패널은 숨김).
+                gridTemplateColumns: isMobile ? 'minmax(0, 1fr)' : [
                   // 발송 표는 한눈에 들어오게 넓히지 않는다(예전 폭 정도인 560px까지).
                   folded.send ? '34px' : 'minmax(0, 560px)',
                   folded.bundle ? '34px' : '420px',
                   ...(rightRows.length > 0 ? ['minmax(0, 0.9fr)'] : []),
                 ].join(' '),
-                gap: 20, alignItems: 'start', justifyContent: 'start',
+                gap: isMobile ? 14 : 20, alignItems: 'start', justifyContent: 'start',
               }}>
-                {folded.send ? (
+                {folded.send && !isMobile ? (
                   <FoldedStrip
                     icon="📤" label="발송" color="#c0392b" count={`${leftItemCount}건`}
                     onOpen={() => setFolded(f => ({ ...f, send: false }))}
                   />
                 ) : (
                 <div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 8, marginBottom: 8 }}>
                     <PanelTitle
                       icon="📤" label="발송" color="#c0392b"
                       folded={folded.send}
@@ -1111,7 +1116,7 @@ export default function CoupangOrderPage({ onGoShipOut }: { onGoShipOut?: () => 
                 </div>
                 )}
 
-                {folded.bundle ? (
+                {isMobile ? null : folded.bundle ? (
                   <FoldedStrip
                     icon="🧺" label="묶음" color="#7c3aed" count={`${bundleCount}묶음`}
                     onOpen={() => setFolded(f => ({ ...f, bundle: false }))}
@@ -1144,7 +1149,7 @@ export default function CoupangOrderPage({ onGoShipOut }: { onGoShipOut?: () => 
                 </div>
                 )}
 
-                {rightRows.length > 0 && <div style={STICKY_PANEL}>
+                {rightRows.length > 0 && <div style={isMobile ? undefined : STICKY_PANEL}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
                     <span style={{ fontSize: 12, fontWeight: 700, color: '#27ae60', letterSpacing: '-0.2px' }}>📅 예약</span>
                     {rightItemCount > 0 && <span style={{ fontSize: 11, color: '#aaa' }}>{rightItemCount}건</span>}

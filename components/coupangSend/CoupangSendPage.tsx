@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import ProductQtySummary from '../coupangOrder/components/ProductQtySummary';
 import { ShipOut, ShipOutLine, subscribeShipOuts, markShipOuts, shipOutBatch, shipOutDone } from '../coupangOrder/data/shipOutStore';
 import { ShipmentBatch, subscribeShipments, allBoxes, waybillForBox, batchForItem } from '../../data/shipmentStore';
 import ShipmentWaybillModal from '../coupangOrder/components/ShipmentWaybillModal';
@@ -131,13 +132,14 @@ export default function CoupangSendPage({ onGoShip }: { onGoShip?: () => void } 
   return (
     <div style={{ minHeight: '100vh', background: '#fff', color: '#1a1a1a', fontFamily: "'Apple SD Gothic Neo', 'Malgun Gothic', 'Noto Sans KR', sans-serif" }}>
       <header style={{ background: '#fff', borderBottom: '1px solid #f0f0f0', position: 'sticky', top: 0, zIndex: 10 }}>
-        <div style={{ maxWidth: 1200, margin: '0 auto', padding: '0 24px', height: 54, display: 'flex', alignItems: 'center', gap: 12 }}>
+        <div style={{ maxWidth: 1200, margin: '0 auto', padding: '6px clamp(12px, 4vw, 24px)', minHeight: 54, boxSizing: 'border-box', display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '4px 12px' }}>
           <span style={{ fontSize: 17, fontWeight: 700, letterSpacing: '-0.3px' }}>📦 발송대기/완료</span>
           <span style={{ fontSize: 12, color: '#999' }}>대기 {waiting.length}건 · 발송 완료 {sent.length}건</span>
         </div>
       </header>
 
-      <main style={{ maxWidth: 1200, margin: '0 auto', padding: '20px 24px 60px' }}>
+      <main style={{ maxWidth: 1200, margin: '0 auto', padding: '20px clamp(10px, 4vw, 24px) 70px' }}>
+        <ProductQtySummary lines={waiting.flatMap(i => i.lines.map(l => ({ ...l, ready: isLineReady(i, l) })))} />
         {waiting.length === 0 ? (
           <div style={{ border: '1px dashed #e0e0e0', borderRadius: 10, padding: '60px 0', textAlign: 'center', color: '#bbb', fontSize: 13 }}>
             발송을 기다리는 건이 없어요.<br />
@@ -145,7 +147,7 @@ export default function CoupangSendPage({ onGoShip }: { onGoShip?: () => void } 
           </div>
         ) : (
           // 카드 목록(격자). 카드 안에서 바로 박스별 상품 준비 체크 · 운송장 · 발송 완료까지 한다.
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(340px, 1fr))', gap: 16, alignItems: 'start' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(min(340px, 100%), 1fr))', gap: 16, alignItems: 'start' }}>
             {waiting.map(item => {
               const { done, total } = readyCount(item);
               const allReady = total > 0 && done === total;
@@ -157,7 +159,7 @@ export default function CoupangSendPage({ onGoShip }: { onGoShip?: () => void } 
                   background: '#fff', boxShadow: '0 1px 4px rgba(0,0,0,0.05)',
                 }}>
                   {/* 머리: 센터 · 입고예정일 · 박스 수 */}
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 12px', background: allReady ? '#f2fbf6' : '#fafafa', borderBottom: '1px solid #f0f0f0' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 8, padding: '10px 12px', background: allReady ? '#f2fbf6' : '#fafafa', borderBottom: '1px solid #f0f0f0' }}>
                     <span style={{ padding: '2px 9px', fontSize: 13, fontWeight: 800, borderRadius: 6, color: '#fff', background: '#b04a3e' }}>{item.center}</span>
                     <b style={{ fontSize: 14, color: '#1e293b' }}>{dayText(item.date)}</b>
                     <span style={{ fontSize: 11, color: '#999' }} title={`출고번호 ${item.id}`}>{item.bundle}</span>

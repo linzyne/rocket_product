@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import ProductQtySummary from '../coupangOrder/components/ProductQtySummary';
 import {
   HanjungOrder, subscribeHanjung, deleteHanjungOrder, saveHanjungOrder, productSummary, orderTotals,
 } from '../../data/hanjungStore';
@@ -189,6 +190,8 @@ const PendingPanel: React.FC<{ orders: HanjungOrder[]; onRecord: (act: Act) => v
           {saving ? '저장 중…' : `선택한 ${selected.length}건 주문완료`}
         </button>
       </div>
+      <div className="px-3 pt-3"><ProductQtySummary lines={pending} /></div>
+      <div className="overflow-x-auto">
       <table className="w-full text-sm">
         <thead className="text-xs text-gray-500">
           <tr className="border-b border-gray-100">
@@ -247,6 +250,7 @@ const PendingPanel: React.FC<{ orders: HanjungOrder[]; onRecord: (act: Act) => v
           })}
         </tbody>
       </table>
+      </div>
       {byProduct.length > 0 && (
         <div className="px-4 py-2 border-t border-gray-100 text-xs text-gray-600">
           주문할 수량: {byProduct.map(([name, q]) => <span key={name} className="mr-3">{name} <b>{q}</b>개</span>)}
@@ -365,7 +369,7 @@ const HanjungOrderPage: React.FC = () => {
           value={search}
           onChange={e => setSearch(e.target.value)}
           placeholder="고유번호·상품명·발주번호 검색"
-          className="w-72 px-3 py-1.5 border border-gray-200 rounded-lg text-sm bg-white focus:outline-none focus:ring-1 focus:ring-blue-400"
+          className="w-full sm:w-72 px-3 py-1.5 border border-gray-200 rounded-lg text-sm bg-white focus:outline-none focus:ring-1 focus:ring-blue-400"
         />
       </div>
 
@@ -410,7 +414,8 @@ const HanjungOrderPage: React.FC = () => {
 
               {isOpen && (
                 <div className="border-t border-gray-100 px-4 py-3 space-y-4">
-                  <table className="w-full text-sm">
+                  <div className="overflow-x-auto">
+                  <table className="w-full min-w-[34rem] text-sm">
                     <thead className="text-xs text-gray-500">
                       <tr><th className="text-left font-medium py-1">상품</th><th className="w-20 text-right font-medium">발주</th><th className="w-20 text-right font-medium">수입입고</th><th className="w-20 text-right font-medium">남음</th><th className="w-20 text-right font-medium">쿠팡입고</th><th className="w-20 text-right font-medium">미정산</th></tr>
                     </thead>
@@ -429,6 +434,7 @@ const HanjungOrderPage: React.FC = () => {
                       ))}
                     </tbody>
                   </table>
+                  </div>
 
                   <div>
                     <div className="text-xs font-semibold text-gray-500 mb-1">들어간 쿠팡 발주 {o.lines.length}건</div>

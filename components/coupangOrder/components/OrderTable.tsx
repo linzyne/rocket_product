@@ -1,4 +1,5 @@
 import React from 'react';
+import { useIsMobile } from '../../../utils/useIsMobile';
 import type { DisplayRow } from '../utils/dataProcessor';
 import type { OfficeMatch } from '../../../data/inventoryStore';
 import { parseBoxNo, boxLabel, boxGroupKey, bundleCenters } from '../utils/dataProcessor';
@@ -497,6 +498,10 @@ function OfficeCell({ match, need }: { match: OfficeMatch | null; need: number }
 
 /* ── 메인 테이블 ── */
 export default function OrderTable({ rows, onMemoChange, onShipmentChange, colorScheme = 'pink', readOnly = false, onDelete, officeQtyOf, selectedOrders, onToggleSelect, onBulkOrder, doneOrders, onSortByBox, bundleLabel, bundleColorOf, layout = 'order', selectedLines, onToggleLine, hideBox = false, newOrders, onSplitLine, isChunkCollapsed, onToggleChunk, onEditChunkDate, chunkExtra, boxWaybill, actionOrder, actions, chunkPad, monoBoxes, onOrderMemoChange, hideMemo, lineSelectByOrder, onToggleHanjung, isHanjung, isReady, onToggleReady, lineBadge }: Props) {
+  // 휴대폰에서는 머리줄을 여러 줄로 접고 상품이름 칸을 좁혀 표가 화면 안에 들어오게 한다.
+  const isMobile = useIsMobile();
+  const headWrap: React.CSSProperties['whiteSpace'] = isMobile ? 'normal' : 'nowrap';
+  const nameMin = isMobile ? 120 : 210;
   if (rows.length === 0) return null;
 
   const sc = SCHEME[colorScheme];
@@ -628,11 +633,11 @@ export default function OrderTable({ rows, onMemoChange, onShipmentChange, color
                   {/* data-chunk: 오른쪽 묶음 카드가 이 덩어리 옆에서만 따라오게 바깥에서 높이를 재는 표시다. */}
                   <tr data-chunk={chunk.bundle || chunk.key} style={{ background: chunkDone ? DONE_HEAD_BG : (tint ? `${tint}1c` : '#f7f7f8') }}>
                     <td colSpan={boxHeaders.length} style={{
-                      padding: '5px 8px', textAlign: 'left', whiteSpace: 'nowrap',
+                      padding: '5px 8px', textAlign: 'left', whiteSpace: headWrap,
                       borderTop: '1px solid #e8e8e8', borderBottom: '1px solid #f0f0f0',
                       borderLeft: `4px solid ${edge}`,
                     }}>
-                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 7 }}>
+                      <span style={{ display: 'inline-flex', alignItems: 'center', flexWrap: 'wrap', gap: 7 }}>
                         {canFold && (
                           <button
                             onClick={() => onToggleChunk!(chunk.bundle)}
@@ -698,7 +703,7 @@ export default function OrderTable({ rows, onMemoChange, onShipmentChange, color
                         {/* 박스 머리줄: 이 박스에 들어갈 품목 수와 수량 */}
                         <tr style={{ background: `${bc}12` }}>
                           <td colSpan={boxHeaders.length} style={{
-                            padding: '3px 8px', textAlign: 'left', whiteSpace: 'nowrap',
+                            padding: '3px 8px', textAlign: 'left', whiteSpace: headWrap,
                             borderTop: `1px solid ${bc}33`, borderLeft: `4px solid ${bc}`,
                           }}>
                             <span style={{ display: 'inline-flex', alignItems: 'center', gap: 7 }}>
@@ -747,7 +752,7 @@ export default function OrderTable({ rows, onMemoChange, onShipmentChange, color
                                 </td>
                               )}
                               <td style={{
-                                ...cs(0), textAlign: 'left', minWidth: 210, padding: '5px 6px',
+                                ...cs(0), textAlign: 'left', minWidth: nameMin, padding: '5px 6px',
                                 borderLeft: onToggleReady ? undefined : `4px solid ${bc}`, fontSize: 13,
                                 color: ready ? '#6b8f78' : undefined,
                               }}>{row.상품이름}{lineBadge?.(row)}{ready && <span style={{ marginLeft: 6, fontSize: 11, fontWeight: 800, color: '#27ae60' }}>준비됨</span>}</td>
@@ -881,9 +886,9 @@ export default function OrderTable({ rows, onMemoChange, onShipmentChange, color
                 <td colSpan={headers.length} style={{
                   padding: '4px 8px', borderTop: '1px solid #e8e8e8', borderBottom: '1px solid #f0f0f0',
                   borderLeft: edge ? `4px solid ${edge}` : undefined,
-                  whiteSpace: 'nowrap',
+                  whiteSpace: headWrap,
                 }}>
-                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 7 }}>
+                  <span style={{ display: 'inline-flex', alignItems: 'center', flexWrap: 'wrap', gap: 7 }}>
                     {selectable && (
                       <input
                         type="checkbox"
@@ -1030,7 +1035,7 @@ export default function OrderTable({ rows, onMemoChange, onShipmentChange, color
                   );
                 })()}
                 <td style={{
-                  ...cs(0), textAlign: 'left', minWidth: 210, padding: '5px 6px',
+                  ...cs(0), textAlign: 'left', minWidth: nameMin, padding: '5px 6px',
                   borderLeft: lineSelectable || onToggleReady ? undefined : (edge ? `4px solid ${edge}` : undefined),
                   color: isReady?.(row) ? '#6b8f78' : undefined,
                 }}>{row.상품이름}{isReady?.(row) && <span style={{ marginLeft: 6, fontSize: 11, fontWeight: 800, color: '#27ae60' }}>준비됨</span>}</td>

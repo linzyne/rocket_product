@@ -132,7 +132,7 @@ const StockHistoryPage: React.FC<{ mode: StockMode }> = ({ mode }) => {
           value={search}
           onChange={e => setSearch(e.target.value)}
           placeholder="상품명 검색"
-          className="w-64 px-3 py-1.5 border border-gray-200 rounded-lg text-sm bg-white focus:outline-none focus:ring-1 focus:ring-blue-400"
+          className="w-full sm:w-64 px-3 py-1.5 border border-gray-200 rounded-lg text-sm bg-white focus:outline-none focus:ring-1 focus:ring-blue-400"
         />
         <order.Toggle />
       </div>
@@ -141,7 +141,7 @@ const StockHistoryPage: React.FC<{ mode: StockMode }> = ({ mode }) => {
         <table className="text-xs border-collapse">
           <thead className="bg-gray-50 text-gray-500">
             <tr>
-              <th className="sticky left-0 z-10 bg-gray-50 min-w-[16rem] px-3 py-2 text-left font-medium border-r border-gray-200">상품</th>
+              <th className="sticky left-0 z-10 bg-gray-50 min-w-[9rem] sm:min-w-[16rem] px-3 py-2 text-left font-medium border-r border-gray-200">상품</th>
               {days.map(d => {
                 const dow = new Date(d).getDay();
                 return (
@@ -161,7 +161,7 @@ const StockHistoryPage: React.FC<{ mode: StockMode }> = ({ mode }) => {
                   {...order.rowProps(it.adsId, visibleKeys)}
                   className={`border-t border-gray-100 hover:bg-gray-50 ${order.rowClass(it.adsId)}`}
                 >
-                  <td className="sticky left-0 z-10 bg-white px-3 py-1.5 border-r border-gray-200 max-w-[16rem]">
+                  <td className="sticky left-0 z-10 bg-white px-3 py-1.5 border-r border-gray-200 max-w-[11rem] sm:max-w-[16rem]">
                     <div className="flex items-center gap-2">
                       <DragHandle show={order.mine} onUp={() => order.move(it.adsId, -1)} onDown={() => order.move(it.adsId, 1)} />
                       {it.imageUrl

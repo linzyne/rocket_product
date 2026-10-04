@@ -140,13 +140,13 @@ export default function OrderSearchPage({ onNavigate }: { onNavigate?: (menu: Ap
   return (
     <div style={{ minHeight: '100vh', background: '#fff', color: '#1a1a1a', fontFamily: "'Apple SD Gothic Neo', 'Malgun Gothic', 'Noto Sans KR', sans-serif" }}>
       <header style={{ background: '#fff', borderBottom: '1px solid #f0f0f0', position: 'sticky', top: 0, zIndex: 10 }}>
-        <div style={{ maxWidth: 1100, margin: '0 auto', padding: '0 24px', height: 54, display: 'flex', alignItems: 'center', gap: 12 }}>
+        <div style={{ maxWidth: 1100, margin: '0 auto', padding: '6px clamp(12px, 4vw, 24px)', minHeight: 54, boxSizing: 'border-box', display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '4px 12px' }}>
           <span style={{ fontSize: 17, fontWeight: 700, letterSpacing: '-0.3px' }}>🔎 발주서 검색</span>
           <span style={{ fontSize: 12, color: '#999' }}>앱 전체 {new Set(all.map(h => h.발주번호)).size}건에서 찾아요</span>
         </div>
       </header>
 
-      <main style={{ maxWidth: 1100, margin: '0 auto', padding: '20px 24px 60px' }}>
+      <main style={{ maxWidth: 1100, margin: '0 auto', padding: '20px clamp(10px, 4vw, 24px) 70px' }}>
         <input
           autoFocus
           value={q}
@@ -173,7 +173,7 @@ export default function OrderSearchPage({ onNavigate }: { onNavigate?: (menu: Ap
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginTop: 14 }}>
           {groups.map(([no, hits]) => (
             <div key={no} style={{ border: '1px solid #e5e7eb', borderRadius: 10, overflow: 'hidden' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 12px', background: '#fafafa', borderBottom: '1px solid #f0f0f0' }}>
+              <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '4px 10px', padding: '8px 12px', background: '#fafafa', borderBottom: '1px solid #f0f0f0' }}>
                 <b style={{ fontSize: 15, fontFamily: 'monospace' }}>{no}</b>
                 <span style={{ fontSize: 12, color: '#666' }}>{Array.from(new Set(hits.map(h => h.물류센터))).join(', ')}</span>
                 <span style={{ fontSize: 12, color: '#666' }}>입고 {Array.from(new Set(hits.map(h => md(h.입고예정일)))).join(', ')}</span>
@@ -185,11 +185,11 @@ export default function OrderSearchPage({ onNavigate }: { onNavigate?: (menu: Ap
                 </span>
               </div>
               {hits.map((h, i) => (
-                <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '7px 12px', borderTop: i ? '1px solid #f5f5f5' : 'none', fontSize: 13 }}>
+                <div key={i} style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '4px 10px', padding: '7px 12px', borderTop: i ? '1px solid #f5f5f5' : 'none', fontSize: 13 }}>
                   <span style={{ minWidth: 74, padding: '1px 8px', fontSize: 11, fontWeight: 800, borderRadius: 999, textAlign: 'center', color: h.color, background: `${h.color}14`, border: `1px solid ${h.color}40` }}>{h.stage}</span>
-                  <span style={{ flex: 1, minWidth: 0 }}>{h.상품이름}</span>
+                  <span style={{ flex: 1, minWidth: 140 }}>{h.상품이름}</span>
                   <b style={{ minWidth: 44, textAlign: 'right' }}>{h.확정수량}개</b>
-                  <span style={{ minWidth: 220, fontSize: 11.5, color: '#777' }}>{h.detail}</span>
+                  <span style={{ minWidth: 'min(220px, 100%)', fontSize: 11.5, color: '#777' }}>{h.detail}</span>
                   {onNavigate && (
                     <button
                       onClick={() => onNavigate(h.menu)}

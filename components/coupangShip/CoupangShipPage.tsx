@@ -1,4 +1,6 @@
 import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import ProductQtySummary from '../coupangOrder/components/ProductQtySummary';
+import { useIsMobile } from '../../utils/useIsMobile';
 import { ShipOut, setShipOutDate, subscribeShipOuts, deleteShipOut, restoreShipOut, restoreOrders, updateShipOutLine, markShipOuts, applyShipOutRequest, snapshotShipOuts, restoreShipSnapshot, sameSnapshot } from '../coupangOrder/data/shipOutStore';
 import type { ShipSnapshot } from '../coupangOrder/data/shipOutStore';
 import { dateKeyYMD } from '../coupangOrder/utils/dateUtils';
@@ -49,6 +51,7 @@ const PENDING_COLOR = '#7c3aed';
 const PENDING_BOX = '#e67e22';
 
 export default function CoupangShipPage({ onGoOrder }: { onGoOrder?: () => void } = {}) {
+  const isMobile = useIsMobile();
   const [list, setList] = useState<ShipOut[]>([]);
   const hanjungBadge = useHanjungBadge();
   const ready = useReady();
@@ -733,7 +736,7 @@ export default function CoupangShipPage({ onGoOrder }: { onGoOrder?: () => void 
   return (
     <div style={{ minHeight: '100vh', background: '#fff', color: '#1a1a1a', fontFamily: "'Apple SD Gothic Neo', 'Malgun Gothic', 'Noto Sans KR', sans-serif" }}>
       <header style={{ background: '#fff', borderBottom: '1px solid #f0f0f0', position: 'sticky', top: 0, zIndex: 10 }}>
-        <div style={{ maxWidth: 1600, margin: '0 auto', padding: '0 24px', height: 54, display: 'flex', alignItems: 'center', gap: 12 }}>
+        <div style={{ maxWidth: 1600, margin: '0 auto', padding: isMobile ? '6px 12px' : '0 24px', minHeight: 54, display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: isMobile ? 8 : 12 }}>
           <span style={{ fontSize: 17, fontWeight: 700, letterSpacing: '-0.3px' }}>🚚 쉽먼트생성대기</span>
           {ordered.length > 0 && <span style={{ fontSize: 12, color: '#999' }}>출고 {ordered.length}건 · 발주 {itemCount}줄</span>}
 
@@ -757,7 +760,7 @@ export default function CoupangShipPage({ onGoOrder }: { onGoOrder?: () => void 
             </button>
           </div>
 
-          <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 8 }}>
+          <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
             <button onClick={() => setShowSenderManager(true)} style={plainBtn}>📮 보내는사람 설정</button>
             <button onClick={() => setShowAddressManager(true)} style={plainBtn}>🗺️ 택배주소 관리</button>
             <button
@@ -786,7 +789,8 @@ export default function CoupangShipPage({ onGoOrder }: { onGoOrder?: () => void 
         </div>
       </header>
 
-      <main style={{ maxWidth: 1600, margin: '0 auto', padding: '20px 24px' }}>
+      <main style={{ maxWidth: 1600, margin: '0 auto', padding: isMobile ? '12px 10px 70px' : '20px 24px' }}>
+        <ProductQtySummary lines={rows.filter(r => !r.isBlank).map(r => ({ 상품이름: r.상품이름, 확정수량: r.확정수량, ready: lineReady(list.find(i => i.id === r.묶음), lineOfRow(r)) }))} />
         {ordered.length === 0 ? (
           <div style={{
             border: '1px dashed #e0e0e0', borderRadius: 10,
@@ -797,10 +801,11 @@ export default function CoupangShipPage({ onGoOrder }: { onGoOrder?: () => void 
           </div>
         ) : (
           /* 쿠팡발주확인과 같은 3단 폭(발주서 / 묶음 / 예약 자리). 예약 자리는 여기선 비워 둔다. */
-          <div style={{ display: 'grid', gridTemplateColumns: '1.25fr 0.7fr 1.1fr', gap: 20, alignItems: 'start' }}>
+          // 휴대폰에서는 발주서 표만 화면 폭에 꽉 차게(묶음 카드는 숨김).
+          <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'minmax(0, 1fr)' : '1.25fr 0.7fr 1.1fr', gap: 20, alignItems: 'start' }}>
             {/* 왼쪽: 발주서 표(쿠팡발주확인의 발송 패널과 같은 표) */}
-            <div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+            <div style={{ minWidth: 0 }}>
+              <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 8, marginBottom: 8 }}>
                 <span style={{ fontSize: 12, fontWeight: 700, color: '#c0392b', letterSpacing: '-0.2px' }}>📤 발주서</span>
                 <span style={{ fontSize: 11, color: '#aaa' }}>{itemCount}건</span>
                 <button
@@ -855,7 +860,7 @@ export default function CoupangShipPage({ onGoOrder }: { onGoOrder?: () => void 
                 layout="box"
                 monoBoxes={PENDING_BOX}
                 isChunkCollapsed={id => !openDone.has(id)}
-                chunkPad={chunkPad}
+                chunkPad={isMobile ? undefined : chunkPad}
                 lineBadge={row => hanjungBadge({ 발주번호: row._발주번호, 상품이름: row.상품이름, 확정수량: row._조각 !== undefined ? (row._원수량 ?? row.확정수량) : row.확정수량 })}
                 isReady={row => lineReady(list.find(i => i.id === row.묶음), lineOfRow(row))}
                 onToggleReady={(row, on) => toggleLineReady(list.find(i => i.id === row.묶음), lineOfRow(row), on)}
@@ -895,7 +900,7 @@ export default function CoupangShipPage({ onGoOrder }: { onGoOrder?: () => void 
 
             {/* 오른쪽: 묶음(출고 건) 카드 */}
             {/* overflow를 주면 안쪽 sticky가 죽는다(스크롤 상자가 새로 생겨서). 그래서 넘침 처리는 카드 쪽에서 한다. */}
-            <div style={{ paddingRight: 2 }}>
+            {!isMobile && <div style={{ paddingRight: 2 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
                 <span style={{ fontSize: 12, fontWeight: 700, color: '#7c3aed', letterSpacing: '-0.2px' }}>🧺 묶음</span>
                 <span style={{ fontSize: 11, color: '#aaa' }}>{ordered.length}건</span>
@@ -1100,10 +1105,10 @@ export default function CoupangShipPage({ onGoOrder }: { onGoOrder?: () => void 
                   );
                 })}
               </div>
-            </div>
+            </div>}
 
             {/* 예약 자리(쿠팡발주확인과 폭을 맞추기 위해 비워 둔다) */}
-            <div />
+            {!isMobile && <div />}
           </div>
         )}
 

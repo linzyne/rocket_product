@@ -1,4 +1,5 @@
-import React from 'react';
+import React, { useState } from 'react';
+import { useIsMobile } from '../utils/useIsMobile';
 
 // 앱의 큰 메뉴. 주소창 해시(#/detail 등)에 그대로 쓰여서 새로고침해도 같은 메뉴가 열린다.
 export type AppMenuId =
@@ -97,7 +98,38 @@ interface AppSidebarProps {
   onToggleCollapsed: () => void;
 }
 
-const AppSidebar: React.FC<AppSidebarProps> = ({ active, onSelect, collapsed, onToggleCollapsed }) => (
+// 휴대폰에서는 메뉴가 화면 폭을 먹지 않게 숨겨 두고, 왼쪽 아래 ☰ 단추로 서랍처럼 꺼낸다.
+const AppSidebar: React.FC<AppSidebarProps> = (props) => {
+  const isMobile = useIsMobile();
+  const [open, setOpen] = useState(false);
+  if (!isMobile) return <SidebarNav {...props} />;
+  return (
+    <>
+      <button
+        onClick={() => setOpen(true)}
+        aria-label="메뉴 열기"
+        className="fixed left-3 bottom-3 z-[1500] w-11 h-11 rounded-full bg-gray-900/85 text-white shadow-lg flex items-center justify-center"
+      >
+        {icon('M4 6h16M4 12h16M4 18h16')}
+      </button>
+      {open && (
+        <div className="fixed inset-0 z-[1600] flex" onClick={() => setOpen(false)}>
+          <div onClick={e => e.stopPropagation()} className="h-full shadow-xl">
+            <SidebarNav
+              {...props}
+              collapsed={false}
+              onToggleCollapsed={() => setOpen(false)}
+              onSelect={id => { props.onSelect(id); setOpen(false); }}
+            />
+          </div>
+          <div className="flex-1 bg-black/30" />
+        </div>
+      )}
+    </>
+  );
+};
+
+const SidebarNav: React.FC<AppSidebarProps> = ({ active, onSelect, collapsed, onToggleCollapsed }) => (
   <nav className={`sticky top-0 h-screen flex-shrink-0 flex flex-col bg-white border-r border-gray-200 transition-[width] duration-150 ${collapsed ? 'w-14' : 'w-44'}`}>
     <div className={`flex items-center h-12 border-b border-gray-100 ${collapsed ? 'justify-center' : 'justify-between px-3'}`}>
       {!collapsed && <span className="text-base font-bold text-gray-900">🚀 로켓</span>}

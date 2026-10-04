@@ -365,6 +365,16 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     chrome.storage.local.remove(SCHEDULE_RUN_KEY);
   }
 
+  // coupang-login.js가 묻는다: 이 창이 확장이 수집하려고 연 창인가(그때만 자동 로그인한다).
+  if (message.type === 'IS_COLLECT_WINDOW') {
+    (async () => {
+      const winId = sender && sender.tab && sender.tab.windowId;
+      const jobs = await collectJobs();
+      sendResponse({ collect: !!winId && jobs.some((j) => j.windowId === winId) });
+    })();
+    return true;
+  }
+
   // 내가 지금 어느 창·탭에 있는지 알려준다. 확장이 연 창에서만 자동 진행하려고 쓴다.
   if (message.type === 'MY_WINDOW') {
     sendResponse({
@@ -408,4 +418,62 @@ chrome.storage.onChanged.addListener((changes, area) => {
   const before = changes[PO_KEY].oldValue;
   if (!now || !now.windowId || (before && before.step === now.step)) return;
   if (now.step === 'file' || now.step === 'empty') setTimeout(() => chrome.windows.remove(now.windowId).catch(() => {}), 1500);
+});
+
+// ---- 로그인 뒤 이어가기 ----
+// 수집 창에서 로그인하면 서허가 첫 화면으로 보내 버리는 일이 있다. 그러면 수집 화면(po.js·panel.js)이
+// 깨어나지 못해 창이 그대로 멈춘다. 그래서 아직 끝나지 않은 수집 창이 서허의 다른 화면에 닿으면
+// 원래 가야 할 화면으로 다시 보낸다(창마다 몇 번까지만).
+const JOB_MAX_AGE_MS = 15 * 60 * 1000;
+const collectJobs = async () => {
+  const r = await chrome.storage.local.get([PO_KEY, RECEIVE_KEY, AUTO_KEY, SHUB_KEY]);
+  const now = Date.now();
+  const jobs = [];
+  const po = r[PO_KEY];
+  if (po && po.windowId && !['file', 'empty', 'error'].includes(po.step) && now - (po.savedAt || 0) < JOB_MAX_AGE_MS) {
+    jobs.push({ windowId: po.windowId, home: PO_URL, path: '/po-web/purchase/order/list' });
+  }
+  const rc = r[RECEIVE_KEY];
+  if (rc && rc.createdWindowId && !rc.done && now - (rc.requestedAt || 0) < JOB_MAX_AGE_MS) {
+    jobs.push({ windowId: rc.createdWindowId, home: RECEIVE_URL, path: '/scm/receive/detail' });
+  }
+  const ad = r[AUTO_KEY];
+  if (ad && ad.createdWindowId && !ad.done && now - (ad.requestedAt || 0) < JOB_MAX_AGE_MS) {
+    jobs.push({ windowId: ad.createdWindowId, home: '', path: '' });
+  }
+  const sh = r[SHUB_KEY];
+  if (sh && sh.windowId && !sh.file && !['error', 'manual'].includes(sh.step) && now - (sh.savedAt || 0) < JOB_MAX_AGE_MS) {
+    jobs.push({ windowId: sh.windowId, home: '', path: '' });
+  }
+  return jobs;
+};
+
+// 로그인 화면을 거친 창만 다시 보낸다. 로그인 없이 화면이 스스로 주소를 바꾸는 경우까지
+// 되돌리면 창이 계속 새로고침되며 깜빡인다. 서비스워커가 잠들어도 잊지 않게 session 저장소에 둔다.
+const LOGIN_SEEN_KEY = 'loginSeenWindows';
+const isLoginUrl = (url) => url.hostname !== 'supplier.coupang.com' || /login|auth/i.test(url.pathname);
+chrome.tabs.onUpdated.addListener(async (tabId, info, tab) => {
+  if (info.status !== 'complete' || !tab || !tab.url) return;
+  let url;
+  try {
+    url = new URL(tab.url);
+  } catch (err) {
+    return;
+  }
+  if (!/(^|\.)coupang\.com$/.test(url.hostname) || url.hostname === 'advertising.coupang.com') return;
+  const job = (await collectJobs()).find((j) => j.windowId === tab.windowId);
+  if (!job || !job.home) return;
+  const r = await chrome.storage.session.get(LOGIN_SEEN_KEY);
+  const seen = (r && r[LOGIN_SEEN_KEY]) || {};
+  if (isLoginUrl(url)) {
+    seen[tab.windowId] = { count: (seen[tab.windowId] && seen[tab.windowId].count) || 0 };
+    await chrome.storage.session.set({ [LOGIN_SEEN_KEY]: seen });
+    return;
+  }
+  const mark = seen[tab.windowId];
+  if (!mark || url.pathname.startsWith(job.path)) return;
+  // 로그인 뒤 엉뚱한 화면에 닿았다. 한 번만 원래 화면으로 보낸다.
+  delete seen[tab.windowId];
+  await chrome.storage.session.set({ [LOGIN_SEEN_KEY]: seen });
+  chrome.tabs.update(tabId, { url: job.home }).catch(() => {});
 });

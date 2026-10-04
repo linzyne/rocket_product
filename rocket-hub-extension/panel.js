@@ -738,6 +738,15 @@
     return dateRangeIs(day);
   };
 
+  // 화면이 새로 열리는 중인지. 검색·페이지 버튼이 화면을 새로 열면, 넘어가기 전의 옛 표를 읽고
+  // 앞서 나가지 않도록 여기서 멈춘다(새 화면이 저장된 자리부터 잇는다).
+  let leaving = false;
+  window.addEventListener('beforeunload', () => { leaving = true; });
+  const settleAfterClick = async () => {
+    await sleep(1500);
+    return leaving;
+  };
+
   const runReceiveAuto = async (run) => {
     const c = collectors.find((x) => x.id === 'receiveDetail');
     if (!c || !c.match()) return;
@@ -751,34 +760,62 @@
       await runSet(RECEIVE_KEY, run);
     }
 
-    receiveStatus(`자동 수집 중 · 기간을 ${day}로 맞추는 중`);
-    if (!(await waitFor(() => dateInputs().length >= 2, 30000))) {
-      return failReceive(run, '기간검색 날짜 칸을 찾지 못했어요. 서허 로그인을 확인해 주세요.');
-    }
-    if (!(await setDay(day, run.range))) {
-      const now = dateInputs().map((el) => el.value).join(' ~ ');
-      return failReceive(run, `기간을 ${day}로 못 맞췄어요. 지금 화면은 ${now} 입니다.`);
+    // 서허 입고상세내역은 검색·페이지 넘김 때 화면을 새로 연다. 새로 열리면 이 스크립트도 처음부터 돌기 때문에
+    // 어디까지 했는지(searched·page)를 run에 적어 두고 거기서 잇는다. 안 그러면 검색 → 새로고침 → 또 검색을 끝없이 한다.
+    run.loads = (run.loads || 0) + 1;
+    await runSet(RECEIVE_KEY, run);
+    if (run.loads > 60) return failReceive(run, '서허 화면이 너무 여러 번 새로 열렸어요. 다시 눌러 주세요.');
+
+    let page = run.searched ? run.page || 1 : 1;
+    let ok = false;
+    if (run.searched) {
+      receiveStatus(`자동 수집 중 · ${page}페이지 이어서`);
+      ok = await waitFor(() => rowsAreDay(day), 8000);
+      logLine(`화면 새로 열림 · 검색은 끝나 있음 · ${page}페이지 · 표 ${receiveItems().length}줄 · ${ok ? '그 날짜 맞음' : '그 날짜 아님'}`);
     }
 
-    closePopups(); // 달력이 떠 있으면 검색 클릭이 달력에 먹힌다
-    await sleep(300);
-    const searchBtn = searchButton();
-    if (!searchBtn) return failReceive(run, '"검색" 버튼을 찾지 못했어요.');
-    receiveStatus(`자동 수집 중 · ${day} 입고 내역 검색하는 중`);
-    clickEl(searchBtn);
+    // 아직 검색 전이거나, 새로 열린 화면에 다른 날 줄이 보이면(날짜가 풀림) 검색한다. 끝없이 돌지 않게 3번까지만.
+    if (!ok && (!run.searched || otherDays(day).length)) {
+      if ((run.searchTries || 0) >= 3) {
+        const now = dateInputs().map((el) => el.value).join(' ~ ');
+        return failReceive(run, `${day}로 검색해도 화면이 그 날짜로 바뀌지 않아요(날짜 칸은 ${now}).`);
+      }
+      receiveStatus(`자동 수집 중 · 기간을 ${day}로 맞추는 중`);
+      if (!(await waitFor(() => dateInputs().length >= 2, 30000))) {
+        return failReceive(run, '기간검색 날짜 칸을 찾지 못했어요. 서허 로그인을 확인해 주세요.');
+      }
+      if (!(await setDay(day, run.range))) {
+        const now = dateInputs().map((el) => el.value).join(' ~ ');
+        return failReceive(run, `기간을 ${day}로 못 맞췄어요. 지금 화면은 ${now} 입니다.`);
+      }
 
-    // 표가 그 날짜 것으로 바뀔 때까지 기다린다. 그날 입고가 없으면 빈 표 그대로다.
-    // 한 번에 안 되면 달력을 닫고 날짜를 다시 적은 뒤 진짜 클릭으로 한 번 더 눌러 본다.
-    let ok = await waitFor(() => rowsAreDay(day), 12000);
-    logLine(`검색 결과 ${ok ? '나옴' : '안 나옴'} · 표 ${receiveItems().length}줄`);
-    if (!ok) {
-      closePopups();
-      await setDay(day, run.range);
-      receiveStatus(`자동 수집 중 · ${day} 입고 내역 다시 검색하는 중`);
-      const again = searchButton() || searchBtn;
-      clickEl(again);
-      try { again.click(); } catch (err) {}
+      closePopups(); // 달력이 떠 있으면 검색 클릭이 달력에 먹힌다
+      await sleep(300);
+      const searchBtn = searchButton();
+      if (!searchBtn) return failReceive(run, '"검색" 버튼을 찾지 못했어요.');
+      receiveStatus(`자동 수집 중 · ${day} 입고 내역 검색하는 중`);
+      // 누르기 전에 적어 둔다. 화면이 새로 열리면 여기서 끊기고, 새 화면이 이 표시를 보고 잇는다.
+      run.searched = true;
+      run.searchTries = (run.searchTries || 0) + 1;
+      run.page = 1;
+      page = 1;
+      await runSet(RECEIVE_KEY, run);
+      clickEl(searchBtn);
+      if (await settleAfterClick()) return;
+
+      // 표가 그 날짜 것으로 바뀔 때까지 기다린다. 그날 입고가 없으면 빈 표 그대로다.
+      // 한 번에 안 되면 달력을 닫고 날짜를 다시 적은 뒤 진짜 클릭으로 한 번 더 눌러 본다.
       ok = await waitFor(() => rowsAreDay(day), 12000);
+      logLine(`검색 결과 ${ok ? '나옴' : '안 나옴'} · 표 ${receiveItems().length}줄`);
+      if (!ok) {
+        closePopups();
+        await setDay(day, run.range);
+        receiveStatus(`자동 수집 중 · ${day} 입고 내역 다시 검색하는 중`);
+        const again = searchButton() || searchBtn;
+        clickEl(again);
+        if (await settleAfterClick()) return;
+        ok = await waitFor(() => rowsAreDay(day), 12000);
+      }
     }
     if (!ok) {
       const others = otherDays(day);
@@ -799,16 +836,18 @@
       return;
     }
 
-    // 페이지를 끝까지 넘기며 모은다.
-    let page = 1;
+    // 페이지를 끝까지 넘기며 모은다. 넘기기 전에 페이지 번호를 적어 둬서, 화면이 새로 열려도 그 쪽부터 잇는다.
     while (page < 50) {
       await collectNow();
       const sign = receiveSign();
       const next = pageEl(page + 1);
       if (!next) break;
       page += 1;
+      run.page = page;
+      await runSet(RECEIVE_KEY, run);
       receiveStatus(`자동 수집 중 · ${page}페이지`);
       clickEl(next);
+      if (await settleAfterClick()) return;
       await waitFor(() => receiveSign() && receiveSign() !== sign, 15000);
       await sleep(500);
       if (!rowsAreDay(day)) return failReceive(run, `${page}페이지에 ${day}가 아닌 줄이 보여요. 다시 눌러 주세요.`);

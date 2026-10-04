@@ -10,7 +10,7 @@
 // 목록에 그것만 남긴 뒤 전체 선택을 누르면 고르는 것도 확실해집니다.
 // JSON은 hook.js가 페이지와 같은 세계에서 복사해 보내줍니다(막지 않고 보기만 합니다).
 // 새 발주서가 없으면 step을 'empty'로 적어 앱이 알려주게 합니다.
-// 로그인은 사람이 직접 합니다(확장은 서허 비밀번호를 다루지 않습니다).
+// 로그인 화면이 뜨면 coupang-login.js가 확장 설정의 쿠팡 정보로 로그인하고, background.js가 이 화면으로 다시 보냅니다.
 (() => {
   if (window.__rocketPoInjected) return;
   window.__rocketPoInjected = true;

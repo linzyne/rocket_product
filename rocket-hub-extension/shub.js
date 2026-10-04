@@ -2,7 +2,7 @@
 // 앱에서 "서허 양식 받기"를 누르면 background.js가 이 사이트를 새 창으로 열고, 여기서
 //   물류 › 쉽먼트 › 쉽먼트 일괄등록 › 양식 다운로드
 // 를 차례로 눌러 줍니다. 내려받은 파일은 background.js가 같은 주소로 한 번 더 받아 앱에 넘깁니다.
-// 로그인은 사람이 직접 합니다(확장은 서허 비밀번호를 다루지 않습니다).
+// 로그인 화면이 뜨면 coupang-login.js가 확장 설정의 쿠팡 정보로 로그인하고, background.js가 이 화면으로 다시 보냅니다.
 (() => {
   if (window.__rocketShubInjected) return;
   window.__rocketShubInjected = true;

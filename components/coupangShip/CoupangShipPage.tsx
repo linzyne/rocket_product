@@ -882,16 +882,26 @@ export default function CoupangShipPage({ onGoOrder }: { onGoOrder?: () => void 
                     <span
                       onClick={() => setReqPick({ item, center: req?.center || item.center, date: req?.date || item.date })}
                       title={req ? '눌러서 요청한 센터·입고예정일을 고치거나, 승인됐으면 승인을 눌러 바꾸기' : '쿠팡에 센터·입고예정일 변경을 요청했으면 눌러서 적어 두세요'}
-                      style={{
+                      style={req ? {
+                        // 요청 중인 건은 멀리서도 보이게: 빨간 바탕에 흰 글씨, 점이 깜빡인다.
+                        display: 'inline-flex', alignItems: 'center', gap: 6, cursor: 'pointer',
+                        padding: '3px 10px', fontSize: 13, fontWeight: 800, borderRadius: 6, lineHeight: 1.4,
+                        border: '1.5px solid #dc2626', background: '#dc2626', color: '#fff',
+                        boxShadow: '0 0 0 3px #fecaca',
+                      } : {
                         display: 'inline-flex', alignItems: 'center', gap: 5, cursor: 'pointer',
                         padding: '1px 8px', fontSize: 11, fontWeight: 800, borderRadius: 5, lineHeight: 1.5,
-                        border: `1.5px solid ${req ? '#dc2626' : '#e5e5e5'}`,
-                        background: req ? '#fef2f2' : '#fff',
-                        color: req ? '#dc2626' : '#bbb',
+                        border: '1.5px solid #e5e5e5', background: '#fff', color: '#bbb',
                       }}
                     >
-                      {req ? '● 요청등록중' : '○ 요청등록중'}
-                      {req && <span style={{ color: '#333' }}>→ {req.center} · {req.date.slice(5).replace('-', '/')}</span>}
+                      {req ? (
+                        <>
+                          <style>{'@keyframes reqBlink{0%,100%{opacity:1}50%{opacity:.25}}'}</style>
+                          <span style={{ width: 8, height: 8, borderRadius: '50%', background: '#fff', animation: 'reqBlink 1.2s ease-in-out infinite' }} />
+                          요청등록중
+                          <span style={{ background: '#fff', color: '#dc2626', padding: '0 7px', borderRadius: 4 }}>→ {req.center} · {req.date.slice(5).replace('-', '/')}</span>
+                        </>
+                      ) : '○ 요청등록중'}
                     </span>
                   );
                 }}

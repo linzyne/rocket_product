@@ -171,6 +171,18 @@ export async function getRootDirectory(options?: { forcePicker?: boolean }): Pro
   }
 }
 
+// 브라우저 기본 다운로드(다운로드 폴더). 창을 띄우지 않으므로 클릭 직후가 아니어도 된다.
+function downloadBlob(blob: Blob, name: string) {
+  const blobUrl = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = blobUrl;
+  link.download = name;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  setTimeout(() => URL.revokeObjectURL(blobUrl), 10000);
+}
+
 export async function saveBlob(blob: Blob, suggestedName: string, mimeType: string): Promise<void> {
   const picker = (window as any).showSaveFilePicker;
   if (typeof picker === 'function') {
@@ -291,12 +303,16 @@ async function createNewProductFolder(root: any, baseName: string): Promise<any>
   return root.getDirectoryHandle(`${baseName} (${Date.now()})`, { create: true });
 }
 
+// opts.root: 미리 골라 둔 폴더(없으면 null). 오래 걸리는 작업(상세페이지 캡처 등) 뒤에 부르면 크롬이
+// 폴더 창·권한 요청을 막는다("클릭 직후 몇 초 안"에만 허락). 그래서 그런 곳은 버튼을 누르자마자
+// getRootDirectory()로 폴더를 먼저 받아 두고 여기로 넘긴다.
 export async function saveFilesInProductFolder(
   folderName: string,
-  files: { name: string; blob: Blob }[]
+  files: { name: string; blob: Blob }[],
+  opts?: { root: any | null }
 ): Promise<void> {
   const safeFolderName = sanitizeFolderName(folderName);
-  const root = await getRootDirectory();
+  const root = opts ? opts.root : await getRootDirectory();
   console.log('[통합다운] saveFilesInProductFolder: root =', root ? root.name : null, 'fileCount =', files.length);
   if (root) {
     try {
@@ -314,6 +330,11 @@ export async function saveFilesInProductFolder(
       console.error('폴더에 파일 저장 실패:', err);
       // fall through to the fallback below
     }
+  }
+  // 파일이 한 장이면 zip으로 묶지 않고 그 파일 그대로 내려받는다(다운로드 폴더에 이미지로 남게).
+  if (files.length === 1) {
+    downloadBlob(files[0].blob, files[0].name);
+    return;
   }
   console.log('[통합다운] fallback zip 다운로드 경로 진입');
   const prefixedFiles = files.map(file => ({ name: `${safeFolderName}/${file.name}`, blob: file.blob }));

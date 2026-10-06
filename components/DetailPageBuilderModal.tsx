@@ -20,7 +20,7 @@ import {
   pushCopySettingsToExtension,
   saveCopySettings,
 } from '../utils/detailPageCopyPrompt';
-import { saveFilesInProductFolder, productFolderName, detailSliceFileNames } from '../utils/fileSave';
+import { saveFilesInProductFolder, productFolderName, detailSliceFileNames, getRootDirectory } from '../utils/fileSave';
 import { generateId } from '../utils/id';
 import { saveDetailPageDraft, loadDetailPageDraft, deleteDetailPageDraft } from '../data/detailPageDrafts';
 import { loadDetailText, saveDetailText } from '../data/detailTextCloud';
@@ -2440,6 +2440,9 @@ const DetailPageBuilderModal: React.FC<DetailPageBuilderModalProps> = ({ isOpen,
 
   const handleDownload = async () => {
     if (!confirmIfCopyEmpty()) return;
+    // 저장할 폴더를 누르자마자 먼저 받는다. 크롬은 클릭 직후 몇 초 안에만 폴더 창·폴더 권한 요청을 허락하는데,
+    // 상세페이지를 찍는 데 그보다 오래 걸리면 창이 막혀 저장이 안 됐다.
+    const root = await getRootDirectory();
     const dataUrls = await captureSlices();
     if (!dataUrls || dataUrls.length === 0) return;
     const baseName = product?.detailFile || `${product?.productName || 'detail_page'}.png`;
@@ -2448,7 +2451,7 @@ const DetailPageBuilderModal: React.FC<DetailPageBuilderModalProps> = ({ isOpen,
     const files = await Promise.all(
       dataUrls.map(async (url, idx) => ({ name: names[idx], blob: await (await fetch(url)).blob() }))
     );
-    await saveFilesInProductFolder(productFolderName(product), files);
+    await saveFilesInProductFolder(productFolderName(product), files, { root });
   };
 
   // 사진에 별(★)을 눌러 대표이미지를 지정하지 않은 채로 저장하면, 통합다운 때 대표이미지가

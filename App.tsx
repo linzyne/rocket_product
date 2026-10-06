@@ -2877,16 +2877,9 @@ const App: React.FC = () => {
     value: string | string[],
   ) => {
     // 임시 상품이면 값을 되돌려 넣을 행이 없으므로, 저장 = 완성된 상세페이지를 파일로 내려받기.
+    // 파일 받기는 빌더(handleSave)가 크롬 다운로드 폴더로 직접 한다(폴더 창은 캡처 뒤라 막혀서 안 썼다).
     if (detailPageBuilderState.standalone || detailPageBuilderState.fromArchive) {
       if (field !== 'detailDataUrls') return;
-      const dataUrls = value as string[];
-      const product = detailPageBuilderState.product;
-      const baseName = (product?.productName || '').trim() || 'detail_page';
-      const names = detailSliceFileNames(`${baseName}.png`, dataUrls);
-      const files = await Promise.all(
-        dataUrls.map(async (url, idx) => ({ name: names[idx], blob: await (await fetch(url)).blob() }))
-      );
-      await saveFilesInProductFolder(productFolderName(product), files);
       const backToList = detailPageBuilderState.fromArchive;
       closeDetailPageBuilder();
       if (backToList) {

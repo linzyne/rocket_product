@@ -172,7 +172,7 @@ export async function getRootDirectory(options?: { forcePicker?: boolean }): Pro
 }
 
 // 브라우저 기본 다운로드(다운로드 폴더). 창을 띄우지 않으므로 클릭 직후가 아니어도 된다.
-function downloadBlob(blob: Blob, name: string) {
+export function downloadBlob(blob: Blob, name: string) {
   const blobUrl = URL.createObjectURL(blob);
   const link = document.createElement('a');
   link.href = blobUrl;

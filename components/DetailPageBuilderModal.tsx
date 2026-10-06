@@ -20,7 +20,7 @@ import {
   pushCopySettingsToExtension,
   saveCopySettings,
 } from '../utils/detailPageCopyPrompt';
-import { saveFilesInProductFolder, productFolderName, detailSliceFileNames, getRootDirectory } from '../utils/fileSave';
+import { detailSliceFileNames, downloadBlob } from '../utils/fileSave';
 import { generateId } from '../utils/id';
 import { saveDetailPageDraft, loadDetailPageDraft, deleteDetailPageDraft } from '../data/detailPageDrafts';
 import { loadDetailText, saveDetailText } from '../data/detailTextCloud';
@@ -2415,7 +2415,7 @@ const DetailPageBuilderModal: React.FC<DetailPageBuilderModalProps> = ({ isOpen,
       return dataUrls;
     } catch (error) {
       console.error(error);
-      alert('상세페이지 이미지를 만드는 중 오류가 발생했습니다.');
+      alert(`상세페이지 이미지를 만드는 중 오류가 발생했습니다.\n(${(error as any)?.message || error})`);
       return null;
     } finally {
       setIsExporting(false);
@@ -2438,20 +2438,32 @@ const DetailPageBuilderModal: React.FC<DetailPageBuilderModalProps> = ({ isOpen,
     );
   };
 
+  // 다운로드: 폴더 창 없이 크롬 다운로드 폴더에 이미지 그대로 받는다.
+  // (예전엔 상품 폴더를 골라 넣었는데, 폴더 창·권한 요청이 클릭 직후에만 허락돼서 캡처가 길면 막히고,
+  //  막혀도 아무 표시 없이 끝나 저장이 안 된 줄도 몰랐다. 확실히 받는 쪽으로 바꾼다.)
   const handleDownload = async () => {
     if (!confirmIfCopyEmpty()) return;
-    // 저장할 폴더를 누르자마자 먼저 받는다. 크롬은 클릭 직후 몇 초 안에만 폴더 창·폴더 권한 요청을 허락하는데,
-    // 상세페이지를 찍는 데 그보다 오래 걸리면 창이 막혀 저장이 안 됐다.
-    const root = await getRootDirectory();
     const dataUrls = await captureSlices();
     if (!dataUrls || dataUrls.length === 0) return;
-    const baseName = product?.detailFile || `${product?.productName || 'detail_page'}.png`;
-    const names = detailSliceFileNames(baseName, dataUrls);
-    // 여러 장이어도 폴더 선택은 한 번만 받도록 한꺼번에 넘긴다.
-    const files = await Promise.all(
-      dataUrls.map(async (url, idx) => ({ name: names[idx], blob: await (await fetch(url)).blob() }))
-    );
-    await saveFilesInProductFolder(productFolderName(product), files, { root });
+    await downloadDetail(dataUrls, '');
+  };
+
+  // 찍은 상세페이지를 크롬 다운로드 폴더에 이미지 파일로 받고, 받았다고 알려준다.
+  const downloadDetail = async (dataUrls: string[], note: string) => {
+    try {
+      const baseName = (product?.detailFile || `${product?.productName || 'detail_page'}.png`).replace(/[\\/:*?"<>|]/g, '_');
+      const names = detailSliceFileNames(baseName, dataUrls);
+      for (let idx = 0; idx < dataUrls.length; idx++) {
+        const blob = await (await fetch(dataUrls[idx])).blob();
+        downloadBlob(blob, names[idx]);
+        // 여러 장을 한꺼번에 받으면 크롬이 막을 수 있어 조금씩 띄운다.
+        if (idx < dataUrls.length - 1) await new Promise(r => setTimeout(r, 400));
+      }
+      alert(`${note}다운로드 폴더에 저장했어요.\n${names.join('\n')}`);
+    } catch (err: any) {
+      console.error(err);
+      alert(`이미지 파일로 받지 못했어요: ${err?.message || err}`);
+    }
   };
 
   // 사진에 별(★)을 눌러 대표이미지를 지정하지 않은 채로 저장하면, 통합다운 때 대표이미지가
@@ -2481,6 +2493,8 @@ const DetailPageBuilderModal: React.FC<DetailPageBuilderModalProps> = ({ isOpen,
       if (fileName !== product.detailFile) onSave('detailFile', fileName);
     }
     onSave('detailDataUrls', dataUrls);
+    // 상품에 붙여 두는 것과 같이 컴퓨터(다운로드 폴더)에도 받는다.
+    await downloadDetail(dataUrls, '');
   };
 
   return (

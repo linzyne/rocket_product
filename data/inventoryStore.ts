@@ -171,6 +171,12 @@ const cleanTokens = (name: string) =>
 
 export const productMatchKey = (name: string) => cleanTokens(name).join('');
 
+// 두 상품명이 얼마나 비슷한지(겹치는 낱말 수). 이름이 다른 같은 상품을 고를 때 비슷한 것부터 보여주려고 쓴다.
+export const nameSimilarity = (a: string, b: string) => {
+  const tb = new Set(cleanTokens(b));
+  return cleanTokens(a).filter(t => tb.has(t)).length;
+};
+
 // 이름 끝에 붙는 옵션 말. 상품관리 이름에만 있는 경우가 많아 짝을 지을 때는 떼어낸다.
 // 예: "…키링 신랑 혼합색상 11cm" → "…키링 신랑"
 const OPTION_TAIL = /^(혼합색상|단일색상|기본색상|랜덤색상|혼합|단일|단품|색상|컬러|칼라|색|사이즈|size|프리사이즈|freesize|free|공용|옵션|택1|선택|종류|종|세트|set|\d+(\.\d+)?(cm|mm|m|g|kg|ml|l|호|인치|inch|p|pcs|ea|개|개입|세트|set|색|종)?)$/i;
@@ -189,6 +195,8 @@ export interface OfficeMatch {
   names: string[];
   // 이름이 그대로 같았는지(아니면 한쪽이 다른 쪽을 품은 느슨한 짝).
   exact: boolean;
+  // 한중 여유로 계산할 때: 아직 오는 중인 여유 수량(qty는 이미 도착한 것).
+  incoming?: number;
 }
 
 const toMatch = (hits: InventoryItem[], exact: boolean): OfficeMatch => {
@@ -236,5 +244,31 @@ export const makeOfficeLookup = (items: InventoryItem[]) => {
     const inside = [...byBase.entries()].filter(([key]) => base.includes(key));
     if (inside.length !== 1) return null;
     return toMatch(inside[0][1], false);
+  };
+};
+
+// 상품이름으로 상품 사진(쿠팡 광고 화면에서 모은 것)을 찾아주는 함수. 사무실 재고 찾기와 같은 순서로 맞춘다
+// (이름 그대로 → 옵션 말 뗀 이름 → 그 이름으로 시작하는 상품). 사진이 있는 첫 상품을 쓴다.
+export const makeImageLookup = (items: InventoryItem[]) => {
+  const withImage = items.filter(it => it.imageUrl);
+  const byKey = new Map<string, string>();
+  const byBase = new Map<string, string>();
+  withImage.forEach(it => {
+    const k = productMatchKey(it.productName);
+    const b = productBaseKey(it.productName);
+    if (k && !byKey.has(k)) byKey.set(k, it.imageUrl);
+    if (b && !byBase.has(b)) byBase.set(b, it.imageUrl);
+  });
+  const cache = new Map<string, string>();
+  return (name: string): string => {
+    if (cache.has(name)) return cache.get(name)!;
+    const k = productMatchKey(name);
+    const base = productBaseKey(name);
+    let url = (k && byKey.get(k)) || (base && byBase.get(base)) || '';
+    if (!url && base) {
+      for (const [key, u] of byBase) if (key.startsWith(base) || base.startsWith(key)) { url = u; break; }
+    }
+    cache.set(name, url);
+    return url;
   };
 };

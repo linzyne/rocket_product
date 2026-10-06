@@ -5,7 +5,7 @@ import { ShipmentBatch, subscribeShipments, allBoxes, waybillForBox, batchForIte
 import ShipmentWaybillModal from '../coupangOrder/components/ShipmentWaybillModal';
 import { useHanjungBadge } from '../coupangOrder/data/useHanjungBadge';
 import { useReady } from '../coupangOrder/data/readyStore';
-import { InventoryItem, subscribeInventory, makeOfficeLookup } from '../../data/inventoryStore';
+import { HanjungOrder, subscribeHanjung, makeHanjungOfficeLookup } from '../../data/hanjungStore';
 import { expandBoxSplit, parseBoxNo } from '../coupangOrder/utils/dataProcessor';
 import { ymdSortKey } from '../coupangOrder/utils/dateUtils';
 
@@ -42,7 +42,8 @@ export default function CoupangSendPage({ onGoShip }: { onGoShip?: () => void } 
   // 준비 체크: 쿠팡발주확인부터 쓰는 공통 기록 + 예전에 이 출고 건에 적어 둔 표시.
   const readyStore = useReady();
   const [batches, setBatches] = useState<ShipmentBatch[]>([]);
-  const [inventory, setInventory] = useState<InventoryItem[]>([]);
+  // 사무실 칸 = 한중으로 넉넉히 사 둔 여유(도착한 것 + 오는 중인 것).
+  const [hanjungOrders, setHanjungOrders] = useState<HanjungOrder[]>([]);
   const [sendPick, setSendPick] = useState<{ item: ShipOut; date: string } | null>(null);
   const [showSent, setShowSent] = useState(true);
   // 운송장번호를 고치는 창(쉽먼트 기록 하나를 연다).
@@ -55,8 +56,8 @@ export default function CoupangSendPage({ onGoShip }: { onGoShip?: () => void } 
 
   useEffect(() => subscribeShipOuts(setList), []);
   useEffect(() => subscribeShipments(setBatches), []);
-  useEffect(() => subscribeInventory(setInventory), []);
-  const officeQtyOf = useMemo(() => makeOfficeLookup(inventory), [inventory]);
+  useEffect(() => subscribeHanjung(setHanjungOrders), []);
+  const officeQtyOf = useMemo(() => makeHanjungOfficeLookup(hanjungOrders), [hanjungOrders]);
 
   // 발송대기: 쉽먼트 완료했고 아직 안 보낸 건. 입고예정일 빠른 순.
   const waiting = useMemo(
@@ -188,7 +189,7 @@ export default function CoupangSendPage({ onGoShip }: { onGoShip?: () => void } 
                           const on = isLineReady(item, line);
                           const office = officeQtyOf(line.상품이름);
                           const need = Number(line.확정수량) || 0;
-                          const short = office?.qty != null && office.qty < need;
+                          const short = (office.qty || 0) < need;
                           return (
                             <label
                               key={`${key}-${i}`}
@@ -202,10 +203,10 @@ export default function CoupangSendPage({ onGoShip }: { onGoShip?: () => void } 
                               </span>
                               <b style={{ fontSize: 12.5, whiteSpace: 'nowrap' }} title={qty !== need ? `전체 ${need}개 중 이 박스` : undefined}>{qty.toLocaleString()}개</b>
                               <span
-                                style={{ minWidth: 44, textAlign: 'right', fontSize: 10.5, whiteSpace: 'nowrap', color: office?.qty == null ? '#ccc' : short ? '#c0392b' : '#999', fontWeight: short ? 800 : 500 }}
-                                title={office ? `사무실 재고 · ${office.names.join(' / ')}` : '사무실재고에서 같은 상품을 못 찾았어요'}
+                                style={{ minWidth: 44, textAlign: 'right', fontSize: 10.5, whiteSpace: 'nowrap', color: !office.qty && !office.incoming ? '#ccc' : short ? '#c0392b' : '#999', fontWeight: short ? 800 : 500 }}
+                                title={office.qty || office.incoming ? `사무실 재고(한중 여유) · 도착 ${office.qty}개${office.incoming ? ` · 오는 중 ${office.incoming}개` : ''}\n${office.names.join('\n')}` : '한중으로 넉넉히 사 둔 여유가 없어요'}
                               >
-                                사무실 {office?.qty == null ? '-' : office.qty}
+                                사무실 {office.qty || office.incoming ? office.qty : '-'}{office.incoming ? ` +${office.incoming}` : ''}
                               </span>
                             </label>
                           );

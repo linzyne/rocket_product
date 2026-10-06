@@ -24,6 +24,11 @@ import SenderManager from '../coupangOrder/components/SenderManager';
 import ShipmentWaybillModal from '../coupangOrder/components/ShipmentWaybillModal';
 import ShipmentList from '../coupangOrder/components/ShipmentList';
 import { useHanjungBadge } from '../coupangOrder/data/useHanjungBadge';
+import { HanjungQueueItem, subscribeHanjungQueue, addToHanjungQueue, removeFromHanjungQueue, hanjungQueueKey, makePlaceLookup } from '../coupangOrder/data/hanjungQueueStore';
+import { HanjungOrder, subscribeHanjung, saveHanjungOrder, freezeOrderQty, makeHanjungOfficeLookup, productSummary, sameName, orderQtyName } from '../../data/hanjungStore';
+import { reservationKey } from '../coupangOrder/data/reservationStore';
+import type { LineHanjung, HanjungChoice, HanjungAction, HanjungLink } from '../coupangOrder/components/OrderTable';
+import { nameSimilarity } from '../../data/inventoryStore';
 import { useReady } from '../coupangOrder/data/readyStore';
 
 // 발주 > 쉽먼트생성. 쿠팡발주확인의 묶음 패널에서 "쉽먼트"를 누른 건들이 여기로 옮겨 온다.
@@ -47,13 +52,142 @@ const lineOfRow = (row: DisplayRow) => ({
 // 표에서 덩어리 사이를 띄우는 흰 여백. 오른쪽 묶음 카드도 같은 간격을 쓴다.
 const CHUNK_GAP = 26;
 // 아직 쉽먼트를 안 끝낸 건의 색(끝난 건은 초록).
-const PENDING_COLOR = '#7c3aed';
-const PENDING_BOX = '#e67e22';
+const PENDING_COLOR = '#6b7280'; // 회색 계열(눈에 덜 띄게)
+// 박스 표시는 눈에 덜 띄게 회색(흰 바탕에 회색 테두리).
+const PENDING_BOX = '#9ca3af';
+// 묶음 카드의 "← 발주확인으로" · "발송대기로 →" 버튼(앞뒤 단계로 보내는 같은 모양).
+const stageBtn = (done: boolean): React.CSSProperties => ({
+  padding: '2px 8px', fontSize: 11, fontWeight: 700, borderRadius: 5, cursor: 'pointer',
+  border: `1px solid ${done ? '#27ae60' : '#d1d5db'}`, background: done ? '#e8f8f0' : '#fff', color: done ? '#27ae60' : '#6b7280',
+});
 
 export default function CoupangShipPage({ onGoOrder }: { onGoOrder?: () => void } = {}) {
   const isMobile = useIsMobile();
   const [list, setList] = useState<ShipOut[]>([]);
   const hanjungBadge = useHanjungBadge();
+  // 상품 줄 체크 메뉴의 "한중발주": 한중발주의 발주 대기에 담는다(같은 상품은 거기서 수량이 합쳐진다).
+  const [hanjungQueue, setHanjungQueue] = useState<HanjungQueueItem[]>([]);
+  const [hanjungOrders, setHanjungOrders] = useState<HanjungOrder[]>([]);
+  useEffect(() => subscribeHanjungQueue(setHanjungQueue), []);
+  useEffect(() => subscribeHanjung(setHanjungOrders), []);
+  // 사무실 칸 = 한중으로 넉넉히 사 둔 여유(도착한 것 + 오는 중인 것).
+  const officeQtyOf = useMemo(() => makeHanjungOfficeLookup(hanjungOrders), [hanjungOrders]);
+  const queuedKeys = useMemo(() => new Set(hanjungQueue.map(q => q.key)), [hanjungQueue]);
+  const placesOf = useMemo(() => makePlaceLookup(hanjungOrders, hanjungQueue), [hanjungOrders, hanjungQueue]);
+  // 박스로 나눈 조각도 원래 한 줄로 본다(나누기 전 수량).
+  const hanjungLineOf = (row: DisplayRow) => ({
+    발주번호: row._발주번호, 물류센터: row._물류센터, 상품이름: row.상품이름,
+    확정수량: row._조각 !== undefined ? (row._원수량 ?? row.확정수량) : row.확정수량,
+    입고예정일: row._입고예정일, 메모: '', 쉼먼트: '',
+  });
+  // 체크 메뉴에 보일 것: 이 줄이 한중 어디에 몇 개 있는지 + 고를 수 있는 한중발주(이 상품의 주문·여유).
+  //  · 이 상품이 있는 건: 여유가 남았거나, 아직 입고 전이거나(더 주문할 수 있음), 이 줄이 이미 들어 있는 건
+  //  · 이 상품이 없는 건: 아직 입고 전인 건만(1688에 추가 주문해 넣는 경우)
+  const hanjungOf = (row: DisplayRow): LineHanjung => {
+    const line = hanjungLineOf(row);
+    const places = placesOf(line);
+    const choices: HanjungChoice[] = [];
+    for (const o of hanjungOrders) {
+      const p = productSummary(o).find(x => sameName(x.상품이름, line.상품이름));
+      const placed = places.some(pl => pl.code === o.code);
+      if (p && (p.spare > 0 || !o.receipts.length || placed)) {
+        choices.push({ code: o.code, has: true, ordered: p.ordered, spare: p.spare, arrived: p.received > 0 });
+      } else if (!p && !o.receipts.length) {
+        choices.push({ code: o.code, has: false, ordered: 0, spare: 0, arrived: false });
+      }
+    }
+    // 이름이 다르게 적힌 같은 상품 후보: 여유가 있고 쿠팡 발주 줄이 안 붙은 품목(직접 더한 품목), 비슷한 이름 순.
+    const links: HanjungLink[] = [];
+    for (const o of hanjungOrders) {
+      for (const p of productSummary(o)) {
+        if (p.spare <= 0 || p.allocated > 0 || sameName(p.상품이름, line.상품이름)) continue;
+        links.push({ code: o.code, name: p.상품이름, ordered: p.ordered, spare: p.spare, arrived: p.received > 0 });
+      }
+    }
+    links.sort((a, b) => nameSimilarity(b.name, line.상품이름) - nameSimilarity(a.name, line.상품이름));
+    return { need: Number(line.확정수량) || 0, places, choices, links };
+  };
+  // 체크 메뉴에서 고른 대로 한중에 맡긴다. 먼저 이 줄을 있던 곳(한중발주·대기)에서 모두 떼고 새로 붙인다.
+  // 줄을 떼도 1688에 산 수량(주문 수량)은 그대로라 그만큼 여유로 돌아간다.
+  const setLineHanjung = async (row: DisplayRow, action: HanjungAction) => {
+    const line = hanjungLineOf(row);
+    const k = hanjungQueueKey(line);
+    const name = line.상품이름;
+    const need = Number(line.확정수량) || 0;
+    const same = (l: { 발주번호: string; 상품이름: string; 확정수량: number }) => hanjungQueueKey(l) === k;
+    try {
+      // 1) 있던 한중발주에서 떼기
+      const changed = new Map<string, HanjungOrder>();
+      for (const o of hanjungOrders) {
+        if (!o.lines.some(same)) continue;
+        const lines = o.lines.filter(l => !same(l));
+        const orderQty = freezeOrderQty(o, name);
+        // 1688에서 안 샀으면 뗀 수량만큼 주문 수량도 줄인다(0이 되고 그 상품 줄도 없으면 품목에서 뺀다).
+        // 같은 건에 다시 붙이는 경우(여유가 모자라 나누기 등)는 줄이지 않는다.
+        const reattach = action.type === 'order' && action.code === o.code;
+        if (action.release === 'shrink' && !reattach) {
+          const freed = o.lines.filter(same).reduce((sum, l) => sum + (l.배정 ?? l.확정수량), 0);
+          const qk = orderQtyName(orderQty, name);
+          const left = Math.max(0, (orderQty[qk] || 0) - freed);
+          if (left > 0 || lines.some(l => sameName(l.상품이름, name))) orderQty[qk] = left;
+          else delete orderQty[qk];
+        }
+        changed.set(o.code, { ...o, orderQty, lines });
+      }
+      // 2) 고른 한중발주에 붙이기
+      let toQueue = 0;
+      if (action.type === 'queue') toQueue = need;
+      if (action.type === 'order') {
+        let base = changed.get(action.code) || hanjungOrders.find(o => o.code === action.code);
+        if (!base) return;
+        // 이름이 다르게 적힌 같은 상품에 연결: 그 품목 이름을 이 쿠팡 발주 상품 이름으로 바꾼다(수량은 그대로).
+        if (action.linkFrom && base.orderQty && base.orderQty[action.linkFrom] != null) {
+          const { [action.linkFrom]: q, ...rest } = base.orderQty;
+          const k = orderQtyName(rest, name);
+          base = { ...base, orderQty: { ...rest, [k]: (rest[k] || 0) + q } };
+          // 수입입고에 적힌 이름도 같이 바꿔야 도착 수량이 맞는다.
+          base = { ...base, receipts: base.receipts.map(r => ({ ...r, items: r.items.map(it => (it.상품이름 === action.linkFrom ? { ...it, 상품이름: name } : it)) })) };
+        }
+        if (action.linkFrom) changed.set(base.code, base);
+        const p = productSummary(base).find(x => sameName(x.상품이름, name));
+        const spare = p ? p.spare : 0;
+        let orderQty = freezeOrderQty(base, name, need);
+        let alloc = need;
+        if (p && spare < need) {
+          if (action.mode === 'split') {
+            alloc = spare;
+            toQueue = need - spare;
+          } else if (action.mode === 'grow') {
+            orderQty = { ...orderQty, [orderQtyName(orderQty, name)]: p.ordered + (need - spare) };
+          }
+        }
+        if (alloc > 0) {
+          changed.set(base.code, {
+            ...base,
+            orderQty,
+            lines: [...base.lines, {
+              key: reservationKey(line),
+              발주번호: line.발주번호,
+              물류센터: line.물류센터,
+              상품이름: name,
+              확정수량: need,
+              입고예정일: dateKeyYMD(line.입고예정일).replace(/-/g, ''),
+              ...(alloc !== need ? { 배정: alloc } : {}),
+            }],
+          });
+        }
+      }
+      // 떼고 나서 품목이 하나도 안 남는 한중발주가 있으면 확인한다.
+      const emptied = Array.from(changed.values()).filter(o => !o.lines.length && !Object.keys(o.orderQty || {}).length).map(o => o.code);
+      if (emptied.length && !confirm(`${emptied.join(', ')}에 남는 품목이 없어요. 빈 한중발주가 돼요(한중발주 페이지에서 지울 수 있어요). 그래도 할까요?`)) return;
+      for (const o of changed.values()) await saveHanjungOrder(o);
+      // 3) 발주 대기: 있던 것은 지우고, 대기로 보낼 수량이 있으면 그만큼 다시 넣는다.
+      if (queuedKeys.has(k)) await removeFromHanjungQueue([k]);
+      if (toQueue > 0) await addToHanjungQueue([{ ...line, ...(toQueue !== need ? { 배정: toQueue } : {}) }], []);
+    } catch (err: any) {
+      alert(`한중발주 저장 실패: ${err?.message || err}`);
+    }
+  };
   const ready = useReady();
   // 준비 체크 한 줄: 쿠팡발주확인부터 쓰는 공통 기록 + 예전에 이 출고 건에 적어 둔 표시.
   const lineReady = (item: ShipOut | undefined, l: { 발주번호: string; 상품이름: string; 확정수량: number | '' }) =>
@@ -660,8 +794,8 @@ export default function CoupangShipPage({ onGoOrder }: { onGoOrder?: () => void 
       step('완료 풀기', () => { markShipOuts([item.id], { doneAt: undefined, undoneAt: Date.now() }); });
       return;
     }
-    if (!confirm(`${item.bundle}(${item.center} · ${item.date})을 쉽먼트 완료로 표시하고 발송대기로 넘길까요?`)) return;
-    step('쉽먼트 완료', () => { markShipOuts([item.id], { doneAt: Date.now(), undoneAt: undefined }); });
+    if (!confirm(`${item.bundle}(${item.center} · ${item.date})을 발송대기로 보낼까요?`)) return;
+    step('발송대기로', () => { markShipOuts([item.id], { doneAt: Date.now(), undoneAt: undefined }); });
     setShubStatus(`${item.bundle}(${item.center})을 발송대기로 넘겼어요.`);
   };
   // 입고예정일 바꾸기. 쉽먼트 기록(서허 양식 받을 때 날짜로 목록을 좁힌다)의 이 건 발주 날짜도 같이 맞춘다.
@@ -802,7 +936,7 @@ export default function CoupangShipPage({ onGoOrder }: { onGoOrder?: () => void 
         ) : (
           /* 쿠팡발주확인과 같은 3단 폭(발주서 / 묶음 / 예약 자리). 예약 자리는 여기선 비워 둔다. */
           // 휴대폰에서는 발주서 표만 화면 폭에 꽉 차게(묶음 카드는 숨김).
-          <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'minmax(0, 1fr)' : '1.25fr 0.7fr 1.1fr', gap: 20, alignItems: 'start' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'minmax(0, 1fr)' : '1.75fr 0.7fr 0.6fr', gap: 20, alignItems: 'start' }}>
             {/* 왼쪽: 발주서 표(쿠팡발주확인의 발송 패널과 같은 표) */}
             {/* PC에서는 표 폭만큼 칸이 늘어나야 잘리지 않는다(minWidth 0은 휴대폰에서만). */}
             <div style={{ minWidth: isMobile ? 0 : undefined }}>
@@ -838,7 +972,7 @@ export default function CoupangShipPage({ onGoOrder }: { onGoOrder?: () => void 
                     style={{
                       display: 'inline-flex', alignItems: 'center', gap: 4,
                       padding: '3px 10px', fontSize: 11, fontWeight: 700, color: '#fff',
-                      background: '#7c3aed', border: '1px solid #7c3aed', borderRadius: 6, cursor: 'pointer',
+                      background: PENDING_COLOR, border: `1px solid ${PENDING_COLOR}`, borderRadius: 6, cursor: 'pointer',
                     }}
                   >
                     ← 발주확인으로 {selected.size}건
@@ -859,12 +993,15 @@ export default function CoupangShipPage({ onGoOrder }: { onGoOrder?: () => void 
                 bundleLabel={(key) => list.find(i => i.id === key)?.bundle || key}
                 bundleColorOf={colorOf}
                 layout="box"
+                officeQtyOf={officeQtyOf}
                 monoBoxes={PENDING_BOX}
                 isChunkCollapsed={id => !openDone.has(id)}
                 chunkPad={isMobile ? undefined : chunkPad}
-                lineBadge={row => hanjungBadge({ 발주번호: row._발주번호, 상품이름: row.상품이름, 확정수량: row._조각 !== undefined ? (row._원수량 ?? row.확정수량) : row.확정수량 })}
+                lineBadge={row => hanjungBadge({ 발주번호: row._발주번호, 상품이름: row.상품이름, 확정수량: row._조각 !== undefined ? (row._원수량 ?? row.확정수량) : row.확정수량 }, lineReady(list.find(i => i.id === row.묶음), lineOfRow(row)))}
                 isReady={row => lineReady(list.find(i => i.id === row.묶음), lineOfRow(row))}
                 onToggleReady={(row, on) => toggleLineReady(list.find(i => i.id === row.묶음), lineOfRow(row), on)}
+                hanjungOf={hanjungOf}
+                onLineHanjung={setLineHanjung}
                 boxWaybill={(id, no) => {
                   const item = list.find(i => i.id === id);
                   return item ? waybillOf(item, no) : '';
@@ -913,7 +1050,7 @@ export default function CoupangShipPage({ onGoOrder }: { onGoOrder?: () => void 
             {/* overflow를 주면 안쪽 sticky가 죽는다(스크롤 상자가 새로 생겨서). 그래서 넘침 처리는 카드 쪽에서 한다. */}
             {!isMobile && <div style={{ paddingRight: 2 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
-                <span style={{ fontSize: 12, fontWeight: 700, color: '#7c3aed', letterSpacing: '-0.2px' }}>🧺 묶음</span>
+                <span style={{ fontSize: 12, fontWeight: 700, color: PENDING_COLOR, letterSpacing: '-0.2px' }}>🧺 묶음</span>
                 <span style={{ fontSize: 11, color: '#aaa' }}>{ordered.length}건</span>
               </div>
 
@@ -967,13 +1104,27 @@ export default function CoupangShipPage({ onGoOrder }: { onGoOrder?: () => void 
                         {/* 센터·날짜·발주 수·수량, 체크 칸과 접기는 왼쪽 표 머리줄에 있어 카드에는 진행 상태만 둔다. */}
                         <div style={{ display: 'flex', alignItems: 'center', gap: 8, overflow: 'hidden' }}>
                           <span style={{ fontSize: 12, fontWeight: 800, color }} title={`출고번호 ${item.id} · ${item.center} · ${item.date}`}>{item.bundle}</span>
+                          {/* 거의 안 쓰는 삭제는 작은 휴지통으로 번호 옆에 둔다. */}
+                          <button
+                            onClick={() => remove(item)}
+                            title={'이 출고 건을 지워요. 발주 줄도 쿠팡발주확인으로 돌아가지 않고 같이 사라져요.\n쿠팡이 발주를 취소했거나 실수로 두 번 만든 건일 때만 쓰세요.\n발주확인으로 되돌리려면 "← 발주확인으로"를 누르세요. (지워도 ↶ 되돌리기로 살릴 수 있어요)'}
+                            style={{
+                              padding: '0 3px', fontSize: 13, lineHeight: 1, opacity: 0.4,
+                              background: 'transparent', border: 'none', cursor: 'pointer',
+                            }}
+                            onMouseEnter={e => (e.currentTarget.style.opacity = '1')}
+                            onMouseLeave={e => (e.currentTarget.style.opacity = '0.4')}
+                          >
+                            🗑
+                          </button>
                           {(() => {
                             const doneN = item.lines.filter(l => lineReady(item, l)).length;
                             const all = item.lines.length > 0 && doneN === item.lines.length;
                             return (
                               <span title="준비됨으로 체크한 상품 줄 수" style={{
                                 padding: '1px 8px', fontSize: 11, fontWeight: 800, borderRadius: 999,
-                                color: all ? '#fff' : '#e67e22', background: all ? '#27ae60' : '#fff4e8', border: `1px solid ${all ? '#27ae60' : '#f5c89a'}`,
+                                // 준비 중은 한중 뱃지처럼 흰 바탕에 초록 테두리, 다 끝나면 초록 바탕.
+                                color: all ? '#fff' : '#27ae60', background: all ? '#27ae60' : '#fff', border: '1px solid #27ae60',
                               }}>
                                 {all ? '✓ 준비 끝' : `준비 ${doneN}/${item.lines.length}`}
                               </span>
@@ -996,9 +1147,16 @@ export default function CoupangShipPage({ onGoOrder }: { onGoOrder?: () => void 
                           </div>
                         )}
 
-                        {/* 일하는 차례대로: (위쪽 택배예약) → 쉽먼트업로드 → 완료 */}
+                        {/* 앞뒤 단계로 보내기: 왼쪽은 발주확인으로 되돌리기, 오른쪽은 발송대기로 넘기기(같은 모양). 가운데는 쉽먼트업로드. */}
                         {!folded && (<>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginTop: 5, flexWrap: 'wrap' }}>
+                          <button
+                            onClick={() => restore(item)}
+                            title="이 출고를 취소하고 쿠팡발주확인 발송 목록으로 되돌립니다"
+                            style={stageBtn(false)}
+                          >
+                            ← 발주확인으로
+                          </button>
                           {pr.reserved && !pr.done && (
                             <button
                               onClick={() => shubForItem(item)}
@@ -1013,43 +1171,13 @@ export default function CoupangShipPage({ onGoOrder }: { onGoOrder?: () => void 
                           )}
                           <button
                             onClick={() => toggleDone(item)}
-                            title={pr.done ? '완료 표시를 풀고 다시 할 수 있게 합니다' : '이 건의 쉽먼트 작업이 끝났다고 표시합니다'}
-                            style={{
-                              marginLeft: 'auto',
-                              padding: '2px 10px', fontSize: 11, fontWeight: 700, borderRadius: 5, cursor: 'pointer',
-                              border: pr.done ? '1.5px solid #27ae60' : '1px solid #e5e5e5',
-                              background: pr.done ? '#e8f8f0' : '#fff',
-                              color: pr.done ? '#27ae60' : '#888',
-                            }}
+                            title={pr.done ? '발송대기로 보낸 것을 풀고 다시 할 수 있게 합니다' : '쉽먼트를 다 만들었으면 눌러서 발송대기로 보냅니다'}
+                            style={{ ...stageBtn(pr.done), marginLeft: 'auto' }}
                           >
-                            {pr.done ? '쉽먼트 완료 ✓' : '쉽먼트 완료'}
+                            {pr.done ? '발송대기 ✓' : '발송대기로 →'}
                           </button>
                         </div>
 
-                        {/* 되돌리기·삭제는 일하는 버튼과 떨어뜨려 둔다 */}
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginTop: 5 }}>
-                          <button
-                            onClick={() => restore(item)}
-                            title="이 출고를 취소하고 쿠팡발주확인 발송 목록으로 되돌립니다"
-                            style={{
-                              padding: '2px 8px', fontSize: 11, color: '#7c3aed',
-                              background: '#fff', border: '1px solid #d6c9f5', borderRadius: 5, cursor: 'pointer',
-                            }}
-                          >
-                            ← 발주확인으로
-                          </button>
-                          <button
-                            onClick={() => remove(item)}
-                            title="이 출고 건을 목록에서 지웁니다"
-                            style={{
-                              marginLeft: 'auto',
-                              padding: '2px 8px', fontSize: 11, color: '#aaa',
-                              background: '#fff', border: '1px solid #e5e5e5', borderRadius: 5, cursor: 'pointer',
-                            }}
-                          >
-                            삭제
-                          </button>
-                        </div>
                         </>)}
                       </div>
 
@@ -1062,7 +1190,7 @@ export default function CoupangShipPage({ onGoOrder }: { onGoOrder?: () => void 
                               display: 'flex', alignItems: 'center', gap: 6, padding: '3px 8px',
                               background: `${bc}12`, borderTop: `1px solid ${bc}33`, borderLeft: `3px solid ${bc}`, fontSize: 11,
                             }}>
-                              <span style={{ padding: '0 7px', fontWeight: 800, borderRadius: 8, color: '#fff', background: bc }}>
+                              <span style={{ padding: '0 7px', fontWeight: 800, borderRadius: 8, color: bc, background: '#fff', border: `1.5px solid ${bc}` }}>
                                 📦 {boxNo ? `박스${boxNo}` : '박스 미지정'}
                               </span>
                               {!!boxNo && !!waybillOf(item, boxNo) && (

@@ -15,7 +15,7 @@ import { loadLocalAddresses, subscribeShippingSettings } from './data/shippingSe
 import { subscribeReservations, addReservations, updateReservationShipment, updateReservations, deleteReservations, reservationKey, setReservationMemo } from './data/reservationStore';
 import type { OrderRow } from './types';
 import { dateKeyYMD, normalizeDateValue, ymdSortKey } from './utils/dateUtils';
-import { InventoryItem, subscribeInventory, makeOfficeLookup } from '../../data/inventoryStore';
+import { HanjungOrder, subscribeHanjung, makeHanjungOfficeLookup } from '../../data/hanjungStore';
 import BundlePanel from './components/BundlePanel';
 import { addShipOut, allShipOutLines, shipOutLineKeys, subscribeShipOuts, snapshotShipOuts, restoreShipOutsOnly } from './data/shipOutStore';
 import { loadWork, saveWork, subscribeWork, newOrderNos } from './data/orderWorkStore';
@@ -75,8 +75,9 @@ export default function CoupangOrderPage({ onGoShipOut }: { onGoShipOut?: () => 
   // B단계(서허 양식 받기) 진행 문구와, 받아온 양식 파일.
   // 지금 B·C를 진행 중인 쉽먼트(양식을 직접 골라 채울 때 쓴다).
   // 재고 > 상품관리의 사무실 재고. 발주서 상품이름과 상품명을 맞춰 확정수량 옆에 보여준다.
-  const [inventory, setInventory] = useState<InventoryItem[]>([]);
-  const officeQtyOf = useMemo(() => makeOfficeLookup(inventory), [inventory]);
+  // 사무실 칸 = 한중으로 넉넉히 사 둔 여유(도착한 것 + 오는 중인 것).
+  const [hanjungOrders, setHanjungOrders] = useState<HanjungOrder[]>([]);
+  const officeQtyOf = useMemo(() => makeHanjungOfficeLookup(hanjungOrders), [hanjungOrders]);
   const [error, setError] = useState('');
   // 발주서를 이어 붙인 결과 같은 알림(오류가 아니어서 따로 둔다).
   const [notice, setNotice] = useState('');
@@ -194,7 +195,7 @@ export default function CoupangOrderPage({ onGoShipOut }: { onGoShipOut?: () => 
     return () => window.removeEventListener('keydown', onKey);
   });
   // 택배주소·보내는사람은 클라우드에 저장돼 있어 다른 컴퓨터에서 고친 것도 바로 반영된다.
-  useEffect(() => subscribeInventory(setInventory), []);
+  useEffect(() => subscribeHanjung(setHanjungOrders), []);
   // 택배주소는 묶음 카드에서 센터를 고를 때 쓴다(보내는사람·주소 관리는 쉽먼트생성 화면에 있다).
   useEffect(() => subscribeShippingSettings(({ addresses }) => setAddresses(addresses)), []);
   useEffect(() => saveWork(leftRows, fileName, Array.from(doneBundles)), [leftRows, fileName, doneBundles]);

@@ -21,13 +21,21 @@ export interface HanjungQueueItem {
   확정수량: number | '';
   입고예정일: string; // YYYYMMDD
   addedAt: number;
+  // 쿠팡 줄 일부만 대기에 둘 때 그 수량(나머지는 한중발주가 맡음). 없으면 확정수량 전부.
+  배정?: number;
 }
+
+// 대기 줄 하나가 맡은 수량.
+export const queueAlloc = (q: HanjungQueueItem) => q.배정 ?? (Number(q.확정수량) || 0);
+
+// 줄(행)을 대기에 넣을 때 쓰는 모양. 배정이 있으면 그 수량만 대기에 둔다.
+export type QueueRow = OrderRow & { 배정?: number };
 
 // 날짜·센터는 묶음 적용 등으로 바뀔 수 있어 열쇠에서 뺀다(바뀌어도 같은 줄로 본다).
 export const hanjungQueueKey = (r: { 발주번호?: unknown; 상품이름?: unknown; 확정수량?: unknown }) =>
   `${String(r.발주번호 ?? '').trim()}│${String(r.상품이름 ?? '').trim()}│${String(r.확정수량 ?? '').trim()}`.replace(/\//g, '∕');
 
-const toItem = (r: OrderRow, addedAt: number): HanjungQueueItem => ({
+const toItem = (r: QueueRow, addedAt: number): HanjungQueueItem => ({
   key: hanjungQueueKey(r),
   발주번호: r.발주번호,
   물류센터: r.물류센터,
@@ -35,10 +43,11 @@ const toItem = (r: OrderRow, addedAt: number): HanjungQueueItem => ({
   확정수량: r.확정수량,
   입고예정일: dateKeyYMD(r.입고예정일).replace(/-/g, ''),
   addedAt,
+  ...(r.배정 != null && r.배정 !== Number(r.확정수량) ? { 배정: r.배정 } : {}),
 });
 
 // 화면에서 쓰기 쉽게 OrderRow 모양으로도 돌려준다.
-export const queueItemToRow = (q: HanjungQueueItem): OrderRow => ({
+export const queueItemToRow = (q: HanjungQueueItem): QueueRow => ({
   발주번호: q.발주번호,
   물류센터: q.물류센터,
   상품이름: q.상품이름,
@@ -46,6 +55,7 @@ export const queueItemToRow = (q: HanjungQueueItem): OrderRow => ({
   입고예정일: normalizeDateValue(q.입고예정일),
   메모: '',
   쉼먼트: '',
+  ...(q.배정 != null ? { 배정: q.배정 } : {}),
 });
 
 type Listener = (items: HanjungQueueItem[]) => void;
@@ -89,7 +99,7 @@ export const subscribeHanjungQueue = (listener: Listener): (() => void) => {
 };
 
 // 줄들을 대기에 더한다. 이미 있는 줄은 그대로 둔다(처음 넣은 시각 유지).
-export const addToHanjungQueue = async (rows: OrderRow[], existing: HanjungQueueItem[]) => {
+export const addToHanjungQueue = async (rows: QueueRow[], existing: HanjungQueueItem[]) => {
   const have = new Set(existing.map(q => q.key));
   const now = Date.now();
   const fresh = rows.filter(r => !have.has(hanjungQueueKey(r))).map(r => toItem(r, now));
@@ -130,4 +140,35 @@ export const removeFromHanjungQueue = async (keys: string[]) => {
     keys.slice(i, i + 450).forEach(k => batch.delete(doc(firestore, COLLECTION, k)));
     await waitAtMost(batch.commit());
   }
+};
+
+// 쿠팡 줄 하나가 한중 어디에 몇 개씩 맡겨져 있는지. code가 null이면 발주 대기.
+// 한 줄을 여유 있는 한중발주와 발주 대기로 나눠 맡길 수 있어서 여러 곳일 수 있다.
+export type HanjungPlace = { code: string | null; qty: number };
+export const makePlaceLookup = (
+  orders: { code: string; lines: { 발주번호: string; 상품이름: string; 확정수량: number; 배정?: number }[] }[],
+  queue: HanjungQueueItem[],
+) => {
+  const m = new Map<string, HanjungPlace[]>();
+  const push = (k: string, p: HanjungPlace) => m.set(k, [...(m.get(k) || []), p]);
+  for (const o of orders) for (const l of o.lines) push(hanjungQueueKey(l), { code: o.code, qty: l.배정 ?? l.확정수량 });
+  for (const q of queue) push(q.key, { code: null, qty: queueAlloc(q) });
+  return (line: { 발주번호?: unknown; 상품이름?: unknown; 확정수량?: unknown }): HanjungPlace[] => m.get(hanjungQueueKey(line)) || [];
+};
+
+// 한중발주에서 뺀 줄을 발주 대기로 돌린다. 같은 쿠팡 줄의 나머지가 이미 대기에 있으면 수량을 합친다
+// (한 줄을 한중발주와 대기에 나눠 맡긴 경우). 합쳐서 줄 전체가 되면 배정 표시는 뗀다.
+export const returnToHanjungQueue = async (rows: QueueRow[], queue: HanjungQueueItem[]) => {
+  const have = new Map(queue.map(q => [q.key, q]));
+  const merged = rows.map(r => {
+    const full = Number(r.확정수량) || 0;
+    const add = r.배정 ?? full;
+    const cur = have.get(hanjungQueueKey(r));
+    const sum = Math.min(full, (cur ? queueAlloc(cur) : 0) + add);
+    const { 배정: _drop, ...rest } = r;
+    return sum === full ? rest : { ...rest, 배정: sum };
+  });
+  const keys = merged.map(r => hanjungQueueKey(r)).filter(k => have.has(k));
+  if (keys.length) await removeFromHanjungQueue(keys);
+  return addToHanjungQueue(merged, []);
 };

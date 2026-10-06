@@ -1,5 +1,6 @@
 import React from 'react';
 import { useIsMobile } from '../../../utils/useIsMobile';
+import { badge as stateBadge } from '../data/useHanjungBadge';
 import type { DisplayRow } from '../utils/dataProcessor';
 import type { OfficeMatch } from '../../../data/inventoryStore';
 import { parseBoxNo, boxLabel, boxGroupKey, bundleCenters } from '../utils/dataProcessor';
@@ -66,6 +67,10 @@ interface Props {
   // 있으면 'box' 레이아웃 상품 줄 맨 앞에 "준비" 체크 칸을 둔다(상품이 준비됐는지).
   isReady?: (row: DisplayRow) => boolean;
   onToggleReady?: (row: DisplayRow, on: boolean) => void;
+  // 있으면 'box' 레이아웃 체크 칸을 누를 때 "준비됨 / 한중발주"를 고르는 작은 메뉴가 뜬다(쉽먼트생성대기).
+  // hanjungOf: 그 줄이 한중 어디에 몇 개씩 있는지와 고를 수 있는 한중발주(여유 포함).
+  hanjungOf?: (row: DisplayRow) => LineHanjung;
+  onLineHanjung?: (row: DisplayRow, action: HanjungAction) => void;
   // 있으면 'box' 레이아웃 상품이름 옆에 붙일 뱃지(한중 등).
   lineBadge?: (row: DisplayRow) => React.ReactNode;
   // 'box' 레이아웃에서 박스를 번호별 색 대신 이 한 색으로 칠한다(완료 덩어리는 초록). 화면 색을 줄이려고.
@@ -272,7 +277,7 @@ function BoxButton({ value, onChange }: { value: string; onChange: (v: string) =
     <div style={{ display: 'inline-flex', alignItems: 'center', gap: 0, border: `1.5px solid ${c}`, borderRadius: 6, overflow: 'hidden' }}>
       <button
         onClick={(e) => adjust(-1, e)}
-        style={counterBtnStyle(`${c}14`, c)}
+        style={counterBtnStyle('#fff', c)}
       >−</button>
       <button
         onClick={toggle}
@@ -280,7 +285,7 @@ function BoxButton({ value, onChange }: { value: string; onChange: (v: string) =
           padding: '3px 8px',
           fontSize: 12,
           fontWeight: 700,
-          background: `${c}14`,
+          background: '#fff',
           color: c,
           border: 'none',
           cursor: 'pointer',
@@ -294,7 +299,7 @@ function BoxButton({ value, onChange }: { value: string; onChange: (v: string) =
       </button>
       <button
         onClick={(e) => adjust(+1, e)}
-        style={counterBtnStyle(`${c}14`, c)}
+        style={counterBtnStyle('#fff', c)}
       >+</button>
     </div>
   );
@@ -410,7 +415,7 @@ export function BoxPicker({ value, maxNo, onChange, allowNone = true, color }: {
         style={{
           display: 'inline-flex', alignItems: 'center', gap: 6, minWidth: 82, justifyContent: 'space-between',
           padding: '3px 8px 3px 9px', fontSize: 12, fontWeight: 800, borderRadius: 14, cursor: 'pointer',
-          border: `1.5px solid ${no ? c : '#d5d5d5'}`, background: no ? `${c}14` : '#fafafa', color: no ? c : '#aaa',
+          border: `1.5px solid ${no ? c : '#d5d5d5'}`, background: no ? '#fff' : '#fafafa', color: no ? c : '#aaa',
         }}
       >
         <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
@@ -449,6 +454,304 @@ export function BoxPicker({ value, maxNo, onChange, allowNone = true, color }: {
   );
 }
 
+// 쉽먼트생성 체크 메뉴의 한중발주 고르기.
+//  choices: 고를 수 있는 한중발주. has = 이 상품이 이미 있는 건(여유를 쓸 수 있음), 아니면 새로 넣는 건.
+//  places : 이 줄이 지금 맡겨진 곳(code null = 발주 대기)과 수량.
+export type HanjungChoice = { code: string; has: boolean; ordered: number; spare: number; arrived: boolean };
+//  links: 이름은 다르지만 같은 상품일 수 있는 한중발주 품목(여유가 있는 것, 비슷한 이름 순). 고르면 그 품목 이름을 이 줄 이름으로 바꾸고 배정한다.
+export type HanjungLink = { code: string; name: string; ordered: number; spare: number; arrived: boolean };
+export type LineHanjung = { need: number; places: { code: string | null; qty: number }[]; choices: HanjungChoice[]; links?: HanjungLink[] };
+//  queue: 전부 발주 대기로 / order: 그 한중발주에 맡김(whole 전부, split 여유만큼 + 나머지 대기, grow 그 건 주문 수량을 늘려 전부) / remove: 빼기
+//  release: 이 줄을 원래 한중발주에서 뗄 때 그 건의 주문 수량을 어떻게 할지
+//    shrink = 같이 줄이기(1688에서 안 샀음) / keep = 그대로 두고 여유로 남기기(사 둔 건 그대로)
+export type HanjungRelease = 'shrink' | 'keep';
+export type HanjungAction = (
+  { type: 'queue' } | { type: 'order'; code: string; mode: 'whole' | 'split' | 'grow'; linkFrom?: string } | { type: 'remove' }
+) & { release?: HanjungRelease };
+
+// 상품 줄 체크 칸. 누르면 "준비됨"과 "한중발주" 중에서 고른다(둘 다 켤 수도 있다).
+// 한중발주를 누르면 이 상품의 여유가 있는 한중발주를 고르거나, 발주 대기에 담는다.
+// 준비됨이든 한중발주든 초록 체크로 보인다.
+function LineCheckMenu({ ready, hanjung, onReady, onHanjung }: {
+  ready: boolean; hanjung: LineHanjung; onReady: (on: boolean) => void; onHanjung: (action: HanjungAction) => void;
+}) {
+  const btnRef = React.useRef<HTMLButtonElement>(null);
+  const [menu, setMenu] = React.useState<{ left: number; top: number; up: boolean } | null>(null);
+  // 메뉴 화면: main(준비됨/한중발주) → pick(한중발주 고르기) → short(여유가 모자랄 때 어떻게 할지)
+  const [view, setView] = React.useState<
+    { kind: 'main' } | { kind: 'pick' } | { kind: 'link' } | { kind: 'short'; choice: HanjungChoice; linkFrom?: string }
+    | { kind: 'release'; action: HanjungAction; from: { code: string; qty: number }[] }
+  >({ kind: 'main' });
+  const { need, places, choices } = hanjung;
+  const links = hanjung.links || [];
+  const open = () => {
+    const r = btnRef.current?.getBoundingClientRect();
+    if (!r) return;
+    const up = r.bottom + 200 + choices.length * 32 > window.innerHeight - 8;
+    setView({ kind: 'main' });
+    setMenu({ left: r.left, top: up ? r.top - 4 : r.bottom + 4, up });
+  };
+  const on = ready || places.length > 0;
+  const color = '#27ae60';
+  const item = (key: string, label: React.ReactNode, onClick: (() => void) | null, color: string, close = true) => (
+    <button
+      key={key}
+      onClick={onClick ? () => { if (close) setMenu(null); onClick(); } : undefined}
+      disabled={!onClick}
+      onMouseEnter={e => { if (onClick) e.currentTarget.style.background = '#f4f5f7'; }}
+      onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; }}
+      style={{
+        display: 'flex', alignItems: 'center', gap: 8, width: '100%', minHeight: 32, padding: '4px 10px',
+        fontSize: 13, fontWeight: 700, color, textAlign: 'left', whiteSpace: 'nowrap',
+        background: 'transparent', border: 'none', borderRadius: 6, cursor: onClick ? 'pointer' : 'default',
+      }}
+    >
+      {label}
+    </button>
+  );
+  const line = <div style={{ height: 1, background: '#f0f0f0', margin: '4px 2px' }} />;
+  const head = (text: React.ReactNode) => <div style={{ fontSize: 11, color: '#999', padding: '4px 10px 2px', whiteSpace: 'nowrap' }}>{text}</div>;
+  const placeText = places.map(p => `${p.code ? p.code : '대기'}${places.length > 1 || p.qty !== need ? ` ×${p.qty}` : ''}`).join(' · ');
+  const placeQty = (code: string | null) => places.find(p => p.code === code)?.qty || 0;
+  const wholeIn = (code: string | null) => places.length === 1 && places[0].code === code && places[0].qty === need;
+  // 이 줄이 이미 맡겨진 한중발주에서 떼게 되는 동작이면, 그 건의 주문 수량을 줄일지 먼저 묻는다.
+  const act = (a: HanjungAction) => {
+    const from = places
+      .filter(p => p.code && !(a.type === 'order' && a.code === p.code))
+      .map(p => ({ code: p.code as string, qty: p.qty }));
+    if (from.length) { setView({ kind: 'release', action: a, from }); return; }
+    setMenu(null);
+    onHanjung(a);
+  };
+  const mine = choices.filter(c => c.has);
+  const others = choices.filter(c => !c.has);
+  // 한중발주를 골랐을 때: 이 줄이 이미 그 건에 맡긴 수량은 여유로 다시 쓸 수 있다고 보고 계산한다.
+  const pick = (c: HanjungChoice) => {
+    const free = c.spare + placeQty(c.code);
+    if (!c.has || free >= need) { act({ type: 'order', code: c.code, mode: 'whole' }); return; }
+    setView({ kind: 'short', choice: c });
+  };
+  return (
+    <>
+      <button
+        ref={btnRef}
+        onClick={() => (menu ? setMenu(null) : open())}
+        title={[ready ? '준비됨' : '', placeText ? `한중 ${placeText}` : ''].filter(Boolean).join(' · ') || '눌러서 준비됨 또는 한중발주로 표시'}
+        style={{
+          width: 18, height: 18, padding: 0, borderRadius: 4, cursor: 'pointer',
+          display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+          fontSize: 12, fontWeight: 900, lineHeight: 1, color: '#fff',
+          border: `1.5px solid ${on ? color : '#b5b5b5'}`, background: on ? color : '#fff',
+        }}
+      >
+        {on ? '✓' : ''}
+      </button>
+      {menu && (
+        <>
+          <div onClick={() => setMenu(null)} style={{ position: 'fixed', inset: 0, zIndex: 2000 }} />
+          <div style={{
+            position: 'fixed', left: menu.left, zIndex: 2001, minWidth: 230, maxHeight: '70vh', overflowY: 'auto', padding: 5,
+            ...(menu.up ? { bottom: window.innerHeight - menu.top } : { top: menu.top }),
+            background: '#fff', border: '1px solid #e5e7eb', borderRadius: 10,
+            boxShadow: '0 8px 24px rgba(0,0,0,0.14)',
+          }}>
+            {view.kind === 'main' && (
+              <>
+                {ready
+                  ? item('ready', '준비됨 풀기', () => onReady(false), '#999')
+                  : item('ready', <><span>✓</span> 준비됨</>, () => onReady(true), '#27ae60')}
+                {item('hj', (
+                  <>
+                    <span>＋</span> 한중발주
+                    {placeText && <span style={{ marginLeft: 'auto', fontSize: 11, color: '#94a3b8' }}>{placeText}</span>}
+                    <span style={{ marginLeft: placeText ? 4 : 'auto', fontSize: 10 }}>▶</span>
+                  </>
+                ), () => setView({ kind: 'pick' }), '#27ae60', false)}
+              </>
+            )}
+
+            {view.kind === 'pick' && (
+              <>
+                {item('back', <>◀ 뒤로<span style={{ marginLeft: 'auto', fontSize: 11, color: '#999' }}>이 줄: {need}개</span></>, () => setView({ kind: 'main' }), '#999', false)}
+                {line}
+                {head('이 상품이 있는 한중발주')}
+                {mine.map(c => {
+                  const free = c.spare + placeQty(c.code);
+                  return item(`c${c.code}`, (
+                    <>
+                      <span style={{ fontFamily: 'monospace' }}>{c.code}</span>
+                      <span style={{ fontSize: 11, color: '#888', fontWeight: 600 }}>주문 {c.ordered} · 여유 <b style={{ color: free >= need ? '#27ae60' : '#dc2626' }}>{free}</b></span>
+                      <span style={{ marginLeft: 'auto', fontSize: 11, color: c.arrived ? '#27ae60' : '#d97706' }}>{c.arrived ? '도착' : '입고중'}</span>
+                      {free < need && <span style={{ fontSize: 11, color: '#dc2626' }}>⚠ 부족</span>}
+                      {wholeIn(c.code) && <span>✓</span>}
+                    </>
+                  ), wholeIn(c.code) ? null : () => pick(c), '#333', false);
+                })}
+                {!mine.length && head(<span style={{ color: '#bbb' }}>이 상품이 있는 한중발주가 없어요</span>)}
+                {others.length > 0 && (
+                  <>
+                    {line}
+                    {head('다른 한중발주에 새로 넣기(1688에 추가 주문)')}
+                    {others.map(c => item(`o${c.code}`, (
+                      <>
+                        <span style={{ fontFamily: 'monospace' }}>{c.code}</span>
+                        <span style={{ marginLeft: 'auto', fontSize: 11, color: '#999', fontWeight: 600 }}>이 상품 없음</span>
+                      </>
+                    ), () => pick(c), '#555', false))}
+                  </>
+                )}
+                {links.length > 0 && (
+                  <>
+                    {line}
+                    {item('link', <>이름이 다른 같은 상품에 연결<span style={{ marginLeft: 'auto', fontSize: 10 }}>▶</span></>, () => setView({ kind: 'link' }), '#2563eb', false)}
+                  </>
+                )}
+                {line}
+                {item('queue', (
+                  <>
+                    발주 대기에 담기(새로 주문)
+                    {wholeIn(null) && <span style={{ marginLeft: 'auto' }}>✓</span>}
+                  </>
+                ), wholeIn(null) ? null : () => act({ type: 'queue' }), '#555', false)}
+                {places.length > 0 && item('out', '한중에서 빼기', () => act({ type: 'remove' }), '#dc2626', false)}
+              </>
+            )}
+
+            {view.kind === 'link' && (
+              <>
+                {item('back', <>◀ 뒤로<span style={{ marginLeft: 'auto', fontSize: 11, color: '#999' }}>이 줄: {need}개</span></>, () => setView({ kind: 'pick' }), '#999', false)}
+                {line}
+                {head('한중발주에 이름이 다르게 적힌 품목 · 같은 상품이면 골라요')}
+                {head(<span style={{ color: '#bbb' }}>고르면 그 품목 이름이 이 상품 이름으로 바뀌어요</span>)}
+                {links.map(lk => item(`l${lk.code}${lk.name}`, (
+                  <span style={{ display: 'flex', flexDirection: 'column', gap: 1, minWidth: 0, maxWidth: 360 }}>
+                    <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }} title={lk.name}>{lk.name}</span>
+                    <span style={{ fontSize: 11, color: '#888', fontWeight: 600 }}>
+                      <span style={{ fontFamily: 'monospace' }}>{lk.code}</span> · 주문 {lk.ordered} · 여유 <b style={{ color: lk.spare >= need ? '#27ae60' : '#dc2626' }}>{lk.spare}</b> · {lk.arrived ? '도착' : '입고중'}
+                    </span>
+                  </span>
+                ), () => {
+                  if (lk.spare >= need) act({ type: 'order', code: lk.code, mode: 'whole', linkFrom: lk.name });
+                  else setView({ kind: 'short', choice: { code: lk.code, has: true, ordered: lk.ordered, spare: lk.spare, arrived: lk.arrived }, linkFrom: lk.name });
+                }, '#333', false))}
+              </>
+            )}
+
+            {view.kind === 'short' && (() => {
+              const c = view.choice;
+              const linkFrom = view.linkFrom;
+              const free = c.spare + placeQty(c.code);
+              const lack = need - free;
+              return (
+                <>
+                  {item('back', '◀ 뒤로', () => setView({ kind: 'pick' }), '#999', false)}
+                  {line}
+                  <div style={{ fontSize: 12.5, color: '#333', padding: '4px 10px 6px', lineHeight: 1.5, whiteSpace: 'nowrap' }}>
+                    <b style={{ fontFamily: 'monospace' }}>{c.code}</b> 여유가 <b>{free}</b>개뿐이에요.<br />이 줄은 <b>{need}</b>개 필요해요.
+                  </div>
+                  {free > 0 && item('split', <>① {free}개는 {c.code}에서, 모자란 {lack}개는 발주 대기</>, () => act({ type: 'order', code: c.code, mode: 'split', linkFrom }), '#27ae60', false)}
+                  {item('grow', <>② {c.code}에 {lack}개 더 주문했어요</>, () => act({ type: 'order', code: c.code, mode: 'grow', linkFrom }), '#555', false)}
+                  {item('cancel', '취소', () => setView({ kind: 'pick' }), '#999', false)}
+                </>
+              );
+            })()}
+
+            {view.kind === 'release' && (() => {
+              const { action, from } = view;
+              const done = (release: HanjungRelease) => { setMenu(null); onHanjung({ ...action, release }); };
+              const where = from.map(f => `${f.code}(${f.qty}개)`).join(', ');
+              return (
+                <>
+                  {item('back', '◀ 뒤로', () => setView({ kind: 'pick' }), '#999', false)}
+                  {line}
+                  <div style={{ fontSize: 12.5, color: '#333', padding: '4px 10px 6px', lineHeight: 1.5, whiteSpace: 'nowrap' }}>
+                    이 줄을 <b style={{ fontFamily: 'monospace' }}>{where}</b>에서 빼요.<br />그 한중발주의 주문 수량은 어떻게 할까요?
+                  </div>
+                  {item('shrink', <>주문 수량도 줄이기 <span style={{ fontSize: 11, color: '#999', fontWeight: 600 }}>1688에서 안 샀어요</span></>, () => done('shrink'), '#dc2626')}
+                  {item('keep', <>여유로 남기기 <span style={{ fontSize: 11, color: '#999', fontWeight: 600 }}>사 둔 건 그대로</span></>, () => done('keep'), '#27ae60')}
+                </>
+              );
+            })()}
+          </div>
+        </>
+      )}
+    </>
+  );
+}
+
+// "발주 N"에 마우스를 올리면 발주번호 목록이 뜨고, 번호를 누르면 클립보드에 복사된다.
+function OrderNosHover({ orders }: { orders: string[] }) {
+  const ref = React.useRef<HTMLSpanElement>(null);
+  const hideTimer = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [pos, setPos] = React.useState<{ left: number; top: number } | null>(null);
+  const [copied, setCopied] = React.useState('');
+  const show = () => {
+    if (hideTimer.current) clearTimeout(hideTimer.current);
+    const r = ref.current?.getBoundingClientRect();
+    if (r) setPos({ left: r.left, top: r.bottom + 2 });
+  };
+  // 목록으로 마우스를 옮기는 사이에 닫히지 않게 조금 기다렸다 닫는다.
+  const hide = () => {
+    if (hideTimer.current) clearTimeout(hideTimer.current);
+    hideTimer.current = setTimeout(() => { setPos(null); setCopied(''); }, 200);
+  };
+  const copy = (text: string, label: string) => {
+    const done = () => setCopied(label);
+    if (navigator.clipboard?.writeText) navigator.clipboard.writeText(text).then(done).catch(() => alert('복사하지 못했어요.'));
+    else {
+      const t = document.createElement('textarea');
+      t.value = text;
+      document.body.appendChild(t);
+      t.select();
+      document.execCommand('copy');
+      t.remove();
+      done();
+    }
+  };
+  const row = (key: string, label: React.ReactNode, onClick: () => void, on: boolean) => (
+    <button
+      key={key}
+      onClick={onClick}
+      onMouseEnter={e => (e.currentTarget.style.background = '#f4f5f7')}
+      onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
+      style={{
+        display: 'flex', alignItems: 'center', gap: 10, width: '100%', padding: '4px 8px',
+        fontSize: 12.5, fontWeight: 700, color: '#333', textAlign: 'left', whiteSpace: 'nowrap',
+        background: 'transparent', border: 'none', borderRadius: 5, cursor: 'pointer',
+      }}
+    >
+      {label}
+      <span style={{ marginLeft: 'auto', fontSize: 11, color: on ? '#27ae60' : '#bbb' }}>{on ? '✓ 복사됨' : '복사'}</span>
+    </button>
+  );
+  return (
+    <>
+      <span ref={ref} onMouseEnter={show} onMouseLeave={hide} style={{ cursor: 'default', textDecoration: 'underline dotted' }}>
+        발주 {orders.length}
+      </span>
+      {pos && (
+        <div
+          onMouseEnter={show}
+          onMouseLeave={hide}
+          style={{
+            position: 'fixed', left: pos.left, top: pos.top, zIndex: 2001, minWidth: 170, maxHeight: '60vh', overflowY: 'auto',
+            padding: 5, background: '#fff', border: '1px solid #e5e7eb', borderRadius: 8, boxShadow: '0 8px 24px rgba(0,0,0,0.14)',
+          }}
+        >
+          <div style={{ fontSize: 11, color: '#999', padding: '2px 8px 4px' }}>발주번호 · 누르면 복사</div>
+          {orders.map(no => row(no, <span style={{ fontFamily: 'monospace' }}>{no}</span>, () => copy(no, no), copied === no))}
+          {orders.length > 1 && (
+            <>
+              <div style={{ height: 1, background: '#f0f0f0', margin: '4px 2px' }} />
+              {row('all', `전체 ${orders.length}개`, () => copy(orders.join('\n'), 'all'), copied === 'all')}
+            </>
+          )}
+        </div>
+      )}
+    </>
+  );
+}
+
 // 발주서 머리줄의 일괄 적용 버튼(전체예약·전체박스).
 function bulkBtn(color: string): React.CSSProperties {
   return {
@@ -476,6 +779,21 @@ function counterBtnStyle(bg: string, color: string): React.CSSProperties {
 // 이름이 딱 맞지 않아 비슷한 상품으로 맞춘 경우에는 * 를 붙인다.
 function OfficeCell({ match, need }: { match: OfficeMatch | null; need: number }) {
   if (!match) return <td style={{ ...narrow(42), color: '#ccc' }} title="상품관리에서 같은 이름을 못 찾았어요">-</td>;
+  // 한중 여유로 계산한 값(incoming이 있음): 도착한 여유와 오는 중인 여유를 같이 보여준다.
+  if (match.incoming != null) {
+    const arrived = match.qty || 0;
+    const incoming = match.incoming;
+    const color = arrived >= need ? '#2d7a4f' : arrived + incoming >= need ? '#d97706' : arrived + incoming > 0 ? '#c0392b' : '#ccc';
+    const title = arrived + incoming > 0
+      ? `사무실 재고(한중 여유) · 도착 ${arrived}개${incoming ? ` · 오는 중 ${incoming}개` : ''}\n${match.names.join('\n')}`
+      : '한중으로 넉넉히 사 둔 여유가 없어요';
+    return (
+      <td style={{ ...narrow(42), color, fontWeight: 700, whiteSpace: 'nowrap' }} title={title}>
+        {arrived + incoming > 0 ? arrived.toLocaleString() : '-'}
+        {incoming > 0 && <span style={{ fontSize: 10, fontWeight: 600, color: '#d97706' }}> +{incoming}</span>}
+      </td>
+    );
+  }
   const matched = `상품관리: ${match.names.join(' / ')}`;
   if (match.qty == null) {
     return <td style={{ ...narrow(42), color: '#bbb', fontSize: 11 }} title={`${matched} (사무실 재고 미입력)`}>미입력</td>;
@@ -497,7 +815,7 @@ function OfficeCell({ match, need }: { match: OfficeMatch | null; need: number }
 }
 
 /* ── 메인 테이블 ── */
-export default function OrderTable({ rows, onMemoChange, onShipmentChange, colorScheme = 'pink', readOnly = false, onDelete, officeQtyOf, selectedOrders, onToggleSelect, onBulkOrder, doneOrders, onSortByBox, bundleLabel, bundleColorOf, layout = 'order', selectedLines, onToggleLine, hideBox = false, newOrders, onSplitLine, isChunkCollapsed, onToggleChunk, onEditChunkDate, chunkExtra, boxWaybill, actionOrder, actions, chunkPad, monoBoxes, onOrderMemoChange, hideMemo, lineSelectByOrder, onToggleHanjung, isHanjung, isReady, onToggleReady, lineBadge }: Props) {
+export default function OrderTable({ rows, onMemoChange, onShipmentChange, colorScheme = 'pink', readOnly = false, onDelete, officeQtyOf, selectedOrders, onToggleSelect, onBulkOrder, doneOrders, onSortByBox, bundleLabel, bundleColorOf, layout = 'order', selectedLines, onToggleLine, hideBox = false, newOrders, onSplitLine, isChunkCollapsed, onToggleChunk, onEditChunkDate, chunkExtra, boxWaybill, actionOrder, actions, chunkPad, monoBoxes, onOrderMemoChange, hideMemo, lineSelectByOrder, onToggleHanjung, isHanjung, isReady, onToggleReady, hanjungOf, onLineHanjung, lineBadge }: Props) {
   // 휴대폰에서는 머리줄을 여러 줄로 접고 상품이름 칸을 좁혀 표가 화면 안에 들어오게 한다.
   const isMobile = useIsMobile();
   const headWrap: React.CSSProperties['whiteSpace'] = isMobile ? 'normal' : 'nowrap';
@@ -674,9 +992,8 @@ export default function OrderTable({ rows, onMemoChange, onShipmentChange, color
                           <DateTag value={chunk.date} />
                         )}
                         {/* 묶음 이름·완료·박스 수는 오른쪽 카드에 있어 여기서는 뺀다(같은 정보가 두 번 보이지 않게). */}
-                        <span style={{ fontSize: 11, color: '#777', fontWeight: 700 }}
-                          title="이 덩어리의 발주서 수 · 품목 수 · 수량 합계">
-                          발주 {chunk.orders.length} · {chunk.lines}품목 · {chunk.qty.toLocaleString()}개
+                        <span style={{ fontSize: 11, color: '#777', fontWeight: 700 }}>
+                          <OrderNosHover orders={chunk.orders} /> · {chunk.lines}품목 · {chunk.qty.toLocaleString()}개
                         </span>
                         {onSortByBox && !folded && (
                           <button
@@ -709,7 +1026,7 @@ export default function OrderTable({ rows, onMemoChange, onShipmentChange, color
                             <span style={{ display: 'inline-flex', alignItems: 'center', gap: 7 }}>
                               <span style={{
                                 padding: '0 7px', fontSize: 11, fontWeight: 800, borderRadius: 8,
-                                color: '#fff', background: bc,
+                                color: bc, background: '#fff', border: `1.5px solid ${bc}`,
                               }}>
                                 📦 {box.no ? boxLabel(box.no) : '박스 미지정'}
                               </span>
@@ -732,7 +1049,9 @@ export default function OrderTable({ rows, onMemoChange, onShipmentChange, color
                         {box.rows.map(row => {
                           const done = !!doneOrders?.has(row._발주번호);
                           const ready = !!isReady?.(row);
-                          const bg = done ? DONE_BG : ready ? '#f3fbf6' : (tint ? `${tint}0f` : '#fff');
+                          // 한중발주로 넘긴 줄(준비 안 됨)은 흰 바탕·검정 글자로 준비됨과 구분한다.
+                          const hanjung = !!hanjungOf?.(row)?.places.length;
+                          const bg = done ? DONE_BG : ready ? '#e2f4e9' : hanjung ? '#fff' : (tint ? `${tint}0f` : '#fff');
                           return (
                             <tr
                               key={row.id}
@@ -742,20 +1061,39 @@ export default function OrderTable({ rows, onMemoChange, onShipmentChange, color
                             >
                               {onToggleReady && (
                                 <td style={{ ...cs(40), padding: '4px 4px', borderLeft: `4px solid ${bc}` }}>
-                                  <input
-                                    type="checkbox"
-                                    checked={ready}
-                                    onChange={e => onToggleReady(row, e.target.checked)}
-                                    title="상품이 준비됐으면 체크하세요(발송대기에서도 그대로 보여요)"
-                                    style={{ width: 16, height: 16, margin: 0, cursor: 'pointer', accentColor: '#27ae60' }}
-                                  />
+                                  {onLineHanjung ? (
+                                    <LineCheckMenu
+                                      ready={ready}
+                                      hanjung={hanjungOf?.(row) || { need: 0, places: [], choices: [] }}
+                                      onReady={on => onToggleReady(row, on)}
+                                      onHanjung={action => onLineHanjung(row, action)}
+                                    />
+                                  ) : (
+                                    <input
+                                      type="checkbox"
+                                      checked={ready}
+                                      onChange={e => onToggleReady(row, e.target.checked)}
+                                      title="상품이 준비됐으면 체크하세요(발송대기에서도 그대로 보여요)"
+                                      style={{ width: 16, height: 16, margin: 0, cursor: 'pointer', accentColor: '#27ae60' }}
+                                    />
+                                  )}
                                 </td>
                               )}
-                              <td style={{
-                                ...cs(0), textAlign: 'left', minWidth: nameMin, padding: '5px 6px',
+                              {/* 상품이름은 한 줄로 두고 넘치면 …로 자른다. 뱃지(준비됨·한중)는 늘 같은 줄 오른쪽 끝.
+                                  maxWidth 0 + width 100%: 남는 폭만 쓰게 해서 표가 글자 길이만큼 늘어나지 않게 한다. */}
+                              <td title={row.상품이름} style={{
+                                ...cs(0), textAlign: 'left', minWidth: nameMin, maxWidth: 0, width: '100%', padding: '5px 6px',
                                 borderLeft: onToggleReady ? undefined : `4px solid ${bc}`, fontSize: 13,
-                                color: ready ? '#6b8f78' : undefined,
-                              }}>{row.상품이름}{lineBadge?.(row)}{ready && <span style={{ marginLeft: 6, fontSize: 11, fontWeight: 800, color: '#27ae60' }}>준비됨</span>}</td>
+                                color: ready ? '#6b8f78' : hanjung ? '#111' : undefined,
+                              }}>
+                                {/* 칸이 좁으면 상품이름을 먼저 줄이고(최소 몇 글자는 남김), 그래도 넘치면 뱃지 끝이 잘린다(옆 칸을 덮지 않게). */}
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 4, overflow: 'hidden' }}>
+                                  <span style={{ flex: '1 1 auto', minWidth: 56, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{row.상품이름}</span>
+                                  <span style={{ flex: '0 1 auto', minWidth: 0, overflow: 'hidden', display: 'inline-flex', alignItems: 'center', whiteSpace: 'nowrap' }}>
+                                    {ready && !hanjung && <span style={stateBadge('#27ae60', true)}>준비됨</span>}{lineBadge?.(row)}
+                                  </span>
+                                </div>
+                              </td>
                               <td style={narrow(38)} title={row._조각 !== undefined ? `전체 ${row._원수량}개 중 이 박스에 담는 수량` : undefined}>
                                 {row.확정수량 !== '' ? row.확정수량 : ''}
                                 {row._조각 !== undefined && <div style={{ fontSize: 10, color: '#aaa' }}>/{row._원수량}</div>}
@@ -1038,7 +1376,7 @@ export default function OrderTable({ rows, onMemoChange, onShipmentChange, color
                   ...cs(0), textAlign: 'left', minWidth: nameMin, padding: '5px 6px',
                   borderLeft: lineSelectable || onToggleReady ? undefined : (edge ? `4px solid ${edge}` : undefined),
                   color: isReady?.(row) ? '#6b8f78' : undefined,
-                }}>{row.상품이름}{isReady?.(row) && <span style={{ marginLeft: 6, fontSize: 11, fontWeight: 800, color: '#27ae60' }}>준비됨</span>}</td>
+                }}>{row.상품이름}{isReady?.(row) && <span style={stateBadge('#27ae60', true)}>준비됨</span>}</td>
                 <td style={narrow(38)}>{row.확정수량 !== '' ? row.확정수량 : ''}</td>
                 {officeQtyOf && <OfficeCell match={officeQtyOf(row.상품이름)} need={Number(row.확정수량) || 0} />}
 

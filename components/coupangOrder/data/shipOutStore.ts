@@ -52,6 +52,10 @@ export interface ShipOut {
   readyKeys?: string[];
   // 쿠팡에 센터·입고예정일 변경을 요청해 둔 상태(요청등록중). 승인을 누르면 이 값으로 바뀐다.
   request?: { center: string; date: string };
+  // 발송대기에서 "출력완료"로 표시한 발주서(발주번호)들. 발주서를 종이로 뽑았는지 챙긴다.
+  printedOrders?: string[];
+  // 서허 쉽먼트 일괄등록으로 생긴 쉽먼트 번호(발주번호 → 쉽먼트 번호). 확장이 내역 조회·택배 쉽먼트 화면에서 찾아 준다.
+  shipmentNos?: Record<string, string>;
   lines: ShipOutLine[];
 }
 
@@ -296,7 +300,7 @@ export function applyShipOutRequest(id: string) {
 }
 
 // 출고 건들에 진행 표시를 붙인다(쉽먼트 번호·양식 저장 시각).
-export function markShipOuts(ids: string[], patch: Partial<Pick<ShipOut, 'batchId' | 'formSavedAt' | 'doneAt' | 'undoneAt' | 'sentDate' | 'readyKeys' | 'request'>>) {
+export function markShipOuts(ids: string[], patch: Partial<Pick<ShipOut, 'batchId' | 'formSavedAt' | 'doneAt' | 'undoneAt' | 'sentDate' | 'readyKeys' | 'request' | 'printedOrders' | 'shipmentNos'>>) {
   const want = new Set(ids);
   const list = read();
   let touched = false;
@@ -448,3 +452,23 @@ export async function forceUploadShipOuts() {
 // 목록을 번갈아 덮어쓴다(지운 줄이 사라졌다 생겼다 함). 바뀌면 페이지를 통째로 새로 불러오게 한다.
 // @ts-ignore
 if (import.meta.hot) import.meta.hot.decline();
+
+// 발주번호별 쉽먼트 번호를 그 발주서가 든 출고 건마다 적는다(쉽먼트생성대기·발송대기 어디에 있든).
+// 이미 같은 값이면 쓰지 않는다(앱을 열 때마다 다시 받아 와도 괜찮게).
+export function applyShipmentNos(byOrder: Record<string, string>) {
+  const found = Object.entries(byOrder).filter(([, ship]) => ship);
+  if (!found.length) return 0;
+  const list = read();
+  let changed = 0;
+  for (const item of list) {
+    const mine = new Set(item.lines.map(l => String(l.발주번호 || '').trim()));
+    const next = { ...(item.shipmentNos || {}) };
+    let touched = false;
+    for (const [no, ship] of found) {
+      if (mine.has(no) && next[no] !== ship) { next[no] = ship; touched = true; }
+    }
+    if (touched) { item.shipmentNos = next; changed += 1; }
+  }
+  if (changed) write(list);
+  return changed;
+}

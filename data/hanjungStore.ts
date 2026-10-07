@@ -61,9 +61,63 @@ const LOCAL_KEY = 'hanjungOrders';
 
 // ---- 계산 ----
 
-// 같은 상품인지 볼 때 쓰는 열쇠. 쿠팡 발주와 상품관리의 이름이 띄어쓰기·쉼표만 다른 경우가 있어서
-// ("핑크 1개 30cm" / "핑크, 1개, 30cm") 글자만 남겨 비교한다.
-export const nameKey = (name: string) => productMatchKey(name) || String(name || '').trim();
+// ---- 이름이 다른 같은 상품 기억하기 ----
+// 쿠팡 발주와 한중발주(상품관리에서 고른 이름)의 상품명이 규칙 없이 다를 때가 있다
+// ("파우치 필통, 그린" / "파우치형 필통, 그린, 1개"). 사람이 한 번 "같은 상품"이라고 하면
+// productAliases/map에 적어 두고, 그 뒤로는 어디서든 같은 상품으로 본다. "다른 상품"이라고 한 쌍도 적어
+// 두어 다시 묻지 않는다.
+//  aliases : 열쇠(rawKey) → 쿠팡 발주 쪽 이름
+//  notSame : "열쇠A│열쇠B" → true
+type AliasState = { aliases: Record<string, string>; notSame: Record<string, boolean> };
+const ALIAS_COLLECTION = 'productAliases';
+const ALIAS_DOC = 'map';
+const ALIAS_LOCAL_KEY = 'productAliases';
+let aliasState: AliasState = { aliases: {}, notSame: {} };
+const aliasListeners = new Set<() => void>();
+const readLocalAliases = (): AliasState => {
+  try {
+    const v = JSON.parse(localStorage.getItem(ALIAS_LOCAL_KEY) || '');
+    return { aliases: v.aliases || {}, notSame: v.notSame || {} };
+  } catch {
+    return { aliases: {}, notSame: {} };
+  }
+};
+if (!db) aliasState = readLocalAliases();
+const setAliasState = (next: AliasState) => {
+  aliasState = next;
+  aliasListeners.forEach(l => l());
+};
+
+const rawKey = (name: string) => productMatchKey(name) || String(name || '').trim();
+const pairKey = (a: string, b: string) => [rawKey(a), rawKey(b)].sort().join('│');
+export const isNotSame = (a: string, b: string) => !!aliasState.notSame[pairKey(a, b)];
+
+// 같은 상품인지 볼 때 쓰는 열쇠. 띄어쓰기·쉼표만 다른 이름("핑크 1개 30cm" / "핑크, 1개, 30cm")은
+// 글자만 남겨 맞추고, 사람이 같은 상품이라고 연결한 이름은 연결한 이름의 열쇠로 바꾼다.
+export const nameKey = (name: string) => {
+  const k = rawKey(name);
+  const to = aliasState.aliases[k];
+  return to ? rawKey(to) : k;
+};
+
+// 사람이 고른 답을 적는다. same이면 from 이름을 to(쿠팡 발주 이름)와 같은 상품으로 본다.
+export const rememberSameProduct = async (from: string, to: string, same: boolean) => {
+  const next: AliasState = {
+    aliases: same ? { ...aliasState.aliases, [rawKey(from)]: to } : aliasState.aliases,
+    notSame: same ? aliasState.notSame : { ...aliasState.notSame, [pairKey(from, to)]: true },
+  };
+  setAliasState(next);
+  if (!db) {
+    localStorage.setItem(ALIAS_LOCAL_KEY, JSON.stringify(next));
+    return;
+  }
+  await ensureSignedIn();
+  await setDoc(
+    doc(db, ALIAS_COLLECTION, ALIAS_DOC),
+    same ? { aliases: { [rawKey(from)]: to } } : { notSame: { [pairKey(from, to)]: true } },
+    { merge: true }
+  );
+};
 export const sameName = (a: string, b: string) => nameKey(a) === nameKey(b);
 
 // orderQty에 이미 적힌 같은 상품의 이름(없으면 받은 이름). 같은 상품이 이름만 달리 두 번 적히지 않게 한다.
@@ -189,23 +243,40 @@ export const subscribeHanjung = (listener: Listener): (() => void) => {
   if (!db) {
     listener(sortOrders(Object.values(readLocal())));
     localListeners.add(listener);
-    return () => localListeners.delete(listener);
+    const again = () => listener(sortOrders(Object.values(readLocal())));
+    aliasListeners.add(again);
+    return () => { localListeners.delete(listener); aliasListeners.delete(again); };
   }
   const firestore = db;
   let cancelled = false;
   let unsubscribe: (() => void) | undefined;
+  let unsubAlias: (() => void) | undefined;
+  // 같은 상품 연결이 바뀌면 계산을 다시 하도록 한중발주 목록을 새로 한 번 더 보낸다.
+  let last: HanjungOrder[] = [];
+  const reemit = () => listener([...last]);
+  aliasListeners.add(reemit);
   (async () => {
     await ensureSignedIn();
     if (cancelled) return;
     unsubscribe = onSnapshot(
       collection(firestore, COLLECTION),
-      snap => listener(sortOrders(snap.docs.map(d => d.data() as HanjungOrder))),
+      snap => { last = sortOrders(snap.docs.map(d => d.data() as HanjungOrder)); listener(last); },
       error => console.error('한중발주 동기화 실패:', error)
+    );
+    unsubAlias = onSnapshot(
+      doc(firestore, ALIAS_COLLECTION, ALIAS_DOC),
+      snap => {
+        const v = (snap.data() || {}) as Partial<AliasState>;
+        setAliasState({ aliases: v.aliases || {}, notSame: v.notSame || {} });
+      },
+      error => console.error('같은 상품 연결 동기화 실패:', error)
     );
   })();
   return () => {
     cancelled = true;
+    aliasListeners.delete(reemit);
     unsubscribe?.();
+    unsubAlias?.();
   };
 };
 

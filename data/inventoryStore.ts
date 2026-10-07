@@ -171,10 +171,16 @@ const cleanTokens = (name: string) =>
 
 export const productMatchKey = (name: string) => cleanTokens(name).join('');
 
-// 두 상품명이 얼마나 비슷한지(겹치는 낱말 수). 이름이 다른 같은 상품을 고를 때 비슷한 것부터 보여주려고 쓴다.
+// 두 상품명이 얼마나 비슷한지(0~1). 짧은 쪽 낱말 중 다른 쪽에 있는 비율.
+// "파우치"와 "파우치형"처럼 한쪽이 다른 쪽을 품은 낱말(두 글자 이상)도 같은 낱말로 친다.
+// 이름이 다른 같은 상품을 찾아 연결하라고 알려줄 때, 비슷한 것부터 보여줄 때 쓴다.
 export const nameSimilarity = (a: string, b: string) => {
-  const tb = new Set(cleanTokens(b));
-  return cleanTokens(a).filter(t => tb.has(t)).length;
+  const ta = cleanTokens(a);
+  const tb = cleanTokens(b);
+  if (!ta.length || !tb.length) return 0;
+  const [short, long] = ta.length <= tb.length ? [ta, tb] : [tb, ta];
+  const hit = short.filter(t => long.some(u => u === t || (t.length >= 2 && u.length >= 2 && (u.includes(t) || t.includes(u))))).length;
+  return hit / short.length;
 };
 
 // 이름 끝에 붙는 옵션 말. 상품관리 이름에만 있는 경우가 많아 짝을 지을 때는 떼어낸다.

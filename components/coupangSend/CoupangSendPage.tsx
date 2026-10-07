@@ -4,6 +4,7 @@ import { ShipOut, ShipOutLine, subscribeShipOuts, markShipOuts, shipOutBatch, sh
 import { ShipmentBatch, subscribeShipments, allBoxes, waybillForBox, batchForItem } from '../../data/shipmentStore';
 import ShipmentWaybillModal from '../coupangOrder/components/ShipmentWaybillModal';
 import { useHanjungBadge } from '../coupangOrder/data/useHanjungBadge';
+import { useShipmentNoSync } from '../coupangOrder/data/useShipmentNoSync';
 import { useReady } from '../coupangOrder/data/readyStore';
 import { HanjungOrder, subscribeHanjung, makeHanjungOfficeLookup } from '../../data/hanjungStore';
 import { expandBoxSplit, parseBoxNo } from '../coupangOrder/utils/dataProcessor';
@@ -39,6 +40,54 @@ const ORANGE = '#e67e22';
 export default function CoupangSendPage({ onGoShip }: { onGoShip?: () => void } = {}) {
   const [list, setList] = useState<ShipOut[]>([]);
   const hanjungBadge = useHanjungBadge();
+  useShipmentNoSync();
+  // 쉽먼트 출력 진행 상황(발주번호 → 글). 쉽먼트 번호를 누르면 확장이 서허에서 Label·내역서를 받아 오고,
+  // 여기서 두 PDF를 하나로 합쳐 새 탭에 연다(사람은 프린트만 누른다).
+  const [printNote, setPrintNote] = useState<Record<string, string>>({});
+  const setPrinted = (item: ShipOut, no: string, on: boolean) =>
+    markShipOuts([item.id], { printedOrders: on ? Array.from(new Set([...(item.printedOrders || []), no])) : (item.printedOrders || []).filter(x => x !== no) });
+  const printShipment = (item: ShipOut, orderNo: string, shipmentNo: string) => {
+    // 새 탭은 누른 순간에 열어 둔다(파일이 다 온 뒤에 열면 크롬이 팝업으로 막는다).
+    const win = window.open('', '_blank');
+    win?.document.write('<p style="font:15px sans-serif;padding:32px;color:#555">서허에서 Label·내역서 받는 중…<br><small>다 받으면 이 탭에 합친 PDF가 열려요.</small></p>');
+    const requestId = `${shipmentNo}-${Date.now()}`;
+    const note = (t: string) => setPrintNote(n => ({ ...n, [orderNo]: t }));
+    const fail = (t: string) => {
+      note(`❌ ${t}`);
+      if (win && !win.closed) win.document.body.innerHTML = `<p style="font:15px sans-serif;padding:32px;color:#c0392b">${t.replace(/</g, '&lt;')}</p>`;
+    };
+    const onMsg = async (event: MessageEvent) => {
+      const d = event.data;
+      if (event.source !== window || !d || d.source !== 'rocket-hub-extension' || d.requestId !== requestId) return;
+      if (d.type === 'SHUB_PRINT_ACK' && !d.ok) { window.removeEventListener('message', onMsg); fail(`서허를 열지 못했어요: ${d.error || ''}`); return; }
+      if (d.type !== 'SHUB_PRINT_STATUS') return;
+      if (d.step === 'error') { window.removeEventListener('message', onMsg); fail(d.status || '파일을 받지 못했어요'); return; }
+      note(d.status || '');
+      if (d.step !== 'files' || !d.files?.label || !d.files?.manifest) return;
+      window.removeEventListener('message', onMsg);
+      try {
+        const { PDFDocument } = await import('pdf-lib');
+        const out = await PDFDocument.create();
+        for (const f of [d.files.label, d.files.manifest]) {
+          const src = await PDFDocument.load(await (await fetch(f.dataUrl)).arrayBuffer());
+          (await out.copyPages(src, src.getPageIndices())).forEach(pg => out.addPage(pg));
+        }
+        const url = URL.createObjectURL(new Blob([await out.save()], { type: 'application/pdf' }));
+        if (win && !win.closed) win.location.href = url;
+        else window.open(url, '_blank');
+        note('✅ 합친 PDF를 새 탭에 열었어요');
+        setTimeout(() => {
+          if (confirm(`쉽먼트 ${shipmentNo}(발주 ${orderNo})을 출력완료로 표시할까요?`)) setPrinted(item, orderNo, true);
+        }, 800);
+      } catch (err: any) {
+        fail(`PDF를 합치지 못했어요: ${err?.message || err}`);
+      }
+    };
+    window.addEventListener('message', onMsg);
+    setTimeout(() => window.removeEventListener('message', onMsg), 5 * 60 * 1000);
+    note('서허 여는 중…');
+    window.postMessage({ source: 'rocket-app-hub', type: 'SHUB_PRINT', requestId, shipmentNo, orderNo }, window.location.origin);
+  };
   // 준비 체크: 쿠팡발주확인부터 쓰는 공통 기록 + 예전에 이 출고 건에 적어 둔 표시.
   const readyStore = useReady();
   const [batches, setBatches] = useState<ShipmentBatch[]>([]);
@@ -60,10 +109,11 @@ export default function CoupangSendPage({ onGoShip }: { onGoShip?: () => void } 
   const officeQtyOf = useMemo(() => makeHanjungOfficeLookup(hanjungOrders), [hanjungOrders]);
 
   // 발송대기: 쉽먼트 완료했고 아직 안 보낸 건. 입고예정일 빠른 순.
+  // 발송대기: 입고예정일이 늦은 것부터(빠른 날짜가 아래로).
   const waiting = useMemo(
     () => list
       .filter(i => !i.sentDate && isShipDone(i, batchOf(i, batches)))
-      .sort((a, b) => ymdSortKey(a.date) - ymdSortKey(b.date) || a.center.localeCompare(b.center, 'ko', { numeric: true })),
+      .sort((a, b) => ymdSortKey(b.date) - ymdSortKey(a.date) || a.center.localeCompare(b.center, 'ko', { numeric: true })),
     [list, batches],
   );
   // 발송 완료: 보낸 날 최근 순.
@@ -166,6 +216,55 @@ export default function CoupangSendPage({ onGoShip }: { onGoShip?: () => void } 
                     <span style={{ fontSize: 11, color: '#999' }} title={`출고번호 ${item.id}`}>{item.bundle}</span>
                     <span style={{ marginLeft: 'auto', fontSize: 13, fontWeight: 800, color: '#333' }}>📦 {boxCount}박스</span>
                   </div>
+
+                  {/* 발주서마다 한 줄: 발주번호 · 쉽먼트 번호(누르면 서허 택배 쉽먼트 화면이 열려 거기서 출력) · 출력 표시 버튼. */}
+                  {(() => {
+                    const orderNos: string[] = Array.from(new Set<string>(item.lines.map(l => String(l.발주번호 || '')))).filter(Boolean);
+                    if (!orderNos.length) return null;
+                    const printed = new Set(item.printedOrders || []);
+                    const doneN = orderNos.filter(no => printed.has(no)).length;
+                    return (
+                      <div style={{ padding: '6px 12px', borderBottom: '1px solid #f0f0f0', fontSize: 11.5 }}>
+                        <div style={{ color: doneN === orderNos.length ? GREEN : '#888', fontWeight: 700, marginBottom: 3 }}>
+                          🖨 출력 {doneN}/{orderNos.length}
+                        </div>
+                        {orderNos.map(no => {
+                          const on = printed.has(no);
+                          const ship = item.shipmentNos?.[no];
+                          return (
+                            <div key={no} style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 8, padding: '2px 0' }}>
+                              <span style={{ fontFamily: 'monospace', fontWeight: 700, color: '#333' }}>{no}</span>
+                              {ship ? (
+                                <button
+                                  onClick={() => printShipment(item, no, ship)}
+                                  title="서허에서 이 쉽먼트의 Label·내역서를 받아 하나로 합쳐 새 탭에 열어요. 거기서 프린트를 누르세요."
+                                  style={{ padding: 0, border: 'none', background: 'none', cursor: 'pointer', fontFamily: 'monospace', fontWeight: 700, fontSize: 11.5, color: '#0369a1', textDecoration: 'underline' }}
+                                >
+                                  🖨 쉽먼트 {ship}
+                                </button>
+                              ) : (
+                                <span style={{ color: '#bbb' }}>쉽먼트 번호 없음</span>
+                              )}
+                              <button
+                                onClick={() => {
+                                  if (on && !confirm(`발주 ${no}을 미출력으로 되돌릴까요?`)) return;
+                                  setPrinted(item, no, !on);
+                                }}
+                                title={on ? '눌러서 미출력으로 되돌려요' : '출력했으면 눌러요'}
+                                style={{
+                                  marginLeft: 'auto', padding: '1px 9px', borderRadius: 999, cursor: 'pointer', fontSize: 11, fontWeight: 800,
+                                  border: `1px solid ${on ? GREEN : '#f59e0b'}`, background: on ? GREEN : '#fffbeb', color: on ? '#fff' : '#b45309',
+                                }}
+                              >
+                                {on ? '✓ 출력완료' : '미출력'}
+                              </button>
+                              {printNote[no] && <span style={{ flexBasis: '100%', fontSize: 10.5, color: printNote[no].startsWith('❌') ? '#c0392b' : '#64748b' }}>{printNote[no]}</span>}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    );
+                  })()}
 
                   {/* 박스별 상품 줄: 체크하면 준비됨. 상품이 많으면 이 안에서만 스크롤해 카드 높이를 맞춘다. */}
                   <div style={{ maxHeight: 300, overflowY: 'auto' }}>

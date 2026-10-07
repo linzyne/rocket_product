@@ -24,8 +24,9 @@ import SenderManager from '../coupangOrder/components/SenderManager';
 import ShipmentWaybillModal from '../coupangOrder/components/ShipmentWaybillModal';
 import ShipmentList from '../coupangOrder/components/ShipmentList';
 import { useHanjungBadge } from '../coupangOrder/data/useHanjungBadge';
+import { useShipmentNoSync } from '../coupangOrder/data/useShipmentNoSync';
 import { HanjungQueueItem, subscribeHanjungQueue, addToHanjungQueue, removeFromHanjungQueue, hanjungQueueKey, makePlaceLookup } from '../coupangOrder/data/hanjungQueueStore';
-import { HanjungOrder, subscribeHanjung, saveHanjungOrder, freezeOrderQty, makeHanjungOfficeLookup, productSummary, sameName, orderQtyName } from '../../data/hanjungStore';
+import { HanjungOrder, subscribeHanjung, saveHanjungOrder, freezeOrderQty, makeHanjungOfficeLookup, productSummary, sameName, orderQtyName, nameKey, isNotSame, rememberSameProduct } from '../../data/hanjungStore';
 import { reservationKey } from '../coupangOrder/data/reservationStore';
 import type { LineHanjung, HanjungChoice, HanjungAction, HanjungLink } from '../coupangOrder/components/OrderTable';
 import { nameSimilarity } from '../../data/inventoryStore';
@@ -65,6 +66,7 @@ export default function CoupangShipPage({ onGoOrder }: { onGoOrder?: () => void 
   const isMobile = useIsMobile();
   const [list, setList] = useState<ShipOut[]>([]);
   const hanjungBadge = useHanjungBadge();
+  useShipmentNoSync();
   // 상품 줄 체크 메뉴의 "한중발주": 한중발주의 발주 대기에 담는다(같은 상품은 거기서 수량이 합쳐진다).
   const [hanjungQueue, setHanjungQueue] = useState<HanjungQueueItem[]>([]);
   const [hanjungOrders, setHanjungOrders] = useState<HanjungOrder[]>([]);
@@ -148,7 +150,11 @@ export default function CoupangShipPage({ onGoOrder }: { onGoOrder?: () => void 
           // 수입입고에 적힌 이름도 같이 바꿔야 도착 수량이 맞는다.
           base = { ...base, receipts: base.receipts.map(r => ({ ...r, items: r.items.map(it => (it.상품이름 === action.linkFrom ? { ...it, 상품이름: name } : it)) })) };
         }
-        if (action.linkFrom) changed.set(base.code, base);
+        if (action.linkFrom) {
+          changed.set(base.code, base);
+          // 다음부터는 묻지 않게 같은 상품이라고 기억해 둔다.
+          rememberSameProduct(action.linkFrom, name, true).catch(() => undefined);
+        }
         const p = productSummary(base).find(x => sameName(x.상품이름, name));
         const spare = p ? p.spare : 0;
         let orderQty = freezeOrderQty(base, name, need);
@@ -385,6 +391,40 @@ export default function CoupangShipPage({ onGoOrder }: { onGoOrder?: () => void 
   }, [ordered, boxOrder]);
 
   const itemCount = rows.filter(r => !r.isBlank).length;
+  // ---- 이름이 다른 같은 상품 찾아 알려주기 ----
+  // 쿠팡 발주 상품명과 한중발주 품목 이름이 규칙 없이 다를 때가 있어(상품관리 이름으로 적은 경우),
+  // 한중에 아직 안 맡긴 쉽먼트 줄마다 "비슷한데 연결 안 된" 한중 품목을 찾아 위에 알린다.
+  // 사람이 같은 상품 / 다른 상품을 고르면 기억해서 다시 묻지 않는다.
+  const LINK_SIMILAR = 0.7;
+  const linkChecks = useMemo(() => {
+    const items: { code: string; name: string; spare: number }[] = [];
+    for (const o of hanjungOrders) {
+      for (const p of productSummary(o)) if (p.spare > 0 && p.allocated === 0) items.push({ code: o.code, name: p.상품이름, spare: p.spare });
+    }
+    const out: { line: string; code: string; item: string; spare: number }[] = [];
+    const seenLine = new Set<string>();
+    for (const r of rows) {
+      if (r.isBlank) continue;
+      const name = r.상품이름;
+      const k = nameKey(name);
+      if (seenLine.has(k)) continue;
+      seenLine.add(k);
+      // 이미 같은 이름(또는 연결된 이름)의 한중 품목이 있으면 묻지 않는다.
+      if (hanjungOrders.some(o => productSummary(o).some(p => nameKey(p.상품이름) === k))) continue;
+      const best = items
+        .filter(it => nameKey(it.name) !== k && !isNotSame(name, it.name))
+        .map(it => ({ it, score: nameSimilarity(name, it.name) }))
+        .filter(x => x.score >= LINK_SIMILAR)
+        .sort((a, b) => b.score - a.score)[0];
+      if (best) out.push({ line: name, code: best.it.code, item: best.it.name, spare: best.it.spare });
+    }
+    return out;
+  }, [rows, hanjungOrders]);
+  const linkCheckNames = useMemo(() => new Set(linkChecks.map(c => nameKey(c.line))), [linkChecks]);
+  const [linkOpen, setLinkOpen] = useState(true);
+  const answerLink = (c: { line: string; item: string }, same: boolean) =>
+    rememberSameProduct(c.item, c.line, same).catch(err => alert(`저장 실패: ${err?.message || err}`));
+
 
 
   // 오른쪽 묶음 카드는 표에서 제 덩어리가 지나가는 동안만 따라붙게 한다.
@@ -649,9 +689,55 @@ export default function CoupangShipPage({ onGoOrder }: { onGoOrder?: () => void 
         `${batch.id} · ✅ 양식 채워서 저장했어요 — ${res.fileName} (상품 ${res.filled}줄, 송장 ${res.waybills.length}개)` +
           (res.missed.length ? ` · 짝 못 찾은 줄 ${res.missed.length}개: ${res.missed.slice(0, 3).join(' / ')}` : '')
       );
+      // 짝 못 찾은 줄이 있으면 올리지 않는다(빠진 채로 등록되면 안 된다). 사람이 확인하고 직접 올린다.
+      if (res.missed.length) {
+        alert(`양식에 짝 못 찾은 줄이 ${res.missed.length}개 있어서 서허에 자동으로 올리지 않았어요.\n저장된 파일을 확인한 뒤 직접 올려 주세요.`);
+        return;
+      }
+      uploadToShub(res.blob, res.fileName, batch);
     } catch (err) {
       setShubStatus(`${batch.id} · 양식을 채우지 못했어요: ${err instanceof Error ? err.message : String(err)}`);
     }
+  };
+
+  // 채운 양식을 서허 쉽먼트 일괄등록에 올린다(확장 shub-upload.js). 사람이 하던 순서 그대로:
+  // 택배사 롯데택배 · 발송일 = 입고예정일 하루 전 · 시간 23:55 · 업로드 파일 → "쉽먼트 일괄등록".
+  // 입고예정일이 여럿이면 가장 이른 날 기준으로 한다.
+  const uploadToShub = (blob: Blob, fileName: string, batch: ShipmentBatch) => {
+    const edds = allBoxes(batch).flatMap(b => b.lines.map(l => String(l.입고예정일 || '').replace(/[^0-9]/g, ''))).filter(d => d.length === 8).sort();
+    if (!edds.length) {
+      setShubStatus(`${batch.id} · 입고예정일을 몰라서 서허에 올리지 못했어요. 저장된 파일을 직접 올려 주세요.`);
+      return;
+    }
+    const e = edds[0];
+    const day = new Date(Number(e.slice(0, 4)), Number(e.slice(4, 6)) - 1, Number(e.slice(6, 8)) - 1);
+    const shipDate = `${day.getFullYear()}-${String(day.getMonth() + 1).padStart(2, '0')}-${String(day.getDate()).padStart(2, '0')}`;
+    const reader = new FileReader();
+    reader.onload = () => {
+      const onMsg = (event: MessageEvent) => {
+        const d = event.data;
+        if (event.source !== window || !d || d.source !== 'rocket-hub-extension') return;
+        if (d.type === 'SHUB_UPLOAD_ACK' && !d.ok) {
+          window.removeEventListener('message', onMsg);
+          setShubStatus(`${batch.id} · 서허 업로드를 시작하지 못했어요: ${d.error || ''}`);
+        }
+        if (d.type === 'SHUB_UPLOAD_STATUS' && d.batchId === batch.id) {
+          const msgs = (d.messages || []).length ? ` · 서허: ${(d.messages as string[]).join(' / ')}` : '';
+          setShubStatus(`${batch.id} · 서허 업로드 · ${d.status || ''}${msgs}`);
+          if (d.step === 'done' || d.step === 'error') window.removeEventListener('message', onMsg);
+        }
+      };
+      window.addEventListener('message', onMsg);
+      setTimeout(() => window.removeEventListener('message', onMsg), 10 * 60 * 1000);
+      setShubStatus(`${batch.id} · 서허에 올리는 중… (발송일 ${shipDate} 23:55)`);
+      window.postMessage({
+        source: 'rocket-app-hub', type: 'SHUB_UPLOAD', batchId: batch.id,
+        file: { name: fileName, dataUrl: reader.result as string }, shipDate, shipTime: '23:55', carrier: '롯데택배',
+        // 등록 뒤 발주서마다 쉽먼트 번호를 찾아 적으려고 이 쉽먼트의 발주번호들을 같이 보낸다.
+        orderNos: Array.from(new Set(allBoxes(batch).flatMap(b => b.lines.map(l => String(l.발주번호 || '').trim())).filter(Boolean))),
+      }, window.location.origin);
+    };
+    reader.readAsDataURL(blob);
   };
 
   // 확장이 파일을 못 가져왔을 때, 다운로드 폴더의 양식을 직접 골라 채운다.
@@ -925,6 +1011,33 @@ export default function CoupangShipPage({ onGoOrder }: { onGoOrder?: () => void 
 
       <main style={{ maxWidth: 1600, margin: '0 auto', padding: isMobile ? '12px 10px 70px' : '20px 24px' }}>
         <ProductQtySummary lines={rows.filter(r => !r.isBlank).map(r => ({ 상품이름: r.상품이름, 확정수량: r.확정수량, ready: lineReady(list.find(i => i.id === r.묶음), lineOfRow(r)) }))} />
+        {/* 이름이 다른 같은 상품일 수 있는 쌍. 사람이 한 번 답하면 기억해서 다시 안 묻는다. */}
+        {linkChecks.length > 0 && (
+          <div style={{ margin: '0 0 14px', border: '1.5px solid #f59e0b', background: '#fffbeb', borderRadius: 10, padding: '10px 14px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }} onClick={() => setLinkOpen(o => !o)}>
+              <span style={{ fontSize: 13, fontWeight: 800, color: '#b45309' }}>⚠ 한중 품목 연결 확인 {linkChecks.length}건</span>
+              <span style={{ fontSize: 12, color: '#92400e' }}>쿠팡 발주 상품명과 한중발주 품목 이름이 달라요. 같은 상품인지 골라 주세요(한 번만 고르면 기억해요).</span>
+              <span style={{ marginLeft: 'auto', fontSize: 11, color: '#b45309' }}>{linkOpen ? '접기 ▲' : '펼치기 ▼'}</span>
+            </div>
+            {linkOpen && (
+              <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 6 }}>
+                {linkChecks.map(c => (
+                  <div key={`${c.line}│${c.item}`} style={{ display: 'flex', alignItems: 'center', gap: 10, background: '#fff', border: '1px solid #fde68a', borderRadius: 8, padding: '6px 10px', fontSize: 12.5 }}>
+                    {/* 이름 앞 꼬리표 칸 폭을 같게 해서 두 상품명이 세로로 줄 맞춰 보이게 한다. */}
+                    <div style={{ flex: 1, minWidth: 0, lineHeight: 1.6, display: 'grid', gridTemplateColumns: '150px minmax(0, 1fr)', columnGap: 10, alignItems: 'baseline' }}>
+                      <span style={{ color: '#999', fontSize: 11, whiteSpace: 'nowrap' }}>쿠팡 발주</span>
+                      <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={c.line}>{c.line}</span>
+                      <span style={{ color: '#999', fontSize: 11, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={`한중 ${c.code} · 여유 ${c.spare}`}>한중 {c.code} · 여유 {c.spare}</span>
+                      <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={c.item}>{c.item}</span>
+                    </div>
+                    <button onClick={() => answerLink(c, true)} style={{ padding: '4px 10px', fontSize: 12, fontWeight: 800, borderRadius: 6, cursor: 'pointer', border: '1.5px solid #27ae60', background: '#27ae60', color: '#fff', whiteSpace: 'nowrap' }}>같은 상품</button>
+                    <button onClick={() => answerLink(c, false)} style={{ padding: '4px 10px', fontSize: 12, fontWeight: 700, borderRadius: 6, cursor: 'pointer', border: '1px solid #d1d5db', background: '#fff', color: '#6b7280', whiteSpace: 'nowrap' }}>다른 상품</button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
         {ordered.length === 0 ? (
           <div style={{
             border: '1px dashed #e0e0e0', borderRadius: 10,
@@ -997,7 +1110,14 @@ export default function CoupangShipPage({ onGoOrder }: { onGoOrder?: () => void 
                 monoBoxes={PENDING_BOX}
                 isChunkCollapsed={id => !openDone.has(id)}
                 chunkPad={isMobile ? undefined : chunkPad}
-                lineBadge={row => hanjungBadge({ 발주번호: row._발주번호, 상품이름: row.상품이름, 확정수량: row._조각 !== undefined ? (row._원수량 ?? row.확정수량) : row.확정수량 }, lineReady(list.find(i => i.id === row.묶음), lineOfRow(row)))}
+                lineBadge={row => (
+                  <>
+                    {linkCheckNames.has(nameKey(row.상품이름)) && (
+                      <span title="한중발주에 이름이 다른 같은 상품이 있을 수 있어요. 위 '한중 품목 연결 확인'에서 골라 주세요." style={{ display: 'inline-block', marginLeft: 6, padding: '0 6px', fontSize: 10.5, fontWeight: 800, lineHeight: '16px', borderRadius: 999, whiteSpace: 'nowrap', verticalAlign: 'middle', color: '#b45309', background: '#fffbeb', border: '1px solid #f59e0b' }}>⚠ 연결 확인</span>
+                    )}
+                    {hanjungBadge({ 발주번호: row._발주번호, 상품이름: row.상품이름, 확정수량: row._조각 !== undefined ? (row._원수량 ?? row.확정수량) : row.확정수량 }, lineReady(list.find(i => i.id === row.묶음), lineOfRow(row)))}
+                  </>
+                )}
                 isReady={row => lineReady(list.find(i => i.id === row.묶음), lineOfRow(row))}
                 onToggleReady={(row, on) => toggleLineReady(list.find(i => i.id === row.묶음), lineOfRow(row), on)}
                 hanjungOf={hanjungOf}
@@ -1215,6 +1335,11 @@ export default function CoupangShipPage({ onGoOrder }: { onGoOrder?: () => void 
                                     <span style={{ width: 8, color: '#ccc', fontSize: 9 }}>{open ? '▾' : '▸'}</span>
                                     <span style={{ fontWeight: 700, color: '#333' }}>{orderNo}</span>
                                     <span style={{ color: '#aaa' }}>{lines[0].입고예정일.slice(5).replace('-', '/')}</span>
+                                    {item.shipmentNos?.[orderNo] && (
+                                      <span title="서허 쉽먼트 번호" style={{ padding: '0 6px', borderRadius: 999, fontWeight: 800, color: '#0369a1', background: '#f0f9ff', border: '1px solid #7dd3fc' }}>
+                                        쉽먼트 {item.shipmentNos[orderNo]}
+                                      </span>
+                                    )}
                                     <span style={{ marginLeft: 'auto', color: '#bbb' }}>{lines.length}품목</span>
                                     <span style={{ fontWeight: 700, color: '#333', minWidth: 36, textAlign: 'right' }}>{sum.toLocaleString()}개</span>
                                   </div>

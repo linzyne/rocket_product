@@ -5,7 +5,11 @@ import { HanjungOrder, subscribeHanjung, productSummary, nameKey } from '../../.
 // 한중 뱃지 색. 준비됨과 같은 초록.
 const HANJUNG_COLOR = '#27ae60';
 // 준비됨(초록 바탕)과 나란히 있어도 구분되게 한중은 흰 바탕에 초록 테두리.
-const hanjungStyle = (): React.CSSProperties => ({ ...badge(HANJUNG_COLOR, false), background: '#fff', border: `1px solid ${HANJUNG_COLOR}` });
+const hanjungStyle = (color = HANJUNG_COLOR): React.CSSProperties => ({ ...badge(color, false), background: '#fff', border: `1px solid ${color}` });
+
+// 한중발주 건마다 다른 색(입고중·일부입고 뱃지). 어느 주문으로 오는지 한눈에 갈리게 한다.
+// 준비됨(초록)·경고(주황·빨강)와 헷갈리지 않는 색만 쓴다. 만든 순서대로 돌려 가며 붙인다.
+const ORDER_COLORS = ['#2563eb', '#7c3aed', '#db2777', '#0891b2', '#4f46e5', '#9333ea', '#0d9488', '#be185d', '#1d4ed8', '#6d28d9'];
 
 // 상품 줄이 한중발주 어디에 있는지 작은 뱃지로 보여준다.
 //  · 한중발주 대기(1688 주문 전) → "한중 대기"
@@ -18,6 +22,11 @@ export function useHanjungBadge() {
   useEffect(() => subscribeHanjungQueue(setQueue), []);
   useEffect(() => subscribeHanjung(setOrders), []);
   const placesOf = useMemo(() => makePlaceLookup(orders, queue), [orders, queue]);
+  const colorOf = useMemo(() => {
+    const byCode = new Map<string, string>();
+    [...orders].sort((a, b) => a.createdAt - b.createdAt).forEach((o, i) => byCode.set(o.code, ORDER_COLORS[i % ORDER_COLORS.length]));
+    return (code: string) => byCode.get(code) || ORDER_COLORS[0];
+  }, [orders]);
   // 한중발주 안에서 그 상품이 얼마나 들어왔는지(수입입고) → 입고중 / 일부입고 / 준비됨.
   const statusOf = useMemo(() => {
     const m = new Map<string, string>();
@@ -35,10 +44,14 @@ export function useHanjungBadge() {
     if (!places.length) return null;
     const full = Number(line.확정수량) || 0;
     const split = places.length > 1 || places[0].qty !== full;
-    const style = ready ? badge(HANJUNG_COLOR, true) : hanjungStyle();
+
     // 단계: 한중 대기(1688 주문 전) → 입고중(주문함, 아직 안 옴) → 일부입고 → 준비됨(다 도착)
     return places.map((p, i) => {
       const status = p.code ? statusOf(p.code, String(line.상품이름).trim()) : '';
+      // 준비됨(줄 체크 또는 다 도착)은 초록, 아직 오는 중이면 한중발주 건마다 다른 색, 발주 대기는 초록 테두리.
+      const style = ready
+        ? badge(HANJUNG_COLOR, true)
+        : p.code && status !== '준비됨' ? hanjungStyle(colorOf(p.code)) : hanjungStyle();
       return (
         <span
           key={`${p.code || 'queue'}-${i}`}

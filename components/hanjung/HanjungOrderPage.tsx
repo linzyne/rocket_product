@@ -475,6 +475,31 @@ const HanjungOrderPage: React.FC = () => {
     });
   };
 
+  // 고유번호(발주번호)만 바꾸기. 상태와 상관없이(도착·정산된 건도) 번호를 누르면 바꿀 수 있다.
+  // 문서 id가 번호라 새 번호로 저장하고 옛 번호는 지운다. 예약 메모("예약 H…")도 따라 바꾼다.
+  const renameCode = async (o: HanjungOrder) => {
+    const input = prompt(`${o.code}의 새 번호`, o.code);
+    const code = input?.trim();
+    if (!code || code === o.code) return;
+    if (/[\/]/.test(code)) return alert('번호에는 / 를 쓸 수 없어요.');
+    if (ordersRef.current.some(x => x.code === code)) return alert(`번호 ${code}는 이미 있어요.`);
+    const rows = o.lines.map(l => ({ 발주번호: l.발주번호, 상품이름: l.상품이름, 확정수량: l.확정수량, 입고예정일: l.입고예정일 } as OrderRow));
+    const move = async (from: string, to: string) => {
+      const cur = ordersRef.current.find(x => x.code === from) || { ...o, code: from };
+      await saveHanjungOrder({ ...cur, code: to });
+      await deleteHanjungOrder(from);
+      await setReservationMemo(rows, `예약 ${to}`);
+    };
+    try {
+      await move(o.code, code);
+    } catch (err: any) {
+      alert(`저장 실패: ${err?.message || err}`);
+      return;
+    }
+    if (open === o.code) setOpen(code);
+    record({ label: `${o.code} → ${code}`, undo: () => move(code, o.code), redo: () => move(o.code, code) });
+  };
+
   const startEdit = (o: HanjungOrder) => {
     setOpen(o.code);
     const names = productSummary(o).map(p => p.상품이름);
@@ -621,7 +646,13 @@ const HanjungOrderPage: React.FC = () => {
           return (
             <div key={o.code} className="bg-white border border-gray-200 rounded-xl overflow-hidden">
               <div className="flex flex-wrap items-center gap-3 px-4 py-3 cursor-pointer hover:bg-gray-50" onClick={() => setOpen(isOpen ? null : o.code)}>
-                <span className="font-mono font-bold text-gray-900 w-28 flex-shrink-0 truncate" title={o.code}>{o.code}</span>
+                <button
+                  onClick={e => { e.stopPropagation(); renameCode(o); }}
+                  title={`${o.code} · 눌러서 번호 바꾸기`}
+                  className="group font-mono font-bold text-gray-900 w-28 flex-shrink-0 truncate text-left hover:text-blue-600"
+                >
+                  {o.code}<span className="ml-1 text-xs text-gray-300 group-hover:text-blue-400">✎</span>
+                </button>
                 {/* 품목 사진(앞에서 6개까지) */}
                 <span className="inline-flex items-center gap-1 w-[232px] flex-shrink-0">
                   {products.slice(0, 6).map(p => <ProductThumb key={p.상품이름} url={imageOf(p.상품이름)} size={30} title={`${p.상품이름} · 주문 ${p.ordered}개`} />)}

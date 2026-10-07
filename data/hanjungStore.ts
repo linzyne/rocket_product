@@ -41,6 +41,7 @@ export interface HanjungReceipt {
   관세사비: number;
   배송비: number;
   작업비: number;
+  통관비?: number; // 나중에 더한 칸이라 예전 기록에는 없다.
   memo: string;
   createdAt: number;
 }
@@ -54,7 +55,21 @@ export interface HanjungOrder {
   // 상품별로 1688에 실제 주문한 수량. 쿠팡 발주보다 넉넉히 사면 남는 만큼이 "여유"가 된다.
   // 없는 상품은 그 상품 줄 수량의 합(넉넉히 사지 않은 것)으로 본다.
   orderQty?: Record<string, number>;
+  // 상품별 1688 구매 단가(원). 주문할 때 미리 적어 두고, 도착 기록 때 기본값으로 쓴다.
+  unitCost?: Record<string, number>;
+  // 주문할 때 미리 적어 둔 부대비용(예상). 도착 기록 때 아직 안 쓴 만큼을 기본값으로 채운다.
+  fees?: Partial<Record<FeeKey, number>>;
+  // 도착한 만큼 배정 줄을 준비됨으로 자동 체크한 시각. 이 기능이 생기기 전에 도착한 건을 한 번만 맞추려고 둔다.
+  autoReadyAt?: number;
 }
+
+// 한중발주 부대비용 칸들(주문할 때·도착 기록 때 같은 순서로 보여준다).
+export const FEE_KEYS = ['관세사비', '통관비', '배송비', '작업비'] as const;
+export type FeeKey = typeof FEE_KEYS[number];
+export const receiptFee = (r: HanjungReceipt, k: FeeKey) => Number((r as unknown as Record<string, number>)[k]) || 0;
+// 이 한중발주에서 그 비용이 아직 도착 기록에 안 쓰인 만큼(주문 때 적은 값 − 지금까지 도착 기록에 적은 합).
+export const remainingFee = (order: HanjungOrder, k: FeeKey) =>
+  Math.max(0, (order.fees?.[k] || 0) - order.receipts.reduce((s, r) => s + receiptFee(r, k), 0));
 
 const COLLECTION = 'hanjungOrders';
 const LOCAL_KEY = 'hanjungOrders';
@@ -82,9 +97,11 @@ const readLocalAliases = (): AliasState => {
     return { aliases: {}, notSame: {} };
   }
 };
-if (!db) aliasState = readLocalAliases();
+// 이 컴퓨터에 남겨 둔 값으로 먼저 시작한다(클라우드 응답이 늦어도 화면을 열자마자 같은 상품으로 보이게).
+aliasState = readLocalAliases();
 const setAliasState = (next: AliasState) => {
   aliasState = next;
+  try { localStorage.setItem(ALIAS_LOCAL_KEY, JSON.stringify(next)); } catch {}
   aliasListeners.forEach(l => l());
 };
 
@@ -107,10 +124,7 @@ export const rememberSameProduct = async (from: string, to: string, same: boolea
     notSame: same ? aliasState.notSame : { ...aliasState.notSame, [pairKey(from, to)]: true },
   };
   setAliasState(next);
-  if (!db) {
-    localStorage.setItem(ALIAS_LOCAL_KEY, JSON.stringify(next));
-    return;
-  }
+  if (!db) return;
   await ensureSignedIn();
   await setDoc(
     doc(db, ALIAS_COLLECTION, ALIAS_DOC),
@@ -123,6 +137,12 @@ export const sameName = (a: string, b: string) => nameKey(a) === nameKey(b);
 // orderQty에 이미 적힌 같은 상품의 이름(없으면 받은 이름). 같은 상품이 이름만 달리 두 번 적히지 않게 한다.
 export const orderQtyName = (orderQty: Record<string, number> | undefined, name: string) =>
   Object.keys(orderQty || {}).find(k => sameName(k, name)) ?? name;
+
+// 주문할 때 적어 둔 그 상품의 단가(없으면 0). 이름이 조금 달라도 같은 상품이면 찾는다.
+export const productUnitCost = (order: HanjungOrder, name: string) => {
+  const k = Object.keys(order.unitCost || {}).find(x => sameName(x, name));
+  return k ? order.unitCost![k] : 0;
+};
 
 // 한 상품을 1688에 주문한 수량(적어 둔 값, 없으면 그 상품 줄 수량의 합).
 export const productOrderQty = (order: HanjungOrder, name: string) => {
@@ -202,7 +222,7 @@ export const freezeOrderQty = (order: HanjungOrder, name: string, newLineQty = 0
 };
 
 export const receiptGoodsCost = (r: HanjungReceipt) => r.items.reduce((s, it) => s + it.qty * it.unitCost, 0);
-export const receiptTotalCost = (r: HanjungReceipt) => receiptGoodsCost(r) + r.관세사비 + r.배송비 + r.작업비;
+export const receiptTotalCost = (r: HanjungReceipt) => receiptGoodsCost(r) + FEE_KEYS.reduce((s, k) => s + receiptFee(r, k), 0);
 
 export const orderTotals = (order: HanjungOrder) => {
   const products = productSummary(order);
@@ -266,6 +286,9 @@ export const subscribeHanjung = (listener: Listener): (() => void) => {
     unsubAlias = onSnapshot(
       doc(firestore, ALIAS_COLLECTION, ALIAS_DOC),
       snap => {
+        // 캐시에 아직 없어서 빈 응답이 오면 무시한다(이걸로 지우면 잠깐 다른 상품처럼 갈라져 보인다).
+        const fromCache = snap.metadata.fromCache;
+        if (!snap.exists() && fromCache) return;
         const v = (snap.data() || {}) as Partial<AliasState>;
         setAliasState({ aliases: v.aliases || {}, notSame: v.notSame || {} });
       },
@@ -308,5 +331,84 @@ export const deleteHanjungOrder = async (code: string) => {
 export const addReceipt = (order: HanjungOrder, receipt: HanjungReceipt) =>
   saveHanjungOrder({ ...order, receipts: [...order.receipts, receipt] });
 
-export const removeReceipt = (order: HanjungOrder, receiptId: string) =>
-  saveHanjungOrder({ ...order, receipts: order.receipts.filter(r => r.id !== receiptId) });
+// 도착 기록을 지운다. 그 기록에 적은 금액(단가)·부대비용은 주문 쪽에 아직 없으면 옮겨 남긴다
+// (단가만 적으려다 도착으로 저장해서 지우는 경우, 금액까지 날아가지 않게).
+export const removeReceipt = (order: HanjungOrder, receiptId: string) => {
+  const r = order.receipts.find(x => x.id === receiptId);
+  const unitCost = { ...(order.unitCost || {}) };
+  const fees = { ...(order.fees || {}) };
+  if (r) {
+    for (const it of r.items) {
+      if (it.unitCost > 0 && !productUnitCost(order, it.상품이름)) unitCost[it.상품이름] = it.unitCost;
+    }
+    for (const k of FEE_KEYS) {
+      const v = receiptFee(r, k);
+      if (v > 0 && !fees[k]) fees[k] = v;
+    }
+  }
+  return saveHanjungOrder({
+    ...order,
+    receipts: order.receipts.filter(x => x.id !== receiptId),
+    ...(Object.keys(unitCost).length ? { unitCost } : {}),
+    ...(Object.keys(fees).length ? { fees } : {}),
+  });
+};
+
+// 같은 상품으로 연결한 이름이 한중발주에 예전 이름으로 남아 있으면 쿠팡 발주 이름으로 바꾼 한중발주들을 돌려준다
+// (주문 수량·단가·도착 기록의 품목 이름). 기억(별칭)에만 기대면 그걸 못 받은 순간 두 상품처럼 갈라져 보여서,
+// 데이터 자체를 맞춰 둔다. 바꿀 게 없으면 빈 배열.
+export const ordersNeedingAliasRename = (orders: HanjungOrder[]): HanjungOrder[] => {
+  const target = (name: string) => aliasState.aliases[rawKey(name)];
+  const out: HanjungOrder[] = [];
+  for (const o of orders) {
+    let changed = false;
+    const renameMap = <T,>(m: Record<string, T> | undefined, merge: (a: T, b: T) => T) => {
+      if (!m) return m;
+      const next: Record<string, T> = {};
+      for (const [k, v] of Object.entries(m)) {
+        const to = target(k);
+        const key = to && to !== k ? to : k;
+        if (key !== k) changed = true;
+        next[key] = next[key] != null ? merge(next[key], v) : v;
+      }
+      return next;
+    };
+    const orderQty = renameMap(o.orderQty, (a, b) => a + b);
+    const unitCost = renameMap(o.unitCost, (a) => a);
+    const receipts = o.receipts.map(r => ({
+      ...r,
+      items: r.items.map(it => {
+        const to = target(it.상품이름);
+        if (to && to !== it.상품이름) { changed = true; return { ...it, 상품이름: to }; }
+        return it;
+      }),
+    }));
+    if (changed) out.push({ ...o, ...(orderQty ? { orderQty } : {}), ...(unitCost ? { unitCost } : {}), receipts });
+  }
+  return out;
+};
+
+// 상품 하나의 개당 원가(부대비용 포함). 상품마다 값이 달라서 건 전체를 수량으로 나누지 않고,
+//  그 상품 상품금액 + 부대비용 × (그 상품 금액 ÷ 그 건 상품금액 합)  을 그 상품 도착 수량으로 나눈다.
+// 아직 도착 전이면 주문할 때 적은 금액(개당) 기준(부대비용 없이).
+export const unitLandedCost = (o: HanjungOrder, name: string) => {
+  const p = productSummary(o).find(x => x.상품이름 === name);
+  if (p && p.received > 0 && p.cost > 0) {
+    const goodsAll = productSummary(o).reduce((s, x) => s + x.cost, 0);
+    const fees = orderTotals(o).totalCost - goodsAll;
+    const share = goodsAll > 0 ? fees * (p.cost / goodsAll) : 0;
+    return (p.cost + share) / p.received;
+  }
+  return productUnitCost(o, name);
+};
+
+// 아직 배정 안 된 여유 = 재고. 도착한 것과 오는 중인 것을 나눈다.
+export const inventoryOf = (o: HanjungOrder) =>
+  productSummary(o)
+    .filter(p => p.spare > 0)
+    .map(p => {
+      const arrived = Math.min(p.spare, Math.max(0, p.received - p.allocated));
+      const unit = unitLandedCost(o, p.상품이름);
+      return { code: o.code, name: p.상품이름, spare: p.spare, arrived, incoming: p.spare - arrived, unit, value: p.spare * unit };
+    });
+

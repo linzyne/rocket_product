@@ -4,12 +4,12 @@ import { Product, ArchivedProduct } from './types';
 import ProductRow from './components/ProductRow';
 import ProductGroupSummary from './components/ProductGroupSummary';
 import ProductListPage from './components/ProductListPage';
-import InventoryPage from './components/InventoryPage';
 import StockHistoryPage from './components/StockHistoryPage';
 import ReceiveHistoryPage from './components/ReceiveHistoryPage';
 import CollectHubPage from './components/CollectHubPage';
 import HanjungOrderPage from './components/hanjung/HanjungOrderPage';
-import ImportInPage from './components/hanjung/ImportInPage';
+import LedgerPage from './components/ledger/LedgerPage';
+import OfficeStockPage from './components/OfficeStockPage';
 import WarehouseInPage from './components/hanjung/WarehouseInPage';
 import CoupangOrderPage from './components/coupangOrder/CoupangOrderPage';
 import CoupangShipPage from './components/coupangShip/CoupangShipPage';
@@ -3236,7 +3236,8 @@ const App: React.FC = () => {
       </div>
       )}
       {activeMenu === 'collect' && <CollectHubPage />}
-      {activeMenu === 'product-manage' && <InventoryPage />}
+      {/* 사무실재고: 한중발주 여유에서 자동 계산(예전 손으로 적던 화면 대신). */}
+      {activeMenu === 'product-manage' && <OfficeStockPage />}
       {activeMenu === 'rocket-stock' && <StockHistoryPage mode="rocket" />}
       {activeMenu === 'rocket-sales' && <StockHistoryPage mode="sales" />}
       {activeMenu === 'rocket-in' && <ReceiveHistoryPage />}
@@ -3244,10 +3245,11 @@ const App: React.FC = () => {
       {activeMenu === 'coupang-ship' && <CoupangShipPage onGoOrder={() => setActiveMenu('coupang-order')} />}
       {activeMenu === 'coupang-send' && <CoupangSendPage onGoShip={() => setActiveMenu('coupang-ship')} />}
       {activeMenu === 'order-search' && <OrderSearchPage onNavigate={setActiveMenu} />}
-      {activeMenu === 'cn-order' && <HanjungOrderPage />}
-      {activeMenu === 'import-in' && <ImportInPage />}
+      {/* 수입입고는 한중발주 화면 안으로 합쳤다(예전 주소 #import-in으로 와도 한중발주를 보여준다). */}
+      {(activeMenu === 'cn-order' || activeMenu === 'import-in') && <HanjungOrderPage />}
       {activeMenu === 'warehouse-in' && <WarehouseInPage />}
-      {!['collect', 'proposal', 'detail', 'product-manage', 'rocket-stock', 'rocket-sales', 'rocket-in', 'order-search', 'coupang-order', 'coupang-ship', 'coupang-send', 'cn-order', 'import-in', 'warehouse-in'].includes(activeMenu) && <MenuPlaceholder id={activeMenu} />}
+      {activeMenu === 'ledger' && <LedgerPage />}
+      {!['collect', 'proposal', 'detail', 'product-manage', 'rocket-stock', 'rocket-sales', 'rocket-in', 'order-search', 'coupang-order', 'coupang-ship', 'coupang-send', 'cn-order', 'import-in', 'warehouse-in', 'ledger'].includes(activeMenu) && <MenuPlaceholder id={activeMenu} />}
       {/* 상세페이지 에디터는 상품 행에서 연 것과 카테고리 탭에서 연 것을 따로 둔다. 둘 다 계속
           떠 있게 두고 숨겨만 둬서, 메뉴·탭을 오가도 작업 중인 내용이 날아가지 않는다.
           카테고리 탭 쪽은 탭마다 key를 달리 줘서 탭을 바꾸면 그 탭의 저장본으로 새로 뜬다. */}

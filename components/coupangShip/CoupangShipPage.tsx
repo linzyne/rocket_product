@@ -26,7 +26,7 @@ import ShipmentList from '../coupangOrder/components/ShipmentList';
 import { useHanjungBadge } from '../coupangOrder/data/useHanjungBadge';
 import { useShipmentNoSync } from '../coupangOrder/data/useShipmentNoSync';
 import { HanjungQueueItem, subscribeHanjungQueue, addToHanjungQueue, removeFromHanjungQueue, hanjungQueueKey, makePlaceLookup } from '../coupangOrder/data/hanjungQueueStore';
-import { HanjungOrder, subscribeHanjung, saveHanjungOrder, freezeOrderQty, makeHanjungOfficeLookup, productSummary, sameName, orderQtyName, nameKey, isNotSame, rememberSameProduct } from '../../data/hanjungStore';
+import { HanjungOrder, subscribeHanjung, saveHanjungOrder, freezeOrderQty, makeHanjungOfficeLookup, productSummary, sameName, orderQtyName, nameKey, isNotSame, rememberSameProduct, ordersNeedingAliasRename } from '../../data/hanjungStore';
 import { reservationKey } from '../coupangOrder/data/reservationStore';
 import type { LineHanjung, HanjungChoice, HanjungAction, HanjungLink } from '../coupangOrder/components/OrderTable';
 import { nameSimilarity } from '../../data/inventoryStore';
@@ -107,11 +107,17 @@ export default function CoupangShipPage({ onGoOrder }: { onGoOrder?: () => void 
       }
     }
     links.sort((a, b) => nameSimilarity(b.name, line.상품이름) - nameSimilarity(a.name, line.상품이름));
-    return { need: Number(line.확정수량) || 0, places, choices, links };
+    // 사무실 재고: 이 상품의 도착했고 배정 안 된 여유 합.
+    const stock = hanjungOrders.reduce((sum, o) => {
+      const p = productSummary(o).find(x => sameName(x.상품이름, line.상품이름));
+      return sum + (p ? Math.min(p.spare, Math.max(0, p.received - p.allocated)) : 0);
+    }, 0);
+    return { need: Number(line.확정수량) || 0, places, choices, links, stock };
   };
   // 체크 메뉴에서 고른 대로 한중에 맡긴다. 먼저 이 줄을 있던 곳(한중발주·대기)에서 모두 떼고 새로 붙인다.
   // 줄을 떼도 1688에 산 수량(주문 수량)은 그대로라 그만큼 여유로 돌아간다.
   const setLineHanjung = async (row: DisplayRow, action: HanjungAction) => {
+    if (action.type === 'stock') { await assignFromSpare(row); return; }
     const line = hanjungLineOf(row);
     const k = hanjungQueueKey(line);
     const name = line.상품이름;
@@ -147,6 +153,11 @@ export default function CoupangShipPage({ onGoOrder }: { onGoOrder?: () => void 
           const { [action.linkFrom]: q, ...rest } = base.orderQty;
           const k = orderQtyName(rest, name);
           base = { ...base, orderQty: { ...rest, [k]: (rest[k] || 0) + q } };
+          // 주문할 때 적은 단가도 같은 이름으로 옮긴다.
+          if (base.unitCost && base.unitCost[action.linkFrom] != null) {
+            const { [action.linkFrom]: c, ...restCost } = base.unitCost;
+            base = { ...base, unitCost: { ...restCost, [name]: c } };
+          }
           // 수입입고에 적힌 이름도 같이 바꿔야 도착 수량이 맞는다.
           base = { ...base, receipts: base.receipts.map(r => ({ ...r, items: r.items.map(it => (it.상품이름 === action.linkFrom ? { ...it, 상품이름: name } : it)) })) };
         }
@@ -391,6 +402,53 @@ export default function CoupangShipPage({ onGoOrder }: { onGoOrder?: () => void 
   }, [ordered, boxOrder]);
 
   const itemCount = rows.filter(r => !r.isBlank).length;
+  // ---- 재고에서 쓰기(체크 메뉴) = 사무실 재고(도착했고 배정 안 된 한중 여유)에서 꺼냄 ----
+  // 그 상품의 사무실 재고가 있는 한중발주 중 가장 오래된 건부터 배정한다(모자라면 다음 건에서 이어 채운다).
+  // 배정되면 사무실 재고에서 빠지고, 그 발주의 쿠팡 정산이 그 한중발주 매출로 잡힌다. 준비됨 체크와는 따로다.
+  const assignFromSpare = async (row: DisplayRow) => {
+    const line = hanjungLineOf(row);
+    if (placesOf(line).length) return; // 이미 한중에 맡긴 줄
+    const name = line.상품이름;
+    const need = Number(line.확정수량) || 0;
+    if (!need) return;
+    let left = need;
+    const changed: HanjungOrder[] = [];
+    for (const o of [...hanjungOrders].sort((a, b) => a.createdAt - b.createdAt)) {
+      if (left <= 0) break;
+      const p = productSummary(o).find(x => sameName(x.상품이름, name));
+      // 사무실에 와 있는 여유만(아직 오는 중인 건 체크 메뉴의 한중발주에서 직접 고른다).
+      const inOffice = p ? Math.min(p.spare, Math.max(0, p.received - p.allocated)) : 0;
+      if (inOffice <= 0) continue;
+      const take = Math.min(inOffice, left);
+      left -= take;
+      changed.push({
+        ...o,
+        orderQty: freezeOrderQty(o, name),
+        lines: [...o.lines, {
+          key: reservationKey(line),
+          발주번호: line.발주번호,
+          물류센터: line.물류센터,
+          상품이름: name,
+          확정수량: need,
+          입고예정일: dateKeyYMD(line.입고예정일).replace(/-/g, ''),
+          ...(take !== need ? { 배정: take } : {}),
+        }],
+      });
+    }
+    if (!changed.length) { setShubStatus(`${name}: 사무실 재고가 없어요.`); return; }
+    try {
+      for (const o of changed) await saveHanjungOrder(o);
+      // 사무실 재고에서 꺼낸 거라 물건은 이미 와 있다. 다 채웠으면 준비됨으로 체크한다.
+      if (left <= 0) toggleLineReady(list.find(i => i.id === row.묶음), lineOfRow(row), true);
+      const where = changed.map(o => o.code).join(', ');
+      setShubStatus(left > 0
+        ? `${name}: 사무실 재고에서 ${need - left}개만 썼어요(${where}). ${left}개는 모자라요 — 체크 메뉴의 한중발주에서 나머지를 정해 주세요.`
+        : `${name} ${need}개를 사무실 재고(${where})에서 썼어요.`);
+    } catch (err: any) {
+      alert(`한중 여유 배정 실패: ${err?.message || err}`);
+    }
+  };
+
   // ---- 이름이 다른 같은 상품 찾아 알려주기 ----
   // 쿠팡 발주 상품명과 한중발주 품목 이름이 규칙 없이 다를 때가 있어(상품관리 이름으로 적은 경우),
   // 한중에 아직 안 맡긴 쉽먼트 줄마다 "비슷한데 연결 안 된" 한중 품목을 찾아 위에 알린다.
@@ -423,7 +481,10 @@ export default function CoupangShipPage({ onGoOrder }: { onGoOrder?: () => void 
   const linkCheckNames = useMemo(() => new Set(linkChecks.map(c => nameKey(c.line))), [linkChecks]);
   const [linkOpen, setLinkOpen] = useState(true);
   const answerLink = (c: { line: string; item: string }, same: boolean) =>
-    rememberSameProduct(c.item, c.line, same).catch(err => alert(`저장 실패: ${err?.message || err}`));
+    rememberSameProduct(c.item, c.line, same)
+      // 같은 상품이면 한중발주에 적힌 품목 이름도 쿠팡 발주 이름으로 바로 바꿔 둔다.
+      .then(() => (same ? Promise.all(ordersNeedingAliasRename(hanjungOrders).map(o => saveHanjungOrder(o))) : undefined))
+      .catch(err => alert(`저장 실패: ${err?.message || err}`));
 
 
 

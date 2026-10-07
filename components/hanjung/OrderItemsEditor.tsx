@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { sameName, nameKey } from '../../data/hanjungStore';
+import { sameName, nameKey, FEE_KEYS } from '../../data/hanjungStore';
+import type { FeeKey } from '../../data/hanjungStore';
 import type { HanjungOrder } from '../../data/hanjungStore';
 import { subscribeInventory } from '../../data/inventoryStore';
 import { subscribeHanjungQueue } from '../coupangOrder/data/hanjungQueueStore';
@@ -12,7 +13,9 @@ import ProductThumb from './ProductThumb';
 // 쿠팡 발주에서 온 품목은 이름이 정해져 있고(need = 쿠팡에 필요한 수량), 직접 더한 품목은 이름을 고른다.
 // 이왕 수입하는 김에 다른 품목도 같이 사 두는 경우가 있어서, 쿠팡 발주와 상관없는 품목도 넣을 수 있다.
 // 주문 수량은 총수량을 적는다(쿠팡에 필요한 수량보다 많이 적으면 남는 만큼이 여유).
-export type OrderItem = { name: string; qty: string; need: number; added: boolean };
+// cost: 그 품목의 1688 구매 총금액(원). 단가로 나누지 않고 총금액을 적는다.
+// 저장할 때 총금액 ÷ 주문 수량으로 단가를 구해 두고(unitCost), 도착 기록 때 그 단가를 기본값으로 쓴다.
+export type OrderItem = { name: string; qty: string; need: number; added: boolean; cost?: string };
 
 // 이름 고르기 목록: 쿠팡 발주·예약·쉽먼트·한중발주·광고 상품에서 본 상품명을 모은다.
 // 한중 여유는 쿠팡 발주 상품명과 같은 이름으로 맞추므로, 쿠팡 발주에 나온 이름을 먼저 쓴다.
@@ -37,6 +40,7 @@ export function useProductNames(orders: HanjungOrder[]) {
 }
 
 export const itemQty = (it: OrderItem) => Math.max(0, Math.round(Number(it.qty) || 0));
+export const itemCostNum = (it: OrderItem) => Math.max(0, Number(it.cost) || 0);
 
 const OrderItemsEditor: React.FC<{
   items: OrderItem[];
@@ -71,7 +75,7 @@ const OrderItemsEditor: React.FC<{
             ) : (
               <span className="flex-1 min-w-0 truncate font-semibold" title={it.name}>{it.name}</span>
             )}
-            <span className="w-20 text-right text-gray-400 whitespace-nowrap">{it.need > 0 ? `쿠팡 ${it.need}` : '추가 품목'}</span>
+            <span className="w-20 text-right text-gray-400 whitespace-nowrap">{it.need > 0 ? `배정 ${it.need}` : '추가 품목'}</span>
             <span>주문</span>
             <input
               type="number"
@@ -80,6 +84,18 @@ const OrderItemsEditor: React.FC<{
               onChange={e => set(i, { qty: e.target.value })}
               className={`w-16 px-1.5 py-0.5 border rounded text-right font-mono bg-white ${short ? 'border-red-400' : 'border-gray-300'}`}
             />
+            <span>금액</span>
+            <input
+              type="number"
+              min={0}
+              value={it.cost ?? ''}
+              placeholder="총금액(원)"
+              onChange={e => set(i, { cost: e.target.value })}
+              className="w-28 px-1.5 py-0.5 border border-gray-300 rounded text-right font-mono bg-white"
+            />
+            <span className="w-24 text-right text-gray-400 font-mono whitespace-nowrap" title="총금액 ÷ 주문 수량">
+              {itemCostNum(it) > 0 && itemQty(it) > 0 ? `개당 ${Math.round(itemCostNum(it) / itemQty(it)).toLocaleString()}원` : ''}
+            </span>
             <span className={`w-16 whitespace-nowrap ${short ? 'text-red-500 font-bold' : q > it.need ? 'text-emerald-600 font-bold' : 'text-gray-300'}`}>
               {short ? `부족 ${it.need - q}` : q > it.need ? `여유 ${q - it.need}` : '여유 0'}
             </span>
@@ -98,7 +114,7 @@ const OrderItemsEditor: React.FC<{
         );
       })}
       <button
-        onClick={() => onChange([...items, { name: '', qty: '', need: 0, added: true }])}
+        onClick={() => onChange([...items, { name: '', qty: '', need: 0, added: true, cost: '' }])}
         className="mt-1 px-2 py-0.5 text-xs border border-dashed border-gray-300 text-gray-500 rounded hover:bg-gray-50"
       >
         ＋ 품목 추가
@@ -121,3 +137,42 @@ export const itemsToOrderQty = (items: OrderItem[]): Record<string, number> => {
   }
   return out;
 };
+
+// 품목 칸 → 한중발주 unitCost(총금액 ÷ 주문 수량). 금액을 적은 품목만 남긴다(같은 이름은 마지막 값).
+export const itemsToUnitCost = (items: OrderItem[]): Record<string, number> => {
+  const out: Record<string, number> = {};
+  for (const it of items) {
+    const name = it.name.trim();
+    const q = itemQty(it);
+    const c = q > 0 ? itemCostNum(it) / q : 0;
+    if (!name || !c) continue;
+    const k = Object.keys(out).find(x => sameName(x, name)) ?? name;
+    out[k] = c;
+  }
+  return out;
+};
+
+// 주문할 때 미리 적는 부대비용(관세사비·통관비·배송비·작업비). 도착 기록 때 기본값으로 채워진다.
+export type FeeDraft = Partial<Record<FeeKey, string>>;
+export const feesToNumbers = (f: FeeDraft): Partial<Record<FeeKey, number>> => {
+  const out: Partial<Record<FeeKey, number>> = {};
+  FEE_KEYS.forEach(k => { const n = Math.max(0, Math.round(Number(f[k]) || 0)); if (n) out[k] = n; });
+  return out;
+};
+export const FeeInputs: React.FC<{ value: FeeDraft; onChange: (v: FeeDraft) => void }> = ({ value, onChange }) => (
+  <div className="flex flex-wrap items-center gap-3 text-xs text-gray-600">
+    {FEE_KEYS.map(k => (
+      <label key={k} className="flex items-center gap-1.5">
+        {k}
+        <input
+          type="number"
+          min={0}
+          value={value[k] ?? ''}
+          placeholder="원"
+          onChange={e => onChange({ ...value, [k]: e.target.value })}
+          className="w-24 px-1.5 py-0.5 border border-gray-300 rounded text-right font-mono bg-white"
+        />
+      </label>
+    ))}
+  </div>
+);

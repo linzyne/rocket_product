@@ -209,42 +209,31 @@ export default function CoupangSendPage({ onGoShip }: { onGoShip?: () => void } 
                   border: `1.5px solid ${allReady ? `${GREEN}88` : '#e5e7eb'}`, borderRadius: 14, overflow: 'hidden',
                   background: '#fff', boxShadow: '0 1px 4px rgba(0,0,0,0.05)',
                 }}>
-                  {/* 머리: 센터 · 입고예정일 · 박스 수 */}
-                  <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 8, padding: '10px 12px', background: allReady ? '#f2fbf6' : '#fafafa', borderBottom: '1px solid #f0f0f0' }}>
-                    <span style={{ padding: '2px 9px', fontSize: 13, fontWeight: 800, borderRadius: 6, color: '#fff', background: '#b04a3e' }}>{item.center}</span>
-                    <b style={{ fontSize: 14, color: '#1e293b' }}>{dayText(item.date)}</b>
-                    <span style={{ fontSize: 11, color: '#999' }} title={`출고번호 ${item.id}`}>{item.bundle}</span>
-                    <span style={{ marginLeft: 'auto', fontSize: 13, fontWeight: 800, color: '#333' }}>📦 {boxCount}박스</span>
-                  </div>
-
-                  {/* 발주서마다 한 줄: 발주번호 · 쉽먼트 번호(누르면 서허 택배 쉽먼트 화면이 열려 거기서 출력) · 출력 표시 버튼. */}
-                  {(() => {
-                    const orderNos: string[] = Array.from(new Set<string>(item.lines.map(l => String(l.발주번호 || '')))).filter(Boolean);
-                    if (!orderNos.length) return null;
-                    const printed = new Set(item.printedOrders || []);
-                    const doneN = orderNos.filter(no => printed.has(no)).length;
-                    return (
-                      <div style={{ padding: '6px 12px', borderBottom: '1px solid #f0f0f0', fontSize: 11.5 }}>
-                        <div style={{ color: doneN === orderNos.length ? GREEN : '#888', fontWeight: 700, marginBottom: 3 }}>
-                          🖨 출력 {doneN}/{orderNos.length}
-                        </div>
-                        {orderNos.map(no => {
-                          const on = printed.has(no);
-                          const ship = item.shipmentNos?.[no];
-                          return (
-                            <div key={no} style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 8, padding: '2px 0' }}>
-                              <span style={{ fontFamily: 'monospace', fontWeight: 700, color: '#333' }}>{no}</span>
-                              {ship ? (
-                                <button
-                                  onClick={() => printShipment(item, no, ship)}
-                                  title="서허에서 이 쉽먼트의 Label·내역서를 받아 하나로 합쳐 새 탭에 열어요. 거기서 프린트를 누르세요."
-                                  style={{ padding: 0, border: 'none', background: 'none', cursor: 'pointer', fontFamily: 'monospace', fontWeight: 700, fontSize: 11.5, color: '#0369a1', textDecoration: 'underline' }}
-                                >
-                                  🖨 쉽먼트 {ship}
-                                </button>
-                              ) : (
-                                <span style={{ color: '#bbb' }}>쉽먼트 번호 없음</span>
-                              )}
+                  {/* 머리: 센터 · 입고예정일 · 박스 수, 그 아래 발주서마다 한 줄(발주번호 · 쉽먼트 번호 · 🖨 출력 · 출력됨/미출력). */}
+                  <div style={{ padding: '10px 12px', background: allReady ? '#f2fbf6' : '#fafafa', borderBottom: '1px solid #f0f0f0' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <span style={{ padding: '2px 9px', fontSize: 13, fontWeight: 800, borderRadius: 6, color: '#fff', background: '#b04a3e' }}>{item.center}</span>
+                      <b style={{ fontSize: 14, color: '#1e293b' }}>{dayText(item.date)}</b>
+                      <span style={{ marginLeft: 'auto', fontSize: 13, fontWeight: 800, color: '#333' }}>📦 {boxCount}박스</span>
+                    </div>
+                    {Array.from(new Set<string>(item.lines.map(l => String(l.발주번호 || '')))).filter(Boolean).map(no => {
+                      const on = (item.printedOrders || []).includes(no);
+                      const ship = item.shipmentNos?.[no];
+                      return (
+                        <div key={no} style={{ marginTop: 6 }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12 }}>
+                            <span style={{ fontFamily: 'monospace', fontWeight: 700, color: '#333' }}>{no}</span>
+                            {ship
+                              ? <span style={{ fontFamily: 'monospace', color: '#0369a1', fontWeight: 700 }}>· 쉽먼트 {ship}</span>
+                              : <span style={{ color: '#bbb' }}>· 쉽먼트 번호 없음</span>}
+                            <span style={{ marginLeft: 'auto', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                              <button
+                                onClick={() => ship ? printShipment(item, no, ship) : alert('쉽먼트 번호가 아직 없어요. 서허 쉽먼트 일괄등록 뒤에 생겨요.')}
+                                title={ship ? 'Label·내역서를 받아 하나로 합쳐 새 탭에 열어요(거기서 프린트)' : '쉽먼트 번호가 아직 없어요'}
+                                style={{ width: 28, height: 24, padding: 0, fontSize: 15, borderRadius: 6, cursor: ship ? 'pointer' : 'not-allowed', border: '1px solid #d1d5db', background: '#fff', opacity: ship ? 1 : 0.4 }}
+                              >
+                                🖨
+                              </button>
                               <button
                                 onClick={() => {
                                   if (on && !confirm(`발주 ${no}을 미출력으로 되돌릴까요?`)) return;
@@ -252,19 +241,19 @@ export default function CoupangSendPage({ onGoShip }: { onGoShip?: () => void } 
                                 }}
                                 title={on ? '눌러서 미출력으로 되돌려요' : '출력했으면 눌러요'}
                                 style={{
-                                  marginLeft: 'auto', padding: '1px 9px', borderRadius: 999, cursor: 'pointer', fontSize: 11, fontWeight: 800,
+                                  padding: '1px 9px', borderRadius: 999, cursor: 'pointer', fontSize: 11, fontWeight: 800,
                                   border: `1px solid ${on ? GREEN : '#f59e0b'}`, background: on ? GREEN : '#fffbeb', color: on ? '#fff' : '#b45309',
                                 }}
                               >
-                                {on ? '✓ 출력완료' : '미출력'}
+                                {on ? '✓ 출력됨' : '미출력'}
                               </button>
-                              {printNote[no] && <span style={{ flexBasis: '100%', fontSize: 10.5, color: printNote[no].startsWith('❌') ? '#c0392b' : '#64748b' }}>{printNote[no]}</span>}
-                            </div>
-                          );
-                        })}
-                      </div>
-                    );
-                  })()}
+                            </span>
+                          </div>
+                          {printNote[no] && <div style={{ fontSize: 10.5, marginTop: 2, color: printNote[no].startsWith('❌') ? '#c0392b' : '#64748b' }}>{printNote[no]}</div>}
+                        </div>
+                      );
+                    })}
+                  </div>
 
                   {/* 박스별 상품 줄: 체크하면 준비됨. 상품이 많으면 이 안에서만 스크롤해 카드 높이를 맞춘다. */}
                   <div style={{ maxHeight: 300, overflowY: 'auto' }}>

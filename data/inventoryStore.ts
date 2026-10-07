@@ -274,6 +274,14 @@ export const makeImageLookup = (items: InventoryItem[]) => {
     if (!url && base) {
       for (const [key, u] of byBase) if (key.startsWith(base) || base.startsWith(key)) { url = u; break; }
     }
+    // 이름이 조금 다른 같은 상품(낱말이 빠지거나 "2개/2종 세트"처럼 달라진 것): 가장 비슷한 상품의 사진(80% 이상).
+    if (!url) {
+      let best = 0.8;
+      for (const it of withImage) {
+        const sc = nameSimilarity(name, it.productName);
+        if (sc >= best) { best = sc; url = it.imageUrl; }
+      }
+    }
     cache.set(name, url);
     return url;
   };

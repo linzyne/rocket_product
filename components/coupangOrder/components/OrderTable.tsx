@@ -460,13 +460,14 @@ export function BoxPicker({ value, maxNo, onChange, allowNone = true, color }: {
 export type HanjungChoice = { code: string; has: boolean; ordered: number; spare: number; arrived: boolean };
 //  links: 이름은 다르지만 같은 상품일 수 있는 한중발주 품목(여유가 있는 것, 비슷한 이름 순). 고르면 그 품목 이름을 이 줄 이름으로 바꾸고 배정한다.
 export type HanjungLink = { code: string; name: string; ordered: number; spare: number; arrived: boolean };
-export type LineHanjung = { need: number; places: { code: string | null; qty: number }[]; choices: HanjungChoice[]; links?: HanjungLink[] };
+//  stock: 사무실 재고(도착했고 배정 안 된 여유)에서 이 상품을 쓸 수 있는 수량.
+export type LineHanjung = { need: number; places: { code: string | null; qty: number }[]; choices: HanjungChoice[]; links?: HanjungLink[]; stock?: number };
 //  queue: 전부 발주 대기로 / order: 그 한중발주에 맡김(whole 전부, split 여유만큼 + 나머지 대기, grow 그 건 주문 수량을 늘려 전부) / remove: 빼기
 //  release: 이 줄을 원래 한중발주에서 뗄 때 그 건의 주문 수량을 어떻게 할지
 //    shrink = 같이 줄이기(1688에서 안 샀음) / keep = 그대로 두고 여유로 남기기(사 둔 건 그대로)
 export type HanjungRelease = 'shrink' | 'keep';
 export type HanjungAction = (
-  { type: 'queue' } | { type: 'order'; code: string; mode: 'whole' | 'split' | 'grow'; linkFrom?: string } | { type: 'remove' }
+  { type: 'queue' } | { type: 'order'; code: string; mode: 'whole' | 'split' | 'grow'; linkFrom?: string } | { type: 'remove' } | { type: 'stock' }
 ) & { release?: HanjungRelease };
 
 // 상품 줄 체크 칸. 누르면 "준비됨"과 "한중발주" 중에서 고른다(둘 다 켤 수도 있다).
@@ -560,6 +561,15 @@ function LineCheckMenu({ ready, hanjung, onReady, onHanjung }: {
                 {ready
                   ? item('ready', '준비됨 풀기', () => onReady(false), '#999')
                   : item('ready', <><span>✓</span> 준비됨</>, () => onReady(true), '#27ae60')}
+                {/* 재고에서 쓰기: 오래된 한중발주 여유부터 자동 배정 → 사무실 재고에서 빠진다. */}
+                {!places.length && (hanjung.stock || 0) > 0 && item('stock', (
+                  <>
+                    <span>📦</span> 재고에서 쓰기
+                    <span style={{ marginLeft: 'auto', fontSize: 11, color: (hanjung.stock || 0) >= need ? '#94a3b8' : '#dc2626' }}>
+                      사무실 {hanjung.stock}{(hanjung.stock || 0) < need ? ` · ${need - (hanjung.stock || 0)}개 모자람` : ''}
+                    </span>
+                  </>
+                ), () => onHanjung({ type: 'stock' }), '#27ae60')}
                 {item('hj', (
                   <>
                     <span>＋</span> 한중발주

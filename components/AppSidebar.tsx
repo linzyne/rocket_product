@@ -16,7 +16,8 @@ export type AppMenuId =
   | 'product-manage'
   | 'rocket-stock'
   | 'rocket-sales'
-  | 'rocket-in';
+  | 'rocket-in'
+  | 'ledger';
 
 interface MenuItem {
   id: AppMenuId;
@@ -67,7 +68,6 @@ export const MENU_GROUPS: { title: string; items: MenuItem[] }[] = [
   {
     title: '사무실',
     items: [
-      { id: 'import-in', label: '수입입고', ready: true, icon: icon('M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4') },
       { id: 'product-manage', label: '사무실재고', ready: true, icon: icon('M4 6h16M4 10h16M4 14h16M4 18h16') },
     ],
   },
@@ -75,6 +75,12 @@ export const MENU_GROUPS: { title: string; items: MenuItem[] }[] = [
     title: '물류',
     items: [
       { id: 'warehouse-in', label: '물류창고입고', ready: true, icon: icon('M3 21V9l9-6 9 6v12M7 21v-8h10v8M7 17h10') },
+    ],
+  },
+  {
+    title: '돈',
+    items: [
+      { id: 'ledger', label: '장부', ready: true, icon: icon('M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z') },
     ],
   },
 ];

@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import ProductQtySummary from '../coupangOrder/components/ProductQtySummary';
 import {
-  HanjungOrder, HanjungLine, subscribeHanjung, deleteHanjungOrder, saveHanjungOrder, productSummary, orderTotals, productOrderQty, lineAlloc, sameName, nameKey,
+  HanjungOrder, HanjungLine, subscribeHanjung, deleteHanjungOrder, saveHanjungOrder, productSummary, orderTotals, productOrderQty, productUnitCost, lineAlloc, sameName, nameKey, ordersNeedingAliasRename,
 } from '../../data/hanjungStore';
 import { ReceiveRow, subscribeReceives, settlementOf, sign } from '../../data/receiveStore';
 import { nextHanjungCode } from '../../data/hanjungStore';
@@ -11,8 +11,9 @@ import {
   HanjungQueueItem, subscribeHanjungQueue, removeFromHanjungQueue, addToHanjungQueue, hanjungQueueKey, queueItemToRow, queueAlloc, returnToHanjungQueue, QueueRow,
 } from '../coupangOrder/data/hanjungQueueStore';
 import { dateKeyYMD, formatDateDisplay, normalizeDateValue } from '../coupangOrder/utils/dateUtils';
-import OrderItemsEditor, { OrderItem, useProductNames, itemsToOrderQty, itemQty } from './OrderItemsEditor';
+import OrderItemsEditor, { OrderItem, useProductNames, itemsToOrderQty, itemQty, itemsToUnitCost, FeeInputs, FeeDraft, feesToNumbers } from './OrderItemsEditor';
 import ProductThumb, { useProductImage } from './ProductThumb';
+import { ReceiptForm, ReceiptHistory, markArrivedLinesReady } from './ReceiptForm';
 
 // 발주 > 한중발주. 위쪽 "발주 대기"는 쿠팡발주확인 발송 목록에서 "한중"을 누른 줄(예약과 따로 저장해서, 그 줄이
 // 예약·쉽먼트 등 다른 단계로 넘어가도 여기서는 안 사라진다) + 예전 방식으로 예약에 넘겨 둔 줄 중 아직 주문 안 한 것.
@@ -48,9 +49,21 @@ const PendingPanel: React.FC<{ orders: HanjungOrder[]; onRecord: (act: Act) => v
   // 이번 1688 주문의 품목별 총수량. 쿠팡 발주에서 온 품목은 qtyDraft(안 고치면 필요 수량),
   // 직접 더한 품목(쿠팡 발주와 상관없이 같이 사는 것)은 extras.
   const [qtyDraft, setQtyDraft] = useState<Record<string, string>>({});
+  // 품목별 단가(원). 비워 두면 같은 상품의 지난 주문 단가를 미리 채운다.
+  const [costDraft, setCostDraft] = useState<Record<string, string>>({});
+  // 이번 주문의 부대비용(예상). 도착 기록 때 기본값이 된다.
+  const [feeDraft, setFeeDraft] = useState<FeeDraft>({});
   const [extras, setExtras] = useState<OrderItem[]>([]);
   const names = useProductNames(orders);
   const imageOf = useProductImage();
+  // 같은 상품을 예전에 주문할 때 적은 단가(가장 최근 한중발주). 새 주문 단가 칸의 기본값.
+  const lastCost = (name: string) => {
+    for (const o of orders) {
+      const c = productUnitCost(o, name);
+      if (c) return String(c);
+    }
+    return '';
+  };
   useEffect(() => subscribeReservations(setReservations), []);
   useEffect(() => subscribeHanjungQueue(setQueue), []);
 
@@ -95,13 +108,20 @@ const PendingPanel: React.FC<{ orders: HanjungOrder[]; onRecord: (act: Act) => v
     selected.reduce((m, r) => m.set(r.상품이름, (m.get(r.상품이름) || 0) + r.need), new Map<string, number>())
   );
   const items: OrderItem[] = [
-    ...byProduct.map(([name, need]) => ({ name, need, qty: qtyDraft[name] ?? String(need), added: false })),
+    ...byProduct.map(([name, need]) => {
+      const qty = qtyDraft[name] ?? String(need);
+      // 금액을 안 적었으면 지난 주문 단가 × 이번 수량으로 미리 채운다.
+      const last = Number(lastCost(name)) || 0;
+      return { name, need, qty, added: false, cost: costDraft[name] ?? (last ? String(Math.round(last * (Number(qty) || 0))) : '') };
+    }),
     ...extras,
   ];
   const setItems = (next: OrderItem[]) => {
     const d: Record<string, string> = { ...qtyDraft };
-    next.filter(it => !it.added).forEach(it => { d[it.name] = it.qty; });
+    const c: Record<string, string> = { ...costDraft };
+    next.filter(it => !it.added).forEach(it => { d[it.name] = it.qty; c[it.name] = it.cost ?? ''; });
     setQtyDraft(d);
+    setCostDraft(c);
     setExtras(next.filter(it => it.added));
   };
   const extraCount = extras.filter(it => it.name.trim() && itemQty(it) > 0).length;
@@ -144,6 +164,8 @@ const PendingPanel: React.FC<{ orders: HanjungOrder[]; onRecord: (act: Act) => v
       })),
       receipts: [],
       orderQty: itemsToOrderQty(items.filter(it => it.added ? itemQty(it) > 0 : true)),
+      unitCost: itemsToUnitCost(items),
+      fees: feesToNumbers(feeDraft),
     };
     // 한중 대기에서 온 줄은 대기에서 빼고, 예전 예약 줄은 예약 메모에 고유번호를 적는다.
     const fromQueue = selected.filter(r => r.fromQueue);
@@ -156,6 +178,8 @@ const PendingPanel: React.FC<{ orders: HanjungOrder[]; onRecord: (act: Act) => v
       if (fromRes.length) await setReservationMemo(fromRes, `예약 ${code}`);
       setChecked(new Set());
       setQtyDraft({});
+      setCostDraft({});
+      setFeeDraft({});
       setExtras([]);
       // 되돌리면 한중발주를 지우고, 대기 줄은 다시 넣고, 예약 메모는 만들기 전 값으로 돌린다.
       const before = fromRes.map(r => ({ row: r, memo: r.메모 || '예약' }));
@@ -285,6 +309,10 @@ const PendingPanel: React.FC<{ orders: HanjungOrder[]; onRecord: (act: Act) => v
           이번 1688 주문 <span className="font-normal text-gray-400">· 품목마다 실제로 주문한 총수량을 적어요. 쿠팡 필요 수량보다 많으면 남는 만큼이 여유가 돼요.</span>
         </div>
         <OrderItemsEditor items={items} onChange={setItems} names={names} listId="hanjung-pending-names" imageOf={imageOf} />
+        <div className="mt-2 pt-2 border-t border-gray-100">
+          <div className="text-xs font-semibold text-gray-600 mb-1">부대비용 <span className="font-normal text-gray-400">· 알면 미리 적어 두세요. 도착 기록 때 그대로 채워져요.</span></div>
+          <FeeInputs value={feeDraft} onChange={setFeeDraft} />
+        </div>
       </div>
     </div>
   );
@@ -296,8 +324,28 @@ const HanjungOrderPage: React.FC = () => {
   const [open, setOpen] = useState<string | null>(null);
   // 입고대기 수정 중인 건(새 고유번호·고친 줄들). 저장해야 반영된다.
   // items: 품목별 총 주문 수량(need는 그릴 때 남은 쿠팡 줄로 다시 센다).
-  const [edit, setEdit] = useState<{ code: string; newCode: string; lines: HanjungLine[]; items: OrderItem[] } | null>(null);
+  const [edit, setEdit] = useState<{ code: string; newCode: string; lines: HanjungLine[]; items: OrderItem[]; fees: FeeDraft } | null>(null);
   const productNames = useProductNames(orders);
+  // 도착(수입입고)을 적고 있는 건. 머리줄의 "📦 도착 기록"을 누르면 펼쳐서 입력 칸을 띄운다.
+  const [receiving, setReceiving] = useState<string | null>(null);
+  // 펼친 건 안에서 더 펼친 칸(쿠팡 발주 목록·도착 기록·쿠팡 입고). 기본은 접어서 상품표만 보이게 한다.
+  const [folds, setFolds] = useState<Set<string>>(new Set());
+  const foldOpen = (k: string) => folds.has(k);
+  const toggleFold = (k: string) => setFolds(prev => {
+    const next = new Set(prev);
+    if (next.has(k)) next.delete(k); else next.add(k);
+    return next;
+  });
+  const foldHead = (k: string, title: string, summary: string) => (
+    <button
+      onClick={() => toggleFold(k)}
+      className="w-full flex items-center gap-2 text-left text-xs py-1.5 px-2 rounded-lg hover:bg-gray-50"
+    >
+      <span className="text-gray-400 w-3">{foldOpen(k) ? '▾' : '▸'}</span>
+      <span className="font-semibold text-gray-600">{title}</span>
+      <span className="text-gray-400">{summary}</span>
+    </button>
+  );
   const imageOf = useProductImage();
 
   const [receives, setReceives] = useState<ReceiveRow[]>([]);
@@ -306,6 +354,23 @@ const HanjungOrderPage: React.FC = () => {
 
   const ordersRef = React.useRef(orders);
   ordersRef.current = orders;
+  // 자동 준비됨 체크가 생기기 전에 도착한 한중발주: 도착한 만큼 배정 줄을 한 번만 준비됨으로 체크한다.
+  // (그 뒤로는 도착 기록을 저장할 때 체크한다. 사람이 일부러 푼 체크를 매번 다시 켜지 않게 한 번만.)
+  useEffect(() => {
+    orders
+      .filter(o => o.receipts.length && !o.autoReadyAt)
+      .forEach(o => {
+        markArrivedLinesReady(o)
+          .then(() => saveHanjungOrder({ ...o, autoReadyAt: Date.now() }))
+          .catch(err => console.error('도착 준비됨 체크 실패:', err));
+      });
+  }, [orders]);
+
+  // 같은 상품으로 연결해 둔 이름이 한중발주에 예전 이름으로 남아 있으면 쿠팡 발주 이름으로 맞춰 저장한다.
+  useEffect(() => {
+    const fix = ordersNeedingAliasRename(orders);
+    fix.forEach(o => saveHanjungOrder(o).catch(err => console.error('같은 상품 이름 맞추기 실패:', err)));
+  }, [orders]);
   // 뺀 줄을 대기로 돌릴 때 같은 줄의 나머지가 이미 대기에 있는지 보려고 대기도 지켜본다.
   const queueRef = React.useRef<HanjungQueueItem[]>([]);
   useEffect(() => subscribeHanjungQueue(q => { queueRef.current = q; }), []);
@@ -415,7 +480,8 @@ const HanjungOrderPage: React.FC = () => {
     const names = productSummary(o).map(p => p.상품이름);
     setEdit({
       code: o.code, newCode: o.code, lines: o.lines.map(l => ({ ...l })),
-      items: names.map(n => ({ name: n, qty: String(productOrderQty(o, n)), need: 0, added: false })),
+      items: names.map(n => ({ name: n, qty: String(productOrderQty(o, n)), need: 0, added: false, cost: productUnitCost(o, n) ? String(Math.round(productUnitCost(o, n) * productOrderQty(o, n))) : '' })),
+      fees: Object.fromEntries(Object.entries(o.fees || {}).map(([k, v]) => [k, String(v)])) as FeeDraft,
     });
   };
 
@@ -450,16 +516,18 @@ const HanjungOrderPage: React.FC = () => {
     const short = items.filter(it => itemQty(it) < it.need);
     if (short.length) return alert(`주문 수량이 연결된 쿠팡 발주 수량보다 적어요:\n${short.map(it => `${it.name} (쿠팡 ${it.need})`).join('\n')}`);
     const orderQty = itemsToOrderQty(items.filter(it => itemQty(it) > 0 || it.need > 0));
+    const unitCost = itemsToUnitCost(items);
+    const fees = feesToNumbers(edit.fees);
 
     // from 번호로 저장된 건을 to 번호·ls 줄로 바꾼다. 그사이 붙은 수입입고 기록은 지금 저장된 것을 쓴다.
-    const put = async (from: string, to: string, ls: HanjungLine[], qty: Record<string, number> | undefined) => {
+    const put = async (from: string, to: string, ls: HanjungLine[], qty: Record<string, number> | undefined, cost: Record<string, number> | undefined, fee: HanjungOrder['fees'] | undefined) => {
       const cur = ordersRef.current.find(x => x.code === from) || o;
-      const { orderQty: _old, ...base } = cur;
-      await saveHanjungOrder(qty ? { ...base, code: to, lines: ls, orderQty: qty } : { ...base, code: to, lines: ls });
+      const { orderQty: _old, unitCost: _oldCost, fees: _oldFees, ...base } = cur;
+      await saveHanjungOrder({ ...base, code: to, lines: ls, ...(qty ? { orderQty: qty } : {}), ...(cost && Object.keys(cost).length ? { unitCost: cost } : {}), ...(fee && Object.keys(fee).length ? { fees: fee } : {}) });
       if (from !== to) await deleteHanjungOrder(from);
     };
     const apply = async () => {
-      await put(o.code, code, lines, orderQty);
+      await put(o.code, code, lines, orderQty, unitCost, fees);
       if (code !== o.code) await setReservationMemo(keptRows, `예약 ${code}`);
       if (removedRows.length) {
         await returnToHanjungQueue(removedRows, queueRef.current);
@@ -477,7 +545,7 @@ const HanjungOrderPage: React.FC = () => {
     record({
       label: `${o.code} 수정`,
       undo: async () => {
-        await put(code, o.code, o.lines, o.orderQty);
+        await put(code, o.code, o.lines, o.orderQty, o.unitCost, o.fees);
         await setReservationMemo([...keptRows, ...removedRows], `예약 ${o.code}`);
         if (removedRows.length) await removeFromHanjungQueue(removedKeys);
         if (queueBefore.length) await addToHanjungQueue(queueBefore.map(queueItemToRow), []);
@@ -499,7 +567,8 @@ const HanjungOrderPage: React.FC = () => {
   };
 
   return (
-    <div className="p-4 sm:p-6 lg:p-8 text-gray-800">
+    // 가로로 길면 눈을 많이 움직여야 해서 화면 폭을 줄인다(왼쪽 정렬).
+    <div className="p-4 sm:p-6 lg:p-8 text-gray-800 max-w-[1000px]">
       <div className="flex flex-wrap items-end justify-between gap-3 mb-4">
         <div>
           <div className="flex items-center gap-2">
@@ -522,7 +591,7 @@ const HanjungOrderPage: React.FC = () => {
               ↷ 다시실행
             </button>
           </div>
-          <p className="text-sm text-gray-500">예약 건을 1688에 주문할 때 한중발주를 만들어요. 도착은 수입입고, 쿠팡 입고는 물류창고입고에서 기록돼요.</p>
+          <p className="text-sm text-gray-500">1688에 주문하면 한중발주를 만들고, 물건이 사무실에 오면 그 건의 📦 도착 기록에 적어요. 쿠팡 입고(정산)는 물류창고입고에서 모아져요.</p>
         </div>
         <input
           value={search}
@@ -552,13 +621,22 @@ const HanjungOrderPage: React.FC = () => {
           return (
             <div key={o.code} className="bg-white border border-gray-200 rounded-xl overflow-hidden">
               <div className="flex flex-wrap items-center gap-3 px-4 py-3 cursor-pointer hover:bg-gray-50" onClick={() => setOpen(isOpen ? null : o.code)}>
-                <span className="font-mono font-bold text-gray-900">{o.code}</span>
+                <span className="font-mono font-bold text-gray-900 w-28 flex-shrink-0 truncate" title={o.code}>{o.code}</span>
                 {/* 품목 사진(앞에서 6개까지) */}
-                <span className="inline-flex items-center gap-1">
+                <span className="inline-flex items-center gap-1 w-[232px] flex-shrink-0">
                   {products.slice(0, 6).map(p => <ProductThumb key={p.상품이름} url={imageOf(p.상품이름)} size={30} title={`${p.상품이름} · 주문 ${p.ordered}개`} />)}
                   {products.length > 6 && <span className="text-xs text-gray-400">+{products.length - 6}</span>}
                 </span>
                 <span className={`text-xs px-2 py-0.5 rounded-full border ${st.cls}`}>{st.text}</span>
+                {t.status !== 'done' && (
+                  <button
+                    onClick={e => { e.stopPropagation(); setOpen(o.code); setReceiving(receiving === o.code ? null : o.code); }}
+                    title="1688 물건이 사무실에 도착했으면 수량·단가·비용을 적어요(나눠서 오면 올 때마다)"
+                    className={`text-xs px-2 py-0.5 rounded-full border ${receiving === o.code ? 'border-emerald-500 bg-emerald-500 text-white' : 'border-emerald-300 text-emerald-700 bg-white hover:bg-emerald-50'}`}
+                  >
+                    📦 도착 기록
+                  </button>
+                )}
                 {t.status === 'ordered' && !o.receipts.length && (
                   <button
                     onClick={e => { e.stopPropagation(); handleCancel(o); }}
@@ -585,6 +663,11 @@ const HanjungOrderPage: React.FC = () => {
                   <br />
                   <span className="text-xs">
                     쿠팡입고 <b>{settle.qty}</b>개 · 정산 <b>{won(settle.total)}</b>
+                    {(() => {
+                      // 입고상세내역의 지급일 = 정산예정일. 여러 날이면 앞의 두 날만.
+                      const days = Array.from(new Set(settle.rows.map(r => String(r.payDate || '').slice(0, 10)).filter(Boolean))).sort();
+                      return days.length ? <span className="text-gray-500" title={`정산예정일(입고상세내역의 지급일): ${days.join(', ')}`}> · 정산예정 <b>{days.slice(0, 2).map(d => d.slice(5).replace('-', '/')).join(', ')}{days.length > 2 ? ' 외' : ''}</b></span> : null;
+                    })()}
                     {rate != null && <> · 정산률 <b className={rate >= 100 ? 'text-emerald-600' : 'text-amber-600'}>{rate}%</b></>}
                     {settle.qty > 0 && t.totalCost > 0 && (
                       <> · 차익 <b className={profit >= 0 ? 'text-emerald-600' : 'text-red-500'} title="정산 공급가(부가세 제외) − 총원가">{won(profit)}</b></>
@@ -596,32 +679,49 @@ const HanjungOrderPage: React.FC = () => {
 
               {isOpen && (
                 <div className="border-t border-gray-100 px-4 py-3 space-y-4">
+                  {receiving === o.code && <ReceiptForm order={o} onDone={() => setReceiving(null)} />}
                   <div className="overflow-x-auto">
-                  <table className="w-full min-w-[34rem] text-sm">
-                    <thead className="text-xs text-gray-500">
-                      <tr><th className="text-left font-medium py-1">상품</th><th className="w-20 text-right font-medium">주문</th><th className="w-20 text-right font-medium" title="쿠팡 발주 줄에 연결한 수량">배정</th><th className="w-20 text-right font-medium" title="주문 − 배정. 아직 어느 쿠팡 발주에도 안 쓴 수량">여유</th><th className="w-20 text-right font-medium">수입입고</th><th className="w-20 text-right font-medium" title="주문 − 수입입고. 1688에서 아직 안 온 수량">미도착</th><th className="w-20 text-right font-medium">쿠팡입고</th><th className="w-20 text-right font-medium">미정산</th></tr>
+                  {/* 상품마다 일의 단계대로 세 칸: 주문(쿠팡 몫·여유) → 사무실 도착 → 쿠팡 입고(정산). 숫자는 "한 것 / 할 것"과 막대로. */}
+                  <table className="text-[15px]">
+                    <thead className="text-sm text-gray-500">
+                      <tr>
+                        <th className="text-left font-medium py-1 pr-3">상품</th>
+                        <th className="w-28 text-left font-medium pl-3" title="1688에 주문한 수량. 배정 = 쿠팡 발주에 연결한 수량, 여유 = 남는 것(다음 발주에 씀)">주문</th>
+                        <th className="w-28 text-left font-medium pl-3" title="사무실에 도착한 수량 / 주문 수량">사무실 도착</th>
+                        <th className="w-28 text-left font-medium pl-3" title="쿠팡 물류센터에 입고(정산)된 수량 / 배정 수량">쿠팡 입고</th>
+                      </tr>
                     </thead>
                     <tbody>
-                      {products.map(p => (
-                        <tr key={p.상품이름} className="border-t border-gray-50">
-                          <td className="py-1.5"><span className="inline-flex items-center gap-2"><ProductThumb url={imageOf(p.상품이름)} />{p.상품이름}</span></td>
-                          <td className="text-right font-mono">{p.ordered}</td>
-                          <td className="text-right font-mono text-gray-500">{p.allocated}</td>
-                          <td className={`text-right font-mono ${p.spare > 0 ? 'text-emerald-600 font-bold' : 'text-gray-300'}`}>{p.spare}</td>
-                          <td className="text-right font-mono">{p.received}</td>
-                          <td className={`text-right font-mono ${p.ordered - p.received > 0 ? 'text-amber-600' : 'text-gray-300'}`}>{Math.max(0, p.ordered - p.received)}</td>
-                          <td className="text-right font-mono">{settle.byProduct.get(p.상품이름) || 0}</td>
-                          <td className={`text-right font-mono ${p.received - (settle.byProduct.get(p.상품이름) || 0) > 0 ? 'text-amber-600' : 'text-gray-300'}`}>
-                            {Math.max(0, p.received - (settle.byProduct.get(p.상품이름) || 0))}
-                          </td>
-                        </tr>
-                      ))}
+                      {products.map(p => {
+                        const coupangIn = settle.byProduct.get(p.상품이름) || 0;
+                        const bar = (done: number, total: number) => {
+                          const pct = total > 0 ? Math.min(100, Math.round((done / total) * 100)) : 0;
+                          const color = total > 0 && done >= total ? 'bg-emerald-500' : done > 0 ? 'bg-amber-400' : 'bg-gray-200';
+                          return (
+                            <div className="pl-3">
+                              <div className="font-mono text-sm"><b className={total > 0 && done >= total ? 'text-emerald-600' : done > 0 ? 'text-amber-600' : 'text-gray-400'}>{done}</b><span className="text-gray-400"> / {total}</span></div>
+                              <div className="h-1 mt-0.5 rounded-full bg-gray-100 overflow-hidden w-16"><div className={`h-full ${color}`} style={{ width: `${pct}%` }} /></div>
+                            </div>
+                          );
+                        };
+                        return (
+                          <tr key={p.상품이름} className="border-t border-gray-100">
+                            <td className="py-1.5 pr-3"><span className="inline-flex items-center gap-2 max-w-[22rem]"><ProductThumb url={imageOf(p.상품이름)} size={26} /><span className="truncate" title={p.상품이름}>{p.상품이름.replace(/^주노엘\s*/, '')}</span></span></td>
+                            <td className="pl-3">
+                              <div className="font-mono font-bold text-gray-900 text-sm whitespace-nowrap">{p.ordered}{productUnitCost(o, p.상품이름) > 0 && <span className="ml-1.5 text-[11px] font-normal text-gray-400">· {Math.round(productUnitCost(o, p.상품이름) * p.ordered).toLocaleString()}원</span>}</div>
+                              <div className="text-xs text-gray-400 whitespace-nowrap">배정 {p.allocated}{p.spare > 0 && <> · <span className="text-emerald-600 font-semibold">여유 {p.spare}</span></>}</div>
+                            </td>
+                            <td>{bar(p.received, p.ordered)}</td>
+                            <td>{p.allocated > 0 ? bar(coupangIn, p.allocated) : <span className="pl-3 text-xs text-gray-300">배정 없음</span>}</td>
+                          </tr>
+                        );
+                      })}
                     </tbody>
                   </table>
                   </div>
 
-                  <div>
-                    <div className="text-xs font-semibold text-gray-500 mb-1">들어간 쿠팡 발주 {o.lines.length}건</div>
+                  <div className="border-t border-gray-100 pt-1 space-y-0.5">
+                    {edit?.code !== o.code && foldHead(`${o.code}|lines`, `쿠팡 발주 ${o.lines.length}건`, Array.from(new Set(o.lines.map(l => l.물류센터))).slice(0, 4).join(' · '))}
                     {edit?.code === o.code ? (
                       <div className="border border-blue-200 bg-blue-50/40 rounded-lg p-2 space-y-1">
                         <label className="flex items-center gap-2 text-xs text-gray-600 pb-1">
@@ -640,6 +740,8 @@ const HanjungOrderPage: React.FC = () => {
                           imageOf={imageOf}
                           listId={`hanjung-edit-names-${o.code}`}
                         />
+                        <div className="text-xs font-semibold text-gray-500 pt-2">부대비용(예상)</div>
+                        <FeeInputs value={edit.fees} onChange={f => setEdit(cur => cur && { ...cur, fees: f })} />
                         <div className="text-xs font-semibold text-gray-500 pt-2">연결된 쿠팡 발주</div>
                         {edit.lines.map((l, i) => (
                           <div key={l.key} className="flex items-center gap-2 text-xs text-gray-600">
@@ -664,27 +766,53 @@ const HanjungOrderPage: React.FC = () => {
                           <button onClick={() => saveEdit(o)} className="px-3 py-1 text-xs rounded-lg bg-blue-600 text-white font-semibold hover:bg-blue-700">저장</button>
                         </div>
                       </div>
-                    ) : (
-                      <div className="text-xs text-gray-600 grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-0.5">
-                        {o.lines.map(l => (
-                          <div key={l.key} className="truncate">
-                            <span className="font-mono text-gray-400">{l.발주번호}</span> · {l.물류센터} · {ymdText(l.입고예정일)} · {l.상품이름} <b>{lineAlloc(l)}</b>개{lineAlloc(l) !== l.확정수량 && <span className="text-gray-400"> (쿠팡 {l.확정수량}개 중)</span>}
-                          </div>
-                        ))}
+                    ) : foldOpen(`${o.code}|lines`) && (
+                      <div className="pl-7 pb-1 overflow-x-auto">
+                        {/* 쿠팡 발주 줄: 발주번호 · 센터 · 입고예정일 · 상품 · 배정 수량을 칸 맞춰서. 같은 발주번호끼리 붙여 둔다. */}
+                        <table className="w-full text-xs">
+                          <thead className="text-gray-400">
+                            <tr><th className="text-left font-medium py-1 w-24">발주번호</th><th className="text-left font-medium w-24">센터</th><th className="text-left font-medium w-20">입고예정</th><th className="text-left font-medium">상품</th><th className="text-right font-medium w-20">배정</th></tr>
+                          </thead>
+                          <tbody>
+                            {[...o.lines].sort((a, b) => a.발주번호.localeCompare(b.발주번호)).map(l => (
+                              <tr key={l.key} className="border-t border-gray-50">
+                                <td className="py-1 font-mono text-gray-500">{l.발주번호}</td>
+                                <td className="text-gray-600">{l.물류센터}</td>
+                                <td className="text-gray-500">{ymdText(l.입고예정일)}</td>
+                                <td className="text-gray-700 truncate max-w-[22rem]" title={l.상품이름}>{l.상품이름}</td>
+                                <td className="text-right font-mono"><b>{lineAlloc(l)}</b>{lineAlloc(l) !== l.확정수량 && <span className="text-gray-400">/{l.확정수량}</span>}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
                       </div>
                     )}
                   </div>
 
-                  {settle.rows.length > 0 && (
-                    <div>
-                      <div className="text-xs font-semibold text-gray-500 mb-1">쿠팡 입고(정산) {settle.rows.length}건</div>
-                      <div className="text-xs text-gray-600 space-y-0.5">
-                        {settle.rows.map(r => (
-                          <div key={r.key} className="truncate">
-                            <span className="font-mono text-gray-400">{r.date.slice(0, 10)}</span> · <span className="font-mono">{r.발주번호}</span> · {r.skuName} <b>{sign(r) * r.qty}</b>개 · {won(sign(r) * r.total)}
-                          </div>
-                        ))}
-                      </div>
+                  {o.receipts.length > 0 && foldHead(`${o.code}|receipts`, `도착 기록 ${o.receipts.length}건`, `총원가 ${won(t.totalCost)}`)}
+                  {foldOpen(`${o.code}|receipts`) && <div className="pl-7"><ReceiptHistory order={o} /></div>}
+
+                  {settle.rows.length > 0 && foldHead(`${o.code}|settle`, `쿠팡 입고 ${settle.rows.length}건`, `정산 ${won(settle.total)}`)}
+                  {settle.rows.length > 0 && foldOpen(`${o.code}|settle`) && (
+                    <div className="pl-7 overflow-x-auto">
+                      {/* 쿠팡 입고(정산) 줄: 입고일 · 발주번호 · 상품 · 수량 · 정산 금액 · 지급일 */}
+                      <table className="w-full text-xs">
+                        <thead className="text-gray-400">
+                          <tr><th className="text-left font-medium py-1 w-24">입고일</th><th className="text-left font-medium w-24">발주번호</th><th className="text-left font-medium">상품</th><th className="text-right font-medium w-14">수량</th><th className="text-right font-medium w-24">정산</th><th className="text-right font-medium w-24">지급일</th></tr>
+                        </thead>
+                        <tbody>
+                          {settle.rows.map(r => (
+                            <tr key={r.key} className="border-t border-gray-50">
+                              <td className="py-1 font-mono text-gray-500">{r.date.slice(0, 10)}</td>
+                              <td className="font-mono text-gray-500">{r.발주번호}</td>
+                              <td className="text-gray-700 truncate max-w-[22rem]" title={r.skuName}>{r.skuName}</td>
+                              <td className="text-right font-mono">{sign(r) * r.qty}</td>
+                              <td className="text-right font-mono">{won(sign(r) * r.total)}</td>
+                              <td className="text-right font-mono text-gray-500">{String(r.payDate || '').slice(0, 10) || '-'}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
                     </div>
                   )}
 

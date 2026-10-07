@@ -810,14 +810,8 @@ export default function CoupangOrderPage({ onGoShipOut }: { onGoShipOut?: () => 
       <button onClick={handleDirectShipOut} title="체크한 발주서를 묶음 없이 바로 쉽먼트생성으로 보냅니다(센터·입고예정일이 같은 것끼리 한 건)">
         <span className="rk-dot" style={{ background: '#fb923c' }} />쉽먼트생성
       </button>
-      <button onClick={handleSelectedToHanjung} title="체크한 발주서의 상품을 모두 한중발주의 발주 대기로 보냅니다(발송 목록에는 그대로 남아요)">
-        <span className="rk-dot" style={{ background: '#60a5fa' }} />한중
-      </button>
       <button onClick={handleBundle} title="체크한 발주서로 새 묶음(택배 한 상자)을 만듭니다. 이미 있는 묶음에 더 담을 때는 그 묶음 카드의 +담기를 누르세요.">
         <span className="rk-dot" style={{ background: '#a78bfa' }} />새 묶음
-      </button>
-      <button onClick={handleReserveSelected} title="체크한 발주서를 통째로 예약 목록으로 넘깁니다">
-        <span className="rk-dot" style={{ background: '#60a5fa' }} />예약
       </button>
       <span className="rk-sep" />
       <button className="rk-danger" onClick={handleDeleteSelected} title="체크한 발주서를 발송 목록에서 지웁니다(되돌리기로 살릴 수 있어요)">삭제</button>

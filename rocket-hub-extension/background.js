@@ -53,6 +53,16 @@ const LOTTE_START_URL = 'https://partner.alps.llogis.com/main/pages/sec/authenti
 const SHUB_KEY = 'shubPending';
 const SHUB_START_URL = 'https://supplier.coupang.com/';
 
+// ---- 쉽먼트 일괄등록 업로드: 앱이 채운 양식을 서허에 올린다(shub-upload.js) ----
+const SHUB_UPLOAD_KEY = 'shubUpload';
+const SHUB_ASN_URL = 'https://supplier.coupang.com/ibs/asn/active';
+
+// ---- 쉽먼트 출력: 택배 쉽먼트 화면에서 그 쉽먼트의 Label·내역서 PDF를 받아 앱에 넘긴다(shub-print.js) ----
+// 서허는 두 파일을 다운로드 폴더로 바로 내려준다. 그 다운로드를 잡아 내용을 읽는다.
+//   shipment_Label_document(51191486)_2026_10_07.pdf / shipment_ManiFest_document(51191486)_2026_10_07.pdf
+const SHUB_PRINT_KEY = 'shubPrint';
+let printChain = Promise.resolve();
+
 // ---- 발주서 수집: 서허 발주서 목록에서 새 발주서만 골라 업로드 양식 받기 ----
 const PO_KEY = 'poPending';
 const PO_URL = 'https://supplier.coupang.com/po-web/purchase/order/list';
@@ -119,8 +129,57 @@ const readDownloadedFile = async (id) => {
 chrome.downloads.onChanged.addListener((delta) => {
   if (delta && delta.state && delta.state.current === 'complete') {
     setTimeout(() => readDownloadedFile(delta.id).catch(() => {}), 1200);
+    // Label·내역서가 거의 같이 끝나도 서로 덮어쓰지 않게 하나씩 차례로 읽는다.
+    setTimeout(() => { printChain = printChain.then(() => readPrintFile(delta.id)).catch(() => {}); }, 800);
   }
 });
+
+// 쉽먼트 출력 중에 받아진 Label·내역서 PDF를 읽어 shubPrint.files에 넣는다.
+// 같은 주소를 다시 받아 보고, 안 되면 다운로드 폴더의 파일을 직접 읽는다("파일 URL 접근 허용"이 켜져 있어야 함).
+const bufToDataUrl = (buf, mime) => {
+  const bytes = new Uint8Array(buf);
+  let bin = '';
+  for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
+  return `data:${mime};base64,${btoa(bin)}`;
+};
+const readPrintFile = async (id) => {
+  const r = await chrome.storage.local.get(SHUB_PRINT_KEY);
+  const job = r && r[SHUB_PRINT_KEY];
+  if (!job || job.step === 'files' || job.step === 'error') return;
+  const [item] = await chrome.downloads.search({ id });
+  if (!item || !item.filename) return;
+  const name = item.filename.split(/[\\/]/).pop();
+  if (!name.includes(job.shipmentNo) || !/\.pdf$/i.test(name)) return;
+  const kind = /label/i.test(name) ? 'label' : /manifest/i.test(name) ? 'manifest' : '';
+  if (!kind || (job.files && job.files[kind])) return;
+  let dataUrl = '';
+  try {
+    const res = await fetch(item.finalUrl || item.url, { credentials: 'include' });
+    const buf = await res.arrayBuffer();
+    if (res.ok && new Uint8Array(buf.slice(0, 5)).every((b, i) => b === [0x25, 0x50, 0x44, 0x46, 0x2d][i])) dataUrl = bufToDataUrl(buf, 'application/pdf');
+  } catch (err) {}
+  if (!dataUrl) {
+    const allowed = await new Promise((res) => chrome.extension.isAllowedFileSchemeAccess(res));
+    if (allowed) {
+      try {
+        const res = await fetch(`file://${item.filename}`);
+        dataUrl = bufToDataUrl(await res.arrayBuffer(), 'application/pdf');
+      } catch (err) {}
+    }
+  }
+  const now = (await chrome.storage.local.get(SHUB_PRINT_KEY))[SHUB_PRINT_KEY];
+  if (!now || now.requestId !== job.requestId) return;
+  if (!dataUrl) {
+    await chrome.storage.local.set({ [SHUB_PRINT_KEY]: { ...now, step: 'error', status: `${name}을 읽지 못했어요. 다운로드 폴더의 파일을 직접 열어 출력해 주세요. (매번 자동으로 하려면 chrome://extensions › 로켓 서허 연동 › 세부정보 › "파일 URL 접근 허용"을 켜 주세요)` } });
+    return;
+  }
+  const files = { ...(now.files || {}), [kind]: { name, dataUrl } };
+  const both = files.label && files.manifest;
+  await chrome.storage.local.set({
+    [SHUB_PRINT_KEY]: { ...now, files, step: both ? 'files' : now.step, status: both ? '✅ Label·내역서를 받았어요' : `${kind === 'label' ? 'Label' : '내역서'} 받음…`, savedAt: Date.now() },
+  });
+  if (both && now.windowId) setTimeout(() => chrome.windows.remove(now.windowId).catch(() => {}), 1500);
+};
 
 chrome.downloads.onCreated.addListener(async (item) => {
   try {
@@ -301,6 +360,62 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true;
   }
 
+  // 쉽먼트 출력: 택배 쉽먼트 화면을 열어 그 쉽먼트의 Label·내역서를 받는다.
+  if (message.type === 'SHUB_PRINT') {
+    (async () => {
+      try {
+        if (!/^\d{6,}$/.test(String(message.shipmentNo || ''))) throw new Error('쉽먼트 번호가 없습니다.');
+        const win = await chrome.windows.create({ url: SHUB_ASN_URL, type: 'popup', width: 1300, height: 900, focused: true });
+        await chrome.storage.local.set({
+          [SHUB_PRINT_KEY]: {
+            requestId: message.requestId || String(Date.now()),
+            shipmentNo: String(message.shipmentNo),
+            orderNo: String(message.orderNo || ''),
+            savedAt: Date.now(),
+            step: 'start',
+            status: '서허 여는 중…',
+            files: {},
+            windowId: win.id,
+          },
+        });
+        sendResponse({ ok: true });
+      } catch (err) {
+        sendResponse({ ok: false, error: String((err && err.message) || err) });
+      }
+    })();
+    return true;
+  }
+
+  // 앱이 채운 쉽먼트 양식을 서허 쉽먼트 일괄등록에 올린다. 창은 결과 확인용으로 열어 둔다.
+  if (message.type === 'SHUB_UPLOAD') {
+    (async () => {
+      try {
+        if (!message.file || !message.file.dataUrl) throw new Error('양식 파일이 비어 있습니다.');
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(String(message.shipDate || ''))) throw new Error('발송일이 없습니다.');
+        const win = await chrome.windows.create({ url: SHUB_ASN_URL, type: 'popup', width: 1300, height: 900, focused: true });
+        await chrome.storage.local.set({
+          [SHUB_UPLOAD_KEY]: {
+            batchId: message.batchId || '',
+            file: message.file,
+            shipDate: message.shipDate,
+            shipTime: message.shipTime || '23:55',
+            carrier: message.carrier || '롯데택배',
+            savedAt: Date.now(),
+            step: 'start',
+            status: '서허 여는 중…',
+            messages: [],
+            orderNos: Array.isArray(message.orderNos) ? message.orderNos : [],
+            windowId: win.id,
+          },
+        });
+        sendResponse({ ok: true });
+      } catch (err) {
+        sendResponse({ ok: false, error: String((err && err.message) || err) });
+      }
+    })();
+    return true;
+  }
+
   // 앱의 발주 > 쿠팡발주확인에서 "서허에서 새 발주서 가져오기" → 발주서 목록을 새 창으로 열고
   // po.js가 지난번 발주번호 위쪽만 골라 업로드 양식을 받는다.
   if (message.type === 'PO_COLLECT') {
@@ -426,7 +541,7 @@ chrome.storage.onChanged.addListener((changes, area) => {
 // 원래 가야 할 화면으로 다시 보낸다(창마다 몇 번까지만).
 const JOB_MAX_AGE_MS = 15 * 60 * 1000;
 const collectJobs = async () => {
-  const r = await chrome.storage.local.get([PO_KEY, RECEIVE_KEY, AUTO_KEY, SHUB_KEY]);
+  const r = await chrome.storage.local.get([PO_KEY, RECEIVE_KEY, AUTO_KEY, SHUB_KEY, SHUB_UPLOAD_KEY, SHUB_PRINT_KEY]);
   const now = Date.now();
   const jobs = [];
   const po = r[PO_KEY];
@@ -444,6 +559,14 @@ const collectJobs = async () => {
   const sh = r[SHUB_KEY];
   if (sh && sh.windowId && !sh.file && !['error', 'manual'].includes(sh.step) && now - (sh.savedAt || 0) < JOB_MAX_AGE_MS) {
     jobs.push({ windowId: sh.windowId, home: '', path: '' });
+  }
+  const up = r[SHUB_UPLOAD_KEY];
+  if (up && up.windowId && !['done', 'error'].includes(up.step) && now - (up.savedAt || 0) < JOB_MAX_AGE_MS) {
+    jobs.push({ windowId: up.windowId, home: SHUB_ASN_URL, path: '/ibs/' });
+  }
+  const pr = r[SHUB_PRINT_KEY];
+  if (pr && pr.windowId && !['files', 'error'].includes(pr.step) && now - (pr.savedAt || 0) < JOB_MAX_AGE_MS) {
+    jobs.push({ windowId: pr.windowId, home: SHUB_ASN_URL, path: '/ibs/asn' });
   }
   return jobs;
 };

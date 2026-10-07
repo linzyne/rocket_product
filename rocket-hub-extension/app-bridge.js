@@ -79,6 +79,40 @@
       }
       return;
     }
+    // 쉽먼트 출력 파일(Label·내역서) 받기.
+    if (d.type === 'SHUB_PRINT') {
+      try {
+        chrome.runtime.sendMessage({ type: 'SHUB_PRINT', requestId: d.requestId, shipmentNo: d.shipmentNo, orderNo: d.orderNo }, (res) => {
+          const lastError = chrome.runtime.lastError;
+          reply({ type: 'SHUB_PRINT_ACK', requestId: d.requestId, ok: !lastError && !!(res && res.ok), error: (lastError && lastError.message) || (res && res.error) });
+        });
+      } catch (err) {
+        reply({ type: 'SHUB_PRINT_ACK', requestId: d.requestId, ok: false, error: '확장을 새로고침한 뒤 앱도 새로고침해 주세요.' });
+      }
+      return;
+    }
+    // 앱을 새로 열었을 때 지난 업로드에서 찾은 발주서별 쉽먼트 번호를 다시 받아 간다(앱이 닫혀 있던 사이에 끝난 경우).
+    if (d.type === 'SHUB_UPLOAD_GET') {
+      try {
+        chrome.storage.local.get('shubUpload', (r) => {
+          const v = r && r.shubUpload;
+          if (v) reply({ type: 'SHUB_UPLOAD_STATUS', step: v.step, status: v.status, batchId: v.batchId, messages: v.messages || [], byOrder: v.byOrder || {} });
+        });
+      } catch (err) {}
+      return;
+    }
+    // 채운 쉽먼트 양식을 서허 쉽먼트 일괄등록에 올리기.
+    if (d.type === 'SHUB_UPLOAD') {
+      try {
+        chrome.runtime.sendMessage({ type: 'SHUB_UPLOAD', batchId: d.batchId, file: d.file, shipDate: d.shipDate, shipTime: d.shipTime, carrier: d.carrier, orderNos: d.orderNos || [] }, (res) => {
+          const lastError = chrome.runtime.lastError;
+          reply({ type: 'SHUB_UPLOAD_ACK', ok: !lastError && !!(res && res.ok), error: (lastError && lastError.message) || (res && res.error) });
+        });
+      } catch (err) {
+        reply({ type: 'SHUB_UPLOAD_ACK', ok: false, error: '확장을 새로고침한 뒤 앱도 새로고침해 주세요.' });
+      }
+      return;
+    }
     if (d.type === 'AUTO_COLLECT_GET' || d.type === 'AUTO_COLLECT_SET') {
       try {
         chrome.runtime.sendMessage(
@@ -165,6 +199,16 @@
         reply({ type: 'PO_STATUS', step: v.step, status: v.status, savedAt: v.savedAt, count: v.count || 0, topOrderNo: v.topOrderNo || '', file: v.file || null });
       }
       // 서허 양식 받기 진행 상황. 다 받으면 file(이름·내용)이 같이 온다.
+      // 쉽먼트 출력 파일 받기 진행 상황. 다 받으면 files(label·manifest)가 같이 온다.
+      if (changes.shubPrint && changes.shubPrint.newValue) {
+        const v = changes.shubPrint.newValue;
+        reply({ type: 'SHUB_PRINT_STATUS', requestId: v.requestId, step: v.step, status: v.status, files: v.step === 'files' ? v.files : null });
+      }
+      // 쉽먼트 일괄등록 업로드 진행 상황(서허 알림 문구 포함).
+      if (changes.shubUpload && changes.shubUpload.newValue) {
+        const v = changes.shubUpload.newValue;
+        reply({ type: 'SHUB_UPLOAD_STATUS', step: v.step, status: v.status, batchId: v.batchId, messages: v.messages || [], byOrder: v.byOrder || {} });
+      }
       if (changes.shubPending && changes.shubPending.newValue) {
         const v = changes.shubPending.newValue;
         reply({ type: 'SHUB_STATUS', step: v.step, status: v.status, savedAt: v.savedAt, batchId: v.batchId, file: v.file || null });

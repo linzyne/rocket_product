@@ -90,4 +90,32 @@
     });
     return origSend.apply(this, args);
   };
+
+  // 쉽먼트 일괄등록 업로드(shub.js)가 "쉽먼트 일괄등록"을 누르기 직전에 sessionStorage에 표시를 남긴다.
+  // 그 뒤 2분 동안 서허가 띄우는 확인창은 확인으로 넘기고, 알림창 내용은 확장에 넘겨 기록한다(창이 막고 있으면 진행이 멈춘다).
+  // 표시가 없을 때는 원래대로 동작한다.
+  const ARM = '__rocketShubUploadArm';
+  const armed = () => {
+    try {
+      return Date.now() - Number(sessionStorage.getItem(ARM) || 0) < 2 * 60 * 1000;
+    } catch (err) {
+      return false;
+    }
+  };
+  const tell = (kind, text) => {
+    try {
+      window.postMessage({ source: SRC, type: 'DIALOG', kind, text: String(text || '') }, '*');
+    } catch (err) {}
+  };
+  const origConfirm = window.confirm;
+  const origAlert = window.alert;
+  window.confirm = function (msg) {
+    if (!armed()) return origConfirm.call(window, msg);
+    tell('confirm', msg);
+    return true;
+  };
+  window.alert = function (msg) {
+    if (!armed()) return origAlert.call(window, msg);
+    tell('alert', msg);
+  };
 })();

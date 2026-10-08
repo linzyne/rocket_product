@@ -234,9 +234,13 @@ export default function CoupangFlowPage({ onNavigate }: { onNavigate: (menu: App
               }}>
                 {/* 왼쪽: 발주서 정보 · 단계 · 버튼을 위아래로 모은다(옆으로 길게 늘이지 않는다). */}
                 <div style={{ flex: '0 0 240px', maxWidth: '100%', boxSizing: 'border-box', padding: '10px 12px', background: '#fafafa', borderRight: '1px solid #f0f0f0', display: 'flex', flexDirection: 'column', gap: 7 }}>
+                  {/* 입고예정일·센터를 가장 크게: 한눈에 언제 어디로 가는지 보이게. */}
                   <div>
-                    <div style={{ fontSize: 14, fontWeight: 800, color: '#222' }}>{o.no}</div>
-                    <div style={{ fontSize: 12, color: '#777', marginTop: 2 }}>{o.center || '센터 없음'} · 입고 {dayText(o.date)}</div>
+                    <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, flexWrap: 'wrap', lineHeight: 1.2 }}>
+                      <span style={{ fontSize: 20, fontWeight: 900, color: '#111' }}>{dayText(o.date)}</span>
+                      <span style={{ fontSize: 20, fontWeight: 900, color: ORANGE }}>{o.center || '센터 없음'}</span>
+                    </div>
+                    <div style={{ fontSize: 12, color: '#888', marginTop: 3 }}>발주 {o.no}</div>
                   </div>
                   <Stepper stage={o.stage} error={r?.state === 'error'} />
                   {(o.bundle && o.stage === 1) || (o.hold && o.stage === 1) || shipNo || o.partial ? (

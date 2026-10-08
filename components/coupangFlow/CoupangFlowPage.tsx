@@ -86,12 +86,13 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
   useEffect(() => subscribeHanjung(setHjOrders), []);
   useEffect(() => subscribeHanjungQueue(setHjQueue), []);
   const placesOf = useMemo(() => makePlaceLookup(hjOrders, hjQueue), [hjOrders, hjQueue]);
-  // 한중발주 번호(동그라미 안 숫자): 고유번호 끝 숫자(H260923-01 → 1, 2 → 2), 없으면 만든 순서.
+  // 한중발주 번호(동그라미 안 숫자): 고유번호에 "1)"처럼 적힌 숫자. 없으면 끝 숫자(H260923-01 → 1), 그것도 없으면 만든 순서.
   const hjNo = useMemo(() => {
     const m = new Map<string, number>();
     [...hjOrders].sort((a, b) => a.createdAt - b.createdAt).forEach((o, i) => {
+      const marked = /(\d+)\s*\)/.exec(o.code);
       const tail = /(\d+)\s*$/.exec(o.code);
-      m.set(o.code, tail ? Number(tail[1]) : i + 1);
+      m.set(o.code, marked ? Number(marked[1]) : tail ? Number(tail[1]) : i + 1);
     });
     return m;
   }, [hjOrders]);

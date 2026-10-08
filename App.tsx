@@ -15,6 +15,7 @@ import CoupangOrderPage from './components/coupangOrder/CoupangOrderPage';
 import CoupangShipPage from './components/coupangShip/CoupangShipPage';
 import CoupangSendPage from './components/coupangSend/CoupangSendPage';
 import OrderGuardBanner from './components/coupangOrder/OrderGuardBanner';
+import CoupangFlowPage from './components/coupangFlow/CoupangFlowPage';
 import OrderSearchPage from './components/coupangOrder/OrderSearchPage';
 import { installOrderNoCopy } from './utils/copyOrderNo';
 import { PlusIcon, DownloadIcon, CloseIcon, BroomIcon, SearchIcon, DocumentAddIcon, SaveIcon, CameraIcon, SettingsIcon, TagIcon, CheckIcon, ArchiveIcon } from './components/Icons';
@@ -3243,6 +3244,7 @@ const App: React.FC = () => {
       {activeMenu === 'rocket-stock' && <StockHistoryPage mode="rocket" />}
       {activeMenu === 'rocket-sales' && <StockHistoryPage mode="sales" />}
       {activeMenu === 'rocket-in' && <ReceiveHistoryPage />}
+      {activeMenu === 'coupang-flow' && <CoupangFlowPage onNavigate={setActiveMenu} />}
       {activeMenu === 'coupang-order' && <CoupangOrderPage onGoShipOut={() => setActiveMenu('coupang-ship')} />}
       {activeMenu === 'coupang-ship' && <CoupangShipPage onGoOrder={() => setActiveMenu('coupang-order')} />}
       {activeMenu === 'coupang-send' && <CoupangSendPage onGoShip={() => setActiveMenu('coupang-ship')} />}

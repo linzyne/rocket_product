@@ -31,6 +31,17 @@ export interface ShipmentBatch {
   centers: ShipmentCenter[];
   // reserved: 택배 예약만 함 / waybilled: 운송장번호까지 받음
   status: 'reserved' | 'waybilled';
+  // 쉽먼트 자동 진행(택배예약 → 운송장 → 서허 양식 → 서허 일괄등록)이 어디까지 갔는지. 화면을 옮기거나
+  // 새로고침해도 멈춘 자리와 까닭이 남아서 "이어서 하기"가 그 다음부터 한다.
+  run?: ShipmentRun;
+}
+
+export type ShipmentRunStep = 'lotte' | 'waybill' | 'form' | 'upload' | 'done';
+export interface ShipmentRun {
+  step: ShipmentRunStep;
+  state: 'running' | 'error' | 'done';
+  message: string;
+  at: number;
 }
 
 const COLLECTION = 'shipmentBatches';
@@ -176,6 +187,19 @@ export const saveShipmentBatch = async (batch: ShipmentBatch) => {
   }
   await ensureSignedIn();
   await setDoc(doc(db, COLLECTION, batch.id), batch);
+};
+
+// 쉽먼트 기록의 몇 칸만 고친다(진행 상태 적기). 박스·운송장은 건드리지 않는다.
+export const patchShipmentBatch = async (id: string, patch: Partial<ShipmentBatch>) => {
+  if (!db) {
+    const s = readLocal();
+    if (!s[id]) return;
+    s[id] = { ...s[id], ...patch };
+    writeLocal(s);
+    return;
+  }
+  await ensureSignedIn();
+  await setDoc(doc(db, COLLECTION, id), patch, { merge: true });
 };
 
 export const deleteShipmentBatch = async (id: string) => {

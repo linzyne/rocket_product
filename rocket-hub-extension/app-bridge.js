@@ -191,7 +191,7 @@
       // 롯데택배 올리기 진행 상황(앱이 끝났는지·실패했는지 알림을 띄움).
       if (changes.lottePending && changes.lottePending.newValue) {
         const v = changes.lottePending.newValue;
-        reply({ type: 'LOTTE_STATUS', step: v.step, status: v.status, savedAt: v.savedAt, waybills: v.waybills || null });
+        reply({ type: 'LOTTE_STATUS', step: v.step, status: v.status, savedAt: v.savedAt, batchId: v.batchId || '', waybills: v.waybills || null });
       }
       // 발주서 수집 진행 상황. 다 받으면 file(이름·내용)이, 새 게 없으면 step이 'empty'로 온다.
       if (changes.poPending && changes.poPending.newValue) {

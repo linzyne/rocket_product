@@ -1,7 +1,7 @@
 import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import ProductQtySummary from '../coupangOrder/components/ProductQtySummary';
 import { useIsMobile } from '../../utils/useIsMobile';
-import { ShipOut, setShipOutDate, subscribeShipOuts, deleteShipOut, restoreShipOut, restoreOrders, updateShipOutLine, markShipOuts, applyShipOutRequest, snapshotShipOuts, restoreShipSnapshot, sameSnapshot, findOrphanLines, restoreOrphanLines } from '../coupangOrder/data/shipOutStore';
+import { ShipOut, shipOutUploaded, setShipOutDate, subscribeShipOuts, deleteShipOut, restoreShipOut, restoreOrders, updateShipOutLine, markShipOuts, applyShipOutRequest, snapshotShipOuts, restoreShipSnapshot, sameSnapshot, findOrphanLines, restoreOrphanLines } from '../coupangOrder/data/shipOutStore';
 import type { OrphanLine } from '../coupangOrder/data/shipOutStore';
 import type { ShipSnapshot } from '../coupangOrder/data/shipOutStore';
 import { dateKeyYMD } from '../coupangOrder/utils/dateUtils';
@@ -13,12 +13,13 @@ import { printPanel } from '../coupangOrder/utils/printUtils';
 import type { OrderRow, AddressEntry, SenderInfo } from '../coupangOrder/types';
 import { shipmentCenters, totalBoxCount } from '../coupangOrder/utils/dataProcessor';
 import { exportLotteExcel } from '../coupangOrder/utils/excelExport';
-import { fillShubForm, dataUrlToBuffer } from '../coupangOrder/utils/shubForm';
+import { startShipment, resumeShipment, fillAndUpload, subscribeLive, clearLive, onNeedWaybill, STEP_LABEL } from '../coupangOrder/data/shipmentRunner';
+import type { LiveStatus } from '../coupangOrder/data/shipmentRunner';
 import {
   loadLocalAddresses, loadLocalSender, subscribeShippingSettings, saveAddresses, saveSender,
 } from '../coupangOrder/data/shippingSettingsStore';
 import {
-  ShipmentBatch, subscribeShipments, saveShipmentBatch, deleteShipmentBatch, batchId, fillWaybills, allBoxes, waybillForBox, retargetBatches,
+  ShipmentBatch, subscribeShipments, saveShipmentBatch, deleteShipmentBatch, allBoxes, waybillForBox, retargetBatches,
 } from '../../data/shipmentStore';
 import AddressManager from '../coupangOrder/components/AddressManager';
 import SenderManager from '../coupangOrder/components/SenderManager';
@@ -240,9 +241,9 @@ export default function CoupangShipPage({ onGoOrder }: { onGoOrder?: () => void 
   const [showAddressManager, setShowAddressManager] = useState(false);
   const [showSenderManager, setShowSenderManager] = useState(false);
   const [batches, setBatches] = useState<ShipmentBatch[]>([]);
-  const [shubStatus, setShubStatus] = useState<string | null>(null);
-  const [shubForm, setShubForm] = useState<{ batchId: string; name: string; dataUrl: string } | null>(null);
-  const [shubBatch, setShubBatch] = useState<ShipmentBatch | null>(null);
+  const [live, setLive] = useState<LiveStatus | null>(null);
+  // 쉽먼트와 상관없는 알림도 같은 파란 줄에 보여준다.
+  const setShubStatus = (text: string) => setLive({ batchId: '', text, tone: 'info' });
   const [waybillBatch, setWaybillBatch] = useState<ShipmentBatch | null>(null);
 
   useEffect(() => subscribeShipOuts(setList), []);
@@ -352,11 +353,12 @@ export default function CoupangShipPage({ onGoOrder }: { onGoOrder?: () => void 
       waybills,
       allWaybilled: boxes.length > 0 && waybills === boxes.length,
       formSaved: !!item.formSavedAt,
+      uploaded: shipOutUploaded(item),
       // 사람이 직접 켠 완료가 가장 우선이고, 직접 풀었으면 다시 할 일로 본다.
-      // 둘 다 없으면 예약·운송장·양식이 다 끝났는지로 판단한다.
+      // 둘 다 없으면 예약·운송장·서허 일괄등록이 다 끝났는지로 판단한다(양식만 저장한 건 아직 할 일).
       done: item.doneAt ? true
         : item.undoneAt ? false
-        : (!!batch && boxes.length > 0 && waybills === boxes.length && !!item.formSavedAt),
+        : (!!batch && boxes.length > 0 && waybills === boxes.length && shipOutUploaded(item)),
     };
   };
 
@@ -707,247 +709,47 @@ export default function CoupangShipPage({ onGoOrder }: { onGoOrder?: () => void 
     saveSender(updated).catch(err => alert(`보내는사람 저장 실패: ${err instanceof Error ? err.message : String(err)}`));
   };
 
-  // B단계: 서허(서플라이어허브)에서 이 쉽먼트의 일괄등록 양식을 받아온다.
-  // 확장이 서허 창을 열어 양식을 내려받고, 받은 파일을 앱으로 넘겨준다(C단계에서 채운다).
+  // 쉽먼트 자동 진행(택배예약 → 운송장 → 서허 양식 → 서허 일괄등록)은 shipmentRunner가 맡는다. 화면을 옮겨도
+  // 계속 가고, 멈추면 쉽먼트 기록에 멈춘 자리와 까닭이 남아 카드에 보인다. 여기서는 시작·이어서 하기만 부른다.
+  useEffect(() => subscribeLive(setLive), []);
+  // 운송장을 사람이 넣어야 하면 운송장 창을 연다.
+  useEffect(() => onNeedWaybill(setWaybillBatch), []);
+
+  // 이 쉽먼트 기록에 든 출고 건들(아직 안 끝난 것).
+  const itemsOfBatch = (batch: ShipmentBatch) => {
+    const orders = new Set(allBoxes(batch).flatMap(b => b.lines.map(l => String(l.발주번호 || '').trim())));
+    return list.filter(i => i.batchId === batch.id || (!i.batchId && i.lines.some(l => orders.has(String(l.발주번호 || '').trim()))));
+  };
+
+  // 쉽먼트 기록 목록의 "서허 양식" 버튼: 그 쉽먼트를 이어서 한다.
   const handleShubForm = (batch: ShipmentBatch) => {
-    setShubBatch(batch);
-    setShubStatus(`${batch.id} · 서허 여는 중…`);
-    const onMsg = (event: MessageEvent) => {
-      const d = event.data;
-      if (event.source !== window || !d || d.source !== 'rocket-hub-extension') return;
-      if (d.type === 'SHUB_FORM_ACK' && !d.ok) {
-        window.removeEventListener('message', onMsg);
-        setShubStatus(null);
-        alert(`서허 창을 열지 못했어요: ${d.error || ''}`);
-      }
-      if (d.type === 'SHUB_STATUS') {
-        setShubStatus(`${batch.id} · ${d.status || ''}`);
-        if (d.file && d.file.dataUrl) {
-          window.removeEventListener('message', onMsg);
-          setShubForm({ batchId: batch.id, name: d.file.name, dataUrl: d.file.dataUrl });
-          // C단계: 받은 양식을 이 쉽먼트의 박스 배정대로 채워서 바로 저장한다.
-          fillAndSave(dataUrlToBuffer(d.file.dataUrl), batch);
-        }
-      }
-    };
-    window.addEventListener('message', onMsg);
-    setTimeout(() => window.removeEventListener('message', onMsg), 10 * 60 * 1000);
-    // 양식 다운로드 팝업에서 이 쉽먼트에 해당하는 발주건만 골라야 해서 발주번호를 같이 보낸다.
-    const orderNos = Array.from(
-      new Set(allBoxes(batch).flatMap(b => b.lines.map(l => String(l.발주번호 || '').trim())).filter(Boolean))
-    );
-    // 서허 팝업 목록을 좁히는 데 쓴다(물류센터·입고예정일이 하나뿐일 때만 보낸다).
-    const centers = batch.centers.map(c => c.center.trim()).filter(Boolean);
-    // 저장본은 'YYYYMMDD'라 서허 화면에서 쓰는 'YYYY-MM-DD'로 바꾼다.
-    const edds = Array.from(new Set(allBoxes(batch).flatMap(b => b.lines.map(l => String(l.입고예정일 || '').trim())).filter(Boolean)))
-      .map(d => (/^\d{8}$/.test(d) ? `${d.slice(0, 4)}-${d.slice(4, 6)}-${d.slice(6, 8)}` : d));
-    window.postMessage(
-      {
-        source: 'rocket-app-hub', type: 'SHUB_FORM', batchId: batch.id,
-        boxCount: allBoxes(batch).length, orderNos,
-        center: new Set(centers).size === 1 ? centers[0] : '',
-        edd: edds.length === 1 ? edds[0] : '',
-      },
-      window.location.origin
-    );
+    resumeShipment(batch, itemsOfBatch(batch));
   };
 
-  // 양식을 채워서 저장한다(자동으로 받아온 파일이든, 직접 고른 파일이든 같은 길).
-  const fillAndSave = (buf: ArrayBuffer, batch: ShipmentBatch) => {
-    try {
-      const res = fillShubForm(buf, batch);
-      const a = document.createElement('a');
-      a.href = URL.createObjectURL(res.blob);
-      a.download = res.fileName;
-      a.click();
-      setTimeout(() => URL.revokeObjectURL(a.href), 5000);
-      markShipOuts(list.filter(i => i.batchId === batch.id).map(i => i.id), { formSavedAt: Date.now() });
-      setShubStatus(
-        `${batch.id} · ✅ 양식 채워서 저장했어요 — ${res.fileName} (상품 ${res.filled}줄, 송장 ${res.waybills.length}개)` +
-          (res.missed.length ? ` · 짝 못 찾은 줄 ${res.missed.length}개: ${res.missed.slice(0, 3).join(' / ')}` : '')
-      );
-      // 짝 못 찾은 줄이 있으면 올리지 않는다(빠진 채로 등록되면 안 된다). 사람이 확인하고 직접 올린다.
-      if (res.missed.length) {
-        alert(`양식에 짝 못 찾은 줄이 ${res.missed.length}개 있어서 서허에 자동으로 올리지 않았어요.\n저장된 파일을 확인한 뒤 직접 올려 주세요.`);
-        return;
-      }
-      uploadToShub(res.blob, res.fileName, batch);
-    } catch (err) {
-      setShubStatus(`${batch.id} · 양식을 채우지 못했어요: ${err instanceof Error ? err.message : String(err)}`);
-    }
-  };
-
-  // 채운 양식을 서허 쉽먼트 일괄등록에 올린다(확장 shub-upload.js). 사람이 하던 순서 그대로:
-  // 택배사 롯데택배 · 발송일 = 입고예정일 하루 전 · 시간 23:55 · 업로드 파일 → "쉽먼트 일괄등록".
-  // 입고예정일이 여럿이면 가장 이른 날 기준으로 한다.
-  const uploadToShub = (blob: Blob, fileName: string, batch: ShipmentBatch) => {
-    const edds = allBoxes(batch).flatMap(b => b.lines.map(l => String(l.입고예정일 || '').replace(/[^0-9]/g, ''))).filter(d => d.length === 8).sort();
-    if (!edds.length) {
-      setShubStatus(`${batch.id} · 입고예정일을 몰라서 서허에 올리지 못했어요. 저장된 파일을 직접 올려 주세요.`);
-      return;
-    }
-    const e = edds[0];
-    const day = new Date(Number(e.slice(0, 4)), Number(e.slice(4, 6)) - 1, Number(e.slice(6, 8)) - 1);
-    const shipDate = `${day.getFullYear()}-${String(day.getMonth() + 1).padStart(2, '0')}-${String(day.getDate()).padStart(2, '0')}`;
-    const reader = new FileReader();
-    reader.onload = () => {
-      const onMsg = (event: MessageEvent) => {
-        const d = event.data;
-        if (event.source !== window || !d || d.source !== 'rocket-hub-extension') return;
-        if (d.type === 'SHUB_UPLOAD_ACK' && !d.ok) {
-          window.removeEventListener('message', onMsg);
-          setShubStatus(`${batch.id} · 서허 업로드를 시작하지 못했어요: ${d.error || ''}`);
-        }
-        if (d.type === 'SHUB_UPLOAD_STATUS' && d.batchId === batch.id) {
-          const msgs = (d.messages || []).length ? ` · 서허: ${(d.messages as string[]).join(' / ')}` : '';
-          setShubStatus(`${batch.id} · 서허 업로드 · ${d.status || ''}${msgs}`);
-          if (d.step === 'done' || d.step === 'error') window.removeEventListener('message', onMsg);
-        }
-      };
-      window.addEventListener('message', onMsg);
-      setTimeout(() => window.removeEventListener('message', onMsg), 10 * 60 * 1000);
-      setShubStatus(`${batch.id} · 서허에 올리는 중… (발송일 ${shipDate} 23:55)`);
-      window.postMessage({
-        source: 'rocket-app-hub', type: 'SHUB_UPLOAD', batchId: batch.id,
-        file: { name: fileName, dataUrl: reader.result as string }, shipDate, shipTime: '23:55', carrier: '롯데택배',
-        // 등록 뒤 발주서마다 쉽먼트 번호를 찾아 적으려고 이 쉽먼트의 발주번호들을 같이 보낸다.
-        orderNos: Array.from(new Set(allBoxes(batch).flatMap(b => b.lines.map(l => String(l.발주번호 || '').trim())).filter(Boolean))),
-      }, window.location.origin);
-    };
-    reader.readAsDataURL(blob);
-  };
-
-  // 확장이 파일을 못 가져왔을 때, 다운로드 폴더의 양식을 직접 골라 채운다.
-  const pickFormFile = (batch: ShipmentBatch) => {
+  // 확장이 양식을 못 가져왔을 때, 다운로드 폴더의 양식을 직접 골라 채운다(채우면 서허에 올리기까지 이어서 한다).
+  const pickFormFile = (id: string) => {
     const input = document.createElement('input');
     input.type = 'file';
     input.accept = '.xlsx,.xls';
     input.onchange = async () => {
       const f = input.files && input.files[0];
       if (!f) return;
-      fillAndSave(await f.arrayBuffer(), batch);
+      fillAndUpload(await f.arrayBuffer(), id);
     };
     input.click();
-  };
-
-  // 받은 양식을 그대로 저장해 두는 버튼(C단계를 만들기 전까지 확인용).
-  const saveShubForm = () => {
-    if (!shubForm) return;
-    const a = document.createElement('a');
-    a.href = shubForm.dataUrl;
-    a.download = shubForm.name || '쉽먼트양식.xlsx';
-    a.click();
   };
 
   // 고른 출고 건들만 쉽먼트로 만든다. 이미 끝낸 건이 딸려 들어가면 택배를 두 번 예약하게 되므로
   // 대상 줄을 받아서 그것만 쓴다.
   const handleLotte = (targetRows: DisplayRow[] = pendingRows, targetIds: string[] = pendingIds) => {
-    if (!targetRows.length) return;
-    // 쉽먼트 번호를 먼저 정해서 엑셀의 주문번호에 붙인다(롯데 목록에서 이번 건만 골라내는 표식).
-    const id = batchId(batches);
-    const file = exportLotteExcel(targetRows, addresses, sender, id);
-    if (!file) return;
-    if (!confirm(`${file.name}을 내려받았어요.\n롯데택배(ALPS)에 올려서 택배 예약과 운송장 만들기까지 할까요?`)) return;
-
-    // 지금의 박스 배정을 기록해 둔다(나중에 서허 쉽먼트 양식을 채울 때 씀).
-    const batch: ShipmentBatch = {
-      id,
-      createdAt: Date.now(),
-      status: 'reserved',
-      centers: shipmentCenters(targetRows).map(c => ({
-        center: c.center,
-        boxes: c.boxes.map(b => ({
-          boxNo: b.boxNo,
-          waybill: '',
-          lines: b.lines.map(l => ({
-            발주번호: l.발주번호,
-            상품이름: l.상품이름,
-            확정수량: Number(l.확정수량) || 0,
-            입고예정일: dateKeyYMD(l.입고예정일).replace(/-/g, ''),
-          })),
-        })),
-      })),
-    };
-    saveShipmentBatch(batch).catch(err => alert(`쉽먼트 기록 저장 실패: ${err instanceof Error ? err.message : String(err)}`));
-    // 지금 화면에 있는 출고 건들이 이 쉽먼트에 들어갔다고 표시해 둔다(카드에 진행 상태로 보여준다).
-    markShipOuts(targetIds, { batchId: id });
-
-    let savedAt = 0;
-    const done = () => window.removeEventListener('message', onMsg);
-    const onMsg = (event: MessageEvent) => {
-      const d = event.data;
-      if (event.source !== window || !d || d.source !== 'rocket-hub-extension') return;
-      if (d.type === 'LOTTE_UPLOAD_ACK' && !d.ok) {
-        done();
-        alert(`택배사 창을 열지 못했어요: ${d.error || ''}\n"로켓 서허 연동" 확장이 켜져 있는지 확인해 주세요.`);
-      }
-      if (d.type === 'LOTTE_STATUS') {
-        if (!savedAt) savedAt = d.savedAt;
-        if (d.savedAt !== savedAt) return;
-        // 운송장번호까지 모아 왔으면 박스에 채워 넣고 확인 창을 띄운다.
-        if (d.waybills && d.waybills.length) {
-          done();
-          // 운송장번호는 절대 틀리면 안 된다. 롯데 목록의 주문번호(이 쉽먼트번호-1, -2 …)와 짝지어 온 번호만
-          // 박스에 넣는다. 주문번호가 없거나 겹치면 추측(센터 순서로 채우기)하지 않고 빈칸으로 두고 직접 넣게 한다.
-          const list = d.waybills as { waybill: string; receiver: string; ordNo?: string }[];
-          const digits = (w: string) => String(w || '').replace(/\D/g, '');
-          const want = new Set(Array.from({ length: allBoxes(batch).length }, (_, i) => `${batch.id}-${i + 1}`));
-          const paired = list.filter(w => w.ordNo && want.has(w.ordNo) && digits(w.waybill).length === 12);
-          const clean = paired.length === list.length
-            && new Set(paired.map(w => w.ordNo)).size === paired.length
-            && new Set(paired.map(w => digits(w.waybill))).size === paired.length;
-          if (!clean) {
-            setWaybillBatch(batch);
-            alert(`가져온 운송장번호를 주문번호와 확실히 짝짓지 못해 넣지 않았어요.\n롯데 화면에서 확인해 직접 넣어 주세요.\n\n가져온 값: ${list.map(w => `${w.ordNo || '(주문번호 없음)'}=${w.waybill}`).join(', ')}`);
-            return;
-          }
-          const filled = { ...fillWaybills(batch, paired), status: 'waybilled' as const };
-          saveShipmentBatch(filled).catch(() => {});
-          const boxes = allBoxes(filled);
-          if (!(boxes.length && boxes.every(b => b.waybill.trim()))) {
-            setWaybillBatch(filled);
-            return;
-          }
-          // 확장이 롯데 목록을 주문번호마다 다시 조회해 대조까지 마친 번호만 여기로 온다.
-          setShubStatus(`${filled.id} · 운송장 ${boxes.length}건(롯데 목록과 대조 완료) → 서허 양식 받는 중…`);
-          setTimeout(() => handleShubForm(filled), 800);
-        } else if (d.step === 'error') {
-          done();
-          setWaybillBatch(batch);
-          alert(`자동 진행이 중간에 멈췄어요.\n${d.status || ''}\n운송장번호는 창에서 직접 넣어주세요.`);
-        }
-      }
-    };
-    window.addEventListener('message', onMsg);
-    setTimeout(done, 10 * 60 * 1000);
-    // boxCount: 방금 예약한 박스(=택배 건) 수. 운송장 목록에서 맨 아래 이 개수만큼만 체크해 출력한다.
-    window.postMessage({ source: 'rocket-app-hub', type: 'LOTTE_UPLOAD', file, boxCount: totalBoxCount(targetRows), batchId: batch.id }, window.location.origin);
+    startShipment(targetRows, targetIds, addresses, sender, batches);
   };
 
-
-
-  // 이 출고 건의 발주건만 담은 쉽먼트로 서허 양식을 받는다. 예전에 센터가 섞여 기록된 배치라도
-  // 이 건에 속한 줄만 골라 보내므로, 남의 발주건을 서허에서 찾지 않는다.
+  // 멈춘 건을 이어서 한다. 이미 된 단계(택배예약·서허 등록)는 다시 하지 않는다.
   const shubForItem = (item: ShipOut) => {
     const batch = progressOf(item).batch;
     if (!batch) return;
-    const mine = new Set(item.lines.map(l => String(l.발주번호 || '').trim()));
-    const trimmed: ShipmentBatch = {
-      ...batch,
-      centers: batch.centers
-        .map(c => ({
-          ...c,
-          boxes: c.boxes
-            .map(b => ({ ...b, lines: b.lines.filter(l => mine.has(String(l.발주번호 || '').trim())) }))
-            .filter(b => b.lines.length),
-        }))
-        .filter(c => c.boxes.length),
-    };
-    if (!allBoxes(trimmed).length) {
-      alert('이 건에 해당하는 박스를 쉽먼트 기록에서 찾지 못했어요.');
-      return;
-    }
-    handleShubForm(trimmed);
+    resumeShipment(batch, [item]);
   };
 
   // 쉽먼트 완료를 누르면 그 건은 발송대기(아직 준비 안 된 상품이 다 준비될 때까지 기다리는 곳)로 넘어간다.
@@ -1401,6 +1203,18 @@ export default function CoupangShipPage({ onGoOrder }: { onGoOrder?: () => void 
                             <Chip on label="예약" />
                             <Chip on={pr.allWaybilled} label={pr.waybills > 0 ? `운송장 ${pr.waybills}건` : '운송장'} />
                             <Chip on={pr.formSaved} label="양식저장" />
+                            <Chip on={pr.uploaded} label="서허등록" />
+                          </div>
+                        )}
+                        {/* 자동 진행이 멈췄으면 어디서 왜 멈췄는지 보여준다. "이어서 하기"는 그 다음 단계부터 한다. */}
+                        {!folded && pr.batch?.run && pr.batch.run.state !== 'done' && !pr.done && (
+                          <div style={{
+                            marginTop: 5, padding: '5px 8px', borderRadius: 6, fontSize: 11, lineHeight: 1.45,
+                            background: pr.batch.run.state === 'error' ? '#fef2f2' : '#eff6ff',
+                            color: pr.batch.run.state === 'error' ? '#b91c1c' : '#1d4ed8',
+                          }}>
+                            <b>{pr.batch.run.state === 'error' ? `⛔ ${STEP_LABEL[pr.batch.run.step]}에서 멈춤` : `⏳ ${STEP_LABEL[pr.batch.run.step]} 하는 중`}</b>
+                            {' · '}{pr.batch.run.message}
                           </div>
                         )}
 
@@ -1417,13 +1231,15 @@ export default function CoupangShipPage({ onGoOrder }: { onGoOrder?: () => void 
                           {pr.reserved && !pr.done && (
                             <button
                               onClick={() => shubForItem(item)}
-                              title="이 건의 발주건만으로 서허 쉽먼트 양식을 받아 채웁니다"
+                              title={!pr.allWaybilled
+                                ? '운송장번호부터 넣어야 해요. 운송장 창이 열려요.'
+                                : '멈춘 데서 이어서 합니다: 서허 양식 받기 → 채우기 → 서허 일괄등록. 택배예약은 다시 하지 않아요.'}
                               style={{
                                 padding: '2px 8px', fontSize: 11, fontWeight: 700, borderRadius: 5, cursor: 'pointer',
-                                border: '1.5px solid #e67e22', background: '#fff', color: '#e67e22',
+                                border: '1.5px solid #e67e22', background: '#e67e22', color: '#fff',
                               }}
                             >
-                              쉽먼트업로드
+                              ▶ 이어서 하기
                             </button>
                           )}
                           <button
@@ -1513,20 +1329,19 @@ export default function CoupangShipPage({ onGoOrder }: { onGoOrder?: () => void 
           </div>
         )}
 
-        {shubStatus && (
-          <div style={{ marginTop: 18, padding: '8px 12px', background: '#eff6ff', color: '#1d4ed8', borderRadius: 8, fontSize: 12, display: 'flex', alignItems: 'center', gap: 10 }}>
-            <span style={{ flex: 1 }}>{shubStatus}</span>
-            {shubBatch && (
-              <button onClick={() => pickFormFile(shubBatch)} style={{ padding: '4px 10px', border: 'none', borderRadius: 6, background: '#2980b9', color: '#fff', fontSize: 12, cursor: 'pointer' }} title="다운로드 폴더에 받아진 양식 파일을 직접 골라 채웁니다">
+        {live && (
+          <div style={{
+            marginTop: 18, padding: '8px 12px', borderRadius: 8, fontSize: 12, display: 'flex', alignItems: 'center', gap: 10,
+            background: live.tone === 'error' ? '#fef2f2' : live.tone === 'ok' ? '#ecfdf5' : '#eff6ff',
+            color: live.tone === 'error' ? '#b91c1c' : live.tone === 'ok' ? '#047857' : '#1d4ed8',
+          }}>
+            <span style={{ flex: 1 }}>{live.text}</span>
+            {live.canPickForm && (
+              <button onClick={() => pickFormFile(live.batchId)} style={{ padding: '4px 10px', border: 'none', borderRadius: 6, background: '#2980b9', color: '#fff', fontSize: 12, cursor: 'pointer' }} title="다운로드 폴더에 받아진 양식 파일을 직접 골라 채우고 서허에 올립니다">
                 양식 직접 고르기
               </button>
             )}
-            {shubForm && (
-              <button onClick={saveShubForm} style={{ padding: '4px 10px', border: 'none', borderRadius: 6, background: '#95a5a6', color: '#fff', fontSize: 12, cursor: 'pointer' }} title="서허에서 받은 원본(빈 양식)">
-                빈 양식 저장
-              </button>
-            )}
-            <button onClick={() => setShubStatus(null)} style={{ border: 'none', background: 'transparent', color: '#94a3b8', cursor: 'pointer' }}>×</button>
+            <button onClick={clearLive} style={{ border: 'none', background: 'transparent', color: '#94a3b8', cursor: 'pointer' }}>×</button>
           </div>
         )}
 

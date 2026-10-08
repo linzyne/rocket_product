@@ -1,12 +1,14 @@
 import React, { useEffect, useState } from 'react';
 import { startOrderGuard, subscribeRestored, clearRestored } from './data/orderGuard';
+import { startShipmentRunner } from './data/shipmentRunner';
 import type { RestoredNote } from './data/orderGuard';
 
 // 발주 지킴이를 앱이 켜질 때 한 번 걸고, 사라질 뻔한 발주를 되살렸으면 어느 화면에서든 위에 알린다.
 // "확인"을 누를 때까지 남아 있다.
 const OrderGuardBanner: React.FC<{ onGoOrder?: () => void }> = ({ onGoOrder }) => {
   const [notes, setNotes] = useState<RestoredNote[]>([]);
-  useEffect(() => { startOrderGuard(); }, []);
+  // 쉽먼트 자동 진행도 앱이 켜질 때 걸어 둔다(어느 화면에 있든 확장 소식을 받아 이어 간다).
+  useEffect(() => { startOrderGuard(); startShipmentRunner(); }, []);
   useEffect(() => subscribeRestored(setNotes), []);
   if (!notes.length) return null;
   const lines = notes.flatMap(n => n.lines);

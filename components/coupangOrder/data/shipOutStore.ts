@@ -42,6 +42,8 @@ export interface ShipOut {
   batchId?: string;
   // 서허 쉽먼트 양식을 채워 내려받은 시각(ms).
   formSavedAt?: number;
+  // 서허 쉽먼트 일괄등록이 끝난 시각(ms). 확장이 "등록 완료"를 알려줄 때 적는다.
+  uploadedAt?: number;
   // 사람이 직접 "쉽먼트 완료"로 표시한 시각(ms). 자동 표시가 안 잡히는 건을 손으로 끝낼 때 쓴다.
   doneAt?: number;
   // 완료를 다시 푼 시각(ms). 자동으로 완료로 잡히는 건이라도 이 값이 있으면 다시 할 일로 본다.
@@ -263,12 +265,23 @@ export function shipOutBatch(item: ShipOut, batches: ShipmentBatch[]): ShipmentB
       .filter(b => allBoxes(b).some(box => box.lines.some(l => mine.has(String(l.발주번호 || '').trim()))))
       .sort((a, b) => b.createdAt - a.createdAt)[0];
 }
+// 이 날 전에 양식을 저장한 건은 예전 기준(양식 저장 = 끝)대로 둔다. 기준을 바꾸면서 이미 발송대기에 있던 건이
+// 쉽먼트생성으로 되돌아가지 않게 하려고.
+const UPLOAD_RULE_FROM = Date.parse('2026-10-09T00:00:00+09:00');
+// 서허 일괄등록까지 끝났는지: 등록 완료 소식을 받았거나, 발주서마다 쉽먼트 번호가 찾아졌으면 끝.
+export function shipOutUploaded(item: ShipOut): boolean {
+  if (item.uploadedAt) return true;
+  const orders = Array.from(new Set(item.lines.map(l => String(l.발주번호 || '').trim()).filter(Boolean)));
+  if (orders.length && orders.every(no => !!(item.shipmentNos || {})[no])) return true;
+  return !!item.formSavedAt && item.formSavedAt < UPLOAD_RULE_FROM;
+}
+// 쉽먼트 끝: 예약·운송장이 다 있고 서허 일괄등록까지 됐을 때. 양식만 저장하고 등록이 안 된 건은 아직 할 일이다.
 export function shipOutDone(item: ShipOut, batches: ShipmentBatch[]): boolean {
   if (item.doneAt) return true;
   if (item.undoneAt) return false;
   const batch = shipOutBatch(item, batches);
   const boxes = batch ? allBoxes(batch) : [];
-  return boxes.length > 0 && boxes.every(b => (b.waybill || '').trim()) && !!item.formSavedAt;
+  return boxes.length > 0 && boxes.every(b => (b.waybill || '').trim()) && shipOutUploaded(item);
 }
 export type ShipStage = 'ship' | 'waiting' | 'sent';
 export function shipOutStage(item: ShipOut, batches: ShipmentBatch[]): ShipStage {
@@ -300,7 +313,7 @@ export function applyShipOutRequest(id: string) {
 }
 
 // 출고 건들에 진행 표시를 붙인다(쉽먼트 번호·양식 저장 시각).
-export function markShipOuts(ids: string[], patch: Partial<Pick<ShipOut, 'batchId' | 'formSavedAt' | 'doneAt' | 'undoneAt' | 'sentDate' | 'readyKeys' | 'request' | 'printedOrders' | 'shipmentNos'>>) {
+export function markShipOuts(ids: string[], patch: Partial<Pick<ShipOut, 'batchId' | 'formSavedAt' | 'uploadedAt' | 'doneAt' | 'undoneAt' | 'sentDate' | 'readyKeys' | 'request' | 'printedOrders' | 'shipmentNos'>>) {
   const want = new Set(ids);
   const list = read();
   let touched = false;
@@ -417,6 +430,11 @@ export function findOrphanLines(batches: ShipmentBatch[]): OrphanLine[] {
 // 찾은 줄을 발주확인으로 되살린다(묶음 없이).
 export function restoreOrphanLines(lines: OrphanLine[]): number {
   return pushBackToWork(lines.map(l => ({ 발주번호: l.발주번호, 물류센터: l.물류센터, 상품이름: l.상품이름, 확정수량: l.확정수량, 입고예정일: l.입고예정일 })), '');
+}
+
+// 지금 출고 목록(이 기기에 받아 둔 것). 쉽먼트 자동 진행이 화면 밖에서 쓴다.
+export function readShipOuts(): ShipOut[] {
+  return read();
 }
 
 // 쉽먼트생성·발송대기·발송 완료에 있는 모든 줄(발주서를 새로 받을 때 이미 있는 줄을 세는 데 쓴다).

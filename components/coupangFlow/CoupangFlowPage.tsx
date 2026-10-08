@@ -145,8 +145,6 @@ export default function CoupangFlowPage({ onNavigate }: { onNavigate: (menu: App
   const boxes = STAGES.map((_, i) => {
     const list = orders.filter(o => o.stage === i && match(o));
     if (i === 5) list.sort((a, b) => (b.item?.sentDate || '').localeCompare(a.item?.sentDate || ''));
-    // 발주확정은 새로 들어온 발주서가 위로(들어온 시각 → 발주번호 큰 순. 쿠팡 발주번호는 나중 것이 더 크다).
-    if (i === 0) list.sort((a, b) => (seenAt[b.no] || 0) - (seenAt[a.no] || 0) || b.no.localeCompare(a.no, 'ko', { numeric: true }));
     return list;
   });
 

@@ -14,6 +14,9 @@ import { appendOrderFile } from '../coupangOrder/data/orderWorkStore';
 import { printShipment, setPrinted } from '../coupangSend/printShipment';
 import { useReady } from '../coupangOrder/data/readyStore';
 import { useLineHanjung } from '../coupangOrder/data/useLineHanjung';
+import { addShipOut } from '../coupangOrder/data/shipOutStore';
+import { linesAt } from '../coupangOrder/data/lineStore';
+import { boxLabel } from '../coupangOrder/utils/dataProcessor';
 import { LineCheckMenu } from '../coupangOrder/components/OrderTable';
 import { HanjungOrder, subscribeHanjung, productSummary, nameKey, makeHanjungOfficeLookup } from '../../data/hanjungStore';
 import { HanjungQueueItem, subscribeHanjungQueue, makePlaceLookup } from '../coupangOrder/data/hanjungQueueStore';
@@ -665,6 +668,39 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
     </div>
   );
 
+  // 고른 것 중 발주확정 칸에 있는 발주서 → 쉽먼트로 보내기.
+  // 센터·입고예정일이 같은 것끼리 출고 건 하나씩 만든다(택배는 한 센터로만 간다). 박스를 안 정한 줄은 박스1.
+  // 줄은 발주확인·예약 어디에 있든 그 줄 그대로 쉽먼트로 옮겨 간다.
+  const pickedConfirmed = orders.filter(o => o.stage === 1 && picked.has(o.no));
+  const sendToShip = () => {
+    const nos = new Set(pickedConfirmed.map(o => o.no));
+    const lines = [...linesAt('work'), ...linesAt('reserve')].filter(l => nos.has(l.발주번호));
+    if (!lines.length) return;
+    const groups = new Map<string, typeof lines>();
+    for (const l of lines) {
+      const k = `${l.물류센터.trim()}|${l.입고예정일}`;
+      groups.set(k, [...(groups.get(k) || []), l]);
+    }
+    const summary = Array.from(groups.entries()).map(([k, ls]) => {
+      const [center, date] = k.split('|');
+      return `  ${center} · ${date} · 발주 ${new Set(ls.map(l => l.발주번호)).size}건`;
+    });
+    if (!window.confirm(`고른 발주서 ${nos.size}건을 쉽먼트로 보낼까요?\n\n${summary.join('\n')}\n\n(센터·입고예정일이 같은 것끼리 한 건으로 넘어가요)`)) return;
+    const made: string[] = [];
+    groups.forEach((ls, k) => {
+      const [center, date] = k.split('|');
+      const orderNos = Array.from(new Set(ls.map(l => l.발주번호)));
+      const name = orderNos.length === 1 ? orderNos[0] : `발주 ${orderNos.length}건`;
+      const item = addShipOut(name, center, date, ls.map(l => ({
+        발주번호: l.발주번호, 물류센터: l.물류센터, 상품이름: l.상품이름, 확정수량: l.확정수량, 입고예정일: l.입고예정일,
+        메모: l.메모 || '', 쉼먼트: l.쉼먼트 || boxLabel(1), 묶음: '', SKU: l.SKU || '',
+      })));
+      made.push(item.id);
+    });
+    setPicked(new Set());
+    setDateNote({ tone: 'ok', text: `🚚 발주 ${nos.size}건을 쉽먼트로 보냈어요(${made.join(', ')}). 쉽먼트 칸에서 이어서 하세요.` });
+  };
+
   // 고르면 화면 아래 가운데에 뜨는 메뉴.
   const layer = (picked.size > 0 || dateNote) && (
     <div style={{
@@ -675,6 +711,12 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
       {picked.size > 0 && (
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           <b style={{ fontSize: 13, whiteSpace: 'nowrap' }}>발주서 {picked.size}건 고름</b>
+          {pickedConfirmed.length > 0 && (
+            <button onClick={sendToShip} title="고른 발주확정 발주서를 센터·입고예정일이 같은 것끼리 출고 건으로 묶어 쉽먼트 칸으로 보냅니다"
+              style={{ padding: '6px 12px', fontSize: 13, fontWeight: 700, borderRadius: 8, border: 'none', background: '#2563eb', color: '#fff', cursor: 'pointer', whiteSpace: 'nowrap' }}>
+              🚚 쉽먼트로 보내기{pickedConfirmed.length !== picked.size ? ` (${pickedConfirmed.length}건)` : ''}
+            </button>
+          )}
           <button onClick={changeDate} style={{ padding: '6px 12px', fontSize: 13, fontWeight: 700, borderRadius: 8, border: 'none', background: ORANGE, color: '#fff', cursor: 'pointer', whiteSpace: 'nowrap' }}>
             📅 날짜 바꾸기
           </button>

@@ -444,13 +444,14 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
                       title={`${isReady ? '준비됨' : coming.length ? `입고중(한중발주 ${coming.map(p => p.code).join(', ')})` : waitingQueue ? '한중발주 대기(1688 주문 전)' : '준비중'} — 왼쪽 체크 칸에서 준비됨·한중발주 배정`}
                       style={{
                         flex: 1, minWidth: 0, wordBreak: 'keep-all',
-                        // 아무 진행도 없는 상품(준비중)은 진하고 굵게, 준비됨·입고중은 흐리게.
-                        color: now < full ? RED : faded ? '#c2bdb7' : '#111',
+                        // 준비중(아무 진행 없음) = 검정 굵게, 입고중 = 중간 회색, 준비됨 = 가장 옅은 회색 + 초록 ✓
+                        color: now < full ? RED : isReady ? '#c9c4be' : faded ? '#857f78' : '#111',
                         fontWeight: faded ? 400 : 700,
                         textDecoration: editable && now === 0 ? 'line-through' : 'none',
                       }}
                     >
-                      {coming.map(p => (
+                      {isReady && <span style={{ marginRight: 4, color: GREEN, fontWeight: 900 }}>✓</span>}
+                      {!isReady && coming.map(p => (
                         <span key={p.code!} style={{
                           display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 16, height: 16, marginRight: 4,
                           borderRadius: '50%', border: '1.5px solid #9ca3af', color: '#6b7280', fontSize: 10, fontWeight: 800, verticalAlign: 'middle',

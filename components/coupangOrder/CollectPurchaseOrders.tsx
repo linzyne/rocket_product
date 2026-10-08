@@ -24,7 +24,10 @@ const CollectPurchaseOrders: React.FC<{
   style?: React.CSSProperties;
   runToken?: number;
   onFinish?: (ok: boolean, message: string) => void;
-}> = ({ onFile, style, runToken, onFinish }) => {
+  // 좁은 자리(발주 진행의 상자 위)용: 위아래로 쌓고 버튼 글자를 바꾼다.
+  compact?: boolean;
+  label?: string;
+}> = ({ onFile, style, runToken, onFinish, compact, label }) => {
   const [running, setRunning] = useState(false);
   const [status, setStatus] = useState('');
   const [lastOrderNo, setLastOrderNo] = useState(loadLocalPoCursor);
@@ -145,7 +148,9 @@ const CollectPurchaseOrders: React.FC<{
   };
 
   return (
-    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 10, ...style }}>
+    <div style={compact
+      ? { display: 'flex', flexDirection: 'column-reverse', alignItems: 'stretch', gap: 5, ...style }
+      : { display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 10, ...style }}>
       {status && <span style={{ fontSize: 11, color: '#2563eb' }}>{status}</span>}
       <span style={{ fontSize: 12, color: '#64748b', display: 'flex', alignItems: 'center', gap: 6 }}>
         마지막 받은 발주번호
@@ -156,7 +161,7 @@ const CollectPurchaseOrders: React.FC<{
           placeholder="비우면 첫 페이지 전부"
           disabled={running}
           title="이 번호 위로 쌓인 발주서만 받아옵니다. 양식을 받으면 그때 받은 것 중 맨 위 번호로 바뀌고, 다른 컴퓨터에도 같이 반영돼요."
-          style={{ width: 130, padding: '5px 8px', border: '1px solid #e2e8f0', borderRadius: 6, fontSize: 12, fontFamily: 'ui-monospace, monospace' }}
+          style={{ width: compact ? 110 : 130, padding: '5px 8px', border: '1px solid #e2e8f0', borderRadius: 6, fontSize: 12, fontFamily: 'ui-monospace, monospace' }}
         />
       </span>
       <button
@@ -169,7 +174,7 @@ const CollectPurchaseOrders: React.FC<{
           cursor: running ? 'default' : 'pointer', whiteSpace: 'nowrap',
         }}
       >
-        {running ? '가져오는 중…' : '서허에서 새 발주서 가져오기'}
+        {running ? '가져오는 중…' : (label || '서허에서 새 발주서 가져오기')}
       </button>
     </div>
   );

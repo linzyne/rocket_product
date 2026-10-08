@@ -9,6 +9,8 @@ import ShipmentWaybillModal from '../coupangOrder/components/ShipmentWaybillModa
 import type { OrderRow } from '../coupangOrder/types';
 import { dateKeyYMD, ymdSortKey } from '../coupangOrder/utils/dateUtils';
 import type { AppMenuId } from '../AppSidebar';
+import CollectPurchaseOrders from '../coupangOrder/CollectPurchaseOrders';
+import { appendOrderFile } from '../coupangOrder/data/orderWorkStore';
 
 // 발주 > 발주 진행. 단계마다 상자를 옆으로 두고, 발주서가 지금 단계의 상자 안에 담긴다(상자 안에서는 위아래 한 줄).
 //   발주확정 → 묶음 → 쉽먼트(택배예약·서허 일괄등록) → 출력(문서·바코드) → 발송대기 → 발송완료
@@ -67,6 +69,16 @@ export default function CoupangFlowPage({ onNavigate }: { onNavigate: (menu: App
   const [confirmed, setConfirmedMap] = useState<Record<string, number>>({});
   const [query, setQuery] = useState('');
   const [waybillBatch, setWaybillBatch] = useState<ShipmentBatch | null>(null);
+  // 새 주문 수집 결과(발주확정 상자 위에 보여준다).
+  const [collectNote, setCollectNote] = useState('');
+  const handleOrderFile = async (file: File) => {
+    try {
+      const { added, skipped } = await appendOrderFile(file, reservations);
+      setCollectNote(added ? `✅ 새 발주 ${added}줄을 발주확정 상자에 넣었어요${skipped ? ` (이미 있는 ${skipped}줄 제외)` : ''}` : `새로 들어온 줄이 없어요${skipped ? ` (이미 있는 ${skipped}줄)` : ''}`);
+    } catch (err) {
+      setCollectNote(`⛔ 발주서를 읽지 못했어요: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  };
 
   useEffect(() => subscribeWork(() => setWork(readWork().rows)), []);
   useEffect(() => subscribeReservations(setReservations), []);
@@ -253,7 +265,15 @@ export default function CoupangFlowPage({ onNavigate }: { onNavigate: (menu: App
           const list = boxes[i];
           const stuck = i === 2 ? list.filter(o => run(o)?.state === 'error').length : 0;
           return (
-            <section key={label} style={{ flex: '0 0 250px', background: '#f5f5f4', borderRadius: 12, padding: 8, boxSizing: 'border-box' }}>
+            <div key={label} style={{ flex: '0 0 250px', display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {/* 1번 상자(발주확정) 위: 서허에서 새 주문 받아 오기 */}
+            {i === 0 && (
+              <div style={{ background: '#eff6ff', borderRadius: 12, padding: 8 }}>
+                <CollectPurchaseOrders onFile={handleOrderFile} compact label="📥 새 주문 수집" />
+                {collectNote && <div style={{ marginTop: 6, fontSize: 11.5, color: collectNote.startsWith('⛔') ? RED : '#1d4ed8', lineHeight: 1.4 }}>{collectNote}</div>}
+              </div>
+            )}
+            <section style={{ background: '#f5f5f4', borderRadius: 12, padding: 8, boxSizing: 'border-box' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '2px 4px 8px' }}>
                 <b style={{ fontSize: 14, color: '#333' }}>{label}</b>
                 <span style={{ fontSize: 12, fontWeight: 800, color: '#fff', background: list.length ? (i === 5 ? GREEN : ORANGE) : GRAY, borderRadius: 999, padding: '0 7px' }}>{list.length}</span>
@@ -273,6 +293,7 @@ export default function CoupangFlowPage({ onNavigate }: { onNavigate: (menu: App
                 {!list.length && <div style={{ padding: '18px 0', textAlign: 'center', fontSize: 12, color: '#bbb' }}>{q ? '찾는 발주서 없음' : '비어 있음'}</div>}
               </div>
             </section>
+            </div>
           );
         })}
       </main>

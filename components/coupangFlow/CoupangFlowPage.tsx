@@ -13,6 +13,8 @@ import CollectPurchaseOrders from '../coupangOrder/CollectPurchaseOrders';
 import { appendOrderFile } from '../coupangOrder/data/orderWorkStore';
 import { subscribePoForms, readDraft, setDraftLine, SHORT_REASONS, DEFAULT_REASON } from '../coupangOrder/data/poFormStore';
 import { startConfirmUpload, subscribeConfirmJob, clearConfirmJob, ConfirmJob } from '../coupangOrder/data/poConfirmRunner';
+import { subscribeDateRequests, markDateRequested, applyCurrent } from '../coupangOrder/data/poDateStore';
+import { retargetBatches, saveShipmentBatch } from '../../data/shipmentStore';
 
 // 발주 > 발주 진행. 단계마다 상자를 옆으로 두고, 발주서가 지금 단계의 상자 안에 담긴다(상자 안에서는 위아래 한 줄).
 //   발주확정 → 묶음 → 쉽먼트(택배예약·서허 일괄등록) → 출력(문서·바코드) → 발송대기 → 발송완료
@@ -73,6 +75,8 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
   const [reservations, setReservations] = useState<OrderRow[]>([]);
   const [shipOuts, setShipOuts] = useState<ShipOut[]>([]);
   const [batches, setBatches] = useState<ShipmentBatch[]>([]);
+  const batchesRef = React.useRef<ShipmentBatch[]>([]);
+  batchesRef.current = batches;
   const [confirmed, setConfirmedMap] = useState<Record<string, number>>({});
   const [query, setQuery] = useState('');
   const [waybillBatch, setWaybillBatch] = useState<ShipmentBatch | null>(null);
@@ -100,6 +104,11 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
     return next;
   });
   const [dateNote, setDateNote] = useState<{ tone: 'info' | 'ok' | 'error'; text: string } | null>(null);
+  // 날짜 변경 요청 중인 발주서(발주번호 → 요청한 시각).
+  const [dateReqs, setDateReqs] = useState<Record<string, number>>({});
+  useEffect(() => subscribeDateRequests(setDateReqs), []);
+  // 적용: 확장이 서허 발주서 목록에서 지금 입고예정일·센터를 읽어 오면 앱에 적는다.
+  const checkingRef = React.useRef<string[] | null>(null);
   const dateAck = React.useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => {
     const onMsg = (event: MessageEvent) => {
@@ -109,21 +118,65 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
       if (d.type === 'PO_DATE_ACK' || d.type === 'PO_DATE_STATUS') { if (dateAck.current) clearTimeout(dateAck.current); dateAck.current = null; }
       if (d.type === 'PO_DATE_ACK' && !d.ok) setDateNote({ tone: 'error', text: `서허 창을 열지 못했어요: ${d.error || ''}` });
       if (d.type === 'PO_DATE_STATUS') setDateNote({ tone: d.step === 'error' ? 'error' : d.step === 'done' ? 'ok' : 'info', text: d.status || '' });
+      // 적용(서허 목록에서 지금 값 읽기) 결과
+      if (checkingRef.current && (d.type === 'PO_COLLECT_ACK' || (d.type === 'PO_STATUS' && d.purpose === 'check'))) {
+        if (dateAck.current) { clearTimeout(dateAck.current); dateAck.current = null; }
+        const nos = checkingRef.current;
+        if (d.type === 'PO_COLLECT_ACK') {
+          if (!d.ok) { checkingRef.current = null; setDateNote({ tone: 'error', text: `서허 창을 열지 못했어요: ${d.error || ''}` }); }
+          return;
+        }
+        if (d.step === 'error' || d.step === 'empty') { checkingRef.current = null; setDateNote({ tone: 'error', text: `서허에서 읽지 못했어요: ${d.status || ''}` }); return; }
+        if (d.step === 'checked' && d.checked) {
+          checkingRef.current = null;
+          applyCurrent(nos, d.checked).then(res => {
+            // 센터·날짜가 바뀐 출고 건은 쉽먼트 기록(박스·운송장)도 같이 옮긴다.
+            for (const m of res.moved) {
+              for (const next of retargetBatches(batchesRef.current, m.before, m.to, shipOutBatch(m.before, batchesRef.current))) {
+                saveShipmentBatch(next).catch(err => console.error('쉽먼트 기록 옮기기 실패:', err));
+              }
+            }
+            const parts = [
+              res.changed.length ? `✅ ${res.changed.length}건 바꿨어요: ${res.changed.map(c => `${c.no} → ${c.to}`).join(', ')}` : '',
+              res.same.length ? `아직 그대로(승인 전?) ${res.same.length}건: ${res.same.join(', ')}` : '',
+              res.missing.length ? `서허 목록에서 못 찾음 ${res.missing.length}건: ${res.missing.join(', ')}` : '',
+            ].filter(Boolean);
+            setDateNote({ tone: res.changed.length && !res.same.length && !res.missing.length ? 'ok' : res.changed.length ? 'info' : 'error', text: parts.join(' · ') });
+            setPicked(new Set());
+          }).catch(err => setDateNote({ tone: 'error', text: `적용하지 못했어요: ${err instanceof Error ? err.message : String(err)}` }));
+          return;
+        }
+        if (d.status) setDateNote({ tone: 'info', text: `서허 목록 확인 중 · ${d.status}` });
+      }
     };
     window.addEventListener('message', onMsg);
     return () => window.removeEventListener('message', onMsg);
   }, []);
   // 날짜 바꾸기: 서허 입고일 변경 요청 화면을 새 창으로 열어 고른 발주서를 하나씩 검색해 "+추가"까지 해 둔다(날짜는 사람이 고른다).
   const changeDate = () => {
-    const nos = Array.from(picked);
+    const nos: string[] = Array.from(picked);
     if (!nos.length) return;
     setDateNote({ tone: 'info', text: `서허 창 여는 중… 발주서 ${nos.length}건을 하나씩 넣어요.` });
+    markDateRequested(nos, true);
     window.postMessage({ source: 'rocket-app-hub', type: 'PO_DATE_CHANGE', orderNos: nos }, window.location.origin);
     if (dateAck.current) clearTimeout(dateAck.current);
     dateAck.current = setTimeout(() => setDateNote({
       tone: 'error',
       text: '확장 프로그램이 대답하지 않아요. chrome://extensions 에서 "로켓 서허 연동"을 새로고침(↻)하고 이 화면도 새로고침해 주세요.',
     }), 5000);
+  };
+  // 적용: 서허에서 승인을 확인한 뒤 누른다. 확장이 서허 발주서 목록에서 그 발주서들의 지금 입고예정일·센터를 읽어 온다.
+  const applyDate = () => {
+    const nos: string[] = Array.from(picked);
+    if (!nos.length) return;
+    checkingRef.current = nos;
+    setDateNote({ tone: 'info', text: `서허 발주서 목록에서 ${nos.length}건의 입고예정일·센터 확인 중…` });
+    window.postMessage({ source: 'rocket-app-hub', type: 'PO_COLLECT', purpose: 'check', orderNos: nos, lastOrderNo: '' }, window.location.origin);
+    if (dateAck.current) clearTimeout(dateAck.current);
+    dateAck.current = setTimeout(() => {
+      checkingRef.current = null;
+      setDateNote({ tone: 'error', text: '확장 프로그램이 대답하지 않아요. chrome://extensions 에서 "로켓 서허 연동"을 새로고침(↻)하고 이 화면도 새로고침해 주세요.' });
+    }, 5000);
   };
   // 새 주문 수집 결과(새 주문 수집 단추 아래에 보여준다).
   const [collectNote, setCollectNote] = useState('');
@@ -270,9 +323,17 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
   );
   const tags = (o: FlowOrder) => {
     const shipNo = o.item?.shipmentNos?.[o.no];
-    if (!(((o.bundle || o.hold) && o.stage === 1) || shipNo || o.partial)) return null;
+    const req = !!dateReqs[o.no];
+    if (!(((o.bundle || o.hold) && o.stage === 1) || shipNo || o.partial || req)) return null;
     return (
-      <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+      <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', alignItems: 'center' }}>
+        {req && <Tag color="#7c3aed">📅 날짜 변경 요청 중</Tag>}
+        {req && (
+          <button onClick={() => { if (window.confirm(`${o.no}의 날짜 변경 요청 표시를 지울까요?(서허 요청은 그대로예요)`)) markDateRequested([o.no], false); }}
+            style={{ padding: 0, border: 'none', background: 'transparent', color: '#aaa', fontSize: 10.5, cursor: 'pointer', textDecoration: 'underline' }}>
+            표시 지우기
+          </button>
+        )}
         {o.bundle && o.stage === 1 && <Tag color="#6b7280">{o.bundle}</Tag>}
         {o.hold && o.stage === 1 && <Tag color="#7c3aed">{o.hold}</Tag>}
         {shipNo && <Tag color="#2563eb">쉽먼트 {shipNo}</Tag>}
@@ -436,6 +497,10 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
           <b style={{ fontSize: 13, whiteSpace: 'nowrap' }}>발주서 {picked.size}건 고름</b>
           <button onClick={changeDate} style={{ padding: '6px 12px', fontSize: 13, fontWeight: 700, borderRadius: 8, border: 'none', background: ORANGE, color: '#fff', cursor: 'pointer', whiteSpace: 'nowrap' }}>
             📅 날짜 바꾸기
+          </button>
+          <button onClick={applyDate} title="서허에서 승인된 것을 확인한 뒤 누르세요. 서허 발주서 목록의 지금 입고예정일·센터를 읽어 앱에 적어요."
+            style={{ padding: '6px 12px', fontSize: 13, fontWeight: 700, borderRadius: 8, border: 'none', background: '#16a34a', color: '#fff', cursor: 'pointer', whiteSpace: 'nowrap' }}>
+            ✅ 바뀐 날짜 적용
           </button>
           <button onClick={() => setPicked(new Set())} style={{ padding: '6px 10px', fontSize: 12, borderRadius: 8, border: '1px solid #4b5563', background: 'transparent', color: '#d1d5db', cursor: 'pointer', whiteSpace: 'nowrap' }}>
             고르기 풀기

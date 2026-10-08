@@ -131,7 +131,7 @@ export function startConfirmRunner() {
         return;
       }
       // 옛 확장은 "이 발주번호들만"을 몰라서 평소 새 주문 수집을 해 버린다(purpose 없이 소식이 온다).
-      if (d.type === 'PO_STATUS' && d.purpose !== 'form') {
+      if (d.type === 'PO_STATUS' && !d.purpose && !d.checked) {
         setJob({ ...job, step: 'error', status: `확장 프로그램이 옛 버전이에요(양식 대신 새 주문 수집을 했어요). ${NO_EXT}` });
         return;
       }

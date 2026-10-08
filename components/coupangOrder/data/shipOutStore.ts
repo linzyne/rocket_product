@@ -372,6 +372,33 @@ export function setShipOutDate(id: string, date: string) {
   write(list);
 }
 
+// 서허에서 바뀐 발주서별 입고예정일·센터를 출고 건 줄에 적는다. 한 건의 줄이 모두 같은 값이 되면 건의 센터·날짜도 바꾼다.
+// 건 센터·날짜가 바뀐 건은 바뀌기 전 모습을 돌려준다(쉽먼트 기록도 옮기라고).
+export function retargetOrders(byOrder: Record<string, { center: string; date: string }>): { before: ShipOut; to: { center: string; date: string } }[] {
+  const list = read();
+  const moved: { before: ShipOut; to: { center: string; date: string } }[] = [];
+  let touched = false;
+  for (const item of list) {
+    if (!item.lines.some(l => byOrder[l.발주번호])) continue;
+    const before: ShipOut = { ...item, lines: item.lines.map(l => ({ ...l })) };
+    item.lines = item.lines.map(l => {
+      const to = byOrder[l.발주번호];
+      return to ? { ...l, 물류센터: to.center || l.물류센터, 입고예정일: to.date || l.입고예정일 } : l;
+    });
+    const centers = new Set(item.lines.map(l => l.물류센터));
+    const dates = new Set(item.lines.map(l => l.입고예정일));
+    if (centers.size === 1 && dates.size === 1) {
+      const to = { center: Array.from(centers)[0], date: Array.from(dates)[0] };
+      if (to.center !== item.center || to.date !== item.date) moved.push({ before, to });
+      item.center = to.center;
+      item.date = to.date;
+    }
+    touched = true;
+  }
+  if (touched) write(list);
+  return moved;
+}
+
 // 요청등록중에 적어 둔 센터·입고예정일을 실제 값으로 옮기고 요청은 지운다.
 export function applyShipOutRequest(id: string) {
   const list = read();

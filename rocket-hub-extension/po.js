@@ -18,7 +18,7 @@
 
   const KEY = 'poPending';
   const MAX_AGE_MS = 10 * 60 * 1000;
-  const DONE_STEPS = ['downloading', 'file', 'empty', 'error'];
+  const DONE_STEPS = ['downloading', 'file', 'empty', 'error', 'checked'];
 
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   const clean = (s) => String(s || '').replace(/\s+/g, ' ').trim();
@@ -190,6 +190,49 @@
     return Array.from(document.querySelectorAll('table input[type="checkbox"]')).find(visible) || null;
   };
 
+  // ---- 지금 입고예정일·물류센터 읽기(날짜 변경 승인 확인용) ----
+  // 표 머리 글자로 칸을 찾는다(발주번호 · 물류센터 · 입고예정일). 표가 아니면(div 격자) role 속성으로 찾는다.
+  const DATE_RE = /(\d{4})[-./]?\s*(\d{1,2})[-./]?\s*(\d{1,2})/;
+  const normDate = (v) => {
+    const m = DATE_RE.exec(String(v || ''));
+    return m ? `${m[1]}-${m[2].padStart(2, '0')}-${m[3].padStart(2, '0')}` : '';
+  };
+  const readGrid = () => {
+    const tables = [];
+    document.querySelectorAll('table').forEach((t) => {
+      if (!visible(t)) return;
+      const heads = Array.from(t.querySelectorAll('thead th, thead td')).map((x) => clean(x.textContent));
+      const rows = Array.from(t.querySelectorAll('tbody tr')).map((tr) => Array.from(tr.querySelectorAll('td')).map((td) => clean(td.textContent)));
+      tables.push({ heads, rows });
+    });
+    const gridHeads = Array.from(document.querySelectorAll('[role="columnheader"]')).filter(visible).map((x) => clean(x.textContent));
+    if (gridHeads.length) {
+      const rows = Array.from(document.querySelectorAll('[role="row"]')).filter(visible)
+        .map((r) => Array.from(r.querySelectorAll('[role="gridcell"], [role="cell"]')).map((c) => clean(c.textContent)))
+        .filter((r) => r.length);
+      tables.push({ heads: gridHeads, rows });
+    }
+    return tables;
+  };
+  const readCurrent = (nos) => {
+    const out = {};
+    for (const { heads, rows } of readGrid()) {
+      const iNo = heads.findIndex((h) => /발주\s*(서)?\s*번호/.test(h));
+      const iCenter = heads.findIndex((h) => /물류\s*센터|^FC|입고\s*센터/.test(h));
+      const iDate = heads.findIndex((h) => /입고\s*예정\s*일/.test(h));
+      if (iNo < 0 || iCenter < 0 || iDate < 0) continue;
+      // 머리 칸 수와 줄 칸 수가 다르면(체크칸 등) 끝에서부터 맞춘다.
+      for (const cells of rows) {
+        const shift = cells.length - heads.length;
+        const at = (i) => cells[i + shift] !== undefined ? cells[i + shift] : cells[i];
+        const no = (String(at(iNo)).match(/\d{8,12}/) || [])[0];
+        if (!no || !nos.includes(no)) continue;
+        out[no] = { center: String(at(iCenter)).trim(), date: normDate(at(iDate)) };
+      }
+    }
+    return out;
+  };
+
   const fail = async (message) => {
 
     await patch({ step: 'error', status: message });
@@ -249,6 +292,21 @@
     const missing = fresh.filter((no) => !shown.includes(no));
     if (explicit && !fresh.some((no) => shown.includes(no))) {
       return fail(`발주서 ${fresh.join(', ')}를 서허 목록에서 찾지 못했어요(기간검색 밖일 수 있어요).`);
+    }
+    // 날짜 변경 승인 확인: 양식은 안 받고, 목록에 지금 적힌 입고예정일·물류센터만 읽어 앱에 넘긴다.
+    if (pending.purpose === 'check') {
+      let checked = {};
+      await waitFor(() => Object.keys((checked = readCurrent(fresh))).length >= fresh.filter((no) => shown.includes(no)).length, 10000);
+      checked = readCurrent(fresh);
+      if (!Object.keys(checked).length) {
+        try {
+          chrome.storage.local.set({ poCheckDebug: { at: new Date().toISOString(), tables: readGrid().map((t) => ({ heads: t.heads, rows: t.rows.slice(0, 3) })) } });
+        } catch (err) {}
+        return fail('목록에서 물류센터·입고예정일 칸을 읽지 못했어요.');
+      }
+      await patch({ step: 'checked', checked, status: `발주서 ${Object.keys(checked).length}건의 입고예정일·센터를 읽었어요.` });
+      try { chrome.runtime.sendMessage({ type: 'PO_DONE' }); } catch (err) {}
+      return;
     }
 
     // 기준번호는 실제로 받은 것 중 맨 위로 남긴다(다시 검색해도 안 나온 건 뺀다).

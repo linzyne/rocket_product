@@ -586,7 +586,7 @@ chrome.storage.onChanged.addListener((changes, area) => {
   const now = changes[PO_KEY].newValue;
   const before = changes[PO_KEY].oldValue;
   if (!now || !now.windowId || (before && before.step === now.step)) return;
-  if (now.step === 'file' || now.step === 'empty') setTimeout(() => chrome.windows.remove(now.windowId).catch(() => {}), 1500);
+  if (now.step === 'file' || now.step === 'empty' || now.step === 'checked') setTimeout(() => chrome.windows.remove(now.windowId).catch(() => {}), 1500);
 });
 
 // ---- 로그인 뒤 이어가기 ----
@@ -599,7 +599,7 @@ const collectJobs = async () => {
   const now = Date.now();
   const jobs = [];
   const po = r[PO_KEY];
-  if (po && po.windowId && !['file', 'empty', 'error'].includes(po.step) && now - (po.savedAt || 0) < JOB_MAX_AGE_MS) {
+  if (po && po.windowId && !['file', 'empty', 'error', 'checked'].includes(po.step) && now - (po.savedAt || 0) < JOB_MAX_AGE_MS) {
     jobs.push({ windowId: po.windowId, home: PO_URL, path: '/po-web/purchase/order/list' });
   }
   const rc = r[RECEIVE_KEY];

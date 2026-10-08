@@ -13,6 +13,19 @@ const JOB_KEY = 'coupangPoConfirmJob';
 
 export interface ConfirmJob { jobId: string; orderNos: string[]; at: number; step: string; status: string; messages?: string[] }
 
+// 확장이 요청을 받았다는 대답(ACK)이 5초 안에 안 오면, 확장이 꺼졌거나 새로고침 전의 옛 버전이다.
+let ackTimer: ReturnType<typeof setTimeout> | null = null;
+const NO_EXT = '확장 프로그램이 대답하지 않아요. 크롬 주소창에 chrome://extensions 를 열어 "로켓 서허 연동"의 새로고침(↻)을 누르고, 이 화면도 새로고침한 뒤 다시 눌러 주세요.';
+const waitAck = () => {
+  if (ackTimer) clearTimeout(ackTimer);
+  ackTimer = setTimeout(() => {
+    ackTimer = null;
+    const j = readJob();
+    if (j && ['fetching', 'start'].includes(j.step)) setJob({ ...j, step: 'error', status: NO_EXT });
+  }, 5000);
+};
+const gotAck = () => { if (ackTimer) { clearTimeout(ackTimer); ackTimer = null; } };
+
 const readJob = (): ConfirmJob | null => {
   try { return JSON.parse(localStorage.getItem(JOB_KEY) || 'null'); } catch { return null; }
 };
@@ -38,6 +51,7 @@ export function startConfirmUpload(orderNos: string[]) {
   if (!missing.length) { upload(orderNos); return; }
   setJob({ jobId: String(Date.now()), orderNos, at: Date.now(), step: 'fetching', status: `서허에서 발주서 ${missing.length}건 양식 받는 중…` });
   window.postMessage({ source: APP, type: 'PO_COLLECT', purpose: 'form', orderNos: missing, lastOrderNo: '' }, window.location.origin);
+  waitAck();
 }
 
 // 발주확정 파일을 만들어 내려받고(기록용) 서허에 올린다.
@@ -61,6 +75,7 @@ function upload(orderNos: string[]) {
     source: APP, type: 'PO_CONFIRM_UPLOAD', jobId,
     file: { name: file.name, dataUrl: file.dataUrl }, orderNos: file.orderNos,
   }, window.location.origin);
+  waitAck();
 }
 
 // 올라간 뒤: 확정 표시, 0개로 한 줄은 빼고, 줄인 줄은 수량을 바꾼다.
@@ -94,6 +109,7 @@ export function startConfirmRunner() {
     if (event.source !== window) return;
     const d = event.data;
     if (!d || d.source !== EXT) return;
+    if (d.type === 'PO_COLLECT_ACK' || d.type === 'PO_CONFIRM_ACK' || d.type === 'PO_STATUS' || d.type === 'PO_CONFIRM_STATUS') gotAck();
     const job = readJob();
     // 양식 다시 받기(새 주문 수집과 같은 길, purpose = 'form')
     if (job && job.step === 'fetching') {

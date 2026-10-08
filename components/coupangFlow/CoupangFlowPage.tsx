@@ -340,8 +340,12 @@ export default function CoupangFlowPage({ onNavigate }: { onNavigate: (menu: App
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 5, marginBottom: 8 }}>
                   <button
                     style={{ ...btn(ORANGE, true), width: '100%', padding: '7px 8px', fontSize: 12.5 }}
-                    disabled={!!confirmJob && !['applied', 'error'].includes(confirmJob.step) && Date.now() - confirmJob.at < 10 * 60 * 1000}
-                    onClick={() => uploadConfirm(list)}
+                    onClick={() => {
+                      // 진행 중인 게 있으면 조용히 막지 않고 물어본다.
+                      if (confirmJob && !['applied', 'error'].includes(confirmJob.step) && Date.now() - confirmJob.at < 10 * 60 * 1000
+                        && !window.confirm(`아직 진행 중인 발주확정 올리기가 있어요(${confirmJob.status}).\n새로 시작할까요?`)) return;
+                      uploadConfirm(list);
+                    }}
                     title="확정수량(I열)·납품부족사유(M열)를 채운 발주확정 파일을 만들어 서허 발주확정 업로드에 올립니다"
                   >
                     📤 발주확정 올리기 ({list.length}건)

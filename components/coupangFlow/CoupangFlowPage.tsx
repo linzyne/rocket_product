@@ -19,7 +19,8 @@ import { startConfirmUpload, subscribeConfirmJob, clearConfirmJob, ConfirmJob } 
 // 단계는 발주확인·예약·쉽먼트생성·발송대기 목록에서 그 발주서 줄이 어디 있는지로 계산한다.
 // 한 발주서의 줄이 여러 단계에 나뉘어 있으면 가장 앞 단계의 상자에 두고 "일부만 넘어감"으로 알린다.
 
-const STAGES = ['발주확정', '묶음', '쉽먼트', '출력', '발송대기', '발송완료'] as const;
+// 칸 이름: 1 새발주서(서허에 확정 올리기 전) → 2 발주확정(확정 끝, 쉽먼트 보내기 전) → 3 쉽먼트 → 4 출력 → 5 발송대기 → 6 발송완료
+const STAGES = ['새발주서', '발주확정', '쉽먼트', '출력', '발송대기', '발송완료'] as const;
 type Stage = 0 | 1 | 2 | 3 | 4 | 5;
 
 const ORANGE = '#e67e22';
@@ -67,7 +68,7 @@ const daysAgo = (ymd: string) => {
 export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavigate: (menu: AppMenuId) => void; view?: 'board' | 'list' }) {
   const [tab, setTab] = useState<Stage | 'active'>('active');
   const [work, setWork] = useState(() => readWork().rows);
-  // 발주번호 → 처음 들어온 시각(24시간 안에 들어온 것만 남아 있다). NEW 표시와 발주확정 상자 순서에 쓴다.
+  // 발주번호 → 처음 들어온 시각(24시간 안에 들어온 것만 남아 있다). NEW 표시에 쓴다.
   const [seenAt, setSeenAt] = useState(() => readWork().seen);
   const [reservations, setReservations] = useState<OrderRow[]>([]);
   const [shipOuts, setShipOuts] = useState<ShipOut[]>([]);
@@ -80,22 +81,56 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
   useEffect(() => subscribePoForms(() => setFormTick(t => t + 1)), []);
   const [confirmJob, setConfirmJob] = useState<ConfirmJob | null>(null);
   useEffect(() => subscribeConfirmJob(setConfirmJob), []);
-  // 발주확정 올리기: 발주확정 상자의 발주서들로 PO_FOR_CONFIRM 파일을 채워 서허에 올린다.
+  // 발주확정 올리기: 새발주서 칸의 발주서들로 PO_FOR_CONFIRM 파일을 채워 서허에 올린다.
   const uploadConfirm = (list: FlowOrder[]) => {
     const nos = list.map(o => o.no);
     const zero = list.flatMap(o => o.lines.filter(l => readDraft(o.no).qty[l.상품이름] === 0).map(l => `${o.no} ${l.상품이름}`));
     if (!window.confirm(
-      `발주확정 상자의 발주서 ${nos.length}건을 서허에 확정으로 올릴까요?` +
+      `새발주서 ${nos.length}건을 서허에 확정으로 올릴까요?` +
       (zero.length ? `\n\n확정수량 0개(사유: 단종 등) ${zero.length}줄:\n${zero.slice(0, 8).join('\n')}${zero.length > 8 ? '\n…' : ''}` : ''),
     )) return;
     startConfirmUpload(nos);
   };
-  // 새 주문 수집 결과(발주확정 상자 위에 보여준다).
+  // ── 발주서 고르기(발주확정·쉽먼트 칸) → 아래쪽 메뉴 ──
+  const PICKABLE: Stage[] = [1, 2];
+  const [picked, setPicked] = useState<Set<string>>(new Set());
+  const togglePick = (no: string) => setPicked(prev => {
+    const next = new Set(prev);
+    if (next.has(no)) next.delete(no); else next.add(no);
+    return next;
+  });
+  const [dateNote, setDateNote] = useState<{ tone: 'info' | 'ok' | 'error'; text: string } | null>(null);
+  const dateAck = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    const onMsg = (event: MessageEvent) => {
+      if (event.source !== window) return;
+      const d = event.data;
+      if (!d || d.source !== 'rocket-hub-extension') return;
+      if (d.type === 'PO_DATE_ACK' || d.type === 'PO_DATE_STATUS') { if (dateAck.current) clearTimeout(dateAck.current); dateAck.current = null; }
+      if (d.type === 'PO_DATE_ACK' && !d.ok) setDateNote({ tone: 'error', text: `서허 창을 열지 못했어요: ${d.error || ''}` });
+      if (d.type === 'PO_DATE_STATUS') setDateNote({ tone: d.step === 'error' ? 'error' : d.step === 'done' ? 'ok' : 'info', text: d.status || '' });
+    };
+    window.addEventListener('message', onMsg);
+    return () => window.removeEventListener('message', onMsg);
+  }, []);
+  // 날짜 바꾸기: 서허 입고일 변경 요청 화면을 새 창으로 열어 고른 발주서를 하나씩 검색해 "+추가"까지 해 둔다(날짜는 사람이 고른다).
+  const changeDate = () => {
+    const nos = Array.from(picked);
+    if (!nos.length) return;
+    setDateNote({ tone: 'info', text: `서허 창 여는 중… 발주서 ${nos.length}건을 하나씩 넣어요.` });
+    window.postMessage({ source: 'rocket-app-hub', type: 'PO_DATE_CHANGE', orderNos: nos }, window.location.origin);
+    if (dateAck.current) clearTimeout(dateAck.current);
+    dateAck.current = setTimeout(() => setDateNote({
+      tone: 'error',
+      text: '확장 프로그램이 대답하지 않아요. chrome://extensions 에서 "로켓 서허 연동"을 새로고침(↻)하고 이 화면도 새로고침해 주세요.',
+    }), 5000);
+  };
+  // 새 주문 수집 결과(새 주문 수집 단추 아래에 보여준다).
   const [collectNote, setCollectNote] = useState('');
   const handleOrderFile = async (file: File) => {
     try {
       const { added, skipped } = await appendOrderFile(file, reservations);
-      setCollectNote(added ? `✅ 새 발주 ${added}줄을 발주확정 상자에 넣었어요${skipped ? ` (이미 있는 ${skipped}줄 제외)` : ''}` : `새로 들어온 줄이 없어요${skipped ? ` (이미 있는 ${skipped}줄)` : ''}`);
+      setCollectNote(added ? `✅ 새 발주 ${added}줄을 새발주서 칸에 넣었어요${skipped ? ` (이미 있는 ${skipped}줄 제외)` : ''}` : `새로 들어온 줄이 없어요${skipped ? ` (이미 있는 ${skipped}줄)` : ''}`);
     } catch (err) {
       setCollectNote(`⛔ 발주서를 읽지 못했어요: ${err instanceof Error ? err.message : String(err)}`);
     }
@@ -157,6 +192,15 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
       || a.no.localeCompare(b.no, 'ko', { numeric: true }));
   }, [work, reservations, shipOuts, batches, confirmed]);
 
+  // 고른 발주서가 다른 칸으로 가면 고른 데서 뺀다.
+  useEffect(() => {
+    setPicked(prev => {
+      const ok = new Set(orders.filter(o => PICKABLE.includes(o.stage)).map(o => o.no));
+      const next = new Set(Array.from(prev).filter(no => ok.has(no)));
+      return next.size === prev.size ? prev : next;
+    });
+  }, [orders]);
+
   const q = query.trim().toLowerCase();
   const match = (o: FlowOrder) =>
     !q || o.no.includes(q) || o.center.toLowerCase().includes(q) || o.lines.some(l => l.상품이름.toLowerCase().includes(q));
@@ -178,9 +222,9 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
     switch (o.stage) {
       case 0:
         // 올리기는 상자 위 "발주확정 올리기"로 한꺼번에. 여기는 서허에서 직접 확정한 발주서를 표시만 할 때.
-        return <button style={btn('#6b7280')} onClick={() => confirm1([o.no], true)} title="서허에서 직접 확정했으면 눌러서 묶음 상자로 넘깁니다">직접 확정함</button>;
+        return <button style={btn('#6b7280')} onClick={() => confirm1([o.no], true)} title="서허에서 직접 확정했으면 눌러서 발주확정 칸으로 넘깁니다">직접 확정함</button>;
       case 1:
-        return <button style={btn(ORANGE)} onClick={() => onNavigate('coupang-order')} title="쿠팡발주확인에서 묶고 쉽먼트생성으로 보냅니다">묶음·보내기 →</button>;
+        return <button style={btn(ORANGE)} onClick={() => onNavigate('coupang-order')} title="쿠팡발주확인에서 묶고 쉽먼트생성으로 보냅니다">쉽먼트로 보내기 →</button>;
       case 2:
         return (
           <>
@@ -205,7 +249,14 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
   // 입고예정일·센터를 가장 크게, 그 아래 발주번호.
   const headInfo = (o: FlowOrder, size: number) => (
     <div>
-      <div style={{ display: 'flex', alignItems: 'baseline', gap: 6, flexWrap: 'wrap', lineHeight: 1.2 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', lineHeight: 1.2 }}>
+        {PICKABLE.includes(o.stage) && (
+          <input
+            type="checkbox" checked={picked.has(o.no)} onChange={() => togglePick(o.no)}
+            title="골라서 아래 메뉴로 날짜 바꾸기 등을 합니다"
+            style={{ width: 16, height: 16, accentColor: ORANGE, cursor: 'pointer', flexShrink: 0 }}
+          />
+        )}
         <span style={{ fontSize: size, fontWeight: 900, color: '#111' }}>{dayText(o.date)}</span>
         <span style={{ fontSize: size, fontWeight: 900, color: ORANGE }}>{o.center || '센터 없음'}</span>
       </div>
@@ -241,7 +292,7 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
       </div>
     );
   };
-  // 상품. 발주확정 단계에서는 확정수량을 바로 고친다(줄이면 사유, 기본 시장 단종). 다른 단계에 가 있는 줄은 어디 있는지 빨갛게.
+  // 상품. 새발주서 단계에서는 확정수량을 바로 고친다(줄이면 사유, 기본 시장 단종). 다른 단계에 가 있는 줄은 어디 있는지 빨갛게.
   const products = (o: FlowOrder) => {
     const qty = o.lines.reduce((sum, l) => sum + (Number(l.확정수량) || 0), 0);
     return (
@@ -301,7 +352,7 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
       )}
     </div>
   );
-  const borderOf = (o: FlowOrder) => `1px solid ${run(o)?.state === 'error' ? '#fca5a5' : '#ececec'}`;
+  const borderOf = (o: FlowOrder) => picked.has(o.no) ? `2px solid ${ORANGE}` : `1px solid ${run(o)?.state === 'error' ? '#fca5a5' : '#ececec'}`;
 
   // 상자 보기 카드: 상자 폭에 맞춰 위아래로.
   const card = (o: FlowOrder) => (
@@ -335,7 +386,7 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
       {collectNote && <div style={{ marginTop: 6, fontSize: 11.5, color: collectNote.startsWith('⛔') ? RED : '#1d4ed8', lineHeight: 1.4 }}>{collectNote}</div>}
     </div>
   );
-  // 발주확정 올리기 칸(발주확정 단계 발주서들)
+  // 발주확정 올리기 칸(새발주서 단계 발주서들)
   const confirmPanel = (list: FlowOrder[]) => (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
       <button
@@ -368,6 +419,33 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
           <button onClick={clearConfirmJob} style={{ marginLeft: 6, border: 'none', background: 'transparent', color: '#888', cursor: 'pointer', fontSize: 11, textDecoration: 'underline' }}>
             {['applied', 'error'].includes(confirmJob.step) ? '닫기' : '그만두기'}
           </button>
+        </div>
+      )}
+    </div>
+  );
+
+  // 고르면 화면 아래 가운데에 뜨는 메뉴.
+  const layer = (picked.size > 0 || dateNote) && (
+    <div style={{
+      position: 'fixed', left: '50%', bottom: 18, transform: 'translateX(-50%)', zIndex: 50,
+      background: '#1f2937', color: '#fff', borderRadius: 12, boxShadow: '0 10px 30px rgba(0,0,0,0.25)',
+      padding: '10px 14px', display: 'flex', flexDirection: 'column', gap: 6, maxWidth: 'calc(100vw - 32px)',
+    }}>
+      {picked.size > 0 && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <b style={{ fontSize: 13, whiteSpace: 'nowrap' }}>발주서 {picked.size}건 고름</b>
+          <button onClick={changeDate} style={{ padding: '6px 12px', fontSize: 13, fontWeight: 700, borderRadius: 8, border: 'none', background: ORANGE, color: '#fff', cursor: 'pointer', whiteSpace: 'nowrap' }}>
+            📅 날짜 바꾸기
+          </button>
+          <button onClick={() => setPicked(new Set())} style={{ padding: '6px 10px', fontSize: 12, borderRadius: 8, border: '1px solid #4b5563', background: 'transparent', color: '#d1d5db', cursor: 'pointer', whiteSpace: 'nowrap' }}>
+            고르기 풀기
+          </button>
+        </div>
+      )}
+      {dateNote && (
+        <div style={{ fontSize: 12, lineHeight: 1.45, color: dateNote.tone === 'error' ? '#fca5a5' : dateNote.tone === 'ok' ? '#86efac' : '#bfdbfe', display: 'flex', gap: 8 }}>
+          <span>{dateNote.text}</span>
+          <button onClick={() => setDateNote(null)} style={{ border: 'none', background: 'transparent', color: '#9ca3af', cursor: 'pointer', fontSize: 12 }}>×</button>
         </div>
       )}
     </div>
@@ -426,6 +504,7 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
           {!shown.length && <div style={{ padding: '48px 0', textAlign: 'center', color: '#aaa', fontSize: 14 }}>{q ? '찾는 발주서가 없어요.' : '이 단계에 있는 발주서가 없어요.'}</div>}
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>{shown.map(row)}</div>
         </main>
+        {layer}
         {waybillBatch && <ShipmentWaybillModal batch={waybillBatch} onClose={() => setWaybillBatch(null)} />}
       </div>
     );
@@ -486,6 +565,7 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
         </div>
       </main>
 
+      {layer}
       {waybillBatch && <ShipmentWaybillModal batch={waybillBatch} onClose={() => setWaybillBatch(null)} />}
     </div>
   );

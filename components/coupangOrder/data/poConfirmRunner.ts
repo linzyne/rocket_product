@@ -1,4 +1,4 @@
-// 발주확정 올리기: 발주확정 상자의 발주서들로 PO_FOR_CONFIRM 파일을 채워 확장(po-confirm.js)이 서허에 올리게 하고,
+// 발주확정 올리기: 새발주서 칸의 발주서들로 PO_FOR_CONFIRM 파일을 채워 확장(po-confirm.js)이 서허에 올리게 하고,
 // 다 올라가면 그 발주서들을 "확정됨"으로 표시한다. 확정수량을 0으로 한 상품 줄은 발주확인에서 빼고(보낼 게 없으므로),
 // 줄인 줄은 수량을 바꾼다.
 // 진행 중인 일은 localStorage에 남겨서, 화면을 옮기거나 새로고침해도 결과가 오면 마저 적는다.
@@ -165,7 +165,7 @@ export function startConfirmRunner() {
     setJob(next);
     if (d.step === 'done') {
       finish(next)
-        .then(() => setJob({ ...next, step: 'applied', status: `${next.status} → 발주 ${next.orderNos.length}건을 묶음 상자로 넘겼어요.` }))
+        .then(() => setJob({ ...next, step: 'applied', status: `${next.status} → 발주 ${next.orderNos.length}건을 발주확정 칸으로 넘겼어요.` }))
         .catch(err => setJob({ ...next, step: 'error', status: `서허에는 올렸는데 앱에 표시하지 못했어요: ${err instanceof Error ? err.message : String(err)}` }));
     }
   });

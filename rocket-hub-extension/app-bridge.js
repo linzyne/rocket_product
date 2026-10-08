@@ -101,6 +101,18 @@
       } catch (err) {}
       return;
     }
+    // 입고예정일 변경 요청 화면에 고른 발주서 넣기.
+    if (d.type === 'PO_DATE_CHANGE') {
+      try {
+        chrome.runtime.sendMessage({ type: 'PO_DATE_CHANGE', orderNos: d.orderNos || [] }, (res) => {
+          const lastError = chrome.runtime.lastError;
+          reply({ type: 'PO_DATE_ACK', ok: !lastError && !!(res && res.ok), error: (lastError && lastError.message) || (res && res.error) });
+        });
+      } catch (err) {
+        reply({ type: 'PO_DATE_ACK', ok: false, error: '확장을 새로고침한 뒤 앱도 새로고침해 주세요.' });
+      }
+      return;
+    }
     // 채운 발주확정 파일을 서허 발주확정 업로드에 올리기.
     if (d.type === 'PO_CONFIRM_UPLOAD') {
       try {
@@ -230,6 +242,11 @@
       if (changes.shubUpload && changes.shubUpload.newValue) {
         const v = changes.shubUpload.newValue;
         reply({ type: 'SHUB_UPLOAD_STATUS', step: v.step, status: v.status, batchId: v.batchId, messages: v.messages || [], byOrder: v.byOrder || {} });
+      }
+      // 입고일 변경 요청에 발주서 넣기 진행 상황.
+      if (changes.poDateChange && changes.poDateChange.newValue) {
+        const v = changes.poDateChange.newValue;
+        reply({ type: 'PO_DATE_STATUS', step: v.step, status: v.status, added: v.added || [], failed: v.failed || [], total: (v.orderNos || []).length });
       }
       // 발주확정 업로드 진행 상황(서허 알림 문구 포함).
       if (changes.poConfirmUpload && changes.poConfirmUpload.newValue) {

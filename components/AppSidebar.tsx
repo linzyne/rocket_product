@@ -93,13 +93,13 @@ export const MENU_GROUPS: { title: string; items: MenuItem[] }[] = [
 
 const ALL_ITEMS = MENU_GROUPS.flatMap(g => g.items);
 
-// 자주 쓰는 메뉴는 맨 위에 따로 두고, 나머지는 맨 아래 "다른 메뉴"에 접어 둔다(혹시 몰라 남겨 둔 것).
-const MAIN_IDS: AppMenuId[] = ['coupang-flow', 'coupang-sent', 'cn-order'];
-const MAIN_ITEMS = MAIN_IDS.map(id => ALL_ITEMS.find(i => i.id === id)!).filter(Boolean);
-const OTHER_GROUPS = MENU_GROUPS
-  .map(g => ({ ...g, items: g.items.filter(i => !MAIN_IDS.includes(i.id)) }))
-  .filter(g => g.items.length);
-const OTHERS_OPEN_KEY = 'sidebar.othersOpen';
+// 발주 메뉴 중 자주 쓰는 것(발주 진행·발송완료·한중발주)만 발주 칸에 두고, 나머지 발주 메뉴는 맨 아래
+// "예전 발주 메뉴"에 접어 둔다(혹시 몰라 남겨 둔 것). 다른 칸(수집·상품·로켓…)은 그대로.
+const ORDER_MAIN: AppMenuId[] = ['coupang-flow', 'coupang-sent', 'cn-order'];
+const OLD_ORDER_ITEMS = (MENU_GROUPS.find(g => g.title === '발주')?.items || []).filter(i => !ORDER_MAIN.includes(i.id));
+const OLD_IDS = new Set(OLD_ORDER_ITEMS.map(i => i.id));
+const VISIBLE_GROUPS = MENU_GROUPS.map(g => ({ ...g, items: g.items.filter(i => !OLD_IDS.has(i.id)) })).filter(g => g.items.length);
+const OTHERS_OPEN_KEY = 'sidebar.oldOrderOpen';
 
 // 개발 중 메뉴 목록을 고치면 화면 일부만 바뀌어(왼쪽 메뉴만 새것, 앱 본체는 옛것) 새 메뉴를 누르면 엉뚱한 화면으로
 // 가는 일이 있었다. 이 파일이 바뀌면 페이지를 통째로 새로 불러오게 한다.
@@ -150,9 +150,9 @@ const AppSidebar: React.FC<AppSidebarProps> = (props) => {
 };
 
 const SidebarNav: React.FC<AppSidebarProps> = ({ active, onSelect, collapsed, onToggleCollapsed }) => {
-  // "다른 메뉴"는 접어 둔다. 지금 보고 있는 메뉴가 그 안에 있으면 펼쳐서 보여준다. 펼침 여부는 이 기기에 기억한다.
+  // "예전 발주 메뉴"는 접어 둔다. 지금 보고 있는 메뉴가 그 안에 있으면 펼쳐서 보여준다. 펼침 여부는 이 기기에 기억한다.
   const [othersOpen, setOthersOpen] = useState(() => { try { return localStorage.getItem(OTHERS_OPEN_KEY) === '1'; } catch { return false; } });
-  const activeInOthers = !MAIN_IDS.includes(active);
+  const activeInOthers = OLD_IDS.has(active);
   const showOthers = othersOpen || activeInOthers;
   const toggleOthers = () => setOthersOpen(v => {
     const next = !v;
@@ -193,25 +193,25 @@ const SidebarNav: React.FC<AppSidebarProps> = ({ active, onSelect, collapsed, on
         </button>
       </div>
       <div className="flex-1 overflow-y-auto py-2 flex flex-col">
-        <div className="mb-2">{MAIN_ITEMS.map(menuButton)}</div>
-        {/* 나머지 메뉴: 맨 아래에 접어 둔다 */}
+        {VISIBLE_GROUPS.map(group => (
+          <div key={group.title} className="mb-2">
+            {collapsed
+              ? <div className="mx-3 my-2 border-t border-gray-100" />
+              : <div className="px-4 pt-2 pb-1 text-[11px] font-semibold text-gray-400">{group.title}</div>}
+            {group.items.map(menuButton)}
+          </div>
+        ))}
+        {/* 예전 발주 메뉴: 맨 아래에 접어 둔다 */}
         <div className="mt-auto border-t border-gray-100 pt-1">
           <button
             onClick={toggleOthers}
-            title={collapsed ? '다른 메뉴' : undefined}
+            title={collapsed ? '예전 발주 메뉴' : undefined}
             className={`w-full flex items-center gap-2 text-xs font-semibold text-gray-400 hover:text-gray-600 ${collapsed ? 'justify-center py-2' : 'px-4 py-1.5'}`}
           >
             {icon(showOthers ? 'M19 9l-7 7-7-7' : 'M9 5l7 7-7 7')}
-            {!collapsed && <span>다른 메뉴</span>}
+            {!collapsed && <span>예전 발주 메뉴</span>}
           </button>
-          {showOthers && OTHER_GROUPS.map(group => (
-            <div key={group.title} className="mb-1">
-              {collapsed
-                ? <div className="mx-3 my-2 border-t border-gray-100" />
-                : <div className="px-4 pt-2 pb-1 text-[11px] font-semibold text-gray-400">{group.title}</div>}
-              {group.items.map(menuButton)}
-            </div>
-          ))}
+          {showOthers && OLD_ORDER_ITEMS.map(menuButton)}
         </div>
       </div>
     </nav>

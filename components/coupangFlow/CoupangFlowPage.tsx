@@ -732,7 +732,7 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
           {pickedConfirmed.length > 0 && (
             <button onClick={sendToShip} title="고른 발주확정 발주서를 센터·입고예정일이 같은 것끼리 출고 건으로 묶어 쉽먼트 칸으로 보냅니다"
               style={{ padding: '6px 12px', fontSize: 13, fontWeight: 700, borderRadius: 8, border: 'none', background: '#2563eb', color: '#fff', cursor: 'pointer', whiteSpace: 'nowrap' }}>
-              🚚 쉽먼트로 보내기{pickedConfirmed.length !== picked.size ? ` (${pickedConfirmed.length}건)` : ''}
+              쉽먼트로 →{pickedConfirmed.length !== picked.size ? ` (${pickedConfirmed.length}건)` : ''}
             </button>
           )}
           {pickedShipping.length > 0 && (

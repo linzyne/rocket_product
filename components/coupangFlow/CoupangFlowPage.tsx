@@ -63,6 +63,8 @@ const daysAgo = (ymd: string) => {
 
 export default function CoupangFlowPage({ onNavigate }: { onNavigate: (menu: AppMenuId) => void }) {
   const [work, setWork] = useState(() => readWork().rows);
+  // 발주번호 → 처음 들어온 시각(24시간 안에 들어온 것만 남아 있다). NEW 표시와 발주확정 상자 순서에 쓴다.
+  const [seenAt, setSeenAt] = useState(() => readWork().seen);
   const [reservations, setReservations] = useState<OrderRow[]>([]);
   const [shipOuts, setShipOuts] = useState<ShipOut[]>([]);
   const [batches, setBatches] = useState<ShipmentBatch[]>([]);
@@ -80,7 +82,7 @@ export default function CoupangFlowPage({ onNavigate }: { onNavigate: (menu: App
     }
   };
 
-  useEffect(() => subscribeWork(() => setWork(readWork().rows)), []);
+  useEffect(() => subscribeWork(() => { const w = readWork(); setWork(w.rows); setSeenAt(w.seen); }), []);
   useEffect(() => subscribeReservations(setReservations), []);
   useEffect(() => subscribeShipOuts(setShipOuts), []);
   useEffect(() => subscribeShipments(setBatches), []);
@@ -143,6 +145,8 @@ export default function CoupangFlowPage({ onNavigate }: { onNavigate: (menu: App
   const boxes = STAGES.map((_, i) => {
     const list = orders.filter(o => o.stage === i && match(o));
     if (i === 5) list.sort((a, b) => (b.item?.sentDate || '').localeCompare(a.item?.sentDate || ''));
+    // 발주확정은 새로 들어온 발주서가 위로(들어온 시각 → 발주번호 큰 순. 쿠팡 발주번호는 나중 것이 더 크다).
+    if (i === 0) list.sort((a, b) => (seenAt[b.no] || 0) - (seenAt[a.no] || 0) || b.no.localeCompare(a.no, 'ko', { numeric: true }));
     return list;
   });
 
@@ -195,7 +199,12 @@ export default function CoupangFlowPage({ onNavigate }: { onNavigate: (menu: App
             <span style={{ fontSize: 17, fontWeight: 900, color: '#111' }}>{dayText(o.date)}</span>
             <span style={{ fontSize: 17, fontWeight: 900, color: ORANGE }}>{o.center || '센터 없음'}</span>
           </div>
-          <div style={{ fontSize: 11.5, color: '#888', marginTop: 2 }}>발주 {o.no}</div>
+          <div style={{ fontSize: 11.5, color: '#888', marginTop: 2 }}>
+            발주 {o.no}
+            {seenAt[o.no] && Date.now() - seenAt[o.no] < 24 * 60 * 60 * 1000 && (
+              <span style={{ marginLeft: 5, padding: '0 5px', borderRadius: 4, background: RED, color: '#fff', fontSize: 10, fontWeight: 800 }}>NEW</span>
+            )}
+          </div>
         </div>
 
         {((o.bundle || o.hold) && o.stage === 1) || shipNo || o.partial ? (

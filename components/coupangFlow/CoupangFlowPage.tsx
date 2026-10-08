@@ -520,12 +520,20 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
                       const assigned = places.filter(p => p.code).reduce((n, p) => n + p.qty, 0);
                       const queued = places.filter(p => !p.code).reduce((n, p) => n + p.qty, 0);
                       if (!assigned && !queued) return null;
+                      // 일부만 맡겼으면 남은 수량을 빨갛게 알린다(준비됨으로 체크한 줄은 빼고).
+                      const left = Math.max(0, (Number(l.확정수량) || 0) - assigned - queued);
+                      const showLeft = left > 0 && !ready.isReady({ 발주번호: o.no, 상품이름: l.상품이름, 확정수량: l.확정수량 }, o.item?.readyKeys);
                       return (
                         <span
-                          title={[assigned ? `배정: ${places.filter(p => p.code).map(p => `${p.code} ${p.qty}개`).join(', ')}` : '', queued ? `한중발주 대기(1688 주문 전) ${queued}개` : ''].filter(Boolean).join('\n')}
+                          title={[
+                            assigned ? `배정: ${places.filter(p => p.code).map(p => `${p.code} ${p.qty}개`).join(', ')}` : '',
+                            queued ? `한중발주 대기(1688 주문 전) ${queued}개` : '',
+                            showLeft ? `남은 ${left}개를 배정해 주세요(왼쪽 체크 칸 → 한중발주 또는 사무실 재고)` : '',
+                          ].filter(Boolean).join('\n')}
                           style={{ flexShrink: 0, fontSize: 10.5, color: '#8a857f', whiteSpace: 'nowrap', letterSpacing: '-0.3px' }}
                         >
                           {assigned ? <>배정 <b>{assigned}</b></> : null}{assigned && queued ? ' · ' : ''}{queued ? <>대기 <b>{queued}</b></> : null}
+                          {showLeft && <> · <b style={{ color: RED }}>미배정 {left}</b></>}
                         </span>
                       );
                     })()}

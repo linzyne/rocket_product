@@ -260,9 +260,9 @@ const PendingPanel: React.FC<{ orders: HanjungOrder[]; onRecord: (act: Act) => v
     const spare = plan.spareFills.map(f => `· ${day(f.line.입고예정일)} 발주 ${f.line.발주번호} ${f.line.상품이름} ${f.qty}개 ← 사무실 여유(${f.code})`);
     const sw = plan.swaps.map(x => `· ${x.to.상품이름} ${x.qty}개: ${day(x.from.입고예정일)} 발주 ${x.from.발주번호} → ${day(x.to.입고예정일)} 발주 ${x.to.발주번호} (${x.code} · ${x.arrived ? '도착분' : '오는 중'})`);
     if (!confirm(
-      `발주 대기의 급한 발주가 늦은 발주의 배정을 가져올까요?` +
+      `급한 발주와 늦은 발주의 자리를 바꿀까요?` +
       (spare.length ? `\n\n사무실 여유로 채워요:\n${spare.join('\n')}` : '') +
-      (sw.length ? `\n\n늦은 발주에서 가져와요(늦은 발주는 대신 발주 대기로):\n${sw.join('\n')}` : '') +
+      (sw.length ? `\n\n자리 바꾸기(급한 발주가 물건을 받고, 늦은 발주는 다음 주문으로):\n${sw.join('\n')}` : '') +
       (plan.notes.length ? `\n\n그래도 대기에 남는 것:\n${plan.notes.map(n => `· ${n}`).join('\n')}` : '') +
       `\n\n(발송완료된 발주는 건드리지 않아요. 쉽먼트·발송대기에 있는 늦은 발주는 옮겨요.)`,
     )) return;
@@ -626,7 +626,7 @@ const HanjungOrderPage: React.FC = () => {
     if (withSwap.swaps.length) {
       const sw = withSwap.swaps.map(x => `· ${x.to.상품이름} ${x.qty}개: ${day(x.from.입고예정일)} 발주 ${x.from.발주번호} → ${day(x.to.입고예정일)} 발주 ${x.to.발주번호} (${x.code} · ${x.arrived ? '도착분' : '오는 중'})`);
       if (confirm(
-        `같은 상품이 입고예정일이 더 늦은 발주에 배정돼 있어요.\n급한 발주로 옮길까요? 옮긴 만큼 늦은 발주가 대신 발주 대기로 가요.\n\n${sw.join('\n')}` +
+        `자리를 바꿀까요?\n급한 발주가 물건을 받고, 늦은 발주는 다음 주문으로 가요.\n\n${sw.join('\n')}` +
         (withSwap.notes.length ? `\n\n그래도 대기로 가는 것:\n${withSwap.notes.map(n => `· ${n}`).join('\n')}` : '') +
         `\n\n(발송완료된 발주는 건드리지 않아요. 취소를 누르면 옮기지 않고 앞 내용대로만 해요.)`,
       )) plan = withSwap;

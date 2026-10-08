@@ -67,7 +67,6 @@ export default function CoupangFlowPage({ onNavigate }: { onNavigate: (menu: App
   const [confirmed, setConfirmedMap] = useState<Record<string, number>>({});
   const [tab, setTab] = useState<Stage | 'active'>('active');
   const [query, setQuery] = useState('');
-  const [open, setOpen] = useState<Set<string>>(new Set());
   const [waybillBatch, setWaybillBatch] = useState<ShipmentBatch | null>(null);
 
   useEffect(() => subscribeWork(() => setWork(readWork().rows)), []);
@@ -138,12 +137,6 @@ export default function CoupangFlowPage({ onNavigate }: { onNavigate: (menu: App
     && (!q || o.no.includes(q) || o.center.toLowerCase().includes(q) || o.lines.some(l => l.상품이름.toLowerCase().includes(q))));
   // 발송완료는 최근 보낸 것이 위로.
   if (tab === 5) shown.sort((a, b) => (b.item?.sentDate || '').localeCompare(a.item?.sentDate || ''));
-
-  const toggleOpen = (no: string) => setOpen(prev => {
-    const next = new Set(prev);
-    if (next.has(no)) next.delete(no); else next.add(no);
-    return next;
-  });
 
   const confirm1 = (nos: string[], on: boolean) =>
     setConfirmed(nos, on).catch(err => alert(`발주확정 표시 저장 실패: ${err instanceof Error ? err.message : String(err)}`));
@@ -233,20 +226,16 @@ export default function CoupangFlowPage({ onNavigate }: { onNavigate: (menu: App
           {shown.map(o => {
             const r = run(o);
             const qty = o.lines.reduce((s, l) => s + (Number(l.확정수량) || 0), 0);
-            const isOpen = open.has(o.no);
             const shipNo = o.item?.shipmentNos?.[o.no];
             return (
               <div key={o.no} style={{ border: `1px solid ${r?.state === 'error' ? '#fecaca' : '#eee'}`, borderRadius: 10, background: '#fff', boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}>
                 <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '8px 14px', padding: '10px 12px' }}>
-                  <button onClick={() => toggleOpen(o.no)} style={{ border: 'none', background: 'transparent', cursor: 'pointer', padding: 0, textAlign: 'left', minWidth: 190 }} title="상품 줄 보기">
-                    <div style={{ fontSize: 14, fontWeight: 800, color: '#222' }}>
-                      <span style={{ color: '#bbb', fontSize: 11, marginRight: 4 }}>{isOpen ? '▼' : '▶'}</span>
-                      {o.no}
-                    </div>
+                  <div style={{ minWidth: 190 }}>
+                    <div style={{ fontSize: 14, fontWeight: 800, color: '#222' }}>{o.no}</div>
                     <div style={{ fontSize: 12, color: '#777', marginTop: 2 }}>
                       {o.center || '센터 없음'} · 입고 {dayText(o.date)} · {o.lines.length}종 {qty}개
                     </div>
-                  </button>
+                  </div>
 
                   <Stepper stage={o.stage} error={r?.state === 'error'} />
 
@@ -268,13 +257,15 @@ export default function CoupangFlowPage({ onNavigate }: { onNavigate: (menu: App
                   </div>
                 )}
 
-                {isOpen && (
-                  <div style={{ borderTop: '1px solid #f4f4f4', padding: '8px 12px 10px 32px', fontSize: 12.5 }}>
+                {/* 상품은 늘 보여준다. 다른 단계에 가 있는 줄만 어디 있는지 빨갛게 적는다. */}
+                <div style={{ borderTop: '1px solid #f4f4f4', padding: '6px 12px 8px', fontSize: 12.5 }}>
                     {o.lines.map((l, i) => (
-                      <div key={i} style={{ display: 'flex', gap: 10, padding: '3px 0', alignItems: 'baseline' }}>
-                        <span style={{ flex: 1, color: '#333' }}>{l.상품이름}</span>
+                      <div key={i} style={{ display: 'flex', gap: 10, padding: '2px 0', alignItems: 'baseline', flexWrap: 'wrap' }}>
+                        <span style={{ flex: 1, minWidth: 160, color: '#333' }}>{l.상품이름}</span>
                         <b style={{ minWidth: 40, textAlign: 'right' }}>{l.확정수량}개</b>
-                        <span style={{ minWidth: 150, color: l.stage === o.stage ? '#888' : RED, fontSize: 11.5 }}>{STAGES[l.stage]} · {l.where}</span>
+                        {o.partial && (
+                          <span style={{ minWidth: 150, color: l.stage === o.stage ? '#888' : RED, fontSize: 11.5 }}>{STAGES[l.stage]} · {l.where}</span>
+                        )}
                       </div>
                     ))}
                     {o.confirmed && o.stage <= 1 && !o.bundle && (
@@ -282,8 +273,7 @@ export default function CoupangFlowPage({ onNavigate }: { onNavigate: (menu: App
                         확정 표시 취소
                       </button>
                     )}
-                  </div>
-                )}
+                </div>
               </div>
             );
           })}

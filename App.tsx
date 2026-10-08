@@ -14,6 +14,7 @@ import WarehouseInPage from './components/hanjung/WarehouseInPage';
 import CoupangOrderPage from './components/coupangOrder/CoupangOrderPage';
 import CoupangShipPage from './components/coupangShip/CoupangShipPage';
 import CoupangSendPage from './components/coupangSend/CoupangSendPage';
+import OrderGuardBanner from './components/coupangOrder/OrderGuardBanner';
 import OrderSearchPage from './components/coupangOrder/OrderSearchPage';
 import { installOrderNoCopy } from './utils/copyOrderNo';
 import { PlusIcon, DownloadIcon, CloseIcon, BroomIcon, SearchIcon, DocumentAddIcon, SaveIcon, CameraIcon, SettingsIcon, TagIcon, CheckIcon, ArchiveIcon } from './components/Icons';
@@ -2997,6 +2998,7 @@ const App: React.FC = () => {
         onToggleCollapsed={toggleSidebarCollapsed}
       />
       <div className="flex-1 min-w-0">
+      <OrderGuardBanner onGoOrder={() => setActiveMenu('coupang-order')} />
       {activeMenu === 'proposal' && (
       <div className="flex flex-col items-start p-4 sm:p-6 lg:p-8">
       <div className="w-full min-w-0 relative z-10">

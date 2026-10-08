@@ -22,6 +22,7 @@ import { loadWork, saveWork, subscribeWork, newOrderNos } from './data/orderWork
 import { useReady } from './data/readyStore';
 import { HanjungQueueItem, subscribeHanjungQueue, addToHanjungQueue, removeFromHanjungQueue, hanjungQueueKey } from './data/hanjungQueueStore';
 import { forceUploadWork } from './data/orderWorkCloud';
+import { forgetLines, forgetDropped, allPlacedLines } from './data/orderGuard';
 import { forceUploadShipOuts } from './data/shipOutStore';
 import { isFirebaseConfigured, waitAtMost } from '../../utils/firebase';
 
@@ -143,6 +144,13 @@ export default function CoupangOrderPage({ onGoShipOut }: { onGoShipOut?: () => 
   // 스냅샷대로 되돌려 놓는다. 예약은 클라우드에 있어서 지금과 다른 것만 지우고·더하고·고친다.
   const applySnap = (snap: OrderSnap) => {
     const cur = nowRef.current.reservations;
+    // 되돌리기로 어디에도 없게 되는 줄(예: 발주서 추가를 되돌림)은 지킴이가 되살리지 않게 지운 줄로 친다.
+    const shipLines = snap.ship !== undefined
+      ? (JSON.parse(snap.ship) as { lines: Record<string, unknown>[] }[]).flatMap(s => s.lines)
+      : allShipOutLines() as unknown as Record<string, unknown>[];
+    forgetDropped(allPlacedLines(cur), [
+      ...extractOrderRows(snap.rows), ...snap.reservations, ...shipLines,
+    ] as { 발주번호?: unknown; 상품이름?: unknown }[]);
     setLeftRows(snap.rows);
     setFileName(snap.fileName);
     setDoneBundles(new Set(snap.done));
@@ -293,6 +301,7 @@ export default function CoupangOrderPage({ onGoShipOut }: { onGoShipOut?: () => 
     if (!row || row.isBlank) return;
     if (!confirm(`발주 ${row._발주번호}의 "${row.상품이름}" 줄을 발송 목록에서 지울까요?\n(되돌리기로 살릴 수 있어요)`)) return;
     record(`발주 ${row._발주번호} 상품 1줄 삭제`);
+    forgetLines([toOrderRow(row)]);
     setLeftRows(prev => buildDisplayRows(extractOrderRows(withoutLine(prev, row))));
   }, [leftRows]);
 
@@ -542,6 +551,7 @@ export default function CoupangOrderPage({ onGoShipOut }: { onGoShipOut?: () => 
     const mine = rightRows.filter(r => !r.isBlank && r._발주번호 === row._발주번호);
     if (!confirm(`발주 ${row._발주번호}의 예약 ${mine.length}줄을 삭제할까요?\n발송 목록으로 돌아가지 않고 지워져요(되돌리기로 살릴 수 있어요).`)) return;
     record(`발주 ${row._발주번호} 예약 삭제`);
+    forgetLines(mine.map(toOrderRow));
     deleteReservations(mine.map(toOrderRow)).catch(alertError);
   }, [rightRows]);
 
@@ -669,6 +679,7 @@ export default function CoupangOrderPage({ onGoShipOut }: { onGoShipOut?: () => 
   const handleReset = () => {
     if (leftRows.length && !confirm(`발송 목록 ${leftItemCount}건을 모두 지울까요?\n묶음도 함께 사라져요(되돌리기로 살릴 수 있어요).`)) return;
     record('전체 비우기');
+    forgetLines(extractOrderRows(leftRows));
     setLeftRows([]);
     setDoneBundles(new Set());
     setSelected(new Set());

@@ -29,6 +29,7 @@ import { useShipmentNoSync } from '../coupangOrder/data/useShipmentNoSync';
 import { HanjungQueueItem, subscribeHanjungQueue, addToHanjungQueue, removeFromHanjungQueue, hanjungQueueKey, makePlaceLookup } from '../coupangOrder/data/hanjungQueueStore';
 import { HanjungOrder, subscribeHanjung, saveHanjungOrder, freezeOrderQty, makeHanjungOfficeLookup, productSummary, sameName, orderQtyName, nameKey, isNotSame, rememberSameProduct, ordersNeedingAliasRename } from '../../data/hanjungStore';
 import { reservationKey } from '../coupangOrder/data/reservationStore';
+import { forgetLines, forgetDropped, allPlacedLines, placedReservations } from '../coupangOrder/data/orderGuard';
 import type { LineHanjung, HanjungChoice, HanjungAction, HanjungLink } from '../coupangOrder/components/OrderTable';
 import { nameSimilarity } from '../../data/inventoryStore';
 import { useReady } from '../coupangOrder/data/readyStore';
@@ -272,10 +273,20 @@ export default function CoupangShipPage({ onGoOrder }: { onGoOrder?: () => void 
     setRedoStack([]);
   };
 
+  // 되돌리기로 어디에도 없게 되는 줄은 지킴이가 되살리지 않게 지운 줄로 친다.
+  const forgetBySnapshot = (snap: ShipSnapshot) => {
+    try {
+      const ships = JSON.parse(snap.shipOuts) as ShipOut[];
+      const work = JSON.parse(snap.work) as { rows: Record<string, unknown>[] };
+      forgetDropped(allPlacedLines(), [...work.rows, ...ships.flatMap(x => x.lines), ...placedReservations()]);
+    } catch {}
+  };
+
   const undo = () => {
     setUndoStack(prev => {
       const last = prev[prev.length - 1];
       if (!last) return prev;
+      forgetBySnapshot(last.before);
       restoreShipSnapshot(last.before);
       setBoxOrder(last.boxBefore);
       setRedoStack(r => [...r, last]);
@@ -287,6 +298,7 @@ export default function CoupangShipPage({ onGoOrder }: { onGoOrder?: () => void 
     setRedoStack(prev => {
       const last = prev[prev.length - 1];
       if (!last) return prev;
+      forgetBySnapshot(last.after);
       restoreShipSnapshot(last.after);
       setBoxOrder(last.boxAfter);
       setUndoStack(u => [...u, last]);
@@ -1008,7 +1020,7 @@ export default function CoupangShipPage({ onGoOrder }: { onGoOrder?: () => void 
 
   const remove = (item: ShipOut) => {
     if (!confirm(`${item.id} (${item.bundle} · ${item.center})을 출고 목록에서 지울까요?`)) return;
-    step(`${item.bundle} 삭제`, () => { deleteShipOut(item.id); });
+    step(`${item.bundle} 삭제`, () => { forgetLines(item.lines); deleteShipOut(item.id); });
   };
 
   // 출고를 취소하고 쿠팡발주확인(발송 목록)으로 되돌린다. 묶음도 그대로 살아난다.

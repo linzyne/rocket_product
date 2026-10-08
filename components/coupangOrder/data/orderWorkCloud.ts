@@ -159,7 +159,9 @@ const upload = (w: StoredWork) => {
     const mine = readWork();
     const merged = await runTransaction(firestore, async tx => {
       const server = parseServer((await tx.get(ref)).data() as StoredWork | undefined) || { ...EMPTY };
-      const result = dropShipped(base ? mergeWork(base, mine, server) : mine);
+      // 걸러내기(dropShipped)는 내 목록에만 한다. 합친 결과에 하면 다른 컴퓨터가 쉽먼트생성에서 되돌려
+      // 넣은 줄을, 이 기기의 묵은 출고 목록을 보고 클라우드에서 지워 버린다(발주가 아예 사라짐).
+      const result = base ? mergeWork(base, mine, server) : dropShipped(mine);
       // 줄이 하나도 안 남으면 문서를 지운다("전체 비우기"가 다른 기기에도 그대로 간다).
       if (!result.rows.length) tx.delete(ref);
       else tx.set(ref, { ...result, updatedAt: Date.now() });
@@ -332,6 +334,13 @@ const startSync = (): (() => void) => {
   return () => {
     watchers--;
   };
+};
+
+// 클라우드에 있는 지금 목록을 서버에서 바로 읽는다(사라진 발주를 확인할 때 캐시 말고 진짜 값을 보려고).
+export const readWorkFromServer = async (): Promise<StoredWork | null> => {
+  if (!db) return null;
+  await ensureSignedIn();
+  return parseServer((await getDocFromServer(doc(db, ...DOC_PATH))).data() as StoredWork | undefined) || { ...EMPTY };
 };
 
 // 이 기기에 있는 목록을 클라우드에 그대로 덮어쓴다. 컴퓨터끼리 목록이 어긋났을 때 "이 컴퓨터 것이 맞다"며

@@ -492,42 +492,43 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
                   </span>
                 ) : (
                   <>
+                    {/* 배정(한중발주에 맡긴 수) · 대기(1688 주문 전): 같은 줄에 작게 */}
+                    {(() => {
+                      const places = placesOf({ 발주번호: o.no, 상품이름: l.상품이름, 확정수량: l.확정수량 });
+                      const assigned = places.filter(p => p.code).reduce((n, p) => n + p.qty, 0);
+                      const queued = places.filter(p => !p.code).reduce((n, p) => n + p.qty, 0);
+                      if (!assigned && !queued) return null;
+                      return (
+                        <span
+                          title={[assigned ? `배정: ${places.filter(p => p.code).map(p => `${p.code} ${p.qty}개`).join(', ')}` : '', queued ? `한중발주 대기(1688 주문 전) ${queued}개` : ''].filter(Boolean).join('\n')}
+                          style={{ flexShrink: 0, fontSize: 11, color: '#8a857f', whiteSpace: 'nowrap' }}
+                        >
+                          {assigned ? <>배정 <b>{assigned}</b></> : null}{assigned && queued ? ' · ' : ''}{queued ? <>대기 <b>{queued}</b></> : null}
+                        </span>
+                      );
+                    })()}
                     {/* 사무실 재고(한중 여유): 도착 수 +오는 중. 필요한 만큼 도착했으면 초록, 오는 것까지 치면 되면 주황, 모자라면 빨강. */}
                     {(() => {
                       const office = officeOf(l.상품이름);
                       const arrived = office.qty || 0;
                       const incoming = office.incoming || 0;
                       // 칸을 맞추려고 없을 때도 같은 너비를 비워 둔다.
-                      if (!arrived && !incoming) return <span style={{ flexShrink: 0, width: 46 }} />;
+                      if (!arrived && !incoming) return <span style={{ flexShrink: 0, width: 50 }} />;
                       const need = Number(l.확정수량) || 0;
                       const color = arrived >= need ? GREEN : arrived + incoming >= need ? '#d97706' : RED;
                       return (
                         <span
                           title={`사무실 재고(한중 여유) · 도착 ${arrived}개${incoming ? ` · 오는 중 ${incoming}개` : ''}\n${office.names.join('\n')}`}
-                          style={{ flexShrink: 0, width: 46, textAlign: 'right', fontSize: 13, fontWeight: 800, color, whiteSpace: 'nowrap' }}
+                          style={{ flexShrink: 0, width: 50, textAlign: 'right', fontSize: 14, fontWeight: 800, color, whiteSpace: 'nowrap' }}
                         >
                           {arrived}{incoming > 0 && <span style={{ fontSize: 11, fontWeight: 700, color: '#d97706' }}> +{incoming}</span>}
                         </span>
                       );
                     })()}
-                    <b style={{ flexShrink: 0, width: 38, textAlign: 'right', whiteSpace: 'nowrap' }}>{l.확정수량}개</b>
+                    <b style={{ flexShrink: 0, width: 42, textAlign: 'right', whiteSpace: 'nowrap' }}>{l.확정수량}개</b>
                   </>
                 )}
               </div>
-              {/* 수량: 배정(한중발주에 맡긴 수) · 대기(1688 주문 전) */}
-              {o.stage > 0 && (() => {
-                const key = { 발주번호: o.no, 상품이름: l.상품이름, 확정수량: l.확정수량 };
-                const places = placesOf(key);
-                const assigned = places.filter(p => p.code).reduce((n, p) => n + p.qty, 0);
-                const queued = places.filter(p => !p.code).reduce((n, p) => n + p.qty, 0);
-                const parts: React.ReactNode[] = [];
-                if (assigned) parts.push(<span key="a" title={`한중발주 ${places.filter(p => p.code).map(p => `${p.code} ${p.qty}개`).join(', ')}`}>배정 <b>{assigned}</b></span>);
-                if (queued) parts.push(<span key="q" title="한중발주 대기(1688 주문 전)">대기 <b>{queued}</b></span>);
-                if (!parts.length) return null;
-                return (
-                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0 10px', fontSize: 10.5, color: '#8a857f', marginTop: 1, paddingLeft: 24 }}>{parts}</div>
-                );
-              })()}
               {editable && now < full && (
                 <select
                   value={draft.reason[l.상품이름] || DEFAULT_REASON}
@@ -605,7 +606,7 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
       {headInfo(o, 17)}
       {tags(o)}
       {runNote(o)}
-      <div style={{ fontSize: 12, borderTop: '1px solid #f3f3f3', paddingTop: 5 }}>{products(o)}</div>
+      <div style={{ fontSize: 13.5, borderTop: '1px solid #f3f3f3', paddingTop: 5 }}>{products(o)}</div>
       {actionRow(o)}
     </div>
   );
@@ -620,7 +621,7 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
         {runNote(o)}
         {actionRow(o)}
       </div>
-      <div style={{ flex: '1 1 220px', minWidth: 0, padding: '10px 12px', fontSize: 12.5 }}>{products(o)}</div>
+      <div style={{ flex: '1 1 220px', minWidth: 0, padding: '10px 12px', fontSize: 13.5 }}>{products(o)}</div>
     </div>
   );
 

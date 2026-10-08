@@ -683,7 +683,7 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
       {/* 커다란 판 하나에 단계 칸이 옆으로 나란히(위쪽 머리줄 = 칸 제목). 발주서는 지금 단계 칸 안에 위아래 한 줄로 자리 잡는다. */}
       <main style={{ overflowX: 'auto', padding: '12px clamp(10px, 3vw, 20px) 70px' }}>
         <div style={{
-          display: 'inline-grid', gridTemplateColumns: `repeat(${BOARD_STAGES.length}, 340px)`,
+          display: 'inline-grid', gridTemplateColumns: `repeat(${BOARD_STAGES.length}, 360px)`,
           border: '1.5px solid #d6d3d1', borderRadius: 12, background: '#efedea', overflow: 'hidden', alignItems: 'stretch',
         }}>
           {/* 머리줄 */}
@@ -693,7 +693,7 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
             const stuck = i === 2 ? list.filter(o => run(o)?.state === 'error').length : 0;
             return (
               <div key={`h-${label}`} style={{
-                position: 'sticky', top: 0, zIndex: 2, display: 'flex', alignItems: 'center', gap: 6, padding: '9px 10px',
+                position: 'sticky', top: 0, zIndex: 2, display: 'flex', alignItems: 'center', gap: 6, padding: '13px 14px',
                 background: '#efedeb', borderBottom: '2px solid #d6d3d1', borderRight: col < BOARD_STAGES.length - 1 ? '1px solid #d6d3d1' : 'none',
               }}>
                 <span style={{ fontSize: 11, color: '#a8a29e', fontWeight: 800 }}>{col + 1}</span>
@@ -710,7 +710,7 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
             const list = boxes[i];
             return (
               <div key={`c-${label}`} style={{
-                padding: 10, minHeight: '60vh', display: 'flex', flexDirection: 'column', gap: 12, boxSizing: 'border-box',
+                padding: '18px 14px 32px', minHeight: '78vh', display: 'flex', flexDirection: 'column', gap: 14, boxSizing: 'border-box',
                 borderRight: col < BOARD_STAGES.length - 1 ? '1px solid #e7e5e4' : 'none',
               }}>
                 {list.map(card)}

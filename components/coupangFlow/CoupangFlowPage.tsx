@@ -451,10 +451,10 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
                       title={`${isReady ? '준비됨' : coming.length ? `입고중(한중발주 ${coming.map(p => p.code).join(', ')})` : waitingQueue ? '한중발주 대기(1688 주문 전)' : '준비중'} — 왼쪽 체크 칸에서 준비됨·한중발주 배정`}
                       style={{
                         flex: 1, minWidth: 0, wordBreak: 'keep-all',
-                        // 준비중(아무 진행 없음) = 검정 굵게, 입고중 = 중간 회색, 준비됨 = 가장 옅은 회색 + 초록 ✓
-                        color: now < full ? RED : isReady ? '#c9c4be' : faded ? '#857f78' : '#111',
+                        // 준비중(아무 진행 없음) = 검정 굵게, 입고중 = 중간 회색 + 번호 동그라미, 준비됨 = 회색 + 줄 긋기 + 초록 ✓
+                        color: now < full ? RED : isReady ? '#a8a29e' : faded ? '#857f78' : '#111',
                         fontWeight: faded ? 400 : 700,
-                        textDecoration: editable && now === 0 ? 'line-through' : 'none',
+                        textDecoration: (editable && now === 0) || isReady ? 'line-through' : 'none',
                       }}
                     >
                       {isReady && <span style={{ marginRight: 4, color: GREEN, fontWeight: 900 }}>✓</span>}

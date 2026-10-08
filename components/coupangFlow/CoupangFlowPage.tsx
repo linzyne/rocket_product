@@ -891,7 +891,7 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
         </header>
         <main style={{ maxWidth: 860, padding: '12px clamp(10px, 3vw, 20px) 70px' }}>
           {!shown.length && <div style={{ padding: '48px 0', textAlign: 'center', color: '#aaa', fontSize: 14 }}>{q ? '찾는 발주서가 없어요.' : '이 단계에 있는 발주서가 없어요.'}</div>}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>{shown.map(row)}</div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>{shown.map(row)}</div>
         </main>
         {layer}
         {newWindow}
@@ -942,7 +942,7 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
             const list = boxes[i];
             return (
               <div key={`c-${label}`} style={{
-                padding: '18px 14px 32px', minHeight: '78vh', display: 'flex', flexDirection: 'column', gap: 14, boxSizing: 'border-box',
+                padding: '18px 14px 32px', minHeight: '78vh', display: 'flex', flexDirection: 'column', gap: 20, boxSizing: 'border-box',
                 borderRight: col < BOARD_STAGES.length - 1 ? '1px solid #e7e5e4' : 'none',
               }}>
                 {list.map(card)}

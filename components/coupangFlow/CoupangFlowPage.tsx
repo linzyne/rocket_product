@@ -454,8 +454,8 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
                       title={`${l.상품이름}\n${isReady ? '준비됨' : coming.length ? `입고중(한중발주 ${coming.map(p => p.code).join(', ')})` : waitingQueue ? '한중발주 대기(1688 주문 전)' : '준비중'} — 왼쪽 체크 칸에서 준비됨·한중발주 배정`}
                       style={{
                         flex: 1, minWidth: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
-                        // 준비중(아무 진행 없음) = 검정 굵게, 입고중 = 중간 회색 + 번호 동그라미, 준비됨 = 회색 + 줄 긋기 + 초록 ✓
-                        color: now < full ? RED : isReady ? '#a8a29e' : faded ? '#857f78' : '#111',
+                        // 준비중(아무 진행 없음) = 검정 굵게, 입고중 = 검정 보통 굵기 + 번호 동그라미, 준비됨 = 회색 + 줄 긋기 + 초록 ✓
+                        color: now < full ? RED : isReady ? '#a8a29e' : '#111',
                         fontWeight: faded ? 400 : 700,
                         textDecoration: (editable && now === 0) || isReady ? 'line-through' : 'none',
                       }}

@@ -724,8 +724,9 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
             style={{ padding: '6px 12px', fontSize: 13, fontWeight: 700, borderRadius: 8, border: 'none', background: '#16a34a', color: '#fff', cursor: 'pointer', whiteSpace: 'nowrap' }}>
             ✅ 바뀐 날짜 적용
           </button>
-          <button onClick={() => setPicked(new Set())} style={{ padding: '6px 10px', fontSize: 12, borderRadius: 8, border: '1px solid #4b5563', background: 'transparent', color: '#d1d5db', cursor: 'pointer', whiteSpace: 'nowrap' }}>
-            고르기 풀기
+          <button onClick={() => setPicked(new Set())} title="고른 발주서를 모두 해제해요"
+            style={{ padding: '6px 12px', fontSize: 13, fontWeight: 700, borderRadius: 8, border: '1px solid #9ca3af', background: '#fff', color: '#374151', cursor: 'pointer', whiteSpace: 'nowrap' }}>
+            ✕ 취소
           </button>
         </div>
       )}

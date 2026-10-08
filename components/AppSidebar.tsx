@@ -93,6 +93,14 @@ export const MENU_GROUPS: { title: string; items: MenuItem[] }[] = [
 
 const ALL_ITEMS = MENU_GROUPS.flatMap(g => g.items);
 
+// 자주 쓰는 메뉴는 맨 위에 따로 두고, 나머지는 맨 아래 "다른 메뉴"에 접어 둔다(혹시 몰라 남겨 둔 것).
+const MAIN_IDS: AppMenuId[] = ['coupang-flow', 'coupang-sent', 'cn-order'];
+const MAIN_ITEMS = MAIN_IDS.map(id => ALL_ITEMS.find(i => i.id === id)!).filter(Boolean);
+const OTHER_GROUPS = MENU_GROUPS
+  .map(g => ({ ...g, items: g.items.filter(i => !MAIN_IDS.includes(i.id)) }))
+  .filter(g => g.items.length);
+const OTHERS_OPEN_KEY = 'sidebar.othersOpen';
+
 // 개발 중 메뉴 목록을 고치면 화면 일부만 바뀌어(왼쪽 메뉴만 새것, 앱 본체는 옛것) 새 메뉴를 누르면 엉뚱한 화면으로
 // 가는 일이 있었다. 이 파일이 바뀌면 페이지를 통째로 새로 불러오게 한다.
 // Vite는 글자 그대로 import.meta.hot 이 있어야 이 기능을 붙여 주므로 형 검사만 건너뛴다.
@@ -141,50 +149,74 @@ const AppSidebar: React.FC<AppSidebarProps> = (props) => {
   );
 };
 
-const SidebarNav: React.FC<AppSidebarProps> = ({ active, onSelect, collapsed, onToggleCollapsed }) => (
-  <nav className={`sticky top-0 h-screen flex-shrink-0 flex flex-col bg-white border-r border-gray-200 transition-[width] duration-150 ${collapsed ? 'w-14' : 'w-44'}`}>
-    <div className={`flex items-center h-12 border-b border-gray-100 ${collapsed ? 'justify-center' : 'justify-between px-3'}`}>
-      {!collapsed && <span className="text-base font-bold text-gray-900">🚀 로켓</span>}
+const SidebarNav: React.FC<AppSidebarProps> = ({ active, onSelect, collapsed, onToggleCollapsed }) => {
+  // "다른 메뉴"는 접어 둔다. 지금 보고 있는 메뉴가 그 안에 있으면 펼쳐서 보여준다. 펼침 여부는 이 기기에 기억한다.
+  const [othersOpen, setOthersOpen] = useState(() => { try { return localStorage.getItem(OTHERS_OPEN_KEY) === '1'; } catch { return false; } });
+  const activeInOthers = !MAIN_IDS.includes(active);
+  const showOthers = othersOpen || activeInOthers;
+  const toggleOthers = () => setOthersOpen(v => {
+    const next = !v;
+    try { localStorage.setItem(OTHERS_OPEN_KEY, next ? '1' : '0'); } catch {}
+    return next;
+  });
+  const menuButton = (item: MenuItem) => {
+    const isActive = item.id === active;
+    return (
       <button
-        onClick={onToggleCollapsed}
-        className="p-1.5 rounded-md text-gray-400 hover:bg-gray-100 hover:text-gray-700 transition-colors"
-        title={collapsed ? '메뉴 펼치기' : '메뉴 접기'}
-        aria-label={collapsed ? '메뉴 펼치기' : '메뉴 접기'}
+        key={item.id}
+        onClick={() => onSelect(item.id)}
+        title={collapsed ? item.label : undefined}
+        className={`w-full flex items-center gap-2.5 text-sm transition-colors ${collapsed ? 'justify-center py-2' : 'px-4 py-1.5'} ${
+          isActive
+            ? 'bg-blue-50 text-blue-700 font-semibold'
+            : item.ready
+              ? 'text-gray-700 hover:bg-gray-50'
+              : 'text-gray-400 hover:bg-gray-50'
+        }`}
       >
-        {icon(collapsed ? 'M13 5l7 7-7 7M5 5l7 7-7 7' : 'M11 19l-7-7 7-7m8 14l-7-7 7-7')}
+        {item.icon}
+        {!collapsed && <span className="truncate">{item.label}</span>}
       </button>
-    </div>
-    <div className="flex-1 overflow-y-auto py-2">
-      {MENU_GROUPS.map(group => (
-        <div key={group.title} className="mb-2">
-          {collapsed
-            ? <div className="mx-3 my-2 border-t border-gray-100" />
-            : <div className="px-4 pt-2 pb-1 text-[11px] font-semibold text-gray-400">{group.title}</div>}
-          {group.items.map(item => {
-            const isActive = item.id === active;
-            return (
-              <button
-                key={item.id}
-                onClick={() => onSelect(item.id)}
-                title={collapsed ? item.label : undefined}
-                className={`w-full flex items-center gap-2.5 text-sm transition-colors ${collapsed ? 'justify-center py-2' : 'px-4 py-1.5'} ${
-                  isActive
-                    ? 'bg-blue-50 text-blue-700 font-semibold'
-                    : item.ready
-                      ? 'text-gray-700 hover:bg-gray-50'
-                      : 'text-gray-400 hover:bg-gray-50'
-                }`}
-              >
-                {item.icon}
-                {!collapsed && <span className="truncate">{item.label}</span>}
-              </button>
-            );
-          })}
+    );
+  };
+  return (
+    <nav className={`sticky top-0 h-screen flex-shrink-0 flex flex-col bg-white border-r border-gray-200 transition-[width] duration-150 ${collapsed ? 'w-14' : 'w-44'}`}>
+      <div className={`flex items-center h-12 border-b border-gray-100 ${collapsed ? 'justify-center' : 'justify-between px-3'}`}>
+        {!collapsed && <span className="text-base font-bold text-gray-900">🚀 로켓</span>}
+        <button
+          onClick={onToggleCollapsed}
+          className="p-1.5 rounded-md text-gray-400 hover:bg-gray-100 hover:text-gray-700 transition-colors"
+          title={collapsed ? '메뉴 펼치기' : '메뉴 접기'}
+          aria-label={collapsed ? '메뉴 펼치기' : '메뉴 접기'}
+        >
+          {icon(collapsed ? 'M13 5l7 7-7 7M5 5l7 7-7 7' : 'M11 19l-7-7 7-7m8 14l-7-7 7-7')}
+        </button>
+      </div>
+      <div className="flex-1 overflow-y-auto py-2 flex flex-col">
+        <div className="mb-2">{MAIN_ITEMS.map(menuButton)}</div>
+        {/* 나머지 메뉴: 맨 아래에 접어 둔다 */}
+        <div className="mt-auto border-t border-gray-100 pt-1">
+          <button
+            onClick={toggleOthers}
+            title={collapsed ? '다른 메뉴' : undefined}
+            className={`w-full flex items-center gap-2 text-xs font-semibold text-gray-400 hover:text-gray-600 ${collapsed ? 'justify-center py-2' : 'px-4 py-1.5'}`}
+          >
+            {icon(showOthers ? 'M19 9l-7 7-7-7' : 'M9 5l7 7-7 7')}
+            {!collapsed && <span>다른 메뉴</span>}
+          </button>
+          {showOthers && OTHER_GROUPS.map(group => (
+            <div key={group.title} className="mb-1">
+              {collapsed
+                ? <div className="mx-3 my-2 border-t border-gray-100" />
+                : <div className="px-4 pt-2 pb-1 text-[11px] font-semibold text-gray-400">{group.title}</div>}
+              {group.items.map(menuButton)}
+            </div>
+          ))}
         </div>
-      ))}
-    </div>
-  </nav>
-);
+      </div>
+    </nav>
+  );
+};
 
 export const MenuPlaceholder: React.FC<{ id: AppMenuId }> = ({ id }) => (
   <div className="h-full min-h-[60vh] flex flex-col items-center justify-center text-gray-400 gap-1">

@@ -629,12 +629,16 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
   const borderOf = (o: FlowOrder) => picked.has(o.no) ? `2px solid ${ORANGE}` : `1px solid ${run(o)?.state === 'error' ? '#fca5a5' : '#ececec'}`;
 
   // 상자 보기 카드: 상자 폭에 맞춰 위아래로.
-  const card = (o: FlowOrder) => (
-    // 카드끼리 잘 구분되게: 진한 테두리 + 그림자 + 왼쪽 색 띠(멈춘 건 빨강, 고른 건 주황).
+  const card = (o: FlowOrder) => {
+    // 쉽먼트·발송대기에서 상품이 다 준비된 발주서는 초록 테두리·띠 + 연한 초록 바탕으로 확 구분한다.
+    const done = (o.stage === 2 || o.stage === 4) && allReady(o);
+    const err = run(o)?.state === 'error';
+    return (
+    // 카드끼리 잘 구분되게: 테두리 + 그림자 + 왼쪽 색 띠(고른 건 주황, 멈춘 건 빨강, 다 준비된 건 초록).
     <div key={o.no} style={{
-      background: '#fff', borderRadius: 10, padding: '10px 12px 10px 14px', boxShadow: '0 2px 6px rgba(0,0,0,0.10)',
-      border: picked.has(o.no) ? `2px solid ${ORANGE}` : `1px solid ${run(o)?.state === 'error' ? '#f87171' : '#b8b2ab'}`,
-      borderLeft: `5px solid ${picked.has(o.no) ? ORANGE : run(o)?.state === 'error' ? RED : '#a8a29e'}`,
+      background: done ? '#f0faf3' : '#fff', borderRadius: 10, padding: '10px 12px 10px 14px', boxShadow: '0 2px 6px rgba(0,0,0,0.10)',
+      border: picked.has(o.no) ? `2px solid ${ORANGE}` : done ? `2px solid ${GREEN}` : `1px solid ${err ? '#f87171' : '#b8b2ab'}`,
+      borderLeft: `5px solid ${picked.has(o.no) ? ORANGE : err ? RED : done ? GREEN : '#a8a29e'}`,
       display: 'flex', flexDirection: 'column', gap: 6,
     }}>
       {headInfo(o, 17)}
@@ -643,7 +647,8 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
       <div style={{ fontSize: 13.5, borderTop: '1px solid #f3f3f3', paddingTop: 5 }}>{products(o)}</div>
       {actionRow(o)}
     </div>
-  );
+    );
+  };
 
   // 단계별 보기 카드: 왼쪽에 날짜·센터·단계·버튼, 오른쪽에 상품.
   const row = (o: FlowOrder) => (

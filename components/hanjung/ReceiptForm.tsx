@@ -3,12 +3,12 @@ import {
   HanjungOrder, HanjungReceipt, addReceipt, removeReceipt,
   productSummary, orderTotals, receiptGoodsCost, receiptTotalCost, productUnitCost, FEE_KEYS, FeeKey, receiptFee, remainingFee, lineAlloc, sameName,
 } from '../../data/hanjungStore';
-import { setReady } from '../coupangOrder/data/readyStore';
+import { setReady, readyKey } from '../coupangOrder/data/readyStore';
 
 // 도착하면 그 한중발주에 배정된 쿠팡 발주 줄을 준비됨으로 자동 체크한다(발송대기에서는 줄이 그어진다).
 // 상품마다 도착한 수량 안에서, 입고예정일이 빠른 줄부터 다 채워지는 줄만 체크한다.
 // 다른 곳(대기·다른 한중발주)과 나눠 맡긴 줄은 이 도착만으로 다 갖춰진 게 아니라서 건드리지 않는다.
-export const markArrivedLinesReady = async (order: HanjungOrder) => {
+const arrivedLines = (order: HanjungOrder) => {
   const lines: { 발주번호: string; 상품이름: string; 확정수량: number }[] = [];
   for (const p of productSummary(order)) {
     let left = p.received;
@@ -21,8 +21,19 @@ export const markArrivedLinesReady = async (order: HanjungOrder) => {
       lines.push({ 발주번호: l.발주번호, 상품이름: l.상품이름, 확정수량: l.확정수량 });
     }
   }
+  return lines;
+};
+export const markArrivedLinesReady = async (order: HanjungOrder) => {
+  const lines = arrivedLines(order);
   if (lines.length) await setReady(lines, true);
   return lines.length;
+};
+
+// 도착 기록을 지우면, 그 도착 덕분에 준비됨이 됐던 줄(남은 도착으로는 못 채우는 줄)의 체크를 푼다.
+const unmarkRemovedArrival = async (order: HanjungOrder, receiptId: string) => {
+  const after = new Set(arrivedLines({ ...order, receipts: order.receipts.filter(x => x.id !== receiptId) }).map(readyKey));
+  const lines = arrivedLines(order).filter(l => !after.has(readyKey(l)));
+  if (lines.length) await setReady(lines, false);
 };
 
 // 한중발주 화면이 이 파일을 쓰므로 거꾸로 가져오지 않게 여기서 따로 둔다.
@@ -173,8 +184,10 @@ export const ReceiptForm: React.FC<{ order: HanjungOrder; onDone?: () => void }>
 // 이 한중발주의 도착(수입입고) 기록 목록. 잘못 적은 건 지울 수 있다.
 export const ReceiptHistory: React.FC<{ order: HanjungOrder }> = ({ order }) => {
   const handleRemove = (r: HanjungReceipt) => {
-    if (!confirm(`${r.date} 도착 기록을 삭제할까요?\n(적어 둔 금액·부대비용은 주문 금액으로 남겨 둬요)`)) return;
-    removeReceipt(order, r.id).catch(err => alert(`삭제 실패: ${err?.message || err}`));
+    if (!confirm(`${r.date} 도착 기록을 삭제할까요?\n(적어 둔 금액·부대비용은 주문 금액으로 남겨 두고, 이 도착으로 준비됨이 된 줄은 체크를 풀어요)`)) return;
+    removeReceipt(order, r.id)
+      .then(() => unmarkRemovedArrival(order, r.id))
+      .catch(err => alert(`삭제 실패: ${err?.message || err}`));
   };
   if (!order.receipts.length) return null;
   // 도착 한 번마다 작은 표: 상품 · 수량 · 금액, 아래에 부대비용과 합계.

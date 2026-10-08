@@ -532,6 +532,20 @@ const ProductListRow: React.FC<ProductListRowProps> = ({ entry, isExpanded, onTo
   const [draftValue, setDraftValue] = useState('');
   const [thumbLoading, setThumbLoading] = useState(false);
 
+  // 바코드 번호 수정칸. 다른 기기에서 바뀐 값은 편집 중이 아닐 때만 화면에 맞춘다.
+  const savedBarcode = entry.barcode || '';
+  const [barcodeDraft, setBarcodeDraft] = useState(savedBarcode);
+  const [barcodeEditing, setBarcodeEditing] = useState(false);
+  useEffect(() => {
+    if (!barcodeEditing) setBarcodeDraft(savedBarcode);
+  }, [savedBarcode, barcodeEditing]);
+
+  const commitBarcode = () => {
+    const next = barcodeDraft.trim();
+    setBarcodeEditing(false);
+    if (next !== savedBarcode) onUpdate({ barcode: next });
+  };
+
   // 상품마다 따로 적어두는 메모. 저장하면 onUpdate를 타고 클라우드(또는 이 기기)에 그대로 남아서
   // 앱을 껐다 켜도 계속 보인다. 예전에 저장된 항목에는 memo가 없으므로 빈 메모로 취급한다.
   const savedMemo = entry.memo || '';
@@ -811,18 +825,32 @@ const ProductListRow: React.FC<ProductListRowProps> = ({ entry, isExpanded, onTo
             </div>
           </div>
 
-          {entry.barcode && (
-            <div>
-              <p className="text-[10px] text-gray-400 mb-1">바코드 (클릭하면 라벨 크게 보기)</p>
-              <button
-                type="button"
-                onClick={() => onEnlargeBarcode(entry)}
-                className="bg-gray-50 border border-gray-200 rounded-md px-3 py-2 inline-flex hover:bg-gray-100 transition-colors"
-              >
-                <BarcodeImage value={entry.barcode} height={40} />
-              </button>
+          <div>
+            <p className="text-[10px] text-gray-400 mb-1">바코드 {entry.barcode && '(그림 클릭하면 라벨 크게 보기)'}</p>
+            <div className="flex flex-wrap items-center gap-2">
+              <input
+                type="text"
+                value={barcodeDraft}
+                onChange={e => { setBarcodeDraft(e.target.value); setBarcodeEditing(true); }}
+                onBlur={commitBarcode}
+                onKeyDown={e => {
+                  if (e.key === 'Enter') { e.preventDefault(); (e.target as HTMLInputElement).blur(); }
+                  if (e.key === 'Escape') { e.preventDefault(); setBarcodeDraft(savedBarcode); setBarcodeEditing(false); }
+                }}
+                placeholder="바코드 번호"
+                className="w-44 px-2 py-1 border border-gray-300 rounded-md text-sm font-mono focus:outline-none focus:ring-1 focus:ring-blue-400 focus:border-blue-400"
+              />
+              {entry.barcode && (
+                <button
+                  type="button"
+                  onClick={() => onEnlargeBarcode(entry)}
+                  className="bg-gray-50 border border-gray-200 rounded-md px-3 py-2 inline-flex hover:bg-gray-100 transition-colors"
+                >
+                  <BarcodeImage value={entry.barcode} height={40} />
+                </button>
+              )}
             </div>
-          )}
+          </div>
 
           <div className="bg-amber-50 border border-amber-200 rounded-md px-3 py-2.5">
             <div className="flex items-center justify-between gap-2 mb-1.5">

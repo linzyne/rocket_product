@@ -337,24 +337,21 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
       case 2:
         return (
           <>
-            {/* 서허 등록이 끝나 쉽먼트 번호가 있으면 출력만, 아니면 쉽먼트 이어서 하기·화면 이동 */}
+            {/* 서허 등록이 끝나 쉽먼트 번호가 있으면 출력만. 아니면 멈춘 쉽먼트 이어서 하기 + 출력(번호 찾기). */}
             {o.item?.shipmentNos?.[o.no] ? printButton(o) : (
               <>
-                {o.item && o.batch && (!r || r.state !== 'running') && (
+                {o.item && o.batch && r && r.state === 'error' && (
                   <button style={btn(ORANGE, true)} onClick={() => resumeShipment(o.batch!, [o.item!])} title="멈춘 데서 이어서 합니다. 택배예약은 다시 하지 않아요.">▶ 이어서 하기</button>
                 )}
-                <button style={btn(ORANGE, !o.batch)} onClick={() => onNavigate('coupang-ship')} title={o.batch ? '쉽먼트생성대기 화면' : '쉽먼트생성대기에서 택배예약부터 시작합니다'}>
-                  {o.batch ? '쉽먼트 →' : '쉽먼트 시작 →'}
-                </button>
                 {printButton(o)}
               </>
             )}
           </>
         );
       case 3:
-        return <button style={btn(ORANGE, true)} onClick={() => onNavigate('coupang-send')} title="발송대기 화면에서 문서와 바코드를 출력합니다">출력하러 →</button>;
       case 4:
-        return <button style={btn(GREEN)} onClick={() => onNavigate('coupang-send')} title="준비되면 발송대기 화면에서 발송 완료를 누릅니다">발송대기 →</button>;
+        // 발송완료로 넘기기는 발주서를 고르면 아래쪽 메뉴에 나온다.
+        return null;
       default:
         return <span style={{ fontSize: 12, color: GREEN, fontWeight: 700 }}>{dayText(o.item?.sentDate || '')} 발송</span>;
     }

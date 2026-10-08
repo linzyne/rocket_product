@@ -633,7 +633,7 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
     // 카드끼리 잘 구분되게: 진한 테두리 + 그림자 + 왼쪽 색 띠(멈춘 건 빨강, 고른 건 주황).
     <div key={o.no} style={{
       background: '#fff', borderRadius: 10, padding: '10px 12px 10px 14px', boxShadow: '0 2px 6px rgba(0,0,0,0.10)',
-      border: picked.has(o.no) ? `2px solid ${ORANGE}` : `1px solid ${run(o)?.state === 'error' ? '#f87171' : '#cfcac5'}`,
+      border: picked.has(o.no) ? `2px solid ${ORANGE}` : `1px solid ${run(o)?.state === 'error' ? '#f87171' : '#b8b2ab'}`,
       borderLeft: `5px solid ${picked.has(o.no) ? ORANGE : run(o)?.state === 'error' ? RED : '#a8a29e'}`,
       display: 'flex', flexDirection: 'column', gap: 6,
     }}>

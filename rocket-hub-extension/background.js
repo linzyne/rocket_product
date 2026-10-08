@@ -454,6 +454,9 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           [PO_KEY]: {
             requestedAt: Date.now(),
             lastOrderNo: String(message.lastOrderNo || ''),
+            // 발주확정 올리기에 쓸 양식만 다시 받을 때: 이 발주번호들만 받는다(기준번호는 안 바꾼다).
+            orderNos: Array.isArray(message.orderNos) ? message.orderNos.map(String) : [],
+            purpose: message.purpose || '',
             savedAt: Date.now(),
             step: 'start',
             status: '서허 발주서 목록 여는 중…',

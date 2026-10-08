@@ -65,6 +65,8 @@ const CollectPurchaseOrders: React.FC<{
         alert(`발주서 가져오기를 시작하지 못했어요: ${d.error || ''}`);
       }
       if (d.type !== 'PO_STATUS') return;
+      // 발주확정 올리기가 양식만 다시 받는 중이면 새 주문 수집과 상관없다.
+      if (d.purpose === 'form') return;
       if (d.status) setStatus(d.status);
       if (d.step === 'empty') {
         setRunning(false);

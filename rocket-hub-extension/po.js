@@ -214,8 +214,10 @@
     const all = listFromJson(askedAt);
     const last = String(pending.lastOrderNo || '');
     const hit = last ? all.indexOf(last) : -1;
+    // 발주번호를 정해서 받는 경우(발주확정 양식 다시 받기): 기준번호는 보지 않는다.
+    const explicit = Array.isArray(pending.orderNos) && pending.orderNos.length ? pending.orderNos.map(String) : null;
 
-    if (last && hit < 0) {
+    if (!explicit && last && hit < 0) {
       return fail(
         `기준 발주번호 ${last}를 목록에서 찾지 못했어요(${all.length}건 확인` +
         `${all.length ? `, 맨 위 ${all[0]} ~ 맨 아래 ${all[all.length - 1]}` : ''}). ` +
@@ -223,7 +225,7 @@
       );
     }
     // 목록은 새 발주서가 맨 위에 온다. 기준번호 위쪽이 이번에 받을 것이다.
-    const fresh = hit >= 0 ? all.slice(0, hit) : all;
+    const fresh = explicit || (hit >= 0 ? all.slice(0, hit) : all);
     if (!fresh.length) {
       await patch({ step: 'empty', status: '새 발주서가 없어요.' });
       try { chrome.runtime.sendMessage({ type: 'PO_DONE' }); } catch (err) {}
@@ -245,6 +247,9 @@
     await sleep(1500);
     const shown = listFromJson(againAt);
     const missing = fresh.filter((no) => !shown.includes(no));
+    if (explicit && !fresh.some((no) => shown.includes(no))) {
+      return fail(`발주서 ${fresh.join(', ')}를 서허 목록에서 찾지 못했어요(기간검색 밖일 수 있어요).`);
+    }
 
     // 기준번호는 실제로 받은 것 중 맨 위로 남긴다(다시 검색해도 안 나온 건 뺀다).
     const topNo = fresh.find((no) => shown.includes(no)) || fresh[0];
@@ -263,7 +268,8 @@
       step: 'downloading',
       status: `발주서 ${shown.length}건 양식 받는 중…${missing.length ? ` (${missing.length}건은 다시 검색해도 안 나와 빠졌어요)` : ''}`,
       count: shown.length,
-      topOrderNo: topNo,
+      // 정해서 받는 경우에는 기준번호를 안 바꾼다.
+      topOrderNo: explicit ? '' : topNo,
     });
     clickEl(btn);
   };

@@ -154,7 +154,7 @@
     }
     if (d.type === 'PO_COLLECT') {
       try {
-        chrome.runtime.sendMessage({ type: 'PO_COLLECT', lastOrderNo: d.lastOrderNo || '' }, (res) => {
+        chrome.runtime.sendMessage({ type: 'PO_COLLECT', lastOrderNo: d.lastOrderNo || '', orderNos: d.orderNos || [], purpose: d.purpose || '' }, (res) => {
           const lastError = chrome.runtime.lastError;
           if (lastError || !res) reply({ type: 'PO_COLLECT_ACK', ok: false, error: (lastError && lastError.message) || '확장이 응답하지 않았습니다.' });
           else reply({ type: 'PO_COLLECT_ACK', ...res });
@@ -218,7 +218,7 @@
       // 발주서 수집 진행 상황. 다 받으면 file(이름·내용)이, 새 게 없으면 step이 'empty'로 온다.
       if (changes.poPending && changes.poPending.newValue) {
         const v = changes.poPending.newValue;
-        reply({ type: 'PO_STATUS', step: v.step, status: v.status, savedAt: v.savedAt, count: v.count || 0, topOrderNo: v.topOrderNo || '', file: v.file || null });
+        reply({ type: 'PO_STATUS', step: v.step, status: v.status, savedAt: v.savedAt, count: v.count || 0, topOrderNo: v.topOrderNo || '', file: v.file || null, purpose: v.purpose || '' });
       }
       // 서허 양식 받기 진행 상황. 다 받으면 file(이름·내용)이 같이 온다.
       // 쉽먼트 출력 파일 받기 진행 상황. 다 받으면 files(label·manifest)가 같이 온다.

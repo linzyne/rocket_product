@@ -2,7 +2,7 @@
 // 다 올라가면 그 발주서들을 "확정됨"으로 표시한다. 확정수량을 0으로 한 상품 줄은 발주확인에서 빼고(보낼 게 없으므로),
 // 줄인 줄은 수량을 바꾼다.
 // 진행 중인 일은 localStorage에 남겨서, 화면을 옮기거나 새로고침해도 결과가 오면 마저 적는다.
-import { buildConfirmFile, readDraft } from './poFormStore';
+import { buildConfirmFile, readDraft, hasForm, savePoForm } from './poFormStore';
 import { setConfirmed } from './poConfirmStore';
 import { readWork, writeWork } from './orderWorkCloud';
 import { markIntentional, linesReady } from './lineStore';
@@ -31,22 +31,36 @@ export const subscribeConfirmJob = (cb: (j: ConfirmJob | null) => void) => {
 };
 export const clearConfirmJob = () => setJob(null);
 
-// 발주확정 파일을 만들어 내려받고(기록용) 서허에 올린다. 만든 파일 정보를 돌려준다(양식 없는 발주서 알림용).
+// 발주확정 올리기. 앱에 양식이 없는 발주서(이 기능 전에 받은 것 등)가 있으면 먼저 서허에서 그 발주서 양식을
+// 다시 받아 오고 나서 올린다.
 export function startConfirmUpload(orderNos: string[]) {
+  const missing = orderNos.filter(no => !hasForm(no));
+  if (!missing.length) { upload(orderNos); return; }
+  setJob({ jobId: String(Date.now()), orderNos, at: Date.now(), step: 'fetching', status: `서허에서 발주서 ${missing.length}건 양식 받는 중…` });
+  window.postMessage({ source: APP, type: 'PO_COLLECT', purpose: 'form', orderNos: missing, lastOrderNo: '' }, window.location.origin);
+}
+
+// 발주확정 파일을 만들어 내려받고(기록용) 서허에 올린다.
+function upload(orderNos: string[]) {
   const file = buildConfirmFile(orderNos);
-  if (!file) return null;
+  if (!file) {
+    setJob({ jobId: String(Date.now()), orderNos, at: Date.now(), step: 'error', status: '발주확정 양식을 만들지 못했어요(양식을 못 받았어요).' });
+    return;
+  }
   const a = document.createElement('a');
   a.href = URL.createObjectURL(file.blob);
   a.download = file.name;
   a.click();
   setTimeout(() => URL.revokeObjectURL(a.href), 5000);
   const jobId = String(Date.now());
-  setJob({ jobId, orderNos: file.orderNos, at: Date.now(), step: 'start', status: '서허 여는 중…' });
+  setJob({
+    jobId, orderNos: file.orderNos, at: Date.now(), step: 'start',
+    status: file.missing.length ? `서허 여는 중… (양식을 못 받은 발주서 ${file.missing.join(', ')}는 빠졌어요)` : '서허 여는 중…',
+  });
   window.postMessage({
     source: APP, type: 'PO_CONFIRM_UPLOAD', jobId,
     file: { name: file.name, dataUrl: file.dataUrl }, orderNos: file.orderNos,
   }, window.location.origin);
-  return file;
 }
 
 // 올라간 뒤: 확정 표시, 0개로 한 줄은 빼고, 줄인 줄은 수량을 바꾼다.
@@ -81,6 +95,31 @@ export function startConfirmRunner() {
     const d = event.data;
     if (!d || d.source !== EXT) return;
     const job = readJob();
+    // 양식 다시 받기(새 주문 수집과 같은 길, purpose = 'form')
+    if (job && job.step === 'fetching') {
+      if (d.type === 'PO_COLLECT_ACK' && !d.ok) {
+        setJob({ ...job, step: 'error', status: `서허에서 양식을 받지 못했어요: ${d.error || ''} ("로켓 서허 연동" 확장을 새로고침해 주세요)` });
+        return;
+      }
+      if (d.type === 'PO_STATUS' && d.purpose === 'form') {
+        if (d.step === 'error' || d.step === 'empty') {
+          setJob({ ...job, step: 'error', status: `서허에서 양식을 받지 못했어요: ${d.status || ''}` });
+          return;
+        }
+        if (d.step === 'file' && d.file && d.file.dataUrl) {
+          const bin = atob(String(d.file.dataUrl).split(',')[1] || '');
+          const bytes = new Uint8Array(bin.length);
+          for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+          savePoForm(new File([bytes], d.file.name || 'PO_FOR_CONFIRM.xlsx'))
+            .then(() => upload(job.orderNos))
+            .catch(err => setJob({ ...job, step: 'error', status: `받은 양식을 읽지 못했어요: ${err instanceof Error ? err.message : String(err)}` }));
+          setJob({ ...job, step: 'fetched', status: '양식을 받았어요. 채워서 올리는 중…' });
+          return;
+        }
+        if (d.status) setJob({ ...job, status: `양식 받는 중 · ${d.status}` });
+        return;
+      }
+    }
     if (!job || d.jobId !== job.jobId) return;
     if (d.type === 'PO_CONFIRM_ACK' && !d.ok) {
       setJob({ ...job, step: 'error', status: `서허 창을 열지 못했어요: ${d.error || ''} ("로켓 서허 연동" 확장을 새로고침해 주세요)` });

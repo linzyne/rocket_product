@@ -11,7 +11,7 @@ import { dateKeyYMD, ymdSortKey } from '../coupangOrder/utils/dateUtils';
 import type { AppMenuId } from '../AppSidebar';
 import CollectPurchaseOrders from '../coupangOrder/CollectPurchaseOrders';
 import { appendOrderFile } from '../coupangOrder/data/orderWorkStore';
-import { subscribePoForms, readDraft, setDraftLine, hasForm, savePoForm, SHORT_REASONS, DEFAULT_REASON } from '../coupangOrder/data/poFormStore';
+import { subscribePoForms, readDraft, setDraftLine, SHORT_REASONS, DEFAULT_REASON } from '../coupangOrder/data/poFormStore';
 import { startConfirmUpload, subscribeConfirmJob, clearConfirmJob, ConfirmJob } from '../coupangOrder/data/poConfirmRunner';
 
 // 발주 > 발주 진행. 단계마다 상자를 옆으로 두고, 발주서가 지금 단계의 상자 안에 담긴다(상자 안에서는 위아래 한 줄).
@@ -81,29 +81,12 @@ export default function CoupangFlowPage({ onNavigate }: { onNavigate: (menu: App
   // 발주확정 올리기: 발주확정 상자의 발주서들로 PO_FOR_CONFIRM 파일을 채워 서허에 올린다.
   const uploadConfirm = (list: FlowOrder[]) => {
     const nos = list.map(o => o.no);
-    const noForm = nos.filter(no => !hasForm(no));
     const zero = list.flatMap(o => o.lines.filter(l => readDraft(o.no).qty[l.상품이름] === 0).map(l => `${o.no} ${l.상품이름}`));
     if (!window.confirm(
-      `발주확정 상자의 발주서 ${nos.length - noForm.length}건을 서허에 확정으로 올릴까요?` +
-      (zero.length ? `\n\n확정수량 0개(사유: 단종 등) ${zero.length}줄:\n${zero.slice(0, 8).join('\n')}${zero.length > 8 ? '\n…' : ''}` : '') +
-      (noForm.length ? `\n\n양식 파일이 없어 빠지는 발주서 ${noForm.length}건: ${noForm.join(', ')}` : ''),
+      `발주확정 상자의 발주서 ${nos.length}건을 서허에 확정으로 올릴까요?` +
+      (zero.length ? `\n\n확정수량 0개(사유: 단종 등) ${zero.length}줄:\n${zero.slice(0, 8).join('\n')}${zero.length > 8 ? '\n…' : ''}` : ''),
     )) return;
-    const file = startConfirmUpload(nos);
-    if (!file) alert('이 발주서들의 발주확정 양식(PO_FOR_CONFIRM 파일)이 없어요. "양식 파일 넣기"로 다운로드 폴더의 파일을 넣어 주세요.');
-  };
-  // 다운로드 폴더의 PO_FOR_CONFIRM 파일을 직접 넣는다(예전에 받아 앱에 양식이 없는 발주서용).
-  const pickForm = () => {
-    const input = document.createElement('input');
-    input.type = 'file';
-    input.accept = '.xlsx';
-    input.multiple = true;
-    input.onchange = async () => {
-      const files = Array.from(input.files || []);
-      let ok = 0;
-      for (const f of files) if (await savePoForm(f).catch(() => false)) ok++;
-      alert(ok ? `발주확정 양식 ${ok}개를 넣었어요.` : '발주확정 양식(PO_FOR_CONFIRM 파일)이 아니에요.');
-    };
-    input.click();
+    startConfirmUpload(nos);
   };
   // 새 주문 수집 결과(발주확정 상자 위에 보여준다).
   const [collectNote, setCollectNote] = useState('');
@@ -248,9 +231,6 @@ export default function CoupangFlowPage({ onNavigate }: { onNavigate: (menu: App
             {o.partial && <Tag color={RED}>일부만 넘어감</Tag>}
           </div>
         ) : null}
-        {o.stage === 0 && !hasForm(o.no) && (
-          <div style={{ fontSize: 10.5, color: '#b45309' }}>⚠ 발주확정 양식 없음 — 상자 위 "양식 파일 넣기"로 PO_FOR_CONFIRM 파일을 넣어 주세요</div>
-        )}
 
         {r && r.state !== 'done' && (
           <div style={{
@@ -360,14 +340,13 @@ export default function CoupangFlowPage({ onNavigate }: { onNavigate: (menu: App
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 5, marginBottom: 8 }}>
                   <button
                     style={{ ...btn(ORANGE, true), width: '100%', padding: '7px 8px', fontSize: 12.5 }}
-                    disabled={!!confirmJob && !['done', 'applied', 'error'].includes(confirmJob.step)}
+                    disabled={!!confirmJob && !['applied', 'error'].includes(confirmJob.step) && Date.now() - confirmJob.at < 10 * 60 * 1000}
                     onClick={() => uploadConfirm(list)}
                     title="확정수량(I열)·납품부족사유(M열)를 채운 발주확정 파일을 만들어 서허 발주확정 업로드에 올립니다"
                   >
                     📤 발주확정 올리기 ({list.length}건)
                   </button>
                   <div style={{ display: 'flex', gap: 4 }}>
-                    <button style={{ ...btn('#6b7280'), flex: 1 }} onClick={pickForm} title="앱에 양식이 없는 발주서: 다운로드 폴더의 PO_FOR_CONFIRM 파일을 넣어요">양식 파일 넣기</button>
                     <button
                       style={{ ...btn('#6b7280'), flex: 1 }}
                       onClick={() => { if (window.confirm(`서허에서 직접 확정한 발주서 ${list.length}건을 확정됨으로만 표시할까요?`)) confirm1(list.map(o => o.no), true); }}

@@ -514,14 +514,18 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
                       const incoming = office.incoming || 0;
                       // 칸을 맞추려고 없을 때도 같은 너비를 비워 둔다.
                       if (!arrived && !incoming) return <span style={{ flexShrink: 0, width: 38 }} />;
-                      const need = Number(l.확정수량) || 0;
-                      const color = arrived >= need ? GREEN : arrived + incoming >= need ? '#d97706' : RED;
+                      // 색은 이 줄에 아직 채울 게 남았을 때만 매긴다. 이미 한중에 다 맡겼거나 준비됨이면 여유는 참고용(회색).
+                      const k = { 발주번호: o.no, 상품이름: l.상품이름, 확정수량: l.확정수량 };
+                      const placed = placesOf(k).reduce((n, p) => n + p.qty, 0);
+                      const need = Math.max(0, (Number(l.확정수량) || 0) - placed);
+                      const covered = need === 0 || ready.isReady(k, o.item?.readyKeys);
+                      const color = covered ? '#a8a29e' : arrived >= need ? GREEN : arrived + incoming >= need ? '#d97706' : RED;
                       return (
                         <span
                           title={`사무실 재고(한중 여유) · 도착 ${arrived}개${incoming ? ` · 오는 중 ${incoming}개` : ''}\n${office.names.join('\n')}`}
                           style={{ flexShrink: 0, width: 38, textAlign: 'right', fontSize: 13.5, fontWeight: 800, color, whiteSpace: 'nowrap', letterSpacing: '-0.3px' }}
                         >
-                          {arrived}{incoming > 0 && <span style={{ fontSize: 10.5, fontWeight: 700, color: '#d97706' }}>+{incoming}</span>}
+                          {arrived}{incoming > 0 && <span style={{ fontSize: 10.5, fontWeight: 700, color: covered ? '#a8a29e' : '#d97706' }}>+{incoming}</span>}
                         </span>
                       );
                     })()}

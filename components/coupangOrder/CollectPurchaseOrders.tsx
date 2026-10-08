@@ -60,7 +60,8 @@ const CollectPurchaseOrders: React.FC<{
         clearTimeout(ackTimerRef.current);
         ackTimerRef.current = null;
       }
-      if (d.type === 'PO_COLLECT_ACK' && !d.ok) {
+      if (d.type === 'PO_COLLECT_ACK' && !d.ok && mineRef.current) {
+        mineRef.current = false;
         setRunning(false);
         setStatus('');
         doneRef.current(false, `시작하지 못했어요: ${d.error || ''}`);

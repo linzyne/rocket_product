@@ -13,7 +13,8 @@ import CollectPurchaseOrders from '../coupangOrder/CollectPurchaseOrders';
 import { appendOrderFile } from '../coupangOrder/data/orderWorkStore';
 import { printShipment, setPrinted } from '../coupangSend/printShipment';
 import { useReady } from '../coupangOrder/data/readyStore';
-import { useHanjungBadge, badge } from '../coupangOrder/data/useHanjungBadge';
+import { HanjungOrder, subscribeHanjung, productSummary, nameKey } from '../../data/hanjungStore';
+import { HanjungQueueItem, subscribeHanjungQueue, makePlaceLookup } from '../coupangOrder/data/hanjungQueueStore';
 import { subscribePoForms, readDraft, setDraftLine, SHORT_REASONS, DEFAULT_REASON } from '../coupangOrder/data/poFormStore';
 import { startConfirmUpload, subscribeConfirmJob, clearConfirmJob, ConfirmJob } from '../coupangOrder/data/poConfirmRunner';
 import { subscribeDateRequests, markDateRequested, applyCurrent, DateReq } from '../coupangOrder/data/poDateStore';
@@ -80,7 +81,26 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
   const [newOpen, setNewOpen] = useState(false);
   // 상품 줄 준비 상태: 준비됨 체크(쿠팡발주확인·쉽먼트·발송대기와 같은 기록) + 한중발주(한중 대기·입고중·일부입고·준비됨).
   const ready = useReady();
-  const hanjungBadge = useHanjungBadge();
+  const [hjOrders, setHjOrders] = useState<HanjungOrder[]>([]);
+  const [hjQueue, setHjQueue] = useState<HanjungQueueItem[]>([]);
+  useEffect(() => subscribeHanjung(setHjOrders), []);
+  useEffect(() => subscribeHanjungQueue(setHjQueue), []);
+  const placesOf = useMemo(() => makePlaceLookup(hjOrders, hjQueue), [hjOrders, hjQueue]);
+  // 한중발주 번호(동그라미 안 숫자): 고유번호 끝 숫자(H260923-01 → 1, 2 → 2), 없으면 만든 순서.
+  const hjNo = useMemo(() => {
+    const m = new Map<string, number>();
+    [...hjOrders].sort((a, b) => a.createdAt - b.createdAt).forEach((o, i) => {
+      const tail = /(\d+)\s*$/.exec(o.code);
+      m.set(o.code, tail ? Number(tail[1]) : i + 1);
+    });
+    return m;
+  }, [hjOrders]);
+  // 한중발주 안에서 그 상품이 다 들어왔는지.
+  const hjArrived = useMemo(() => {
+    const m = new Map<string, { received: number; ordered: number }>();
+    for (const o of hjOrders) for (const p of productSummary(o)) m.set(`${o.code}│${nameKey(p.상품이름)}`, { received: p.received, ordered: p.ordered });
+    return m;
+  }, [hjOrders]);
   const [work, setWork] = useState(() => readWork().rows);
   // 발주번호 → 처음 들어온 시각(24시간 안에 들어온 것만 남아 있다). NEW 표시에 쓴다.
   const [seenAt, setSeenAt] = useState(() => readWork().seen);
@@ -385,7 +405,41 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
           return (
             <div key={i} style={{ padding: '2px 0', borderTop: i ? '1px dashed #f0f0f0' : 'none' }}>
               <div style={{ display: 'flex', gap: 6, alignItems: 'baseline' }}>
-                <span style={{ flex: 1, minWidth: 0, color: now < full ? RED : '#333', wordBreak: 'keep-all', textDecoration: editable && now === 0 ? 'line-through' : 'none' }}>{l.상품이름}</span>
+                {(() => {
+                  // 준비 상태: 준비됨(체크 또는 한중으로 다 도착) → 흐린 글씨, 한중발주로 오는 중 → 흐린 글씨 + 동그라미 안에 한중발주 번호.
+                  // 상품 이름을 누르면 준비됨을 켜고 끈다.
+                  const key = { 발주번호: o.no, 상품이름: l.상품이름, 확정수량: l.확정수량 };
+                  const places = placesOf(key);
+                  const coming = places.filter(p => {
+                    if (!p.code) return false;
+                    const a = hjArrived.get(`${p.code}│${nameKey(l.상품이름)}`);
+                    return !a || a.received < a.ordered;
+                  });
+                  const arrived = places.length > 0 && places.every(p => p.code && !coming.includes(p));
+                  const isReady = ready.isReady(key, o.item?.readyKeys) || arrived;
+                  const waitingQueue = places.some(p => !p.code);
+                  const faded = isReady || coming.length > 0;
+                  return (
+                    <span
+                      onClick={() => ready.setReady([key], !ready.isReady(key, o.item?.readyKeys)).catch(err => alert(`준비 표시 저장 실패: ${err?.message || err}`))}
+                      title={`${isReady ? '준비됨' : coming.length ? `입고중(한중발주 ${coming.map(p => p.code).join(', ')})` : waitingQueue ? '한중발주 대기(1688 주문 전)' : '준비중'} — 눌러서 준비됨 켜고 끄기`}
+                      style={{
+                        flex: 1, minWidth: 0, wordBreak: 'keep-all', cursor: 'pointer',
+                        color: now < full ? RED : faded ? '#b5b0aa' : '#333',
+                        textDecoration: editable && now === 0 ? 'line-through' : 'none',
+                      }}
+                    >
+                      {coming.map(p => (
+                        <span key={p.code!} style={{
+                          display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 16, height: 16, marginRight: 4,
+                          borderRadius: '50%', border: '1.5px solid #9ca3af', color: '#6b7280', fontSize: 10, fontWeight: 800, verticalAlign: 'middle',
+                        }}>{hjNo.get(p.code!) ?? '?'}</span>
+                      ))}
+                      {waitingQueue && !isReady && !coming.length && <span style={{ marginRight: 4, fontSize: 10, color: '#9ca3af' }}>대기</span>}
+                      {l.상품이름}
+                    </span>
+                  );
+                })()}
                 {editable ? (
                   <span style={{ flexShrink: 0, display: 'inline-flex', alignItems: 'center', gap: 2 }}>
                     <input
@@ -403,30 +457,6 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
                   <b style={{ flexShrink: 0 }}>{l.확정수량}개</b>
                 )}
               </div>
-              {/* 준비 상태: 준비됨이면 초록, 한중발주로 오는 중이면 그 상태, 아무것도 없으면 준비중. 눌러서 준비됨을 켜고 끈다. */}
-              {(() => {
-                const key = { 발주번호: o.no, 상품이름: l.상품이름, 확정수량: l.확정수량 };
-                const isReady = ready.isReady(key, o.item?.readyKeys);
-                const hj = hanjungBadge(key, isReady);
-                const toggle = () => ready.setReady([key], !isReady).catch(err => alert(`준비 표시 저장 실패: ${err?.message || err}`));
-                return (
-                  <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 2, marginLeft: -6, marginTop: 1 }}>
-                    {hj}
-                    {(!hj || isReady) && (
-                      <span
-                        onClick={toggle}
-                        title={isReady ? '준비됨 — 눌러서 풀기' : '준비중 — 상품이 준비되면 눌러서 준비됨으로'}
-                        style={{ ...badge(isReady ? GREEN : '#9ca3af', isReady), cursor: 'pointer' }}
-                      >
-                        {isReady ? '✓ 준비됨' : '준비중'}
-                      </span>
-                    )}
-                    {hj && !isReady && (
-                      <span onClick={toggle} title="상품이 준비되면 눌러서 준비됨으로" style={{ ...badge('#9ca3af', false), cursor: 'pointer' }}>준비됨으로</span>
-                    )}
-                  </div>
-                );
-              })()}
               {editable && now < full && (
                 <select
                   value={draft.reason[l.상품이름] || DEFAULT_REASON}

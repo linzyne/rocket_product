@@ -233,7 +233,7 @@ export default function CoupangFlowPage({ onNavigate }: { onNavigate: (menu: App
                 borderRadius: 10, background: '#fff', boxShadow: '0 1px 3px rgba(0,0,0,0.04)', overflow: 'hidden',
               }}>
                 {/* 왼쪽: 발주서 정보 · 단계 · 버튼을 위아래로 모은다(옆으로 길게 늘이지 않는다). */}
-                <div style={{ flex: '0 0 240px', maxWidth: '100%', boxSizing: 'border-box', padding: '10px 12px', background: '#fafafa', borderRight: '1px solid #f0f0f0', display: 'flex', flexDirection: 'column', gap: 7 }}>
+                <div style={{ flex: '0 0 auto', minWidth: 240, maxWidth: '100%', boxSizing: 'border-box', padding: '10px 12px', background: '#fafafa', borderRight: '1px solid #f0f0f0', display: 'flex', flexDirection: 'column', gap: 7 }}>
                   {/* 입고예정일·센터를 가장 크게: 한눈에 언제 어디로 가는지 보이게. */}
                   <div>
                     <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, flexWrap: 'wrap', lineHeight: 1.2 }}>
@@ -295,14 +295,14 @@ export default function CoupangFlowPage({ onNavigate }: { onNavigate: (menu: App
 
 // 6단계 점 줄: 끝난 단계는 초록, 지금 단계는 주황(멈췄으면 빨강), 남은 단계는 회색.
 const Stepper: React.FC<{ stage: Stage; error?: boolean }> = ({ stage, error }) => (
-  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 4 }}>
+  <div style={{ display: 'flex', flexWrap: 'nowrap', gap: 3 }}>
     {STAGES.map((label, i) => {
       const done = i < stage || stage === 5;
       const now = i === stage && stage !== 5;
       const color = done ? GREEN : now ? (error ? RED : ORANGE) : GRAY;
       return (
         <span key={label} style={{
-          padding: '2px 0', fontSize: 11, fontWeight: now ? 800 : 600, borderRadius: 999, whiteSpace: 'nowrap', textAlign: 'center',
+          padding: '2px 6px', fontSize: 11, fontWeight: now ? 800 : 600, flexShrink: 0, borderRadius: 999, whiteSpace: 'nowrap', textAlign: 'center',
           border: `1.5px solid ${color}`, background: now ? color : done ? '#f0fdf4' : '#fff', color: now ? '#fff' : color,
         }}>
           {done ? '✓' : ''}{label}

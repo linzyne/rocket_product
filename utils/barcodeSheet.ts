@@ -19,7 +19,7 @@ const barcodeSvg = (value: string) => {
   const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
   JsBarcode(svg, value, {
     format: validEan13(value) ? 'EAN13' : 'CODE128',
-    height: 60, width: 2, fontSize: 18, margin: 0, textMargin: 1, displayValue: true,
+    height: 60, width: 2, fontSize: 18, margin: 0, marginLeft: 14, marginRight: 14, textMargin: 1, displayValue: true,
   });
   const w = svg.getAttribute('width')?.replace('px', '') || '200';
   const h = svg.getAttribute('height')?.replace('px', '') || '80';

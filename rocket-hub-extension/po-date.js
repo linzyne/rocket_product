@@ -1,7 +1,7 @@
 // 서허 입고예정일·센터 변경 요청 화면(/plan/ticket/reportIssue/CHANGE_PO_INBOUND_DATE_AND_FC)에 발주서 넣기.
 // 앱의 발주 진행에서 발주서를 골라 "날짜 바꾸기"를 누르면 background.js가 이 화면을 새 창으로 열고, 여기서
 //   발주서번호 하나 검색 → 결과 줄 맨 왼쪽 "+추가" 누르기
-// 를 고른 발주서마다 한 번씩 되풀이한다(검색은 한 번에 하나만 된다). 다 넣으면 멈춘다(날짜는 사람이 고른다).
+// 를 고른 발주서마다 한 번씩 되풀이한다(검색은 한 번에 하나만 된다). 다 넣으면 맨 아래 "계속하기"까지 누르고 멈춘다(날짜는 사람이 고른다).
 // 화면에서 무엇을 찾았는지는 poDateDebug에 남긴다(안 될 때 고치려고).
 (() => {
   if (window.__rocketPoDateInjected) return;
@@ -171,10 +171,26 @@
       if (idx >= nos.length) {
         const added = (p.added || []).length;
         const failed = p.failed || [];
-        await patch({
-          step: 'done',
-          status: `✅ 발주서 ${added}건을 넣었어요.${failed.length ? ` 못 넣은 것: ${failed.join(', ')}.` : ''} 이제 날짜를 골라 요청해 주세요.`,
-        });
+        const tail = failed.length ? ` 못 넣은 것: ${failed.join(', ')}.` : '';
+        if (!added) {
+          await patch({ step: 'error', status: `발주서를 하나도 넣지 못해서 "계속하기"는 누르지 않았어요.${tail}` });
+          return;
+        }
+        // 다 넣었으면 맨 아래 "계속하기"를 누른다(그 다음 날짜 고르기는 사람이 한다).
+        const next = Array.from(document.querySelectorAll('button, a, [role="button"], input[type="button"], input[type="submit"]'))
+          .filter((b) => visible(b) && !(panel && panel.contains(b)) && /^계속\s*하기$/.test(clean(b.value || b.textContent)))
+          .sort((a, b) => b.getBoundingClientRect().top - a.getBoundingClientRect().top)[0];
+        const disabled = next && (next.disabled || next.getAttribute('aria-disabled') === 'true' || /disabled/.test(String(next.className)));
+        if (!next || disabled) {
+          if (!p.waitNextAt) { await patch({ waitNextAt: Date.now(), status: `발주서 ${added}건을 넣었어요. "계속하기" 기다리는 중…` }); return; }
+          if (Date.now() - p.waitNextAt > 10000) {
+            debug('no-next', { found: !!next, disabled: !!disabled });
+            await patch({ step: 'done', status: `✅ 발주서 ${added}건을 넣었어요.${tail} "계속하기"를 ${next ? '누를 수 없어서' : '못 찾아서'} 그대로 뒀어요. 직접 눌러 주세요.` });
+          }
+          return;
+        }
+        realClick(next);
+        await patch({ step: 'done', status: `✅ 발주서 ${added}건을 넣고 "계속하기"를 눌렀어요.${tail} 이제 날짜를 골라 요청해 주세요.` });
         return;
       }
       const no = nos[idx];

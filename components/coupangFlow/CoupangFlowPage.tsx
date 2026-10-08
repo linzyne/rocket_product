@@ -318,6 +318,8 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
     const key = { 발주번호: o.no, 상품이름: l.상품이름, 확정수량: l.확정수량 };
     if (ready.isReady(key, o.item?.readyKeys)) return true;
     const places = placesOf(key);
+    // 맡긴 수량이 줄 수량에 못 미치면(일부만 배정) 준비된 게 아니다.
+    if (places.reduce((n, p) => n + p.qty, 0) < (Number(l.확정수량) || 0)) return false;
     return places.length > 0 && places.every(p => {
       if (!p.code) return false;
       const a = hjArrived.get(`${p.code}│${nameKey(l.상품이름)}`);
@@ -468,7 +470,9 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
                     const a = hjArrived.get(`${p.code}│${nameKey(l.상품이름)}`);
                     return !a || a.received < a.ordered;
                   });
-                  const arrived = places.length > 0 && places.every(p => p.code && !coming.includes(p));
+                  // 한중으로 다 도착: 맡긴 곳이 모두 한중발주이고 다 도착했고, 맡긴 수량이 줄 수량을 다 채울 때만.
+                  const placedQty = places.reduce((n, p) => n + p.qty, 0);
+                  const arrived = places.length > 0 && placedQty >= (Number(l.확정수량) || 0) && places.every(p => p.code && !coming.includes(p));
                   const isReady = ready.isReady(key, o.item?.readyKeys) || arrived;
                   const waitingQueue = places.some(p => !p.code);
                   const faded = isReady || coming.length > 0;

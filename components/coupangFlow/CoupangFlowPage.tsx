@@ -153,12 +153,12 @@ export default function CoupangFlowPage({ onNavigate }: { onNavigate: (menu: App
         return <button style={btn(ORANGE)} onClick={() => onNavigate('coupang-order')} title="쿠팡발주확인에서 묶고 쉽먼트생성으로 보냅니다">묶음·보내기 →</button>;
       case 2:
         return (
-          <span style={{ display: 'inline-flex', gap: 6 }}>
+          <span style={{ display: 'inline-flex', gap: 4 }}>
             {o.item && o.batch && (!r || r.state !== 'running') && (
               <button style={btn(ORANGE, true)} onClick={() => resumeShipment(o.batch!, [o.item!])} title="멈춘 데서 이어서 합니다. 택배예약은 다시 하지 않아요.">▶ 이어서 하기</button>
             )}
             <button style={btn(ORANGE, !o.batch)} onClick={() => onNavigate('coupang-ship')} title={o.batch ? '쉽먼트생성대기 화면' : '쉽먼트생성대기에서 택배예약부터 시작합니다'}>
-              {o.batch ? '쉽먼트 화면 →' : '쉽먼트 시작 →'}
+              {o.batch ? '쉽먼트 →' : '쉽먼트 시작 →'}
             </button>
           </span>
         );
@@ -189,13 +189,13 @@ export default function CoupangFlowPage({ onNavigate }: { onNavigate: (menu: App
             style={{ marginLeft: 'auto', padding: '6px 10px', fontSize: 13, border: '1px solid #e0e0e0', borderRadius: 8, minWidth: 180 }}
           />
         </div>
-        <div style={{ maxWidth: 860, margin: '0 auto', padding: '0 clamp(12px, 4vw, 24px) 8px', display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+        <div style={{ maxWidth: 860, margin: '0 auto', padding: '0 clamp(12px, 4vw, 24px) 8px', display: 'flex', gap: 4, flexWrap: 'nowrap', overflowX: 'auto' }}>
           {tabs.map(t => (
             <button
               key={String(t.id)}
               onClick={() => setTab(t.id)}
               style={{
-                padding: '5px 12px', fontSize: 12.5, fontWeight: 700, borderRadius: 999, cursor: 'pointer',
+                padding: '4px 9px', fontSize: 12, fontWeight: 700, borderRadius: 999, cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0,
                 border: `1.5px solid ${tab === t.id ? ORANGE : '#e5e5e5'}`,
                 background: tab === t.id ? ORANGE : '#fff', color: tab === t.id ? '#fff' : '#555',
               }}
@@ -255,7 +255,7 @@ export default function CoupangFlowPage({ onNavigate }: { onNavigate: (menu: App
                       <b>{r.state === 'error' ? `⛔ ${STEP_LABEL[r.step]}에서 멈춤` : `⏳ ${STEP_LABEL[r.step]} 하는 중`}</b> · {r.message}
                     </div>
                   )}
-                  <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>{action(o)}</div>
+                  <div style={{ display: 'flex', gap: 4, flexWrap: 'nowrap' }}>{action(o)}</div>
                   {o.confirmed && o.stage <= 1 && !o.bundle && (
                     <button onClick={() => confirm1([o.no], false)} style={{ alignSelf: 'flex-start', padding: 0, border: 'none', background: 'transparent', color: '#999', fontSize: 11, cursor: 'pointer', textDecoration: 'underline' }}>
                       확정 표시 취소
@@ -313,6 +313,6 @@ const Tag: React.FC<{ color: string; children: React.ReactNode }> = ({ color, ch
 );
 
 const btn = (color: string, solid = false): React.CSSProperties => ({
-  padding: '5px 11px', fontSize: 12, fontWeight: 700, borderRadius: 7, cursor: 'pointer', whiteSpace: 'nowrap',
+  padding: '4px 8px', fontSize: 11.5, fontWeight: 700, borderRadius: 7, cursor: 'pointer', whiteSpace: 'nowrap',
   border: `1.5px solid ${color}`, background: solid ? color : '#fff', color: solid ? '#fff' : color,
 });

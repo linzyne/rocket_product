@@ -12,6 +12,8 @@ import type { AppMenuId } from '../AppSidebar';
 import CollectPurchaseOrders from '../coupangOrder/CollectPurchaseOrders';
 import { appendOrderFile } from '../coupangOrder/data/orderWorkStore';
 import { printShipment, setPrinted } from '../coupangSend/printShipment';
+import { useReady } from '../coupangOrder/data/readyStore';
+import { useHanjungBadge, badge } from '../coupangOrder/data/useHanjungBadge';
 import { subscribePoForms, readDraft, setDraftLine, SHORT_REASONS, DEFAULT_REASON } from '../coupangOrder/data/poFormStore';
 import { startConfirmUpload, subscribeConfirmJob, clearConfirmJob, ConfirmJob } from '../coupangOrder/data/poConfirmRunner';
 import { subscribeDateRequests, markDateRequested, applyCurrent, DateReq } from '../coupangOrder/data/poDateStore';
@@ -76,6 +78,9 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
   const [tab, setTab] = useState<Stage | 'active'>('active');
   // 새 발주서 창(새 주문 수집 · 확정수량 고치기 · 발주확정 올리기)
   const [newOpen, setNewOpen] = useState(false);
+  // 상품 줄 준비 상태: 준비됨 체크(쿠팡발주확인·쉽먼트·발송대기와 같은 기록) + 한중발주(한중 대기·입고중·일부입고·준비됨).
+  const ready = useReady();
+  const hanjungBadge = useHanjungBadge();
   const [work, setWork] = useState(() => readWork().rows);
   // 발주번호 → 처음 들어온 시각(24시간 안에 들어온 것만 남아 있다). NEW 표시에 쓴다.
   const [seenAt, setSeenAt] = useState(() => readWork().seen);
@@ -398,6 +403,30 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
                   <b style={{ flexShrink: 0 }}>{l.확정수량}개</b>
                 )}
               </div>
+              {/* 준비 상태: 준비됨이면 초록, 한중발주로 오는 중이면 그 상태, 아무것도 없으면 준비중. 눌러서 준비됨을 켜고 끈다. */}
+              {(() => {
+                const key = { 발주번호: o.no, 상품이름: l.상품이름, 확정수량: l.확정수량 };
+                const isReady = ready.isReady(key, o.item?.readyKeys);
+                const hj = hanjungBadge(key, isReady);
+                const toggle = () => ready.setReady([key], !isReady).catch(err => alert(`준비 표시 저장 실패: ${err?.message || err}`));
+                return (
+                  <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 2, marginLeft: -6, marginTop: 1 }}>
+                    {hj}
+                    {(!hj || isReady) && (
+                      <span
+                        onClick={toggle}
+                        title={isReady ? '준비됨 — 눌러서 풀기' : '준비중 — 상품이 준비되면 눌러서 준비됨으로'}
+                        style={{ ...badge(isReady ? GREEN : '#9ca3af', isReady), cursor: 'pointer' }}
+                      >
+                        {isReady ? '✓ 준비됨' : '준비중'}
+                      </span>
+                    )}
+                    {hj && !isReady && (
+                      <span onClick={toggle} title="상품이 준비되면 눌러서 준비됨으로" style={{ ...badge('#9ca3af', false), cursor: 'pointer' }}>준비됨으로</span>
+                    )}
+                  </div>
+                );
+              })()}
               {editable && now < full && (
                 <select
                   value={draft.reason[l.상품이름] || DEFAULT_REASON}

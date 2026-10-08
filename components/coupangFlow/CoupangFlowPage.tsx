@@ -953,7 +953,7 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
               }}>
                 <span style={{ fontSize: 11, color: '#a8a29e', fontWeight: 800 }}>{col + 1}</span>
                 <b style={{ fontSize: 14, color: '#292524' }}>{label}</b>
-                <span style={{ fontSize: 12, fontWeight: 800, color: '#fff', background: list.length ? (i === 5 ? GREEN : ORANGE) : GRAY, borderRadius: 999, padding: '0 7px' }}>{list.length}</span>
+                <span style={{ fontSize: 12, fontWeight: 800, color: '#fff', background: ORANGE, opacity: list.length ? 1 : 0.45, borderRadius: 999, padding: '0 7px' }}>{list.length}</span>
                 {stuck > 0 && <span style={{ fontSize: 11.5, fontWeight: 800, color: RED }}>⛔ {stuck}</span>}
                 {i === 5 && <span style={{ fontSize: 10.5, color: '#a8a29e', marginLeft: 'auto' }}>최근 {SENT_DAYS}일</span>}
               </div>

@@ -11,6 +11,7 @@ import { dateKeyYMD, ymdSortKey } from '../coupangOrder/utils/dateUtils';
 import type { AppMenuId } from '../AppSidebar';
 import CollectPurchaseOrders from '../coupangOrder/CollectPurchaseOrders';
 import { appendOrderFile } from '../coupangOrder/data/orderWorkStore';
+import { printShipment, setPrinted } from '../coupangSend/printShipment';
 import { subscribePoForms, readDraft, setDraftLine, SHORT_REASONS, DEFAULT_REASON } from '../coupangOrder/data/poFormStore';
 import { startConfirmUpload, subscribeConfirmJob, clearConfirmJob, ConfirmJob } from '../coupangOrder/data/poConfirmRunner';
 import { subscribeDateRequests, markDateRequested, applyCurrent } from '../coupangOrder/data/poDateStore';
@@ -24,7 +25,9 @@ import { retargetBatches, saveShipmentBatch } from '../../data/shipmentStore';
 // 칸 이름: 1 새발주서(서허에 확정 올리기 전) → 2 발주확정(확정 끝, 쉽먼트 보내기 전) → 3 쉽먼트 → 4 출력 → 5 발송대기 → 6 발송완료
 const STAGES = ['새발주서', '발주확정', '쉽먼트', '출력', '발송대기', '발송완료'] as const;
 // 화면에 칸·탭으로 보여주는 단계. 새발주서는 "새 발주서" 창에서, 발송완료는 '발송완료' 메뉴에서 따로 본다.
-const BOARD_STAGES: Stage[] = [1, 2, 3, 4];
+const BOARD_STAGES: Stage[] = [1, 2, 4];
+// 출력은 따로 칸을 두지 않는다(쉽먼트 칸 카드의 🖨 로 출력). 쉽먼트 끝났어도 출력 전이면 쉽먼트 칸에 둔다.
+const SHOWN_STEPS: Stage[] = [0, 1, 2, 4, 5];
 type Stage = 0 | 1 | 2 | 3 | 4 | 5;
 
 const ORANGE = '#e67e22';
@@ -237,7 +240,7 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
       const batch = shipOutBatch(item, batches);
       for (const l of item.lines) {
         const no = String(l.발주번호 || '').trim();
-        const stage: Stage = st === 'ship' ? 2 : st === 'sent' ? 5 : (item.printedOrders || []).includes(no) ? 4 : 3;
+        const stage: Stage = st === 'sent' ? 5 : st === 'waiting' && (item.printedOrders || []).includes(no) ? 4 : 2;
         add(no, item.center, item.date,
           { 상품이름: l.상품이름, 확정수량: l.확정수량, stage, where: `${item.bundle} (${item.id})` },
           { item, batch });
@@ -285,12 +288,18 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
       case 2:
         return (
           <>
-            {o.item && o.batch && (!r || r.state !== 'running') && (
-              <button style={btn(ORANGE, true)} onClick={() => resumeShipment(o.batch!, [o.item!])} title="멈춘 데서 이어서 합니다. 택배예약은 다시 하지 않아요.">▶ 이어서 하기</button>
+            {/* 서허 등록이 끝나 쉽먼트 번호가 있으면 출력만, 아니면 쉽먼트 이어서 하기·화면 이동 */}
+            {o.item?.shipmentNos?.[o.no] ? printButton(o) : (
+              <>
+                {o.item && o.batch && (!r || r.state !== 'running') && (
+                  <button style={btn(ORANGE, true)} onClick={() => resumeShipment(o.batch!, [o.item!])} title="멈춘 데서 이어서 합니다. 택배예약은 다시 하지 않아요.">▶ 이어서 하기</button>
+                )}
+                <button style={btn(ORANGE, !o.batch)} onClick={() => onNavigate('coupang-ship')} title={o.batch ? '쉽먼트생성대기 화면' : '쉽먼트생성대기에서 택배예약부터 시작합니다'}>
+                  {o.batch ? '쉽먼트 →' : '쉽먼트 시작 →'}
+                </button>
+                {printButton(o)}
+              </>
             )}
-            <button style={btn(ORANGE, !o.batch)} onClick={() => onNavigate('coupang-ship')} title={o.batch ? '쉽먼트생성대기 화면' : '쉽먼트생성대기에서 택배예약부터 시작합니다'}>
-              {o.batch ? '쉽먼트 →' : '쉽먼트 시작 →'}
-            </button>
           </>
         );
       case 3:
@@ -407,7 +416,41 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
       </>
     );
   };
+  // 🖨 출력: 서허 Label·내역서(합친 PDF)와 바코드 라벨을 새 탭에 연다. 색으로 출력 여부를 보여준다(초록 = 출력완료).
+  // 서허 일괄등록이 끝나 쉽먼트 번호가 생겨야 누를 수 있다.
+  const [printNote, setPrintNote] = useState<Record<string, string>>({});
+  const printButton = (o: FlowOrder) => {
+    const item = o.item;
+    const shipNo = item?.shipmentNos?.[o.no];
+    const printed = !!item && (item.printedOrders || []).includes(o.no);
+    if (!item) return null;
+    const color = printed ? GREEN : shipNo ? ORANGE : GRAY;
+    return (
+      <button
+        disabled={!shipNo}
+        onClick={() => {
+          if (!shipNo) return;
+          if (printed && !window.confirm(`발주 ${o.no}은 이미 출력했어요. 다시 출력할까요?`)) return;
+          printShipment(item, o.no, shipNo, t => setPrintNote(n => ({ ...n, [o.no]: t })));
+        }}
+        onContextMenu={e => {
+          // 오른쪽 클릭: 출력완료 표시를 켜고 끈다(직접 출력했을 때).
+          e.preventDefault();
+          if (window.confirm(printed ? `발주 ${o.no}의 출력완료 표시를 풀까요?` : `발주 ${o.no}을 출력완료로 표시할까요?`)) setPrinted(item, o.no, !printed);
+        }}
+        title={!shipNo ? '서허 일괄등록이 끝나 쉽먼트 번호가 생기면 출력할 수 있어요'
+          : printed ? '출력완료(초록). 누르면 다시 출력. 오른쪽 클릭: 출력완료 풀기'
+          : '문서(Label·내역서)와 바코드 라벨을 새 탭에 열어요. 오른쪽 클릭: 출력완료로만 표시'}
+        style={{ ...btn(color, printed || !!shipNo), cursor: shipNo ? 'pointer' : 'not-allowed', opacity: shipNo ? 1 : 0.6 }}
+      >
+        🖨{printed ? ' 출력완료' : ' 출력'}
+      </button>
+    );
+  };
+
   const actionRow = (o: FlowOrder) => (
+    <>
+    {printNote[o.no] && o.stage === 2 && <div style={{ fontSize: 11, color: '#1d4ed8' }}>{printNote[o.no]}</div>}
     <div style={{ display: 'flex', gap: 4, flexWrap: 'nowrap', alignItems: 'center' }}>
       {action(o)}
       {o.confirmed && o.stage <= 1 && !o.bundle && (
@@ -416,6 +459,7 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
         </button>
       )}
     </div>
+    </>
   );
   const borderOf = (o: FlowOrder) => picked.has(o.no) ? `2px solid ${ORANGE}` : `1px solid ${run(o)?.state === 'error' ? '#fca5a5' : '#ececec'}`;
 
@@ -680,7 +724,8 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
 // 6단계 한 줄: 끝난 단계는 초록, 지금 단계는 주황(멈췄으면 빨강), 남은 단계는 회색.
 const Stepper: React.FC<{ stage: Stage; error?: boolean }> = ({ stage, error }) => (
   <div style={{ display: 'flex', flexWrap: 'nowrap', gap: 3 }}>
-    {STAGES.map((label, i) => {
+    {SHOWN_STEPS.map(i => {
+      const label = STAGES[i];
       const done = i < stage || stage === 5;
       const now = i === stage && stage !== 5;
       const color = done ? GREEN : now ? (error ? RED : ORANGE) : GRAY;

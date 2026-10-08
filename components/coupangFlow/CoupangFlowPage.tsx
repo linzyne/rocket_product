@@ -424,7 +424,7 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
           return (
             <div key={i} style={{ padding: '2px 0', borderTop: i ? '1px dashed #f0f0f0' : 'none' }}>
               {/* 한 줄 표: [체크] [상품 이름(넘치면 …)] [사무실] [수량]. 줄바꿈하지 않고 칸 너비를 맞춘다. */}
-              <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+              <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
                 {o.stage > 0 && (() => {
                   // 상품별 체크 → 준비됨 / 한중발주 배정 / 사무실 재고
                   const hl = { 발주번호: o.no, 물류센터: o.center, 상품이름: l.상품이름, 확정수량: l.확정수량, 입고예정일: o.date, 메모: '', 쉼먼트: '' };
@@ -501,7 +501,7 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
                       return (
                         <span
                           title={[assigned ? `배정: ${places.filter(p => p.code).map(p => `${p.code} ${p.qty}개`).join(', ')}` : '', queued ? `한중발주 대기(1688 주문 전) ${queued}개` : ''].filter(Boolean).join('\n')}
-                          style={{ flexShrink: 0, fontSize: 11, color: '#8a857f', whiteSpace: 'nowrap' }}
+                          style={{ flexShrink: 0, fontSize: 10.5, color: '#8a857f', whiteSpace: 'nowrap', letterSpacing: '-0.3px' }}
                         >
                           {assigned ? <>배정 <b>{assigned}</b></> : null}{assigned && queued ? ' · ' : ''}{queued ? <>대기 <b>{queued}</b></> : null}
                         </span>
@@ -513,19 +513,19 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
                       const arrived = office.qty || 0;
                       const incoming = office.incoming || 0;
                       // 칸을 맞추려고 없을 때도 같은 너비를 비워 둔다.
-                      if (!arrived && !incoming) return <span style={{ flexShrink: 0, width: 50 }} />;
+                      if (!arrived && !incoming) return <span style={{ flexShrink: 0, width: 38 }} />;
                       const need = Number(l.확정수량) || 0;
                       const color = arrived >= need ? GREEN : arrived + incoming >= need ? '#d97706' : RED;
                       return (
                         <span
                           title={`사무실 재고(한중 여유) · 도착 ${arrived}개${incoming ? ` · 오는 중 ${incoming}개` : ''}\n${office.names.join('\n')}`}
-                          style={{ flexShrink: 0, width: 50, textAlign: 'right', fontSize: 14, fontWeight: 800, color, whiteSpace: 'nowrap' }}
+                          style={{ flexShrink: 0, width: 38, textAlign: 'right', fontSize: 13.5, fontWeight: 800, color, whiteSpace: 'nowrap', letterSpacing: '-0.3px' }}
                         >
-                          {arrived}{incoming > 0 && <span style={{ fontSize: 11, fontWeight: 700, color: '#d97706' }}> +{incoming}</span>}
+                          {arrived}{incoming > 0 && <span style={{ fontSize: 10.5, fontWeight: 700, color: '#d97706' }}>+{incoming}</span>}
                         </span>
                       );
                     })()}
-                    <b style={{ flexShrink: 0, width: 42, textAlign: 'right', whiteSpace: 'nowrap' }}>{l.확정수량}개</b>
+                    <b style={{ flexShrink: 0, width: 30, textAlign: 'right', whiteSpace: 'nowrap', letterSpacing: '-0.3px' }}>{l.확정수량}개</b>
                   </>
                 )}
               </div>

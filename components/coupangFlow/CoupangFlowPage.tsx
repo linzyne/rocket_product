@@ -14,7 +14,7 @@ import { appendOrderFile } from '../coupangOrder/data/orderWorkStore';
 import { printShipment, setPrinted } from '../coupangSend/printShipment';
 import { subscribePoForms, readDraft, setDraftLine, SHORT_REASONS, DEFAULT_REASON } from '../coupangOrder/data/poFormStore';
 import { startConfirmUpload, subscribeConfirmJob, clearConfirmJob, ConfirmJob } from '../coupangOrder/data/poConfirmRunner';
-import { subscribeDateRequests, markDateRequested, applyCurrent } from '../coupangOrder/data/poDateStore';
+import { subscribeDateRequests, markDateRequested, applyCurrent, DateReq } from '../coupangOrder/data/poDateStore';
 import { retargetBatches, saveShipmentBatch } from '../../data/shipmentStore';
 
 // 발주 > 발주 진행. 단계마다 상자를 옆으로 두고, 발주서가 지금 단계의 상자 안에 담긴다(상자 안에서는 위아래 한 줄).
@@ -112,7 +112,7 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
   });
   const [dateNote, setDateNote] = useState<{ tone: 'info' | 'ok' | 'error'; text: string } | null>(null);
   // 날짜 변경 요청 중인 발주서(발주번호 → 요청한 시각).
-  const [dateReqs, setDateReqs] = useState<Record<string, number>>({});
+  const [dateReqs, setDateReqs] = useState<Record<string, DateReq>>({});
   useEffect(() => subscribeDateRequests(setDateReqs), []);
   // 적용: 확장이 서허 발주서 목록에서 지금 입고예정일·센터를 읽어 오면 앱에 적는다.
   const checkingRef = React.useRef<string[] | null>(null);
@@ -336,11 +336,15 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
   );
   const tags = (o: FlowOrder) => {
     const shipNo = o.item?.shipmentNos?.[o.no];
-    const req = !!dateReqs[o.no];
-    if (!(((o.bundle || o.hold) && o.stage === 1) || shipNo || o.partial || req)) return null;
+    const req = !!dateReqs[o.no] && !dateReqs[o.no].doneAt;
+    const changedDate = dateReqs[o.no]?.doneAt ? dateReqs[o.no] : null;
+    if (!(((o.bundle || o.hold) && o.stage === 1) || shipNo || o.partial || req || changedDate)) return null;
     return (
       <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', alignItems: 'center' }}>
         {req && <Tag color="#7c3aed">📅 날짜 변경 요청 중</Tag>}
+        {changedDate && (
+          <span title={`${changedDate.from} → ${changedDate.to}`} style={{ fontSize: 10.5, color: GREEN, fontWeight: 700 }}>✓ 날짜변경완료</span>
+        )}
         {req && (
           <button onClick={() => { if (window.confirm(`${o.no}의 날짜 변경 요청 표시를 지울까요?(서허 요청은 그대로예요)`)) markDateRequested([o.no], false); }}
             style={{ padding: 0, border: 'none', background: 'transparent', color: '#aaa', fontSize: 10.5, cursor: 'pointer', textDecoration: 'underline' }}>

@@ -2,7 +2,8 @@
 // 서허에서 승인을 확인한 뒤 "적용"을 누르면 확장이 서허 발주서 목록에 지금 적힌 입고예정일·센터를 읽어 와서
 // 앱의 발주서(발주확인·예약·쉽먼트 어디에 있든)에 그대로 적는다. 승인이 안 됐으면(값이 그대로) 표시만 남는다.
 //
-//  coupangPoDateReq/{발주번호} : { no, at }
+//  coupangPoDateReq/{발주번호} : { no, at, doneAt?, from?, to? }
+//    at만 있으면 변경 요청 중, doneAt이 있으면 날짜 변경 완료(from → to).
 import { collection, doc, onSnapshot, setDoc, deleteDoc } from 'firebase/firestore';
 import { db, ensureSignedIn } from '../../../utils/firebase';
 import { allLines, commit, linesReady } from './lineStore';
@@ -15,14 +16,18 @@ const LOCAL_KEY = 'coupangPoDateReq';
 const CHANGED = 'coupang-po-date-req-changed';
 const docId = (no: string) => no.trim().replace(/\//g, '∕');
 
-let reqs: Record<string, number> = (() => { try { return JSON.parse(localStorage.getItem(LOCAL_KEY) || '') || {}; } catch { return {}; } })();
+export interface DateReq { at: number; doneAt?: number; from?: string; to?: string }
+const asReq = (v: unknown): DateReq => (typeof v === 'number' ? { at: v } : { at: 0, ...(v as DateReq) });
+let reqs: Record<string, DateReq> = (() => {
+  try { return Object.fromEntries(Object.entries(JSON.parse(localStorage.getItem(LOCAL_KEY) || '') || {}).map(([k, v]) => [k, asReq(v)])); } catch { return {}; }
+})();
 const notify = () => {
   try { localStorage.setItem(LOCAL_KEY, JSON.stringify(reqs)); } catch {}
   window.dispatchEvent(new CustomEvent(CHANGED));
 };
 
 let started = false;
-export function subscribeDateRequests(cb: (r: Record<string, number>) => void): () => void {
+export function subscribeDateRequests(cb: (r: Record<string, DateReq>) => void): () => void {
   const send = () => cb({ ...reqs });
   send();
   window.addEventListener(CHANGED, send);
@@ -30,7 +35,10 @@ export function subscribeDateRequests(cb: (r: Record<string, number>) => void): 
     started = true;
     const firestore = db;
     ensureSignedIn().then(() => onSnapshot(collection(firestore, COLLECTION), snap => {
-      reqs = Object.fromEntries(snap.docs.map(d => [String(d.data().no || d.id), Number(d.data().at) || 0]));
+      reqs = Object.fromEntries(snap.docs.map(d => {
+        const v = d.data() as DateReq & { no?: string };
+        return [String(v.no || d.id), { at: Number(v.at) || 0, ...(v.doneAt ? { doneAt: v.doneAt, from: v.from || '', to: v.to || '' } : {}) }];
+      }));
       notify();
     }, err => console.error('날짜 변경 요청 동기화 실패:', err)));
   }
@@ -41,7 +49,7 @@ export function markDateRequested(nos: string[], on: boolean) {
   const list = Array.from(new Set(nos.map(n => n.trim()).filter(Boolean)));
   if (!list.length) return;
   const next = { ...reqs };
-  list.forEach(n => { if (on) next[n] = Date.now(); else delete next[n]; });
+  list.forEach(n => { if (on) next[n] = { at: Date.now() }; else delete next[n]; });
   reqs = next;
   notify();
   if (!db) return;
@@ -57,6 +65,20 @@ export interface ApplyResult {
   same: string[];
   missing: string[];
   moved: { before: ShipOut; to: { center: string; date: string } }[];
+}
+
+// 날짜 변경 완료로 적는다(카드에 작게 "날짜변경완료"를 보여준다).
+function markDateDone(done: { no: string; from: string; to: string }[]) {
+  if (!done.length) return;
+  const next = { ...reqs };
+  const now = Date.now();
+  done.forEach(d => { next[d.no] = { at: next[d.no]?.at || now, doneAt: now, from: d.from, to: d.to }; });
+  reqs = next;
+  notify();
+  if (!db) return;
+  const firestore = db;
+  ensureSignedIn().then(() => Promise.all(done.map(d => setDoc(doc(firestore, COLLECTION, docId(d.no)), { no: d.no, ...next[d.no] }))))
+    .catch(err => console.error('날짜 변경 완료 저장 실패:', err));
 }
 
 // 서허에서 읽어 온 지금 값(발주번호 → 센터·입고예정일 'YYYY-MM-DD')을 앱에 적는다.
@@ -83,7 +105,7 @@ export async function applyCurrent(nos: string[], current: Record<string, { cent
   }
   commit(out);
   if (Object.keys(byOrder).length) res.moved = retargetOrders(byOrder);
-  // 바뀐 발주서는 요청이 끝난 것이다.
-  markDateRequested(res.changed.map(c => c.no), false);
+  // 바뀐 발주서는 요청이 끝난 것이다(날짜변경완료로 남긴다).
+  markDateDone(res.changed);
   return res;
 }

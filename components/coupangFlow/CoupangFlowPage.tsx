@@ -485,32 +485,37 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
                     <span style={{ fontSize: 11, color: '#999' }}>/{full}</span>
                   </span>
                 ) : (
-                  <b style={{ flexShrink: 0 }}>{l.확정수량}개</b>
+                  <>
+                    {/* 사무실 재고(한중 여유): 도착 수 +오는 중. 필요한 만큼 도착했으면 초록, 오는 것까지 치면 되면 주황, 모자라면 빨강. */}
+                    {(() => {
+                      const office = officeOf(l.상품이름);
+                      const arrived = office.qty || 0;
+                      const incoming = office.incoming || 0;
+                      if (!arrived && !incoming) return null;
+                      const need = Number(l.확정수량) || 0;
+                      const color = arrived >= need ? GREEN : arrived + incoming >= need ? '#d97706' : RED;
+                      return (
+                        <span
+                          title={`사무실 재고(한중 여유) · 도착 ${arrived}개${incoming ? ` · 오는 중 ${incoming}개` : ''}\n${office.names.join('\n')}`}
+                          style={{ flexShrink: 0, fontSize: 13, fontWeight: 800, color, whiteSpace: 'nowrap' }}
+                        >
+                          {arrived}{incoming > 0 && <span style={{ fontSize: 11, fontWeight: 700, color: '#d97706' }}> +{incoming}</span>}
+                        </span>
+                      );
+                    })()}
+                    <b style={{ flexShrink: 0 }}>{l.확정수량}개</b>
+                  </>
                 )}
               </div>
-              {/* 수량: 배정(한중발주에 맡긴 수) · 입고(그 한중발주에 들어온 수/산 수) · 사무실(여유 도착 +오는 중) */}
+              {/* 수량: 배정(한중발주에 맡긴 수) · 대기(1688 주문 전) */}
               {o.stage > 0 && (() => {
                 const key = { 발주번호: o.no, 상품이름: l.상품이름, 확정수량: l.확정수량 };
                 const places = placesOf(key);
                 const assigned = places.filter(p => p.code).reduce((n, p) => n + p.qty, 0);
                 const queued = places.filter(p => !p.code).reduce((n, p) => n + p.qty, 0);
-                let rec = 0, ord = 0;
-                for (const p of places) {
-                  if (!p.code) continue;
-                  const a = hjArrived.get(`${p.code}│${nameKey(l.상품이름)}`);
-                  if (a) { rec += a.received; ord += a.ordered; }
-                }
-                const office = officeOf(l.상품이름);
                 const parts: React.ReactNode[] = [];
                 if (assigned) parts.push(<span key="a" title={`한중발주 ${places.filter(p => p.code).map(p => `${p.code} ${p.qty}개`).join(', ')}`}>배정 <b>{assigned}</b></span>);
                 if (queued) parts.push(<span key="q" title="한중발주 대기(1688 주문 전)">대기 <b>{queued}</b></span>);
-                if (ord) parts.push(<span key="r" title="그 한중발주에 이 상품이 들어온 수 / 산 수">입고 <b>{rec}</b>/{ord}</span>);
-                if ((office.qty || 0) + (office.incoming || 0) > 0) parts.push(
-                  <span key="o" title={`사무실 재고(한중 여유) · 도착 ${office.qty || 0}개${office.incoming ? ` · 오는 중 ${office.incoming}개` : ''}\n${office.names.join('\n')}`}>
-                    사무실 <b style={{ color: (office.qty || 0) >= (Number(l.확정수량) || 0) ? GREEN : undefined }}>{office.qty || 0}</b>
-                    {office.incoming ? <span style={{ color: '#d97706' }}> +{office.incoming}</span> : null}
-                  </span>,
-                );
                 if (!parts.length) return null;
                 return (
                   <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0 10px', fontSize: 10.5, color: '#8a857f', marginTop: 1, paddingLeft: 24 }}>{parts}</div>

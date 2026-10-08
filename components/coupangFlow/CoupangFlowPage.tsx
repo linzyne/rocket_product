@@ -444,6 +444,11 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
 
       {/* 커다란 판 하나에 단계 칸이 옆으로 나란히(위쪽 머리줄 = 칸 제목). 발주서는 지금 단계 칸 안에 위아래 한 줄로 자리 잡는다. */}
       <main style={{ overflowX: 'auto', padding: '12px clamp(10px, 3vw, 20px) 70px' }}>
+        {/* 새 주문 수집·발주확정 올리기는 판 위에 따로 둔다(칸 안에 두면 1번 칸 발주서만 아래로 밀려 줄이 안 맞는다). */}
+        <div style={{ display: 'flex', gap: 10, alignItems: 'flex-start', marginBottom: 10 }}>
+          <div style={{ flex: '0 0 250px' }}>{collectPanel}</div>
+          {boxes[0].length > 0 && <div style={{ flex: '0 0 250px', background: '#fff7ed', borderRadius: 12, padding: 8 }}>{confirmPanel(boxes[0])}</div>}
+        </div>
         <div style={{
           display: 'inline-grid', gridTemplateColumns: `repeat(${STAGES.length}, 250px)`,
           border: '1.5px solid #d6d3d1', borderRadius: 12, background: '#fafaf9', overflow: 'hidden', alignItems: 'stretch',
@@ -473,9 +478,6 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
                 padding: 8, minHeight: '60vh', display: 'flex', flexDirection: 'column', gap: 8, boxSizing: 'border-box',
                 borderRight: i < STAGES.length - 1 ? '1px solid #e7e5e4' : 'none',
               }}>
-                {/* 1번 칸(발주확정) 맨 위: 새 주문 받아 오기와 발주확정 올리기 */}
-                {i === 0 && collectPanel}
-                {i === 0 && list.length > 0 && <div style={{ background: '#fff7ed', borderRadius: 10, padding: 8 }}>{confirmPanel(list)}</div>}
                 {list.map(card)}
                 {!list.length && <div style={{ padding: '18px 0', textAlign: 'center', fontSize: 12, color: '#c4c0bc' }}>{q ? '찾는 발주서 없음' : '비어 있음'}</div>}
               </div>

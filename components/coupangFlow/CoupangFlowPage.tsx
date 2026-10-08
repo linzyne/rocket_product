@@ -145,7 +145,7 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
     startConfirmUpload(nos);
   };
   // ── 발주서 고르기(발주확정·쉽먼트 칸) → 아래쪽 메뉴 ──
-  const PICKABLE: Stage[] = [1, 2];
+  const PICKABLE: Stage[] = [1, 2, 4];
   const [picked, setPicked] = useState<Set<string>>(new Set());
   const togglePick = (no: string) => setPicked(prev => {
     const next = new Set(prev);
@@ -732,6 +732,27 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
     setDateNote({ tone: 'ok', text: `발주 ${pickedShipping.length + others.length}건을 발송대기로 넘겼어요.` });
   };
 
+  // 고른 것 중 발송대기 칸에 있는 발주서 → 발송완료. 보낸 날을 묻고 출고 건 단위로 넘긴다(발송대기 화면의 "발송 완료"와 같다).
+  const pickedWaiting = orders.filter(o => o.stage === 4 && picked.has(o.no) && o.item);
+  const sendDone = () => {
+    const items = new Map<string, ShipOut>();
+    pickedWaiting.forEach(o => items.set(o.item!.id, o.item!));
+    const others = Array.from(items.values()).flatMap(it => Array.from(new Set(it.lines.map(l => l.발주번호))).filter(no => !picked.has(no)));
+    const notReady = Array.from(items.values()).flatMap(it => it.lines.filter(l => !ready.isReady(l, it.readyKeys)).map(l => `${l.발주번호} ${l.상품이름}`));
+    const today = new Date().toLocaleDateString('sv-SE');
+    const date = window.prompt(
+      `고른 발주서 ${pickedWaiting.length}건을 발송완료로 넘겨요. 보낸 날을 적어 주세요(YYYY-MM-DD).` +
+      (notReady.length ? `\n\n⚠ 아직 준비 안 된 상품 ${notReady.length}줄: ${notReady.slice(0, 5).join(', ')}${notReady.length > 5 ? ' …' : ''}` : '') +
+      (others.length ? `\n\n같은 출고 건에 든 다른 발주서도 같이 넘어가요: ${others.join(', ')}` : ''),
+      today,
+    );
+    if (date == null) return;
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date.trim())) { alert('날짜는 2026-10-09처럼 적어 주세요.'); return; }
+    markShipOuts(Array.from(items.keys()), { sentDate: date.trim() });
+    setPicked(new Set());
+    setDateNote({ tone: 'ok', text: `발주 ${pickedWaiting.length + others.length}건을 발송완료(${date.trim()})로 넘겼어요. 발송완료 메뉴에서 볼 수 있어요.` });
+  };
+
   // 고르면 화면 아래 가운데에 뜨는 메뉴.
   const layer = (picked.size > 0 || dateNote) && (
     <div style={{
@@ -746,6 +767,12 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
             <button onClick={sendToShip} title="고른 발주확정 발주서를 센터·입고예정일이 같은 것끼리 출고 건으로 묶어 쉽먼트 칸으로 보냅니다"
               style={{ padding: '6px 12px', fontSize: 13, fontWeight: 700, borderRadius: 8, border: 'none', background: '#2563eb', color: '#fff', cursor: 'pointer', whiteSpace: 'nowrap' }}>
               쉽먼트로 →{pickedConfirmed.length !== picked.size ? ` (${pickedConfirmed.length}건)` : ''}
+            </button>
+          )}
+          {pickedWaiting.length > 0 && (
+            <button onClick={sendDone} title="고른 발송대기 발주서를 발송완료로 넘깁니다(보낸 날을 물어요)"
+              style={{ padding: '6px 12px', fontSize: 13, fontWeight: 700, borderRadius: 8, border: 'none', background: '#0f766e', color: '#fff', cursor: 'pointer', whiteSpace: 'nowrap' }}>
+              발송완료 →{pickedWaiting.length !== picked.size ? ` (${pickedWaiting.length}건)` : ''}
             </button>
           )}
           {pickedShipping.length > 0 && (

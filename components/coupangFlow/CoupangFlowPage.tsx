@@ -365,7 +365,7 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
       <div style={{ fontSize: 11.5, color: '#888', marginTop: 2 }}>
         {/* 발주번호만 따로 감싼다: 앱 전체의 "발주번호 누르면 복사"(utils/copyOrderNo)가 글자가 번호 하나일 때만 복사한다. */}
         발주 <span title="눌러서 발주번호 복사" style={{ cursor: 'copy', textDecoration: 'underline dotted', textUnderlineOffset: 2 }}>{o.no}</span>
-        {/* 쉽먼트 칸부터: 쉽먼트 번호와 인쇄 아이콘을 같은 줄에 */}
+        {/* 쉽먼트·발송대기 칸: 쉽먼트 번호와 인쇄 아이콘을 같은 줄에 */}
         {o.stage >= 2 && o.item?.shipmentNos?.[o.no] && (
           <span style={{ marginLeft: 10 }}>쉽먼트 <span
             title="눌러서 쉽먼트 번호 복사"
@@ -373,7 +373,7 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
             style={{ cursor: 'copy', textDecoration: 'underline dotted', textUnderlineOffset: 2 }}
           >{o.item.shipmentNos[o.no]}</span></span>
         )}
-        {o.stage === 2 && o.item && <span style={{ marginLeft: 8 }}>{printButton(o)}</span>}
+        {(o.stage === 2 || o.stage === 4) && o.item && <span style={{ marginLeft: 8 }}>{printButton(o)}</span>}
       </div>
     </div>
   );
@@ -563,7 +563,7 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
           // 쉽먼트 번호가 없으면(서허 일괄등록을 직접 한 건) 서허 택배 쉽먼트 화면에서 찾아 온다.
           // 쉽먼트 칸에서 번호 없는 발주서를 한꺼번에 찾는다.
           if (!shipNo) {
-            const nos = orders.filter(x => x.stage === 2 && x.item && !x.item.shipmentNos?.[x.no]).map(x => x.no);
+            const nos = orders.filter(x => (x.stage === 2 || x.stage === 4) && x.item && !x.item.shipmentNos?.[x.no]).map(x => x.no);
             if (!window.confirm(`쉽먼트 번호가 없어서 출력할 수 없어요.\n서허 택배 쉽먼트 화면에서 발주서 ${nos.length}건의 쉽먼트 번호를 찾아 올까요?\n(서허 일괄등록이 끝난 건만 찾을 수 있어요)`)) return;
             setDateNote({ tone: 'info', text: `서허에서 쉽먼트 번호 찾는 중… (발주서 ${nos.length}건)` });
             window.postMessage({ source: 'rocket-app-hub', type: 'SHUB_FIND_SHIPMENTS', orderNos: nos }, window.location.origin);
@@ -595,7 +595,7 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
   // 카드 아래 단추 줄(할 일이 없으면 줄을 안 그린다).
   const actionRow = (o: FlowOrder) => {
     const act = action(o);
-    const note = printNote[o.no] && o.stage === 2 ? <div style={{ fontSize: 11, color: '#1d4ed8' }}>{printNote[o.no]}</div> : null;
+    const note = printNote[o.no] && (o.stage === 2 || o.stage === 4) ? <div style={{ fontSize: 11, color: '#1d4ed8' }}>{printNote[o.no]}</div> : null;
     if (!act && !note) return null;
     return (
       <>

@@ -81,6 +81,15 @@ export default function CoupangSendPage({ onGoShip, view = 'waiting' }: { onGoSh
     () => list.filter(i => !!i.sentDate).sort((a, b) => (b.sentDate || '').localeCompare(a.sentDate || '') || b.createdAt - a.createdAt),
     [list],
   );
+  // 발송완료는 달별로 본다. 달 단추(최근 달이 앞)를 누르면 그 달 기록만. 기본은 가장 최근 달.
+  const months = useMemo(() => {
+    const m = new Map<string, number>();
+    sent.forEach(i => { const k = (i.sentDate || '').slice(0, 7); m.set(k, (m.get(k) || 0) + 1); });
+    return Array.from(m.entries()).sort((a, b) => b[0].localeCompare(a[0]));
+  }, [sent]);
+  const [month, setMonth] = useState('');
+  const curMonth = months.some(([k]) => k === month) ? month : (months[0]?.[0] || '');
+  const sentShown = sent.filter(i => (i.sentDate || '').startsWith(curMonth));
 
   // 박스 n번의 운송장번호(쉽먼트 기록을 내용으로 확인해서 확실한 것만).
   const waybillOf = (item: ShipOut, no: number) => waybillForBox(batches, item, no);
@@ -305,9 +314,24 @@ export default function CoupangSendPage({ onGoShip, view = 'waiting' }: { onGoSh
         )}
         {view === 'sent' && sent.length > 0 && (
           <div>
+            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+              {months.map(([k, n]) => (
+                <button
+                  key={k}
+                  onClick={() => setMonth(k)}
+                  style={{
+                    padding: '5px 12px', fontSize: 13, fontWeight: 700, borderRadius: 999, cursor: 'pointer',
+                    border: `1.5px solid ${k === curMonth ? GREEN : '#e5e5e5'}`,
+                    background: k === curMonth ? GREEN : '#fff', color: k === curMonth ? '#fff' : '#555',
+                  }}
+                >
+                  {Number(k.slice(0, 4))}년 {Number(k.slice(5, 7))}월 <span style={{ opacity: 0.8 }}>{n}</span>
+                </button>
+              ))}
+            </div>
             {(
-              <div style={{ marginTop: 8, border: '1px solid #eee', borderRadius: 10, overflow: 'hidden' }}>
-                {sent.map(item => {
+              <div style={{ marginTop: 10, border: '1px solid #eee', borderRadius: 10, overflow: 'hidden' }}>
+                {sentShown.map(item => {
                   const nos = boxesOf(item).map(([no]) => no).filter(Boolean);
                   return (
                     // 칸 너비를 고정해서 줄마다 세로로 맞춘다: 보낸 날 · 센터 · 입고일 · 발주번호 · 박스 수 · 운송장 · 단추.

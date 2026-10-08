@@ -473,7 +473,7 @@ export type HanjungAction = (
 // 상품 줄 체크 칸. 누르면 "준비됨"과 "한중발주" 중에서 고른다(둘 다 켤 수도 있다).
 // 한중발주를 누르면 이 상품의 여유가 있는 한중발주를 고르거나, 발주 대기에 담는다.
 // 준비됨이든 한중발주든 초록 체크로 보인다.
-function LineCheckMenu({ ready, hanjung, onReady, onHanjung }: {
+export function LineCheckMenu({ ready, hanjung, onReady, onHanjung }: {
   ready: boolean; hanjung: LineHanjung; onReady: (on: boolean) => void; onHanjung: (action: HanjungAction) => void;
 }) {
   const btnRef = React.useRef<HTMLButtonElement>(null);

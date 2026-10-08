@@ -13,6 +13,8 @@ import CollectPurchaseOrders from '../coupangOrder/CollectPurchaseOrders';
 import { appendOrderFile } from '../coupangOrder/data/orderWorkStore';
 import { printShipment, setPrinted } from '../coupangSend/printShipment';
 import { useReady } from '../coupangOrder/data/readyStore';
+import { useLineHanjung } from '../coupangOrder/data/useLineHanjung';
+import { LineCheckMenu } from '../coupangOrder/components/OrderTable';
 import { HanjungOrder, subscribeHanjung, productSummary, nameKey } from '../../data/hanjungStore';
 import { HanjungQueueItem, subscribeHanjungQueue, makePlaceLookup } from '../coupangOrder/data/hanjungQueueStore';
 import { subscribePoForms, readDraft, setDraftLine, SHORT_REASONS, DEFAULT_REASON } from '../coupangOrder/data/poFormStore';
@@ -81,6 +83,8 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
   const [newOpen, setNewOpen] = useState(false);
   // 상품 줄 준비 상태: 준비됨 체크(쿠팡발주확인·쉽먼트·발송대기와 같은 기록) + 한중발주(한중 대기·입고중·일부입고·준비됨).
   const ready = useReady();
+  // 상품별 체크 메뉴(준비됨 · 한중발주에 맡기기 · 사무실 재고에서 쓰기). 쉽먼트생성대기와 같은 메뉴.
+  const lineHj = useLineHanjung(t => setDateNote({ tone: 'info', text: t }));
   const [hjOrders, setHjOrders] = useState<HanjungOrder[]>([]);
   const [hjQueue, setHjQueue] = useState<HanjungQueueItem[]>([]);
   useEffect(() => subscribeHanjung(setHjOrders), []);
@@ -406,9 +410,24 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
           return (
             <div key={i} style={{ padding: '2px 0', borderTop: i ? '1px dashed #f0f0f0' : 'none' }}>
               <div style={{ display: 'flex', gap: 6, alignItems: 'baseline' }}>
+                {o.stage > 0 && (() => {
+                  // 상품별 체크 → 준비됨 / 한중발주 배정 / 사무실 재고
+                  const hl = { 발주번호: o.no, 물류센터: o.center, 상품이름: l.상품이름, 확정수량: l.확정수량, 입고예정일: o.date, 메모: '', 쉼먼트: '' };
+                  const key = { 발주번호: o.no, 상품이름: l.상품이름, 확정수량: l.확정수량 };
+                  const on = ready.isReady(key, o.item?.readyKeys);
+                  return (
+                    <span style={{ flexShrink: 0, alignSelf: 'center' }}>
+                      <LineCheckMenu
+                        ready={on}
+                        hanjung={lineHj.hanjungOf(hl)}
+                        onReady={v => ready.setReady([key], v).catch(err => alert(`준비 표시 저장 실패: ${err?.message || err}`))}
+                        onHanjung={action => { lineHj.setLineHanjung(hl, action, () => ready.setReady([key], true).catch(() => {})); }}
+                      />
+                    </span>
+                  );
+                })()}
                 {(() => {
                   // 준비 상태: 준비됨(체크 또는 한중으로 다 도착) → 흐린 글씨, 한중발주로 오는 중 → 흐린 글씨 + 동그라미 안에 한중발주 번호.
-                  // 상품 이름을 누르면 준비됨을 켜고 끈다.
                   const key = { 발주번호: o.no, 상품이름: l.상품이름, 확정수량: l.확정수량 };
                   const places = placesOf(key);
                   const coming = places.filter(p => {
@@ -422,10 +441,9 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
                   const faded = isReady || coming.length > 0;
                   return (
                     <span
-                      onClick={() => ready.setReady([key], !ready.isReady(key, o.item?.readyKeys)).catch(err => alert(`준비 표시 저장 실패: ${err?.message || err}`))}
-                      title={`${isReady ? '준비됨' : coming.length ? `입고중(한중발주 ${coming.map(p => p.code).join(', ')})` : waitingQueue ? '한중발주 대기(1688 주문 전)' : '준비중'} — 눌러서 준비됨 켜고 끄기`}
+                      title={`${isReady ? '준비됨' : coming.length ? `입고중(한중발주 ${coming.map(p => p.code).join(', ')})` : waitingQueue ? '한중발주 대기(1688 주문 전)' : '준비중'} — 왼쪽 체크 칸에서 준비됨·한중발주 배정`}
                       style={{
-                        flex: 1, minWidth: 0, wordBreak: 'keep-all', cursor: 'pointer',
+                        flex: 1, minWidth: 0, wordBreak: 'keep-all',
                         color: now < full ? RED : faded ? '#b5b0aa' : '#333',
                         textDecoration: editable && now === 0 ? 'line-through' : 'none',
                       }}
@@ -473,7 +491,6 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
             </div>
           );
         })}
-        {o.lines.length > 1 && <div style={{ fontSize: 10.5, color: '#aaa', textAlign: 'right' }}>{o.lines.length}종 · {qty}개</div>}
       </>
     );
   };

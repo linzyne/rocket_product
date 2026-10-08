@@ -14,7 +14,7 @@ import { appendOrderFile } from '../coupangOrder/data/orderWorkStore';
 import { printShipment, setPrinted } from '../coupangSend/printShipment';
 import { useReady } from '../coupangOrder/data/readyStore';
 import { useLineHanjung } from '../coupangOrder/data/useLineHanjung';
-import { addShipOut } from '../coupangOrder/data/shipOutStore';
+import { addShipOut, markShipOuts } from '../coupangOrder/data/shipOutStore';
 import { linesAt } from '../coupangOrder/data/lineStore';
 import { boxLabel } from '../coupangOrder/utils/dataProcessor';
 import { LineCheckMenu } from '../coupangOrder/components/OrderTable';
@@ -282,7 +282,8 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
       const batch = shipOutBatch(item, batches);
       for (const l of item.lines) {
         const no = String(l.발주번호 || '').trim();
-        const stage: Stage = st === 'sent' ? 5 : st === 'waiting' && (item.printedOrders || []).includes(no) ? 4 : 2;
+        // 쉽먼트 끝 + 출력완료면 발송대기. 사람이 "발송대기로"를 눌렀으면(doneAt) 출력 전이어도 발송대기.
+        const stage: Stage = st === 'sent' ? 5 : st === 'waiting' && ((item.printedOrders || []).includes(no) || !!item.doneAt) ? 4 : 2;
         add(no, item.center, item.date,
           { 상품이름: l.상품이름, 확정수량: l.확정수량, stage, where: `${item.bundle} (${item.id})` },
           { item, batch });
@@ -701,6 +702,23 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
     setDateNote({ tone: 'ok', text: `🚚 발주 ${nos.size}건을 쉽먼트로 보냈어요(${made.join(', ')}). 쉽먼트 칸에서 이어서 하세요.` });
   };
 
+  // 고른 것 중 쉽먼트 칸에 있는 발주서 → 발송대기로. 출고 건 단위로 넘어간다(쉽먼트생성대기의 "발송대기로 →"와 같다).
+  const pickedShipping = orders.filter(o => o.stage === 2 && picked.has(o.no) && o.item);
+  const sendToWaiting = () => {
+    const items = new Map<string, ShipOut>();
+    pickedShipping.forEach(o => items.set(o.item!.id, o.item!));
+    const others = Array.from(items.values()).flatMap(it => Array.from(new Set(it.lines.map(l => l.발주번호))).filter(no => !picked.has(no)));
+    const notDone = pickedShipping.filter(o => !o.item?.shipmentNos?.[o.no]).map(o => o.no);
+    if (!window.confirm(
+      `고른 발주서 ${pickedShipping.length}건을 발송대기로 넘길까요?` +
+      (notDone.length ? `\n\n⚠ 아직 서허 등록(쉽먼트 번호)이 안 된 발주서: ${notDone.join(', ')}` : '') +
+      (others.length ? `\n\n같은 출고 건에 든 다른 발주서도 같이 넘어가요: ${others.join(', ')}` : ''),
+    )) return;
+    markShipOuts(Array.from(items.keys()), { doneAt: Date.now(), undoneAt: undefined });
+    setPicked(new Set());
+    setDateNote({ tone: 'ok', text: `발주 ${pickedShipping.length + others.length}건을 발송대기로 넘겼어요.` });
+  };
+
   // 고르면 화면 아래 가운데에 뜨는 메뉴.
   const layer = (picked.size > 0 || dateNote) && (
     <div style={{
@@ -715,6 +733,12 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
             <button onClick={sendToShip} title="고른 발주확정 발주서를 센터·입고예정일이 같은 것끼리 출고 건으로 묶어 쉽먼트 칸으로 보냅니다"
               style={{ padding: '6px 12px', fontSize: 13, fontWeight: 700, borderRadius: 8, border: 'none', background: '#2563eb', color: '#fff', cursor: 'pointer', whiteSpace: 'nowrap' }}>
               🚚 쉽먼트로 보내기{pickedConfirmed.length !== picked.size ? ` (${pickedConfirmed.length}건)` : ''}
+            </button>
+          )}
+          {pickedShipping.length > 0 && (
+            <button onClick={sendToWaiting} title="고른 쉽먼트 발주서를 발송대기 칸으로 넘깁니다"
+              style={{ padding: '6px 12px', fontSize: 13, fontWeight: 700, borderRadius: 8, border: 'none', background: GREEN, color: '#fff', cursor: 'pointer', whiteSpace: 'nowrap' }}>
+              발송대기로 →{pickedShipping.length !== picked.size ? ` (${pickedShipping.length}건)` : ''}
             </button>
           )}
           <button onClick={changeDate} style={{ padding: '6px 12px', fontSize: 13, fontWeight: 700, borderRadius: 8, border: 'none', background: ORANGE, color: '#fff', cursor: 'pointer', whiteSpace: 'nowrap' }}>

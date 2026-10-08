@@ -313,9 +313,27 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
   const match = (o: FlowOrder) =>
     !q || o.no.includes(q) || o.center.toLowerCase().includes(q) || o.lines.some(l => l.상품이름.toLowerCase().includes(q));
   // 상자마다 담을 발주서. 발송완료는 최근 보낸 것이 위로.
+  // 상품 줄이 준비됐는지(카드에서 줄 긋는 것과 같은 기준): 준비 체크했거나, 맡긴 한중발주에 그 상품이 다 도착.
+  const lineIsReady = (o: FlowOrder, l: FlowLine) => {
+    const key = { 발주번호: o.no, 상품이름: l.상품이름, 확정수량: l.확정수량 };
+    if (ready.isReady(key, o.item?.readyKeys)) return true;
+    const places = placesOf(key);
+    return places.length > 0 && places.every(p => {
+      if (!p.code) return false;
+      const a = hjArrived.get(`${p.code}│${nameKey(l.상품이름)}`);
+      return !!a && a.received >= a.ordered;
+    });
+  };
+  const allReady = (o: FlowOrder) => o.lines.length > 0 && o.lines.every(l => lineIsReady(o, l));
   const boxes = STAGES.map((_, i) => {
     const list = orders.filter(o => o.stage === i && match(o));
     if (i === 5) list.sort((a, b) => (b.item?.sentDate || '').localeCompare(a.item?.sentDate || ''));
+    // 쉽먼트·발송대기: 상품이 다 준비된 발주서를 맨 위로(그 안에서는 원래 순서).
+    if (i === 2 || i === 4) {
+      const done = list.filter(allReady);
+      const rest = list.filter(o => !allReady(o));
+      return [...done, ...rest];
+    }
     return list;
   });
 

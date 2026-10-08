@@ -676,7 +676,7 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
       {/* 커다란 판 하나에 단계 칸이 옆으로 나란히(위쪽 머리줄 = 칸 제목). 발주서는 지금 단계 칸 안에 위아래 한 줄로 자리 잡는다. */}
       <main style={{ overflowX: 'auto', padding: '12px clamp(10px, 3vw, 20px) 70px' }}>
         <div style={{
-          display: 'inline-grid', gridTemplateColumns: `repeat(${BOARD_STAGES.length}, 250px)`,
+          display: 'inline-grid', gridTemplateColumns: `repeat(${BOARD_STAGES.length}, 340px)`,
           border: '1.5px solid #d6d3d1', borderRadius: 12, background: '#fafaf9', overflow: 'hidden', alignItems: 'stretch',
         }}>
           {/* 머리줄 */}

@@ -39,7 +39,8 @@ const fmtWaybill = (w: string) => {
 const GREEN = '#27ae60';
 const ORANGE = '#e67e22';
 
-export default function CoupangSendPage({ onGoShip }: { onGoShip?: () => void } = {}) {
+// view: 'waiting' = 발송대기 메뉴(아직 안 보낸 건), 'sent' = 발송완료 메뉴(보낸 기록만).
+export default function CoupangSendPage({ onGoShip, view = 'waiting' }: { onGoShip?: () => void; view?: 'waiting' | 'sent' } = {}) {
   const [list, setList] = useState<ShipOut[]>([]);
   const hanjungBadge = useHanjungBadge();
   useShipmentNoSync();
@@ -199,7 +200,6 @@ ${found.length ? `<p style="color:#64748b">바코드를 찾은 상품 ${found.le
   // 사무실 칸 = 한중으로 넉넉히 사 둔 여유(도착한 것 + 오는 중인 것).
   const [hanjungOrders, setHanjungOrders] = useState<HanjungOrder[]>([]);
   const [sendPick, setSendPick] = useState<{ item: ShipOut; date: string } | null>(null);
-  const [showSent, setShowSent] = useState(true);
   // 운송장번호를 고치는 창(쉽먼트 기록 하나를 연다).
   const [editBatch, setEditBatch] = useState<ShipmentBatch | null>(null);
   const editWaybills = (item: ShipOut) => {
@@ -289,14 +289,14 @@ ${found.length ? `<p style="color:#64748b">바코드를 찾은 상품 ${found.le
     <div style={{ minHeight: '100vh', background: '#fff', color: '#1a1a1a', fontFamily: "'Apple SD Gothic Neo', 'Malgun Gothic', 'Noto Sans KR', sans-serif" }}>
       <header style={{ background: '#fff', borderBottom: '1px solid #f0f0f0', position: 'sticky', top: 0, zIndex: 10 }}>
         <div style={{ maxWidth: 1200, margin: '0 auto', padding: '6px clamp(12px, 4vw, 24px)', minHeight: 54, boxSizing: 'border-box', display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '4px 12px' }}>
-          <span style={{ fontSize: 17, fontWeight: 700, letterSpacing: '-0.3px' }}>📦 발송대기/완료</span>
-          <span style={{ fontSize: 12, color: '#999' }}>대기 {waiting.length}건 · 발송 완료 {sent.length}건</span>
+          <span style={{ fontSize: 17, fontWeight: 700, letterSpacing: '-0.3px' }}>{view === 'sent' ? '✓ 발송완료' : '📦 발송대기'}</span>
+          <span style={{ fontSize: 12, color: '#999' }}>{view === 'sent' ? `보낸 기록 ${sent.length}건` : `대기 ${waiting.length}건`}</span>
         </div>
       </header>
 
       <main style={{ maxWidth: 1200, margin: '0 auto', padding: '20px clamp(10px, 4vw, 24px) 70px' }}>
-        <ProductQtySummary lines={waiting.flatMap(i => i.lines.map(l => ({ ...l, ready: isLineReady(i, l) })))} />
-        {waiting.length === 0 ? (
+        {view === 'waiting' && <ProductQtySummary lines={waiting.flatMap(i => i.lines.map(l => ({ ...l, ready: isLineReady(i, l) })))} />}
+        {view !== 'waiting' ? null : waiting.length === 0 ? (
           <div style={{ border: '1px dashed #e0e0e0', borderRadius: 10, padding: '60px 0', textAlign: 'center', color: '#bbb', fontSize: 13 }}>
             발송을 기다리는 건이 없어요.<br />
             <span style={{ fontSize: 12 }}>쉽먼트생성에서 <strong>쉽먼트 완료</strong>를 누르면 여기로 와요.</span>
@@ -445,17 +445,12 @@ ${found.length ? `<p style="color:#64748b">바코드를 찾은 상품 ${found.le
         )}
 
         {/* 발송 완료 기록 */}
-        {sent.length > 0 && (
-          <div style={{ marginTop: 28 }}>
-            <button
-              onClick={() => setShowSent(v => !v)}
-              style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: 0, background: 'none', border: 'none', cursor: 'pointer', fontSize: 13, fontWeight: 700, color: GREEN }}
-            >
-              <span style={{ fontSize: 10, color: '#bbb' }}>{showSent ? '▾' : '▸'}</span>
-              ✓ 발송 완료 {sent.length}건
-              <span style={{ marginLeft: 4, fontSize: 11, fontWeight: 500, color: '#aaa' }}>{showSent ? '접기' : '펼치기'}</span>
-            </button>
-            {showSent && (
+        {view === 'sent' && sent.length === 0 && (
+          <div style={{ border: '1px dashed #e0e0e0', borderRadius: 10, padding: '60px 0', textAlign: 'center', color: '#bbb', fontSize: 13 }}>보낸 기록이 없어요.</div>
+        )}
+        {view === 'sent' && sent.length > 0 && (
+          <div>
+            {(
               <div style={{ marginTop: 8, border: '1px solid #eee', borderRadius: 10, overflow: 'hidden' }}>
                 {sent.map(item => {
                   const nos = boxesOf(item).map(([no]) => no).filter(Boolean);

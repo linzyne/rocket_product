@@ -23,6 +23,8 @@ import { retargetBatches, saveShipmentBatch } from '../../data/shipmentStore';
 
 // 칸 이름: 1 새발주서(서허에 확정 올리기 전) → 2 발주확정(확정 끝, 쉽먼트 보내기 전) → 3 쉽먼트 → 4 출력 → 5 발송대기 → 6 발송완료
 const STAGES = ['새발주서', '발주확정', '쉽먼트', '출력', '발송대기', '발송완료'] as const;
+// 화면에 칸·탭으로 보여주는 단계(발송완료는 '발송완료' 메뉴에서 따로 본다).
+const BOARD = STAGES.slice(0, 5);
 type Stage = 0 | 1 | 2 | 3 | 4 | 5;
 
 const ORANGE = '#e67e22';
@@ -532,7 +534,7 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
     const shown = tab === 'active' ? active.filter(o => o.stage < 5) : boxes[tab];
     const tabs: { id: Stage | 'active'; label: string; n: number }[] = [
       { id: 'active', label: '진행 중 전체', n: active.filter(o => o.stage < 5).length },
-      ...STAGES.map((label, i) => ({ id: i as Stage, label, n: boxes[i].length })),
+      ...BOARD.map((label, i) => ({ id: i as Stage, label, n: boxes[i].length })),
     ];
     return (
       <div style={pageStyle}>
@@ -594,17 +596,17 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
           {boxes[0].length > 0 && <div style={{ flex: '0 0 250px', background: '#fff7ed', borderRadius: 12, padding: 8 }}>{confirmPanel(boxes[0])}</div>}
         </div>
         <div style={{
-          display: 'inline-grid', gridTemplateColumns: `repeat(${STAGES.length}, 250px)`,
+          display: 'inline-grid', gridTemplateColumns: `repeat(${BOARD.length}, 250px)`,
           border: '1.5px solid #d6d3d1', borderRadius: 12, background: '#fafaf9', overflow: 'hidden', alignItems: 'stretch',
         }}>
           {/* 머리줄 */}
-          {STAGES.map((label, i) => {
+          {BOARD.map((label, i) => {
             const list = boxes[i];
             const stuck = i === 2 ? list.filter(o => run(o)?.state === 'error').length : 0;
             return (
               <div key={`h-${label}`} style={{
                 position: 'sticky', top: 0, zIndex: 2, display: 'flex', alignItems: 'center', gap: 6, padding: '9px 10px',
-                background: '#efedeb', borderBottom: '2px solid #d6d3d1', borderRight: i < STAGES.length - 1 ? '1px solid #d6d3d1' : 'none',
+                background: '#efedeb', borderBottom: '2px solid #d6d3d1', borderRight: i < BOARD.length - 1 ? '1px solid #d6d3d1' : 'none',
               }}>
                 <span style={{ fontSize: 11, color: '#a8a29e', fontWeight: 800 }}>{i + 1}</span>
                 <b style={{ fontSize: 14, color: '#292524' }}>{label}</b>
@@ -615,12 +617,12 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
             );
           })}
           {/* 칸 */}
-          {STAGES.map((label, i) => {
+          {BOARD.map((label, i) => {
             const list = boxes[i];
             return (
               <div key={`c-${label}`} style={{
                 padding: 8, minHeight: '60vh', display: 'flex', flexDirection: 'column', gap: 8, boxSizing: 'border-box',
-                borderRight: i < STAGES.length - 1 ? '1px solid #e7e5e4' : 'none',
+                borderRight: i < BOARD.length - 1 ? '1px solid #e7e5e4' : 'none',
               }}>
                 {list.map(card)}
                 {!list.length && <div style={{ padding: '18px 0', textAlign: 'center', fontSize: 12, color: '#c4c0bc' }}>{q ? '찾는 발주서 없음' : '비어 있음'}</div>}

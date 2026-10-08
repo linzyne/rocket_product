@@ -3248,7 +3248,8 @@ const App: React.FC = () => {
       {activeMenu === 'coupang-flow-list' && <CoupangFlowPage onNavigate={setActiveMenu} view="list" />}
       {activeMenu === 'coupang-order' && <CoupangOrderPage onGoShipOut={() => setActiveMenu('coupang-ship')} />}
       {activeMenu === 'coupang-ship' && <CoupangShipPage onGoOrder={() => setActiveMenu('coupang-order')} />}
-      {activeMenu === 'coupang-send' && <CoupangSendPage onGoShip={() => setActiveMenu('coupang-ship')} />}
+      {activeMenu === 'coupang-send' && <CoupangSendPage onGoShip={() => setActiveMenu('coupang-ship')} view="waiting" />}
+      {activeMenu === 'coupang-sent' && <CoupangSendPage onGoShip={() => setActiveMenu('coupang-ship')} view="sent" />}
       {activeMenu === 'order-search' && <OrderSearchPage onNavigate={setActiveMenu} />}
       {/* 수입입고는 한중발주 화면 안으로 합쳤다(예전 주소 #import-in으로 와도 한중발주를 보여준다). */}
       {(activeMenu === 'cn-order' || activeMenu === 'import-in') && <HanjungOrderPage />}

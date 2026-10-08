@@ -5,7 +5,18 @@ import {
 import { ReceiveRow, subscribeReceives, settlementOf, sign } from '../../data/receiveStore';
 import { nextHanjungCode, closeShortOrder, planShortFill, planFill, FillPlan, FillLine } from '../../data/hanjungStore';
 import { useReady } from '../coupangOrder/data/readyStore';
-import { linesAt, isLinesReady, startLines } from '../coupangOrder/data/lineStore';
+import { isLinesReady, startLines } from '../coupangOrder/data/lineStore';
+import { lockedLineKeys, subscribeShipOuts } from '../coupangOrder/data/shipOutStore';
+import { ShipmentBatch, subscribeShipments } from '../../data/shipmentStore';
+
+// 재배정에서 빼야 하는 줄(발송대기·발송완료)을 가리려고 쉽먼트 기록·출고 목록을 받아 둔다.
+const useShipLock = () => {
+  const [batches, setBatches] = useState<ShipmentBatch[]>([]);
+  const [, setTick] = useState(0);
+  useEffect(() => subscribeShipments(setBatches), []);
+  useEffect(() => subscribeShipOuts(() => setTick(t => t + 1)), []);
+  return batches;
+};
 import { subscribeReservations, reservationKey, setReservationMemo } from '../coupangOrder/data/reservationStore';
 import type { OrderRow } from '../coupangOrder/types';
 import {
@@ -226,8 +237,9 @@ const PendingPanel: React.FC<{ orders: HanjungOrder[]; onRecord: (act: Act) => v
   // 주문하지 않을 줄을 대기에서 뺀다(한중 대기에서 온 줄만. 예전 예약 줄은 예약 목록에서 다룬다).
   // 늦은 발주와 바꾸기: 발주 대기에 있는(=물건이 없는) 급한 쿠팡 줄이, 같은 상품을 맡은 한중발주에서 입고예정일이 더 늦은
   // 쿠팡 줄의 배정을 가져온다(사무실 여유가 있으면 그것부터). 늦은 줄은 그만큼 대신 발주 대기로 온다.
-  // 쉽먼트로 넘어간 줄은 건드리지 않는다. 고른 줄이 있으면 그 줄만, 없으면 대기 줄 전부.
+  // 발송완료된 줄은 건드리지 않는다(쉽먼트·발송대기 줄은 날짜가 늦으면 옮긴다). 고른 줄이 있으면 그 줄만, 없으면 대기 줄 전부.
   const ready = useReady();
+  const shipBatches = useShipLock();
   useEffect(() => { startLines(); }, []);
   const fillFromLater = async () => {
     if (!isLinesReady()) { alert('발주 목록을 아직 받는 중이에요. 잠시 뒤 다시 눌러 주세요.'); return; }
@@ -237,8 +249,7 @@ const PendingPanel: React.FC<{ orders: HanjungOrder[]; onRecord: (act: Act) => v
       line: { 발주번호: r.발주번호, 물류센터: r.물류센터, 상품이름: r.상품이름, 확정수량: Number(r.확정수량) || 0, 입고예정일: dateKeyYMD(r.입고예정일).replace(/-/g, '') } as FillLine,
       need: r.need,
     }));
-    const lk = (l: { 발주번호: string; 상품이름: string; 확정수량: number | '' }) => `${l.발주번호}│${String(l.상품이름).trim()}│${l.확정수량}`;
-    const skipKeys = new Set(linesAt('ship').map(l => lk(l)));
+    const skipKeys = lockedLineKeys(shipBatches);
     const keyOf = (l: FillLine) => reservationKey({ 발주번호: l.발주번호, 상품이름: l.상품이름, 확정수량: l.확정수량, 입고예정일: normalizeDateValue(l.입고예정일) } as OrderRow);
     const plan: FillPlan = planFill(needs, orders, { swap: true, skipKeys, keyOf });
     const day = (d: string) => `${Number(d.slice(4, 6))}/${Number(d.slice(6, 8))}`;
@@ -253,7 +264,7 @@ const PendingPanel: React.FC<{ orders: HanjungOrder[]; onRecord: (act: Act) => v
       (spare.length ? `\n\n사무실 여유로 채워요:\n${spare.join('\n')}` : '') +
       (sw.length ? `\n\n늦은 발주에서 가져와요(늦은 발주는 대신 발주 대기로):\n${sw.join('\n')}` : '') +
       (plan.notes.length ? `\n\n그래도 대기에 남는 것:\n${plan.notes.map(n => `· ${n}`).join('\n')}` : '') +
-      `\n\n(쉽먼트로 넘어간 발주는 건드리지 않아요.)`,
+      `\n\n(발송완료된 발주는 건드리지 않아요. 쉽먼트·발송대기에 있는 늦은 발주는 옮겨요.)`,
     )) return;
     const needKeys = needs.map(n => hanjungQueueKey(n.line));
     const rows: QueueRow[] = plan.queue.map(q => ({
@@ -583,14 +594,14 @@ const HanjungOrderPage: React.FC = () => {
   //  3) 남은 것은 발주 대기로 돌린다(다음 한중발주를 대기에서 만들면 그대로 따라간다).
   // 쉽먼트로 넘어간 줄은 건드리지 않는다. 준비됨은 실제 물건으로 다 채워진 줄만 켜고, 배정을 내준 줄은 끈다.
   const ready = useReady();
+  const shipBatches = useShipLock();
   useEffect(() => { startLines(); }, []);
   const handleCloseShort = async (o: HanjungOrder) => {
     const { order: closed, releases } = closeShortOrder(o);
     if (!releases.length) return;
-    const lk = (l: { 발주번호: string; 상품이름: string; 확정수량: number | '' }) => `${l.발주번호}│${String(l.상품이름).trim()}│${l.확정수량}`;
     // 쉽먼트(출고)로 넘어간 쿠팡 줄. 목록을 아직 못 받았으면 가져오기는 하지 않는다(묵은 목록으로 옮기면 안 되므로).
     const canSwap = isLinesReady();
-    const skipKeys = new Set(linesAt('ship').map(l => lk(l)));
+    const skipKeys = lockedLineKeys(shipBatches);
     const keyOf = (l: FillLine) => reservationKey({ 발주번호: l.발주번호, 상품이름: l.상품이름, 확정수량: l.확정수량, 입고예정일: normalizeDateValue(l.입고예정일) } as OrderRow);
     const opts = { skipKeys, keyOf };
     const base = planShortFill(o, closed, releases, orders, { ...opts, swap: false });
@@ -617,7 +628,7 @@ const HanjungOrderPage: React.FC = () => {
       if (confirm(
         `같은 상품이 입고예정일이 더 늦은 발주에 배정돼 있어요.\n급한 발주로 옮길까요? 옮긴 만큼 늦은 발주가 대신 발주 대기로 가요.\n\n${sw.join('\n')}` +
         (withSwap.notes.length ? `\n\n그래도 대기로 가는 것:\n${withSwap.notes.map(n => `· ${n}`).join('\n')}` : '') +
-        `\n\n(쉽먼트로 넘어간 발주는 건드리지 않아요. 취소를 누르면 옮기지 않고 앞 내용대로만 해요.)`,
+        `\n\n(발송완료된 발주는 건드리지 않아요. 취소를 누르면 옮기지 않고 앞 내용대로만 해요.)`,
       )) plan = withSwap;
     }
 

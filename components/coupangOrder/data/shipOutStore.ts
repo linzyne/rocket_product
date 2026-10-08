@@ -532,6 +532,14 @@ export function restoreOrphanLines(lines: OrphanLine[]): number {
   return pushBackToWork(lines.map(l => ({ 발주번호: l.발주번호, 물류센터: l.물류센터, 상품이름: l.상품이름, 확정수량: l.확정수량, 입고예정일: l.입고예정일 })), '');
 }
 
+// 재배정에서 건드리면 안 되는 쿠팡 줄: 발송완료된 줄(이미 보냄). 쉽먼트생성·발송대기 줄은 날짜가 늦으면 재배정해도 된다.
+// 열쇠는 발주번호│상품이름│확정수량.
+export function lockedLineKeys(batches: ShipmentBatch[]): Set<string> {
+  return new Set(read()
+    .filter(item => shipOutStage(item, batches) === 'sent')
+    .flatMap(item => item.lines.map(l => `${l.발주번호}│${String(l.상품이름).trim()}│${l.확정수량}`)));
+}
+
 // 지금 출고 목록(이 기기에 받아 둔 것). 쉽먼트 자동 진행이 화면 밖에서 쓴다.
 export function readShipOuts(): ShipOut[] {
   return read();

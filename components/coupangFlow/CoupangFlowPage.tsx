@@ -328,9 +328,6 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
       </div>
       <div style={{ fontSize: 11.5, color: '#888', marginTop: 2 }}>
         발주 {o.no}
-        {seenAt[o.no] && Date.now() - seenAt[o.no] < 24 * 60 * 60 * 1000 && (
-          <span style={{ marginLeft: 5, padding: '0 5px', borderRadius: 4, background: RED, color: '#fff', fontSize: 10, fontWeight: 800 }}>NEW</span>
-        )}
       </div>
     </div>
   );

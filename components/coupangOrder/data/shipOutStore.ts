@@ -1,23 +1,25 @@
 // 쿠팡발주확인의 묶음을 "출고"로 넘겨 두는 곳(발주 > 쉽먼트생성 화면에서 본다).
 // 한 건 = 묶음 하나 + 그 묶음에 담긴 발주서 줄들.
 //
-//  coupangShipOuts/{출고번호} : ShipOut 한 건 그대로.
+//  coupangShipOuts/{출고번호} : 출고 건의 머리 정보(묶음 이름·센터·날짜·진행 표시). 줄은 여기 두지 않는다.
+//  줄 : lineStore(발주 줄 한 곳 저장소)에 place = 'ship', shipOutId = 출고번호로 들어 있다.
 //
-// 클라우드(Firestore)에 두어 다른 컴퓨터에서도 같은 목록을 본다. 이 기기의 localStorage에도
-// 같이 남겨서 화면이 뜨자마자 바로 보이고, Firebase 설정이 없어도 이 기기 안에서는 돌아간다.
-import { collection, deleteDoc, doc, getDocs, onSnapshot, setDoc } from 'firebase/firestore';
+// 화면에는 예전처럼 "출고 건 + 줄 목록"을 통째로 준다. 저장할 때는 전과 후를 비교해서 바뀐 머리 정보와
+// 바뀐 줄만 적는다. 줄을 발주확인·예약에서 데려오거나 돌려보내는 일은 그 줄의 place 칸만 바꾼다.
+import { collection, deleteDoc, doc, onSnapshot, setDoc } from 'firebase/firestore';
 import { db, ensureSignedIn } from '../../../utils/firebase';
 import type { OrderRow } from '../types';
 import { dateKeyYMD, ymdSortKey } from '../utils/dateUtils';
 import { isBoxSplit, parseBoxSplit, boxLabel } from '../utils/dataProcessor';
 import { allBoxes } from '../../../data/shipmentStore';
 import type { ShipmentBatch } from '../../../data/shipmentStore';
-import { SHIPOUT_KEY, readWork, writeWork, workLineKey as lineKey, stableStringify } from './orderWorkCloud';
+import { readWork, writeWork, workLineKey as lineKey, stableStringify } from './orderWorkCloud';
+import {
+  Line, LineFields, linesAt, commit, pickLine, newLine, moved, patched, trashed, fieldsOf, subscribeLines, whenReady, startLines,
+} from './lineStore';
 
-const KEY = SHIPOUT_KEY;
 const COLLECTION = 'coupangShipOuts';
-// 이 기기에 있던 출고를 클라우드 것과 한 번 합쳤는지. 합치기는 기기마다 딱 한 번만 한다.
-const MERGED_KEY = 'coupangShipOuts.merged';
+const META_LOCAL = 'coupangShipOuts.meta';
 
 export interface ShipOutLine {
   발주번호: string;
@@ -68,127 +70,198 @@ const sortList = (list: ShipOut[]) =>
 // Firestore는 값이 undefined인 칸을 받지 않는다(완료를 풀 때 doneAt을 지우는 식으로 쓴다).
 const clean = <T extends object>(o: T): T =>
   Object.fromEntries(Object.entries(o).filter(([, v]) => v !== undefined)) as T;
-const cleanShipOut = (s: ShipOut): ShipOut => ({ ...clean(s), lines: s.lines.map(l => clean(l)) });
 
-function read(): ShipOut[] {
+// ── 머리 정보(출고 건) ──
+type Meta = Omit<ShipOut, 'lines'>;
+const metaOf = (item: ShipOut): Meta => {
+  const { lines, ...rest } = item as ShipOut & { lines?: unknown };
+  void lines;
+  return clean(rest);
+};
+const metas = new Map<string, Meta>();
+(() => {
   try {
-    const list = JSON.parse(localStorage.getItem(KEY) || '[]');
-    return Array.isArray(list) ? list : [];
-  } catch {
-    return [];
-  }
-}
-
-function writeLocal(list: ShipOut[]) {
-  try {
-    localStorage.setItem(KEY, JSON.stringify(list));
+    const list = JSON.parse(localStorage.getItem(META_LOCAL) || '[]');
+    if (Array.isArray(list)) list.forEach((m: Meta) => { if (m && m.id) metas.set(m.id, m); });
   } catch {}
-  // 같은 창의 다른 화면(쿠팡발주확인)에도 바로 알린다. 다른 탭은 storage 이벤트가 알려준다.
-  window.dispatchEvent(new CustomEvent('coupang-shipouts-changed'));
-}
+})();
+const CHANGED = 'coupang-shipouts-changed';
+const notify = () => window.dispatchEvent(new CustomEvent(CHANGED));
+const saveMetasLocal = () => {
+  try { localStorage.setItem(META_LOCAL, JSON.stringify(Array.from(metas.values()))); } catch {}
+};
 
-// 마지막으로 클라우드에 올린 모양(출고번호 → 내용). 바뀐 건만 올리고, 없어진 건만 지우려고 둔다.
-let lastPushed = new Map<string, string>();
-// 클라우드에서 첫 소식을 받기 전에는 올리지 않는다. 그 전에 올리면 다른 기기에서 해 둔 작업을
-// 이 기기의 묵은 목록으로 덮어쓸 수 있다.
-let ready = !db;
-let pending = false;
+let metaStarted = false;
+const startMeta = () => {
+  if (metaStarted || !db) return;
+  metaStarted = true;
+  const firestore = db;
+  ensureSignedIn().then(() => onSnapshot(collection(firestore, COLLECTION), snap => {
+    metas.clear();
+    // 예전 문서에 남아 있는 lines 칸은 보지 않는다(줄은 lineStore에 있다).
+    snap.docs.forEach(d => metas.set(d.id, metaOf({ ...(d.data() as ShipOut), id: d.id })));
+    saveMetasLocal();
+    notify();
+  }, err => console.error('출고 목록 동기화 실패:', err)));
+};
 
-const syncToCloud = (list: ShipOut[]) => {
+const putMeta = (m: Meta) => {
+  metas.set(m.id, m);
   if (!db) return;
   const firestore = db;
-  const next = new Map(list.map(s => [s.id, stableStringify(cleanShipOut(s))]));
-  const changed = [...next].filter(([id, json]) => lastPushed.get(id) !== json);
-  const gone = [...lastPushed.keys()].filter(id => !next.has(id));
-  lastPushed = next;
-  if (!changed.length && !gone.length) return;
-  (async () => {
-    await ensureSignedIn();
-    await Promise.all([
-      ...changed.map(([id, json]) => setDoc(doc(firestore, COLLECTION, id), JSON.parse(json))),
-      ...gone.map(id => deleteDoc(doc(firestore, COLLECTION, id))),
-    ]);
-  })().catch(err => console.error('출고 목록 올리기 실패:', err));
+  ensureSignedIn().then(() => setDoc(doc(firestore, COLLECTION, m.id), clean(m)))
+    .catch(err => console.error('출고 건 저장 실패:', err));
+};
+const dropMeta = (id: string) => {
+  metas.delete(id);
+  if (!db) return;
+  const firestore = db;
+  ensureSignedIn().then(() => deleteDoc(doc(firestore, COLLECTION, id)))
+    .catch(err => console.error('출고 건 지우기 실패:', err));
 };
 
-function write(list: ShipOut[]) {
-  const sorted = sortList([...list]);
-  writeLocal(sorted);
-  if (ready) syncToCloud(sorted);
-  else pending = true;
+// ── 읽기 ──
+const toShipLine = (l: Line): ShipOutLine => ({
+  발주번호: l.발주번호,
+  물류센터: l.물류센터,
+  상품이름: l.상품이름,
+  확정수량: l.확정수량,
+  입고예정일: l.입고예정일,
+  메모: l.메모 || '',
+  쉼먼트: l.쉼먼트 || '',
+  묶음: l.묶음 || '',
+  SKU: l.SKU || '',
+});
+const lineOrder = (a: Line, b: Line) =>
+  ymdSortKey(a.입고예정일) - ymdSortKey(b.입고예정일)
+  || a.물류센터.localeCompare(b.물류센터, 'ko', { numeric: true })
+  || a.발주번호.localeCompare(b.발주번호, 'ko', { numeric: true })
+  || a.상품이름.localeCompare(b.상품이름, 'ko', { numeric: true })
+  || a.id.localeCompare(b.id);
+
+function read(): ShipOut[] {
+  const byShip = new Map<string, Line[]>();
+  linesAt('ship').forEach(l => {
+    const id = l.shipOutId || '';
+    byShip.set(id, [...(byShip.get(id) || []), l]);
+  });
+  const list: ShipOut[] = [];
+  metas.forEach((m, id) => {
+    const lines = byShip.get(id);
+    if (lines && lines.length) list.push({ ...m, lines: lines.sort(lineOrder).map(toShipLine) });
+  });
+  // 출고 건 정보가 없는 줄(머리 정보가 지워진 줄)도 안 보이면 안 되므로 임시 건으로 보여준다.
+  byShip.forEach((lines, id) => {
+    if (metas.has(id)) return;
+    const first = lines[0];
+    list.push({
+      id: id || `S-${first.발주번호}`, bundle: `${id || '번호 없는 출고'}`, center: first.물류센터, date: first.입고예정일,
+      createdAt: 0, lines: lines.sort(lineOrder).map(toShipLine),
+    });
+  });
+  return sortList(list);
 }
 
-// 클라우드 구독은 화면이 몇 개든 하나만 걸어 둔다.
-let watchers = 0;
-let started = false;
-let unwatch: (() => void) | undefined;
-let cancelled = false;
-
-const startSync = (): (() => void) => {
-  watchers++;
-  if (!started && db) {
-    started = true;
-    const firestore = db;
-    cancelled = false;
-    (async () => {
-      await ensureSignedIn();
-      if (cancelled) return;
-      let first = true;
-      unwatch = onSnapshot(
-        collection(firestore, COLLECTION),
-        // 이 기기 캐시에서 온 묵은 소식은 거르고 서버 소식으로 맞춘다(orderWorkCloud와 같은 까닭).
-        { includeMetadataChanges: true },
-        snap => {
-          if (first && snap.metadata.fromCache) return;
-          if (snap.metadata.fromCache && !snap.metadata.hasPendingWrites) return;
-          const server = sortList(snap.docs.map(d => d.data() as ShipOut));
-          if (first) {
-            first = false;
-            ready = true;
-            // 처음 한 번은 이 기기에만 있던 출고를 잃지 않게 합친다. 그 뒤로는 클라우드가 늘 옳다
-            // (다른 기기에서 지운 출고가 되살아나지 않게).
-            const have = new Set(server.map(s => s.id));
-            const mine = localStorage.getItem(MERGED_KEY) === '1' ? [] : read().filter(s => !have.has(s.id));
-            try {
-              localStorage.setItem(MERGED_KEY, '1');
-            } catch {}
-            const merged = sortList([...server, ...mine]);
-            lastPushed = new Map(server.map(s => [s.id, stableStringify(cleanShipOut(s))]));
-            writeLocal(merged);
-            if (mine.length || pending) syncToCloud(merged);
-            pending = false;
-            return;
-          }
-          lastPushed = new Map(server.map(s => [s.id, stableStringify(cleanShipOut(s))]));
-          // 내가 올린 것이 그대로 되돌아온 것이면 화면을 다시 그리지 않는다.
-          if (stableStringify(server) === stableStringify(read())) return;
-          writeLocal(server);
-        },
-        error => {
-          // 못 받아와도 이 기기에 있는 목록으로 계속 일할 수 있게 열어 둔다.
-          ready = true;
-          console.error('출고 목록 동기화 실패(이 기기에 저장된 것을 씁니다):', error);
-        }
-      );
-    })();
+// ── 쓰기 ──
+// 전(before)과 후(after)를 비교해 바뀐 것만 적는다. 줄은 열쇠(발주번호·상품·수량)와 출고번호로 짝을 맞춘다:
+//  · 같은 출고 건에 그대로 있는 줄은 화면이 고친 칸만.
+//  · 다른 출고 건으로 간 줄은 출고번호만 바꾼다.
+//  · 새로 들어온 줄은 발주확인 → 휴지통 → 예약 순으로 찾아 데려오고, 없으면 새 줄.
+//  · 출고 건에서 빠진 줄은 휴지통으로(되돌리기면 곧 발주확인으로 다시 들어간다).
+export function applyShipOuts(before: ShipOut[], after: ShipOut[]) {
+  // 머리 정보
+  const afterIds = new Set(after.map(i => i.id));
+  for (const item of after) {
+    const m = metaOf(item);
+    const was = metas.get(item.id);
+    if (!was || stableStringify(was) !== stableStringify(m)) putMeta(m);
   }
-  // 보는 화면이 없어져도 클라우드 연결은 끊지 않는다. 끊었다 다시 이으면 첫 소식(아직 방금 고친 게 안 올라간
-  // 클라우드 목록)으로 이 기기 목록을 덮어써서, 방금 한 일이 사라졌다(쉽먼트생성대기 → 발주확인으로 되돌린 줄이 없어짐).
-  return () => {
-    watchers--;
+  for (const item of before) if (!afterIds.has(item.id) && metas.has(item.id)) dropMeta(item.id);
+
+  // 줄
+  type Entry = { ship: string; f: LineFields };
+  const group = (list: ShipOut[]) => {
+    const m = new Map<string, Entry[]>();
+    for (const item of list) for (const l of item.lines) {
+      const f = fieldsOf(l as unknown as Record<string, unknown>);
+      const k = lineKey(f);
+      m.set(k, [...(m.get(k) || []), { ship: item.id, f }]);
+    }
+    return m;
   };
-};
+  const B = group(before);
+  const A = group(after);
+  const taken = new Set<string>();
+  const out: Line[] = [];
+  for (const k of new Set([...B.keys(), ...A.keys()])) {
+    const bs = B.get(k) || [];
+    const as = A.get(k) || [];
+    const here = linesAt('ship').filter(l => lineKey(l) === k).sort((x, y) => x.id.localeCompare(y.id));
+    const leftB = [...bs];
+    const unmatchedA: Entry[] = [];
+    // 1) 같은 출고 건에 있는 줄끼리 짝
+    for (const e of as) {
+      const l = here.find(x => !taken.has(x.id) && (x.shipOutId || '') === e.ship);
+      if (!l) { unmatchedA.push(e); continue; }
+      taken.add(l.id);
+      const bi = leftB.findIndex(x => x.ship === e.ship);
+      const was = bi >= 0 ? leftB.splice(bi, 1)[0].f : null;
+      const p = was ? patched(l, was, e.f) : { ...l, ...e.f };
+      if (p) out.push(p);
+    }
+    // 2) 화면에서 빠진 줄(전에는 있었는데 후에는 짝이 없는 줄)
+    const gone = here.filter(x => !taken.has(x.id) && leftB.some(e => e.ship === (x.shipOutId || '')));
+    // 3) 새로 들어온 줄: 빠진 줄(다른 출고 건에서 옮겨 온 것) → 발주확인 → 휴지통 → 예약 순으로 데려온다.
+    for (const e of unmatchedA) {
+      const from = gone.shift();
+      if (from) {
+        taken.add(from.id);
+        const bi = leftB.findIndex(x => x.ship === (from.shipOutId || ''));
+        if (bi >= 0) leftB.splice(bi, 1);
+        out.push({ ...from, ...e.f, shipOutId: e.ship });
+        continue;
+      }
+      const pick = pickLine(k, ['work', 'trash', 'reserve'], taken);
+      const l = pick ? moved(pick, 'ship', e.f, { shipOutId: e.ship }) : newLine(e.f, 'ship', taken, { shipOutId: e.ship });
+      taken.add(l.id);
+      out.push(l);
+    }
+    // 4) 남은 빠진 줄은 휴지통으로(전에 있던 개수만큼만. 그사이 다른 컴퓨터가 넣은 줄은 건드리지 않는다).
+    for (const e of leftB) {
+      const l = here.find(x => !taken.has(x.id) && (x.shipOutId || '') === e.ship);
+      if (!l) continue;
+      taken.add(l.id);
+      out.push(trashed(l));
+    }
+  }
+  commit(out);
+  notify();
+}
+
+function write(list: ShipOut[]) {
+  // 기준은 부른 순간의 목록(화면은 read()로 읽자마자 고쳐서 부른다).
+  const before = read();
+  const after = sortList([...list]);
+  whenReady(() => applyShipOuts(before, after));
+}
 
 // 목록이 바뀔 때마다 알려준다. 돌려주는 함수를 부르면 그만 듣는다.
 export function subscribeShipOuts(cb: (list: ShipOut[]) => void): () => void {
-  const send = () => cb(read());
+  startLines();
+  startMeta();
+  let last = '';
+  const send = () => {
+    const list = read();
+    const stamp = stableStringify(list);
+    if (stamp === last) return;
+    last = stamp;
+    cb(list);
+  };
   send();
-  window.addEventListener('coupang-shipouts-changed', send);
-  window.addEventListener('storage', send);
-  const stop = startSync();
+  window.addEventListener(CHANGED, send);
+  const stop = subscribeLines(send);
   return () => {
-    window.removeEventListener('coupang-shipouts-changed', send);
-    window.removeEventListener('storage', send);
+    window.removeEventListener(CHANGED, send);
     stop();
   };
 }
@@ -479,23 +552,9 @@ export function restoreShipOutsOnly(json: string) {
 export const sameSnapshot = (a: ShipSnapshot, b: ShipSnapshot) =>
   a.shipOuts === b.shipOuts && a.work === b.work;
 
-// 이 기기의 출고 목록을 클라우드에 그대로 덮어쓴다(클라우드에만 있는 출고는 지운다). 컴퓨터끼리
-// 어긋났을 때 이 컴퓨터 것으로 맞추는 데 쓴다. 다 올라가야 끝난다.
-export async function forceUploadShipOuts() {
-  if (!db) throw new Error('이 컴퓨터는 클라우드에 연결돼 있지 않아요(.env.local의 Firebase 설정이 없음).');
-  const firestore = db;
-  await ensureSignedIn();
-  const list = read();
-  const mine = new Set(list.map(s => s.id));
-  const server = await getDocs(collection(firestore, COLLECTION));
-  lastPushed = new Map(list.map(s => [s.id, stableStringify(cleanShipOut(s))]));
-  ready = true;
-  pending = false;
-  await Promise.all([
-    ...list.map(s => setDoc(doc(firestore, COLLECTION, s.id), cleanShipOut(s))),
-    ...server.docs.filter(d => !mine.has(d.id)).map(d => deleteDoc(d.ref)),
-  ]);
-}
+// 예전에는 컴퓨터끼리 출고 목록이 어긋났을 때 이 컴퓨터 것으로 덮어썼다. 이제 줄마다 따로 저장되어 어긋나지 않으므로
+// 할 일이 없다.
+export async function forceUploadShipOuts() {}
 
 // 클라우드 구독·올리기 상태를 모듈에 들고 있어서, 개발 중 이 파일만 바뀌면 옛것과 새것 두 벌이 같이 돌며
 // 목록을 번갈아 덮어쓴다(지운 줄이 사라졌다 생겼다 함). 바뀌면 페이지를 통째로 새로 불러오게 한다.

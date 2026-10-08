@@ -21,10 +21,9 @@ import { addShipOut, allShipOutLines, shipOutLineKeys, subscribeShipOuts, snapsh
 import { loadWork, saveWork, subscribeWork, newOrderNos } from './data/orderWorkStore';
 import { useReady } from './data/readyStore';
 import { HanjungQueueItem, subscribeHanjungQueue, addToHanjungQueue, removeFromHanjungQueue, hanjungQueueKey } from './data/hanjungQueueStore';
-import { forceUploadWork } from './data/orderWorkCloud';
 import { forgetLines, forgetDropped, allPlacedLines } from './data/orderGuard';
-import { forceUploadShipOuts } from './data/shipOutStore';
-import { isFirebaseConfigured, waitAtMost } from '../../utils/firebase';
+import { isLinesReady } from './data/lineStore';
+import { isFirebaseConfigured } from '../../utils/firebase';
 
 // 화면 한 줄 → 원래 발주 한 건(줄였던 발주번호·물류센터·날짜를 되살림).
 const toOrderRow = (r: DisplayRow): OrderRow => ({
@@ -67,6 +66,13 @@ export default function CoupangOrderPage({ onGoShipOut }: { onGoShipOut?: () => 
   const isMobile = useIsMobile();
   const [initialWork] = useState(loadWork);
   const [leftRows, setLeftRows] = useState<DisplayRow[]>(initialWork.rows);
+  // 이 화면이 마지막으로 저장소에서 받은(또는 저장한) 목록. 저장할 때 이것과 비교해 이 화면에서 바꾼 줄만 적는다.
+  // 그래야 그사이 다른 컴퓨터·다른 화면이 넣거나 옮긴 줄을 이 화면의 묵은 목록으로 건드리지 않는다.
+  const baseRef = React.useRef<DisplayRow[]>(initialWork.rows);
+  const save = (rows: DisplayRow[], name: string, done: string[], nos: string[] = []) => {
+    saveWork(rows, name, done, nos, baseRef.current);
+    baseRef.current = rows;
+  };
   const [reservations, setReservations] = useState<OrderRow[]>([]);
   const rightRows = useMemo(() => buildDisplayRows(reservations), [reservations]);
   const [loading, setLoading] = useState(false);
@@ -206,11 +212,12 @@ export default function CoupangOrderPage({ onGoShipOut }: { onGoShipOut?: () => 
   useEffect(() => subscribeHanjung(setHanjungOrders), []);
   // 택배주소는 묶음 카드에서 센터를 고를 때 쓴다(보내는사람·주소 관리는 쉽먼트생성 화면에 있다).
   useEffect(() => subscribeShippingSettings(({ addresses }) => setAddresses(addresses)), []);
-  useEffect(() => saveWork(leftRows, fileName, Array.from(doneBundles)), [leftRows, fileName, doneBundles]);
+  useEffect(() => save(leftRows, fileName, Array.from(doneBundles)), [leftRows, fileName, doneBundles]);
   // 작업 목록은 클라우드에 있어서 다른 컴퓨터에서 고친 것도 바로 내려온다(쉽먼트생성에서 줄을
   // 되돌려 보낼 때도 이 길로 들어온다).
   useEffect(() => subscribeWork(() => {
     const w = loadWork();
+    baseRef.current = w.rows;
     setLeftRows(w.rows);
     setFileName(w.fileName);
     setDoneBundles(new Set(w.done));
@@ -229,6 +236,11 @@ export default function CoupangOrderPage({ onGoShipOut }: { onGoShipOut?: () => 
   // 발주서를 올리면 지금 목록을 지우지 않고 아래쪽에 이어 붙인다(출고할 때까지 계속 봐야 하므로).
   // 이미 있는 줄(발주번호·상품·수량·입고예정일이 같은 줄)과 예약으로 넘긴 줄은 건너뛴다.
   const handleFile = useCallback(async (file: File) => {
+    // 클라우드와 맞추기 전에 받으면 묵은 목록으로 "이미 있는 줄"을 세게 된다.
+    if (!isLinesReady()) {
+      setError('아직 클라우드에서 발주 목록을 받는 중이에요. 잠시 뒤 다시 올려 주세요.');
+      return;
+    }
     setLoading(true);
     setError('');
     setNotice('');
@@ -245,7 +257,7 @@ export default function CoupangOrderPage({ onGoShipOut }: { onGoShipOut?: () => 
         const next = buildDisplayRows([...existing, ...fresh]);
         setLeftRows(next);
         // 새 발주번호를 NEW로 적어 두려고 바로 저장한다.
-        saveWork(next, file.name, Array.from(nowRef.current.doneBundles), fresh.map(r => r.발주번호));
+        save(next, file.name, Array.from(nowRef.current.doneBundles), fresh.map(r => r.발주번호));
         setFileName(file.name);
         const skipped = rows.length - fresh.length;
         setNotice(fresh.length
@@ -453,7 +465,7 @@ export default function CoupangOrderPage({ onGoShipOut }: { onGoShipOut?: () => 
     setDoneBundles(new Set(done));
     // 바로 다음 줄에서 출고 화면으로 넘어가며 이 화면이 닫히므로, 저장을 미루지 않고 여기서 해 둔다.
     // (저장을 effect에 맡기면 화면이 닫히면서 빠진 줄이 다시 살아난다.)
-    saveWork(rest, fileName, done);
+    save(rest, fileName, done);
     if (resMine.length) deleteReservations(resMine.map(toOrderRow)).catch(alertError);
     setNotice(`${item.id} · ${bundle}(발주 ${orders.size}건)을 쉽먼트생성으로 보냈어요`);
     onGoShipOut?.();
@@ -496,7 +508,7 @@ export default function CoupangOrderPage({ onGoShipOut }: { onGoShipOut?: () => 
     setLeftRows(rest);
     setSelected(new Set());
     // 바로 쉽먼트생성 화면으로 넘어가며 이 화면이 닫히므로 여기서 저장해 둔다(handleShipOut과 같은 까닭).
-    saveWork(rest, fileName, Array.from(doneBundles));
+    save(rest, fileName, Array.from(doneBundles));
     setNotice(`${made.join(', ')} · 발주 ${count}건을 쉽먼트생성으로 보냈어요`);
     onGoShipOut?.();
   }, [leftRows, selected, doneBundles, fileName, onGoShipOut]);
@@ -641,23 +653,6 @@ export default function CoupangOrderPage({ onGoShipOut }: { onGoShipOut?: () => 
     deleteReservations(reservations).catch(alertError);
   }, [leftRows, reservations]);
 
-  // 컴퓨터끼리 목록이 어긋났을 때: 이 컴퓨터의 발송 목록·출고를 클라우드에 그대로 올려 다른 컴퓨터도 같게 만든다.
-  const [pushing, setPushing] = useState(false);
-  const handleForceUpload = useCallback(async () => {
-    if (!confirm('이 컴퓨터의 발송 목록과 쉽먼트생성 출고를 클라우드에 그대로 올릴까요?\n다른 컴퓨터도 이 컴퓨터와 똑같이 바뀌어요(다른 컴퓨터에만 있던 내용은 사라져요).')) return;
-    setPushing(true);
-    try {
-      saveWork(leftRows, fileName, Array.from(doneBundles));
-      const done = await waitAtMost(Promise.all([forceUploadWork(), forceUploadShipOuts()]).then(() => true));
-      setNotice(done
-        ? '이 컴퓨터 목록을 클라우드에 올렸어요. 다른 컴퓨터에도 곧 똑같이 떠요.'
-        : '인터넷이 느려 아직 올라가는 중이에요. 연결되면 저절로 마저 올라가요.');
-    } catch (err) {
-      alert(`올리기 실패: ${err instanceof Error ? err.message : String(err)}`);
-    } finally {
-      setPushing(false);
-    }
-  }, [leftRows, fileName, doneBundles]);
 
   // 툴바의 "+ 발주서 추가"용 파일 고르기(첫 업로드 화면과 같은 길로 들어간다).
   const pickOrderFile = () => {
@@ -962,16 +957,10 @@ export default function CoupangOrderPage({ onGoShipOut }: { onGoShipOut?: () => 
                       전체 비우기
                     </button>
                   )}
-                  <button
-                    onClick={handleForceUpload}
-                    disabled={pushing || !isFirebaseConfigured}
-                    title={isFirebaseConfigured
-                      ? '다른 컴퓨터와 목록이 다를 때, 이 컴퓨터 것으로 모두 맞춥니다'
-                      : '이 컴퓨터는 클라우드에 연결돼 있지 않아 다른 컴퓨터와 같이 볼 수 없어요'}
-                    style={btnStyle('#fff', isFirebaseConfigured ? '#bcd7f5' : '#f5c6c6', isFirebaseConfigured ? '#2563eb' : '#c0392b')}
-                  >
-                    {!isFirebaseConfigured ? '⚠ 클라우드 연결 안 됨' : pushing ? '올리는 중…' : '☁ 이 컴퓨터 것으로 맞추기'}
-                  </button>
+                  {/* 줄마다 따로 저장되어 컴퓨터끼리 목록이 어긋나지 않으므로 "이 컴퓨터 것으로 맞추기"는 뺐다. 연결 상태만 알린다. */}
+                  {!isFirebaseConfigured && (
+                    <span style={{ fontSize: 12, color: '#c0392b' }} title="이 컴퓨터는 클라우드에 연결돼 있지 않아 다른 컴퓨터와 같이 볼 수 없어요">⚠ 클라우드 연결 안 됨</span>
+                  )}
                   <span style={{ fontSize: 11, color: '#ccc' }}>
                     발송 {leftItemCount}건 / 묶음 {bundleCount}개(발주 {bundledOrderCount}건) / 예약 {rightItemCount}건
                   </span>

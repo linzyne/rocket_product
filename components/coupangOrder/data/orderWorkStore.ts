@@ -9,6 +9,7 @@ import type { OrderRow } from '../types';
 import { dateKeyYMD, normalizeDateValue } from '../utils/dateUtils';
 import { allShipOutLines } from './shipOutStore';
 import { readWork, writeWork, workLineKey } from './orderWorkCloud';
+import { linesReady, linesAt } from './lineStore';
 
 export { subscribeWork } from './orderWorkCloud';
 
@@ -31,12 +32,13 @@ export const NEW_FOR_MS = 24 * 60 * 60 * 1000;
 
 // newOrderNos: 이번에 새로 들어온 발주번호. 처음 들어온 시각을 적어 두고 24시간 동안 NEW로 보여준다.
 // 24시간이 지난 기록은 저장할 때 걷어낸다.
-export function saveWork(rows: DisplayRow[], fileName: string, done: string[], newOrderNos: string[] = []) {
-  const plain = extractOrderRows(rows).map(r => ({ ...r, 입고예정일: dateKeyYMD(r.입고예정일).replace(/-/g, '') }));
+// base: 화면이 고치기 전에 본 목록(loadWork로 받은 것). 이것과 비교해 바뀐 줄만 저장한다.
+export function saveWork(rows: DisplayRow[], fileName: string, done: string[], newOrderNos: string[] = [], base?: DisplayRow[]) {
+  const plain = (list: DisplayRow[]) => extractOrderRows(list).map(r => ({ ...r, 입고예정일: dateKeyYMD(r.입고예정일).replace(/-/g, '') }));
   const now = Date.now();
   const seen = Object.fromEntries(Object.entries(readWork().seen).filter(([, t]) => now - t < NEW_FOR_MS));
   newOrderNos.forEach(no => { if (no && !seen[no]) seen[no] = now; });
-  writeWork({ rows: plain, fileName, done, seen });
+  writeWork({ rows: plain(rows), fileName, done, seen }, base ? plain(base) : undefined);
 }
 
 // 지금 NEW로 보여줄 발주번호들(들어온 지 24시간이 안 된 것).
@@ -50,11 +52,14 @@ export function newOrderNos(): Set<string> {
 export async function appendOrderFile(file: File, reservations: OrderRow[]): Promise<{ added: number; skipped: number }> {
   const rows = await parseFile(file);
   if (!rows.length) throw new Error('데이터를 찾을 수 없습니다. 헤더가 올바른지 확인해주세요.');
+  // 클라우드와 맞춘 뒤에 센다(앱을 켜자마자 받으면 묵은 목록으로 세어 이미 넘어간 줄을 새 줄로 볼 수 있다).
+  await linesReady();
+  reservations = linesAt('reserve') as unknown as OrderRow[];
   const work = loadWork();
   const existing = extractOrderRows(work.rows);
   // 발송 목록·예약·쉽먼트(발송 완료 포함)에 이미 있는 줄은 발주번호 + 상품이름의 개수로 맞춰 거른다
   // (날짜·센터·수량은 앱과 서허에서 따로 바뀔 수 있어 보지 않는다).
   const fresh = pickNewByCount(sortOrderRows(rows), [...existing, ...reservations, ...allShipOutLines()]);
-  saveWork(buildDisplayRows([...existing, ...fresh]), file.name, work.done, fresh.map(r => r.발주번호));
+  saveWork(buildDisplayRows([...existing, ...fresh]), file.name, work.done, fresh.map(r => r.발주번호), work.rows);
   return { added: fresh.length, skipped: rows.length - fresh.length };
 }

@@ -179,7 +179,7 @@ export default function CoupangFlowPage({ onNavigate }: { onNavigate: (menu: App
   return (
     <div style={{ minHeight: '100vh', background: '#fff', color: '#1a1a1a', fontFamily: "'Apple SD Gothic Neo', 'Malgun Gothic', 'Noto Sans KR', sans-serif" }}>
       <header style={{ background: '#fff', borderBottom: '1px solid #f0f0f0', position: 'sticky', top: 0, zIndex: 10 }}>
-        <div style={{ maxWidth: 1200, margin: '0 auto', padding: '8px clamp(12px, 4vw, 24px)', boxSizing: 'border-box', display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '6px 12px' }}>
+        <div style={{ maxWidth: 860, margin: '0 auto', padding: '8px clamp(12px, 4vw, 24px)', boxSizing: 'border-box', display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '6px 12px' }}>
           <h1 style={{ fontSize: 17, fontWeight: 800, margin: 0 }}>발주 진행</h1>
           <span style={{ fontSize: 12, color: '#888' }}>발주서마다 지금 단계와 다음 할 일</span>
           <input
@@ -189,7 +189,7 @@ export default function CoupangFlowPage({ onNavigate }: { onNavigate: (menu: App
             style={{ marginLeft: 'auto', padding: '6px 10px', fontSize: 13, border: '1px solid #e0e0e0', borderRadius: 8, minWidth: 180 }}
           />
         </div>
-        <div style={{ maxWidth: 1200, margin: '0 auto', padding: '0 clamp(12px, 4vw, 24px) 8px', display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+        <div style={{ maxWidth: 860, margin: '0 auto', padding: '0 clamp(12px, 4vw, 24px) 8px', display: 'flex', gap: 6, flexWrap: 'wrap' }}>
           {tabs.map(t => (
             <button
               key={String(t.id)}
@@ -206,7 +206,7 @@ export default function CoupangFlowPage({ onNavigate }: { onNavigate: (menu: App
         </div>
       </header>
 
-      <main style={{ maxWidth: 1200, margin: '0 auto', padding: '14px clamp(10px, 4vw, 24px) 70px' }}>
+      <main style={{ maxWidth: 860, margin: '0 auto', padding: '14px clamp(10px, 4vw, 24px) 70px' }}>
         {tab === 0 && shown.length > 1 && (
           <div style={{ marginBottom: 10, fontSize: 12, color: '#666', display: 'flex', alignItems: 'center', gap: 8 }}>
             서허에 한꺼번에 확정했으면
@@ -228,51 +228,55 @@ export default function CoupangFlowPage({ onNavigate }: { onNavigate: (menu: App
             const qty = o.lines.reduce((s, l) => s + (Number(l.확정수량) || 0), 0);
             const shipNo = o.item?.shipmentNos?.[o.no];
             return (
-              <div key={o.no} style={{ border: `1px solid ${r?.state === 'error' ? '#fecaca' : '#eee'}`, borderRadius: 10, background: '#fff', boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}>
-                <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '8px 14px', padding: '10px 12px' }}>
-                  <div style={{ minWidth: 190 }}>
+              <div key={o.no} style={{
+                display: 'flex', flexWrap: 'wrap', border: `1px solid ${r?.state === 'error' ? '#fecaca' : '#eee'}`,
+                borderRadius: 10, background: '#fff', boxShadow: '0 1px 3px rgba(0,0,0,0.04)', overflow: 'hidden',
+              }}>
+                {/* 왼쪽: 발주서 정보 · 단계 · 버튼을 위아래로 모은다(옆으로 길게 늘이지 않는다). */}
+                <div style={{ flex: '0 0 240px', maxWidth: '100%', boxSizing: 'border-box', padding: '10px 12px', background: '#fafafa', borderRight: '1px solid #f0f0f0', display: 'flex', flexDirection: 'column', gap: 7 }}>
+                  <div>
                     <div style={{ fontSize: 14, fontWeight: 800, color: '#222' }}>{o.no}</div>
-                    <div style={{ fontSize: 12, color: '#777', marginTop: 2 }}>
-                      {o.center || '센터 없음'} · 입고 {dayText(o.date)} · {o.lines.length}종 {qty}개
-                    </div>
+                    <div style={{ fontSize: 12, color: '#777', marginTop: 2 }}>{o.center || '센터 없음'} · 입고 {dayText(o.date)}</div>
                   </div>
-
                   <Stepper stage={o.stage} error={r?.state === 'error'} />
-
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', marginLeft: 'auto' }}>
-                    {o.bundle && o.stage === 1 && <Tag color="#6b7280">{o.bundle}</Tag>}
-                    {o.hold && o.stage === 1 && <Tag color="#7c3aed">{o.hold}</Tag>}
-                    {shipNo && <Tag color="#2563eb">쉽먼트 {shipNo}</Tag>}
-                    {o.partial && <Tag color={RED}>일부만 넘어감</Tag>}
-                    {action(o)}
-                  </div>
+                  {(o.bundle && o.stage === 1) || (o.hold && o.stage === 1) || shipNo || o.partial ? (
+                    <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+                      {o.bundle && o.stage === 1 && <Tag color="#6b7280">{o.bundle}</Tag>}
+                      {o.hold && o.stage === 1 && <Tag color="#7c3aed">{o.hold}</Tag>}
+                      {shipNo && <Tag color="#2563eb">쉽먼트 {shipNo}</Tag>}
+                      {o.partial && <Tag color={RED}>일부만 넘어감</Tag>}
+                    </div>
+                  ) : null}
+                  {r && r.state !== 'done' && (
+                    <div style={{
+                      padding: '5px 8px', borderRadius: 6, fontSize: 11.5, lineHeight: 1.45,
+                      background: r.state === 'error' ? '#fef2f2' : '#eff6ff', color: r.state === 'error' ? '#b91c1c' : '#1d4ed8',
+                    }}>
+                      <b>{r.state === 'error' ? `⛔ ${STEP_LABEL[r.step]}에서 멈춤` : `⏳ ${STEP_LABEL[r.step]} 하는 중`}</b> · {r.message}
+                    </div>
+                  )}
+                  <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>{action(o)}</div>
+                  {o.confirmed && o.stage <= 1 && !o.bundle && (
+                    <button onClick={() => confirm1([o.no], false)} style={{ alignSelf: 'flex-start', padding: 0, border: 'none', background: 'transparent', color: '#999', fontSize: 11, cursor: 'pointer', textDecoration: 'underline' }}>
+                      확정 표시 취소
+                    </button>
+                  )}
                 </div>
 
-                {r && r.state !== 'done' && (
-                  <div style={{
-                    margin: '0 12px 10px', padding: '6px 10px', borderRadius: 6, fontSize: 12, lineHeight: 1.5,
-                    background: r.state === 'error' ? '#fef2f2' : '#eff6ff', color: r.state === 'error' ? '#b91c1c' : '#1d4ed8',
-                  }}>
-                    <b>{r.state === 'error' ? `⛔ ${STEP_LABEL[r.step]}에서 멈춤` : `⏳ ${STEP_LABEL[r.step]} 하는 중`}</b> · {r.message}
-                  </div>
-                )}
-
-                {/* 상품은 늘 보여준다. 다른 단계에 가 있는 줄만 어디 있는지 빨갛게 적는다. */}
-                <div style={{ borderTop: '1px solid #f4f4f4', padding: '6px 12px 8px', fontSize: 12.5 }}>
-                    {o.lines.map((l, i) => (
-                      <div key={i} style={{ display: 'flex', gap: 10, padding: '2px 0', alignItems: 'baseline', flexWrap: 'wrap' }}>
-                        <span style={{ flex: 1, minWidth: 160, color: '#333' }}>{l.상품이름}</span>
-                        <b style={{ minWidth: 40, textAlign: 'right' }}>{l.확정수량}개</b>
-                        {o.partial && (
-                          <span style={{ minWidth: 150, color: l.stage === o.stage ? '#888' : RED, fontSize: 11.5 }}>{STAGES[l.stage]} · {l.where}</span>
-                        )}
+                {/* 오른쪽: 상품. 다른 단계에 가 있는 줄은 어디 있는지 빨갛게 적는다. */}
+                <div style={{ flex: '1 1 220px', minWidth: 0, padding: '10px 12px', fontSize: 12.5 }}>
+                  <div style={{ fontSize: 11, color: '#999', marginBottom: 4 }}>상품 {o.lines.length}종 · {qty}개</div>
+                  {o.lines.map((l, i) => (
+                    <div key={i} style={{ padding: '3px 0', borderTop: i ? '1px dashed #f0f0f0' : 'none' }}>
+                      <div style={{ display: 'flex', gap: 8, alignItems: 'baseline' }}>
+                        <span style={{ flex: 1, minWidth: 0, color: '#333', wordBreak: 'keep-all' }}>{l.상품이름}</span>
+                        <b style={{ flexShrink: 0 }}>{l.확정수량}개</b>
                       </div>
-                    ))}
-                    {o.confirmed && o.stage <= 1 && !o.bundle && (
-                      <button onClick={() => confirm1([o.no], false)} style={{ marginTop: 6, border: 'none', background: 'transparent', color: '#999', fontSize: 11.5, cursor: 'pointer', textDecoration: 'underline' }}>
-                        확정 표시 취소
-                      </button>
-                    )}
+                      {o.partial && (
+                        <div style={{ color: l.stage === o.stage ? '#999' : RED, fontSize: 11 }}>{STAGES[l.stage]} · {l.where}</div>
+                      )}
+                    </div>
+                  ))}
                 </div>
               </div>
             );
@@ -287,21 +291,18 @@ export default function CoupangFlowPage({ onNavigate }: { onNavigate: (menu: App
 
 // 6단계 점 줄: 끝난 단계는 초록, 지금 단계는 주황(멈췄으면 빨강), 남은 단계는 회색.
 const Stepper: React.FC<{ stage: Stage; error?: boolean }> = ({ stage, error }) => (
-  <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', rowGap: 4 }}>
+  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 4 }}>
     {STAGES.map((label, i) => {
       const done = i < stage || stage === 5;
       const now = i === stage && stage !== 5;
       const color = done ? GREEN : now ? (error ? RED : ORANGE) : GRAY;
       return (
-        <React.Fragment key={label}>
-          {i > 0 && <span style={{ width: 14, height: 2, background: i <= stage ? GREEN : '#e5e5e5' }} />}
-          <span style={{
-            padding: '2px 8px', fontSize: 11.5, fontWeight: now ? 800 : 600, borderRadius: 999, whiteSpace: 'nowrap',
-            border: `1.5px solid ${color}`, background: now ? color : done ? '#f0fdf4' : '#fff', color: now ? '#fff' : color,
-          }}>
-            {done ? '✓ ' : ''}{label}
-          </span>
-        </React.Fragment>
+        <span key={label} style={{
+          padding: '2px 0', fontSize: 11, fontWeight: now ? 800 : 600, borderRadius: 999, whiteSpace: 'nowrap', textAlign: 'center',
+          border: `1.5px solid ${color}`, background: now ? color : done ? '#f0fdf4' : '#fff', color: now ? '#fff' : color,
+        }}>
+          {done ? '✓' : ''}{label}
+        </span>
       );
     })}
   </div>

@@ -412,3 +412,36 @@ export const inventoryOf = (o: HanjungOrder) =>
       return { code: o.code, name: p.상품이름, spare: p.spare, arrived, incoming: p.spare - arrived, unit, value: p.spare * unit };
     });
 
+
+// ---- 도착 안 한 것 정리 ----
+// 1688에서 일부만 오고 나머지는 다음 한중발주로 새로 주문할 때: 이 한중발주는 도착한 만큼으로 마무리한다.
+//  · 상품마다 주문 수량을 도착한 수량으로 줄인다(더 오지 않으니 오는 중인 여유도 없다).
+//  · 쿠팡 줄 배정이 도착한 수량보다 많으면, 그 넘는 만큼을 이 건에서 떼어 돌려준다(입고예정일이 늦은 줄부터 뗀다).
+//    돌려준 줄은 한중발주 대기로 보내면, 다음 한중발주를 대기에서 만들 때 그대로 따라간다.
+export interface ShortRelease { 상품이름: string; ordered: number; received: number; released: { line: HanjungLine; qty: number }[] }
+export const closeShortOrder = (order: HanjungOrder): { order: HanjungOrder; releases: ShortRelease[] } => {
+  const releases: ShortRelease[] = [];
+  let lines = [...order.lines];
+  let orderQty = { ...(order.orderQty || {}) };
+  for (const p of productSummary(order)) {
+    if (p.received >= p.ordered) continue;
+    const rel: ShortRelease = { 상품이름: p.상품이름, ordered: p.ordered, received: p.received, released: [] };
+    let over = Math.max(0, p.allocated - p.received);
+    const mine = lines
+      .filter(l => nameKey(l.상품이름) === nameKey(p.상품이름))
+      .sort((a, b) => String(b.입고예정일).localeCompare(String(a.입고예정일)));
+    for (const l of mine) {
+      if (over <= 0) break;
+      const alloc = lineAlloc(l);
+      const take = Math.min(alloc, over);
+      over -= take;
+      rel.released.push({ line: l, qty: take });
+      lines = take >= alloc
+        ? lines.filter(x => x !== l)
+        : lines.map(x => (x === l ? { ...x, 배정: alloc - take } : x));
+    }
+    orderQty = { ...orderQty, [orderQtyName(orderQty, p.상품이름)]: p.received };
+    releases.push(rel);
+  }
+  return { order: { ...order, lines, orderQty }, releases };
+};

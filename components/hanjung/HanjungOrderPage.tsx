@@ -3,7 +3,7 @@ import {
   HanjungOrder, HanjungLine, subscribeHanjung, deleteHanjungOrder, saveHanjungOrder, productSummary, orderTotals, productOrderQty, productUnitCost, lineAlloc, sameName, nameKey, ordersNeedingAliasRename,
 } from '../../data/hanjungStore';
 import { ReceiveRow, subscribeReceives, settlementOf, sign } from '../../data/receiveStore';
-import { nextHanjungCode } from '../../data/hanjungStore';
+import { nextHanjungCode, closeShortOrder } from '../../data/hanjungStore';
 import { subscribeReservations, reservationKey, setReservationMemo } from '../coupangOrder/data/reservationStore';
 import type { OrderRow } from '../coupangOrder/types';
 import {
@@ -488,6 +488,39 @@ const HanjungOrderPage: React.FC = () => {
     });
   };
 
+  // 도착 안 한 것 정리: 일부만 오고 나머지는 다음 한중발주로 새로 주문할 때. 이 건은 도착한 만큼으로 마무리하고,
+  // 도착 못 한 만큼의 쿠팡 줄 배정을 발주 대기로 돌린다(다음 한중발주를 대기에서 만들면 그대로 따라간다).
+  const handleCloseShort = async (o: HanjungOrder) => {
+    const { order: next, releases } = closeShortOrder(o);
+    if (!releases.length) return;
+    const rows: QueueRow[] = releases.flatMap(r => r.released.map(({ line, qty }) => ({
+      발주번호: line.발주번호, 물류센터: line.물류센터, 상품이름: line.상품이름, 확정수량: line.확정수량,
+      입고예정일: normalizeDateValue(line.입고예정일), 메모: '', 쉼먼트: '',
+      ...(qty !== line.확정수량 ? { 배정: qty } : {}),
+    })));
+    const lines = releases.map(r => {
+      const back = r.released.reduce((n, x) => n + x.qty, 0);
+      return `· ${r.상품이름}: 도착 ${r.received}/${r.ordered}${back ? ` → 쿠팡 배정 ${back}개를 발주 대기로` : ''}`;
+    });
+    if (!confirm(`${o.code}를 도착한 만큼으로 마무리할까요?\n\n${lines.join('\n')}\n\n도착 안 한 건 다음 한중발주로 새로 주문하면 돼요. 발주 대기로 돌린 줄은 다음 한중발주를 만들 때 그대로 들어가요.`)) return;
+    const keys = rows.map(r => hanjungQueueKey(r));
+    const before = queueRef.current.filter(q => keys.includes(q.key));
+    const run = () => saveHanjungOrder(next).then(() => (rows.length ? returnToHanjungQueue(rows, queueRef.current) : 0));
+    try {
+      await run();
+    } catch (err: any) {
+      alert(`정리 실패: ${err?.message || err}`);
+      return;
+    }
+    record({
+      label: `${o.code} 도착 안 한 것 정리`,
+      undo: () => saveHanjungOrder(o)
+        .then(() => removeFromHanjungQueue(keys))
+        .then(() => (before.length ? addToHanjungQueue(before.map(queueItemToRow), []) : 0)),
+      redo: run,
+    });
+  };
+
   // 입고 대기(아직 수입입고 기록이 없는 건)를 취소한다: 한중발주를 지우고 그 줄들을 다시 "발주 대기"로 돌린다.
   const handleCancel = async (o: HanjungOrder) => {
     if (o.receipts.length) return;
@@ -752,6 +785,15 @@ const HanjungOrderPage: React.FC = () => {
                     📦 도착 기록
                   </button>
                 )}
+                {t.status === 'partial' && (
+                  <button
+                    onClick={e => { e.stopPropagation(); handleCloseShort(o); }}
+                    title="나머지는 더 오지 않고 다음 한중발주로 새로 주문할 때: 이 건을 도착한 만큼으로 마무리하고, 도착 못 한 쿠팡 배정은 발주 대기로 돌려요"
+                    className="text-xs px-2.5 py-1 rounded-lg font-semibold border border-gray-300 text-gray-600 bg-white hover:bg-gray-50"
+                  >
+                    남은 것 정리
+                  </button>
+                )}
                 <span className="ml-auto text-sm text-right whitespace-nowrap">
                   {settle.qty > 0 && t.totalCost > 0
                     ? <>차익 <b className={profit >= 0 ? 'text-emerald-600' : 'text-red-500'} title="정산 공급가(부가세 제외) − 총원가">{won(profit)}</b></>
@@ -875,9 +917,9 @@ const HanjungOrderPage: React.FC = () => {
                     )}
                   </div>
 
-                  {/* "건"이 상품 수로 읽혀서 헷갈렸다: 도착한 횟수(번)와 상품 종류·개수를 같이 적는다. */}
+                  {/* 도착한 상품 종류 수(건)와 개수 */}
                   {o.receipts.length > 0 && foldHead(`${o.code}|receipts`,
-                    `도착 ${o.receipts.length}번 · ${new Set(o.receipts.flatMap(r => r.items.map(it => it.상품이름))).size}종 ${o.receipts.reduce((n, r) => n + r.items.reduce((m, it) => m + (Number(it.qty) || 0), 0), 0)}개`,
+                    `도착 ${new Set(o.receipts.flatMap(r => r.items.filter(it => (Number(it.qty) || 0) > 0).map(it => it.상품이름))).size}건 · ${o.receipts.reduce((n, r) => n + r.items.reduce((m, it) => m + (Number(it.qty) || 0), 0), 0)}개`,
                     `총원가 ${won(t.totalCost)}`)}
                   {foldOpen(`${o.code}|receipts`) && <div className="pl-7"><ReceiptHistory order={o} /></div>}
 

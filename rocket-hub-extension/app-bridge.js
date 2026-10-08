@@ -135,6 +135,18 @@
       } catch (err) {}
       return;
     }
+    // 쉽먼트 번호만 찾기(일괄등록을 서허에서 직접 한 건).
+    if (d.type === 'SHUB_FIND_SHIPMENTS') {
+      try {
+        chrome.runtime.sendMessage({ type: 'SHUB_FIND_SHIPMENTS', orderNos: d.orderNos || [] }, (res) => {
+          const lastError = chrome.runtime.lastError;
+          reply({ type: 'SHUB_FIND_ACK', ok: !lastError && !!(res && res.ok), error: (lastError && lastError.message) || (res && res.error) });
+        });
+      } catch (err) {
+        reply({ type: 'SHUB_FIND_ACK', ok: false, error: '확장을 새로고침한 뒤 앱도 새로고침해 주세요.' });
+      }
+      return;
+    }
     // 채운 쉽먼트 양식을 서허 쉽먼트 일괄등록에 올리기.
     if (d.type === 'SHUB_UPLOAD') {
       try {

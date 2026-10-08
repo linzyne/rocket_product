@@ -437,6 +437,27 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true;
   }
 
+  // 일괄등록을 서허에서 직접 한 건: 택배 쉽먼트 화면에서 발주번호로 쉽먼트 번호만 찾아 온다(shub-upload.js의 linking 단계).
+  if (message.type === 'SHUB_FIND_SHIPMENTS') {
+    (async () => {
+      try {
+        const nos = Array.isArray(message.orderNos) ? message.orderNos.map(String).filter(Boolean) : [];
+        if (!nos.length) throw new Error('발주번호가 없습니다.');
+        const win = await chrome.windows.create({ url: SHUB_ASN_URL, type: 'popup', width: 1300, height: 900, focused: false });
+        await chrome.storage.local.set({
+          [SHUB_UPLOAD_KEY]: {
+            batchId: 'lookup', file: null, savedAt: Date.now(), step: 'linking', status: '쉽먼트 번호 찾는 중…',
+            messages: [], orderNos: nos, shipments: [], linkIdx: 0, byOrder: {}, windowId: win.id,
+          },
+        });
+        sendResponse({ ok: true });
+      } catch (err) {
+        sendResponse({ ok: false, error: String((err && err.message) || err) });
+      }
+    })();
+    return true;
+  }
+
   // 앱이 채운 쉽먼트 양식을 서허 쉽먼트 일괄등록에 올린다. 창은 결과 확인용으로 열어 둔다.
   if (message.type === 'SHUB_UPLOAD') {
     (async () => {

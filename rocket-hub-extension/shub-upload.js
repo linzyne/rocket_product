@@ -326,8 +326,11 @@
     if (Date.now() - (p.searchedAt || 0) < 2500) return;
     const t = readTable({ ship: /쉽먼트\s*번호/, po: /^발주서$/ });
     const ships = new Set(p.shipments || []);
-    const hit = t && t.rows.find((r) => ships.has(r.cells[t.idx.ship]) && r.cells[t.idx.po].includes(no));
-    const any = t && t.rows.find((r) => ships.has(r.cells[t.idx.ship]));
+    // 찾기만 하는 경우(앱의 "쉽먼트 번호 찾기", 일괄등록을 서허에서 직접 한 건): 만든 쉽먼트 목록이 없으니
+    // 발주서 칸에 이 번호가 든 줄의 쉽먼트 번호를 쓴다.
+    const lookup = !ships.size;
+    const hit = t && t.rows.find((r) => (lookup || ships.has(r.cells[t.idx.ship])) && r.cells[t.idx.po].includes(no));
+    const any = !lookup && t && t.rows.find((r) => ships.has(r.cells[t.idx.ship]));
     const ship = (hit || any) ? (hit || any).cells[t.idx.ship] : '';
     debug('link', { no, ship, rows: t ? t.rows.slice(0, 5).map((r) => r.cells) : null });
     await patch({ byOrder: { ...(p.byOrder || {}), [no]: ship }, linkIdx: i + 1, searching: '' });

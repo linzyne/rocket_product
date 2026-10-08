@@ -166,6 +166,11 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
       if (!d || d.source !== 'rocket-hub-extension') return;
       if (d.type === 'PO_DATE_ACK' || d.type === 'PO_DATE_STATUS') { if (dateAck.current) clearTimeout(dateAck.current); dateAck.current = null; }
       if (d.type === 'PO_DATE_ACK' && !d.ok) setDateNote({ tone: 'error', text: `서허 창을 열지 못했어요: ${d.error || ''}` });
+      if (d.type === 'SHUB_FIND_ACK' && !d.ok) setDateNote({ tone: 'error', text: `서허 창을 열지 못했어요: ${d.error || ''} (확장 프로그램을 새로고침해 주세요)` });
+      if (d.type === 'SHUB_UPLOAD_STATUS' && d.batchId === 'lookup') {
+        const found = Object.values(d.byOrder || {}).filter(Boolean).length;
+        setDateNote({ tone: d.step === 'error' ? 'error' : d.step === 'done' ? 'ok' : 'info', text: d.step === 'done' ? `쉽먼트 번호 ${found}건 찾았어요. 이제 🖨 출력을 누르세요.` : (d.status || '') });
+      }
       if (d.type === 'PO_DATE_STATUS') setDateNote({ tone: d.step === 'error' ? 'error' : d.step === 'done' ? 'ok' : 'info', text: d.status || '' });
       // 적용(서허 목록에서 지금 값 읽기) 결과
       if (checkingRef.current && (d.type === 'PO_COLLECT_ACK' || (d.type === 'PO_STATUS' && d.purpose === 'check'))) {
@@ -558,9 +563,16 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
     const color = printed ? GREEN : shipNo ? ORANGE : GRAY;
     return (
       <button
-        disabled={!shipNo}
         onClick={() => {
-          if (!shipNo) return;
+          // 쉽먼트 번호가 없으면(서허 일괄등록을 직접 한 건) 서허 택배 쉽먼트 화면에서 찾아 온다.
+          // 쉽먼트 칸에서 번호 없는 발주서를 한꺼번에 찾는다.
+          if (!shipNo) {
+            const nos = orders.filter(x => x.stage === 2 && x.item && !x.item.shipmentNos?.[x.no]).map(x => x.no);
+            if (!window.confirm(`쉽먼트 번호가 없어서 출력할 수 없어요.\n서허 택배 쉽먼트 화면에서 발주서 ${nos.length}건의 쉽먼트 번호를 찾아 올까요?\n(서허 일괄등록이 끝난 건만 찾을 수 있어요)`)) return;
+            setDateNote({ tone: 'info', text: `서허에서 쉽먼트 번호 찾는 중… (발주서 ${nos.length}건)` });
+            window.postMessage({ source: 'rocket-app-hub', type: 'SHUB_FIND_SHIPMENTS', orderNos: nos }, window.location.origin);
+            return;
+          }
           if (printed && !window.confirm(`발주 ${o.no}은 이미 출력했어요. 다시 출력할까요?`)) return;
           printShipment(item, o.no, shipNo, t => setPrintNote(n => ({ ...n, [o.no]: t })));
         }}
@@ -569,12 +581,12 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
           e.preventDefault();
           if (window.confirm(printed ? `발주 ${o.no}의 출력완료 표시를 풀까요?` : `발주 ${o.no}을 출력완료로 표시할까요?`)) setPrinted(item, o.no, !printed);
         }}
-        title={!shipNo ? '서허 일괄등록이 끝나 쉽먼트 번호가 생기면 출력할 수 있어요'
+        title={!shipNo ? '쉽먼트 번호가 없어요. 눌러서 서허에서 찾아 와요(일괄등록을 서허에서 직접 한 건)'
           : printed ? '출력완료(초록). 누르면 다시 출력. 오른쪽 클릭: 출력완료 풀기'
           : '문서(Label·내역서)와 바코드 라벨을 새 탭에 열어요. 오른쪽 클릭: 출력완료로만 표시'}
-        style={{ ...btn(color, printed || !!shipNo), cursor: shipNo ? 'pointer' : 'not-allowed', opacity: shipNo ? 1 : 0.6 }}
+        style={{ ...btn(color, printed || !!shipNo) }}
       >
-        🖨{printed ? ' 출력완료' : ' 출력'}
+        🖨{printed ? ' 출력완료' : shipNo ? ' 출력' : ' 번호 찾기'}
       </button>
     );
   };

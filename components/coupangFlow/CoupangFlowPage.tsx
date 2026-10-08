@@ -465,7 +465,13 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
 
   // 상자 보기 카드: 상자 폭에 맞춰 위아래로.
   const card = (o: FlowOrder) => (
-    <div key={o.no} style={{ background: '#fff', borderRadius: 9, padding: '9px 10px', boxShadow: '0 1px 3px rgba(0,0,0,0.06)', border: borderOf(o), display: 'flex', flexDirection: 'column', gap: 6 }}>
+    // 카드끼리 잘 구분되게: 진한 테두리 + 그림자 + 왼쪽 색 띠(멈춘 건 빨강, 고른 건 주황).
+    <div key={o.no} style={{
+      background: '#fff', borderRadius: 10, padding: '10px 12px 10px 14px', boxShadow: '0 2px 6px rgba(0,0,0,0.10)',
+      border: picked.has(o.no) ? `2px solid ${ORANGE}` : `1px solid ${run(o)?.state === 'error' ? '#f87171' : '#cfcac5'}`,
+      borderLeft: `5px solid ${picked.has(o.no) ? ORANGE : run(o)?.state === 'error' ? RED : '#a8a29e'}`,
+      display: 'flex', flexDirection: 'column', gap: 6,
+    }}>
       {headInfo(o, 17)}
       {tags(o)}
       {runNote(o)}
@@ -677,7 +683,7 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
       <main style={{ overflowX: 'auto', padding: '12px clamp(10px, 3vw, 20px) 70px' }}>
         <div style={{
           display: 'inline-grid', gridTemplateColumns: `repeat(${BOARD_STAGES.length}, 340px)`,
-          border: '1.5px solid #d6d3d1', borderRadius: 12, background: '#fafaf9', overflow: 'hidden', alignItems: 'stretch',
+          border: '1.5px solid #d6d3d1', borderRadius: 12, background: '#efedea', overflow: 'hidden', alignItems: 'stretch',
         }}>
           {/* 머리줄 */}
           {BOARD_STAGES.map((i, col) => {
@@ -703,7 +709,7 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
             const list = boxes[i];
             return (
               <div key={`c-${label}`} style={{
-                padding: 8, minHeight: '60vh', display: 'flex', flexDirection: 'column', gap: 8, boxSizing: 'border-box',
+                padding: 10, minHeight: '60vh', display: 'flex', flexDirection: 'column', gap: 12, boxSizing: 'border-box',
                 borderRight: col < BOARD_STAGES.length - 1 ? '1px solid #e7e5e4' : 'none',
               }}>
                 {list.map(card)}

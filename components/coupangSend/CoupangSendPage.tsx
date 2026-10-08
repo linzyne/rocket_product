@@ -310,12 +310,24 @@ export default function CoupangSendPage({ onGoShip, view = 'waiting' }: { onGoSh
                 {sent.map(item => {
                   const nos = boxesOf(item).map(([no]) => no).filter(Boolean);
                   return (
-                    <div key={item.id} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '8px 12px', borderTop: '1px solid #f4f4f4', fontSize: 12 }}>
-                      <b style={{ color: GREEN, minWidth: 70 }}>{dayText(item.sentDate || '')}</b>
-                      <span style={{ fontWeight: 700, color: '#333', minWidth: 60 }}>{item.center}</span>
-                      <span style={{ color: '#888' }}>입고 {dayText(item.date)}</span>
-                      <span style={{ color: '#888' }}>{item.bundle}</span>
-                      <span style={{ fontWeight: 700 }}>📦 {nos.length}박스</span>
+                    // 칸 너비를 고정해서 줄마다 세로로 맞춘다: 보낸 날 · 센터 · 입고일 · 발주번호 · 박스 수 · 운송장 · 단추.
+                    <div key={item.id} style={{
+                      display: 'grid', gridTemplateColumns: '84px 70px 96px 120px 64px 1fr auto auto', alignItems: 'center',
+                      columnGap: 12, padding: '8px 12px', borderTop: '1px solid #f4f4f4', fontSize: 12,
+                    }}>
+                      <b style={{ color: GREEN, whiteSpace: 'nowrap' }}>{dayText(item.sentDate || '')}</b>
+                      <span style={{ fontWeight: 700, color: '#333', whiteSpace: 'nowrap' }}>{item.center}</span>
+                      <span style={{ color: '#888', whiteSpace: 'nowrap' }}>입고 {dayText(item.date)}</span>
+                      {/* 예전 "묶음1" 같은 묶음 이름 대신 실제 발주번호를 보여준다(여러 개면 첫 번호 외 N). */}
+                      {(() => {
+                        const orderNos = Array.from(new Set(item.lines.map(l => String(l.발주번호))));
+                        return (
+                          <span style={{ color: '#888', whiteSpace: 'nowrap' }} title={orderNos.join(', ')}>
+                            {orderNos[0] || '-'}{orderNos.length > 1 ? ` 외 ${orderNos.length - 1}` : ''}
+                          </span>
+                        );
+                      })()}
+                      <span style={{ fontWeight: 700, whiteSpace: 'nowrap' }}>📦 {nos.length}박스</span>
                       {/* 운송장번호는 옆으로 늘어나지 않게 박스마다 한 줄씩 쌓는다. */}
                       <span style={{ display: 'flex', flexDirection: 'column', gap: 1, fontSize: 11.5, color: '#555', fontFamily: 'monospace' }}>
                         {nos.map(no => (
@@ -325,7 +337,7 @@ export default function CoupangSendPage({ onGoShip, view = 'waiting' }: { onGoSh
                           </span>
                         ))}
                       </span>
-                      <button onClick={() => editWaybills(item)} style={{ ...btn('#888'), marginLeft: 'auto', height: 24 }} title="이 건의 운송장번호를 고칩니다">
+                      <button onClick={() => editWaybills(item)} style={{ ...btn('#888'), height: 24 }} title="이 건의 운송장번호를 고칩니다">
                         운송장 수정
                       </button>
                       <button onClick={() => unsend(item)} style={{ ...btn('#999'), height: 24 }} title="발송 완료를 풀고 발송대기로 되돌립니다">

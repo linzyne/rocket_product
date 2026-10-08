@@ -10,6 +10,7 @@ import { dateKeyYMD, normalizeDateValue } from '../utils/dateUtils';
 import { allShipOutLines } from './shipOutStore';
 import { readWork, writeWork, workLineKey } from './orderWorkCloud';
 import { linesReady, linesAt } from './lineStore';
+import { savePoForm } from './poFormStore';
 
 export { subscribeWork } from './orderWorkCloud';
 
@@ -52,6 +53,8 @@ export function newOrderNos(): Set<string> {
 export async function appendOrderFile(file: File, reservations: OrderRow[]): Promise<{ added: number; skipped: number }> {
   const rows = await parseFile(file);
   if (!rows.length) throw new Error('데이터를 찾을 수 없습니다. 헤더가 올바른지 확인해주세요.');
+  // 발주확정 양식이면 그대로 남겨 둔다(발주확정 올리기 때 I·M열을 채워 서허에 올린다).
+  savePoForm(file).catch(err => console.error('발주확정 양식 저장 실패:', err));
   // 클라우드와 맞춘 뒤에 센다(앱을 켜자마자 받으면 묵은 목록으로 세어 이미 넘어간 줄을 새 줄로 볼 수 있다).
   await linesReady();
   reservations = linesAt('reserve') as unknown as OrderRow[];

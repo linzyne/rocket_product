@@ -23,6 +23,7 @@ import { useReady } from './data/readyStore';
 import { HanjungQueueItem, subscribeHanjungQueue, addToHanjungQueue, removeFromHanjungQueue, hanjungQueueKey } from './data/hanjungQueueStore';
 import { forgetLines, forgetDropped, allPlacedLines } from './data/orderGuard';
 import { isLinesReady } from './data/lineStore';
+import { savePoForm } from './data/poFormStore';
 import { isFirebaseConfigured } from '../../utils/firebase';
 
 // 화면 한 줄 → 원래 발주 한 건(줄였던 발주번호·물류센터·날짜를 되살림).
@@ -246,6 +247,8 @@ export default function CoupangOrderPage({ onGoShipOut }: { onGoShipOut?: () => 
     setNotice('');
     try {
       const rows = await parseFile(file);
+      // 발주확정 양식이면 그대로 남겨 둔다(발주 진행의 발주확정 올리기에서 쓴다).
+      savePoForm(file).catch(err => console.error('발주확정 양식 저장 실패:', err));
       if (rows.length === 0) {
         setError('데이터를 찾을 수 없습니다. 헤더가 올바른지 확인해주세요.');
       } else {

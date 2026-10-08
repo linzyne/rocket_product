@@ -65,6 +65,8 @@ let printChain = Promise.resolve();
 
 // ---- 발주서 수집: 서허 발주서 목록에서 새 발주서만 골라 업로드 양식 받기 ----
 const PO_KEY = 'poPending';
+const PO_CONFIRM_KEY = 'poConfirmUpload';
+const PO_CONFIRM_URL = 'https://supplier.coupang.com/scm/purchase/upload/form';
 const PO_URL = 'https://supplier.coupang.com/po-web/purchase/order/list';
 
 const shubPatch = async (fields) => {
@@ -386,6 +388,32 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true;
   }
 
+  // 앱이 채운 발주확정 파일(PO_FOR_CONFIRM)을 서허 발주확정 업로드에 올린다(po-confirm.js). 창은 결과 확인용으로 열어 둔다.
+  if (message.type === 'PO_CONFIRM_UPLOAD') {
+    (async () => {
+      try {
+        if (!message.file || !message.file.dataUrl) throw new Error('발주확정 파일이 비어 있습니다.');
+        const win = await chrome.windows.create({ url: PO_CONFIRM_URL, type: 'popup', width: 1300, height: 900, focused: true });
+        await chrome.storage.local.set({
+          [PO_CONFIRM_KEY]: {
+            jobId: message.jobId || String(Date.now()),
+            file: message.file,
+            orderNos: Array.isArray(message.orderNos) ? message.orderNos : [],
+            savedAt: Date.now(),
+            step: 'start',
+            status: '서허 여는 중…',
+            messages: [],
+            windowId: win.id,
+          },
+        });
+        sendResponse({ ok: true });
+      } catch (err) {
+        sendResponse({ ok: false, error: String((err && err.message) || err) });
+      }
+    })();
+    return true;
+  }
+
   // 앱이 채운 쉽먼트 양식을 서허 쉽먼트 일괄등록에 올린다. 창은 결과 확인용으로 열어 둔다.
   if (message.type === 'SHUB_UPLOAD') {
     (async () => {
@@ -541,7 +569,7 @@ chrome.storage.onChanged.addListener((changes, area) => {
 // 원래 가야 할 화면으로 다시 보낸다(창마다 몇 번까지만).
 const JOB_MAX_AGE_MS = 15 * 60 * 1000;
 const collectJobs = async () => {
-  const r = await chrome.storage.local.get([PO_KEY, RECEIVE_KEY, AUTO_KEY, SHUB_KEY, SHUB_UPLOAD_KEY, SHUB_PRINT_KEY]);
+  const r = await chrome.storage.local.get([PO_KEY, RECEIVE_KEY, AUTO_KEY, SHUB_KEY, SHUB_UPLOAD_KEY, SHUB_PRINT_KEY, PO_CONFIRM_KEY]);
   const now = Date.now();
   const jobs = [];
   const po = r[PO_KEY];
@@ -563,6 +591,10 @@ const collectJobs = async () => {
   const up = r[SHUB_UPLOAD_KEY];
   if (up && up.windowId && !['done', 'error'].includes(up.step) && now - (up.savedAt || 0) < JOB_MAX_AGE_MS) {
     jobs.push({ windowId: up.windowId, home: SHUB_ASN_URL, path: '/ibs/' });
+  }
+  const pc = r[PO_CONFIRM_KEY];
+  if (pc && pc.windowId && !['done', 'error'].includes(pc.step) && now - (pc.savedAt || 0) < JOB_MAX_AGE_MS) {
+    jobs.push({ windowId: pc.windowId, home: PO_CONFIRM_URL, path: '/scm/purchase/upload' });
   }
   const pr = r[SHUB_PRINT_KEY];
   if (pr && pr.windowId && !['files', 'error'].includes(pr.step) && now - (pr.savedAt || 0) < JOB_MAX_AGE_MS) {

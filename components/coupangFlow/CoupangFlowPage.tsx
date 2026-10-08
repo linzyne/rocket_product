@@ -11,6 +11,8 @@ import { dateKeyYMD, ymdSortKey } from '../coupangOrder/utils/dateUtils';
 import type { AppMenuId } from '../AppSidebar';
 import CollectPurchaseOrders from '../coupangOrder/CollectPurchaseOrders';
 import { appendOrderFile } from '../coupangOrder/data/orderWorkStore';
+import { subscribePoForms, readDraft, setDraftLine, hasForm, savePoForm, SHORT_REASONS, DEFAULT_REASON } from '../coupangOrder/data/poFormStore';
+import { startConfirmUpload, subscribeConfirmJob, clearConfirmJob, ConfirmJob } from '../coupangOrder/data/poConfirmRunner';
 
 // 발주 > 발주 진행. 단계마다 상자를 옆으로 두고, 발주서가 지금 단계의 상자 안에 담긴다(상자 안에서는 위아래 한 줄).
 //   발주확정 → 묶음 → 쉽먼트(택배예약·서허 일괄등록) → 출력(문서·바코드) → 발송대기 → 발송완료
@@ -71,6 +73,38 @@ export default function CoupangFlowPage({ onNavigate }: { onNavigate: (menu: App
   const [confirmed, setConfirmedMap] = useState<Record<string, number>>({});
   const [query, setQuery] = useState('');
   const [waybillBatch, setWaybillBatch] = useState<ShipmentBatch | null>(null);
+  // 발주확정 양식·고친 수량이 바뀌면 다시 그린다.
+  const [, setFormTick] = useState(0);
+  useEffect(() => subscribePoForms(() => setFormTick(t => t + 1)), []);
+  const [confirmJob, setConfirmJob] = useState<ConfirmJob | null>(null);
+  useEffect(() => subscribeConfirmJob(setConfirmJob), []);
+  // 발주확정 올리기: 발주확정 상자의 발주서들로 PO_FOR_CONFIRM 파일을 채워 서허에 올린다.
+  const uploadConfirm = (list: FlowOrder[]) => {
+    const nos = list.map(o => o.no);
+    const noForm = nos.filter(no => !hasForm(no));
+    const zero = list.flatMap(o => o.lines.filter(l => readDraft(o.no).qty[l.상품이름] === 0).map(l => `${o.no} ${l.상품이름}`));
+    if (!window.confirm(
+      `발주확정 상자의 발주서 ${nos.length - noForm.length}건을 서허에 확정으로 올릴까요?` +
+      (zero.length ? `\n\n확정수량 0개(사유: 단종 등) ${zero.length}줄:\n${zero.slice(0, 8).join('\n')}${zero.length > 8 ? '\n…' : ''}` : '') +
+      (noForm.length ? `\n\n양식 파일이 없어 빠지는 발주서 ${noForm.length}건: ${noForm.join(', ')}` : ''),
+    )) return;
+    const file = startConfirmUpload(nos);
+    if (!file) alert('이 발주서들의 발주확정 양식(PO_FOR_CONFIRM 파일)이 없어요. "양식 파일 넣기"로 다운로드 폴더의 파일을 넣어 주세요.');
+  };
+  // 다운로드 폴더의 PO_FOR_CONFIRM 파일을 직접 넣는다(예전에 받아 앱에 양식이 없는 발주서용).
+  const pickForm = () => {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = '.xlsx';
+    input.multiple = true;
+    input.onchange = async () => {
+      const files = Array.from(input.files || []);
+      let ok = 0;
+      for (const f of files) if (await savePoForm(f).catch(() => false)) ok++;
+      alert(ok ? `발주확정 양식 ${ok}개를 넣었어요.` : '발주확정 양식(PO_FOR_CONFIRM 파일)이 아니에요.');
+    };
+    input.click();
+  };
   // 새 주문 수집 결과(발주확정 상자 위에 보여준다).
   const [collectNote, setCollectNote] = useState('');
   const handleOrderFile = async (file: File) => {
@@ -158,7 +192,8 @@ export default function CoupangFlowPage({ onNavigate }: { onNavigate: (menu: App
     const r = run(o);
     switch (o.stage) {
       case 0:
-        return <button style={btn(ORANGE, true)} onClick={() => confirm1([o.no], true)} title="서허에 발주확정을 올렸으면 눌러 주세요">✓ 확정했어요</button>;
+        // 올리기는 상자 위 "발주확정 올리기"로 한꺼번에. 여기는 서허에서 직접 확정한 발주서를 표시만 할 때.
+        return <button style={btn('#6b7280')} onClick={() => confirm1([o.no], true)} title="서허에서 직접 확정했으면 눌러서 묶음 상자로 넘깁니다">직접 확정함</button>;
       case 1:
         return <button style={btn(ORANGE)} onClick={() => onNavigate('coupang-order')} title="쿠팡발주확인에서 묶고 쉽먼트생성으로 보냅니다">묶음·보내기 →</button>;
       case 2:
@@ -213,6 +248,9 @@ export default function CoupangFlowPage({ onNavigate }: { onNavigate: (menu: App
             {o.partial && <Tag color={RED}>일부만 넘어감</Tag>}
           </div>
         ) : null}
+        {o.stage === 0 && !hasForm(o.no) && (
+          <div style={{ fontSize: 10.5, color: '#b45309' }}>⚠ 발주확정 양식 없음 — 상자 위 "양식 파일 넣기"로 PO_FOR_CONFIRM 파일을 넣어 주세요</div>
+        )}
 
         {r && r.state !== 'done' && (
           <div style={{
@@ -225,17 +263,48 @@ export default function CoupangFlowPage({ onNavigate }: { onNavigate: (menu: App
 
         {/* 상품. 다른 상자에 가 있는 줄은 어디 있는지 빨갛게 적는다. */}
         <div style={{ fontSize: 12, borderTop: '1px solid #f3f3f3', paddingTop: 5 }}>
-          {o.lines.map((l, i) => (
+          {o.lines.map((l, i) => {
+            // 발주확정 상자에서는 확정수량을 바로 고친다. 발주수량보다 줄이면 사유를 고른다(기본: 시장 단종).
+            const editable = o.stage === 0 && l.stage === 0;
+            const draft = readDraft(o.no);
+            const full = Number(l.확정수량) || 0;
+            const now = draft.qty[l.상품이름] ?? full;
+            return (
             <div key={i} style={{ padding: '2px 0' }}>
               <div style={{ display: 'flex', gap: 6, alignItems: 'baseline' }}>
-                <span style={{ flex: 1, minWidth: 0, color: '#333', wordBreak: 'keep-all' }}>{l.상품이름}</span>
-                <b style={{ flexShrink: 0 }}>{l.확정수량}개</b>
+                <span style={{ flex: 1, minWidth: 0, color: now < full ? RED : '#333', wordBreak: 'keep-all', textDecoration: editable && now === 0 ? 'line-through' : 'none' }}>{l.상품이름}</span>
+                {editable ? (
+                  <span style={{ flexShrink: 0, display: 'inline-flex', alignItems: 'center', gap: 2 }}>
+                    <input
+                      type="number" min={0} max={full} value={now}
+                      onChange={e => {
+                        const v = Math.max(0, Math.min(full, Math.floor(Number(e.target.value) || 0)));
+                        setDraftLine(o.no, l.상품이름, v === full ? null : v, v < full ? (draft.reason[l.상품이름] || DEFAULT_REASON) : undefined);
+                      }}
+                      title={`발주수량 ${full}개. 줄이면 납품부족사유를 골라요.`}
+                      style={{ width: 44, padding: '1px 3px', fontSize: 12, fontWeight: 700, textAlign: 'right', border: `1px solid ${now < full ? RED : '#ddd'}`, borderRadius: 4 }}
+                    />
+                    <span style={{ fontSize: 11, color: '#999' }}>/{full}</span>
+                  </span>
+                ) : (
+                  <b style={{ flexShrink: 0 }}>{l.확정수량}개</b>
+                )}
               </div>
+              {editable && now < full && (
+                <select
+                  value={draft.reason[l.상품이름] || DEFAULT_REASON}
+                  onChange={e => setDraftLine(o.no, l.상품이름, now, e.target.value)}
+                  style={{ width: '100%', marginTop: 2, fontSize: 10.5, padding: '1px 2px', border: `1px solid ${RED}`, borderRadius: 4, color: RED }}
+                >
+                  {SHORT_REASONS.map(r => <option key={r} value={r}>{r}</option>)}
+                </select>
+              )}
               {o.partial && l.stage !== o.stage && (
                 <div style={{ color: RED, fontSize: 10.5 }}>{STAGES[l.stage]} · {l.where}</div>
               )}
             </div>
-          ))}
+            );
+          })}
           {o.lines.length > 1 && <div style={{ fontSize: 10.5, color: '#aaa', textAlign: 'right' }}>{o.lines.length}종 · {qty}개</div>}
         </div>
 
@@ -287,13 +356,40 @@ export default function CoupangFlowPage({ onNavigate }: { onNavigate: (menu: App
                 {stuck > 0 && <span style={{ fontSize: 11.5, fontWeight: 800, color: RED }}>⛔ 멈춤 {stuck}</span>}
                 {i === 5 && <span style={{ fontSize: 10.5, color: '#999', marginLeft: 'auto' }}>최근 {SENT_DAYS}일</span>}
               </div>
-              {i === 0 && list.length > 1 && (
-                <button
-                  style={{ ...btn(ORANGE), width: '100%', marginBottom: 8 }}
-                  onClick={() => { if (window.confirm(`발주확정 상자의 발주서 ${list.length}건을 모두 확정했다고 표시할까요?`)) confirm1(list.map(o => o.no), true); }}
-                >
-                  {list.length}건 모두 확정했어요
-                </button>
+              {i === 0 && list.length > 0 && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 5, marginBottom: 8 }}>
+                  <button
+                    style={{ ...btn(ORANGE, true), width: '100%', padding: '7px 8px', fontSize: 12.5 }}
+                    disabled={!!confirmJob && !['done', 'applied', 'error'].includes(confirmJob.step)}
+                    onClick={() => uploadConfirm(list)}
+                    title="확정수량(I열)·납품부족사유(M열)를 채운 발주확정 파일을 만들어 서허 발주확정 업로드에 올립니다"
+                  >
+                    📤 발주확정 올리기 ({list.length}건)
+                  </button>
+                  <div style={{ display: 'flex', gap: 4 }}>
+                    <button style={{ ...btn('#6b7280'), flex: 1 }} onClick={pickForm} title="앱에 양식이 없는 발주서: 다운로드 폴더의 PO_FOR_CONFIRM 파일을 넣어요">양식 파일 넣기</button>
+                    <button
+                      style={{ ...btn('#6b7280'), flex: 1 }}
+                      onClick={() => { if (window.confirm(`서허에서 직접 확정한 발주서 ${list.length}건을 확정됨으로만 표시할까요?`)) confirm1(list.map(o => o.no), true); }}
+                      title="서허에서 직접 확정했을 때: 올리지 않고 표시만 해서 묶음 상자로 넘깁니다"
+                    >
+                      직접 확정함
+                    </button>
+                  </div>
+                  {confirmJob && (
+                    <div style={{
+                      fontSize: 11.5, lineHeight: 1.45, padding: '5px 7px', borderRadius: 6,
+                      background: confirmJob.step === 'error' ? '#fef2f2' : confirmJob.step === 'applied' ? '#ecfdf5' : '#eff6ff',
+                      color: confirmJob.step === 'error' ? '#b91c1c' : confirmJob.step === 'applied' ? '#047857' : '#1d4ed8',
+                    }}>
+                      {confirmJob.status}
+                      {(confirmJob.messages || []).length > 0 && <div>💬 {(confirmJob.messages || []).join(' / ')}</div>}
+                      {['applied', 'error'].includes(confirmJob.step) && (
+                        <button onClick={clearConfirmJob} style={{ marginLeft: 6, border: 'none', background: 'transparent', color: '#888', cursor: 'pointer', fontSize: 11, textDecoration: 'underline' }}>닫기</button>
+                      )}
+                    </div>
+                  )}
+                </div>
               )}
               <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                 {list.map(card)}

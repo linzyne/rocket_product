@@ -101,6 +101,28 @@
       } catch (err) {}
       return;
     }
+    // 채운 발주확정 파일을 서허 발주확정 업로드에 올리기.
+    if (d.type === 'PO_CONFIRM_UPLOAD') {
+      try {
+        chrome.runtime.sendMessage({ type: 'PO_CONFIRM_UPLOAD', jobId: d.jobId, file: d.file, orderNos: d.orderNos || [] }, (res) => {
+          const lastError = chrome.runtime.lastError;
+          reply({ type: 'PO_CONFIRM_ACK', jobId: d.jobId, ok: !lastError && !!(res && res.ok), error: (lastError && lastError.message) || (res && res.error) });
+        });
+      } catch (err) {
+        reply({ type: 'PO_CONFIRM_ACK', jobId: d.jobId, ok: false, error: '확장을 새로고침한 뒤 앱도 새로고침해 주세요.' });
+      }
+      return;
+    }
+    // 앱을 새로 열었을 때 지난 발주확정 업로드 결과를 다시 받아 간다.
+    if (d.type === 'PO_CONFIRM_GET') {
+      try {
+        chrome.storage.local.get('poConfirmUpload', (r) => {
+          const v = r && r.poConfirmUpload;
+          if (v) reply({ type: 'PO_CONFIRM_STATUS', jobId: v.jobId, step: v.step, status: v.status, messages: v.messages || [] });
+        });
+      } catch (err) {}
+      return;
+    }
     // 채운 쉽먼트 양식을 서허 쉽먼트 일괄등록에 올리기.
     if (d.type === 'SHUB_UPLOAD') {
       try {
@@ -208,6 +230,11 @@
       if (changes.shubUpload && changes.shubUpload.newValue) {
         const v = changes.shubUpload.newValue;
         reply({ type: 'SHUB_UPLOAD_STATUS', step: v.step, status: v.status, batchId: v.batchId, messages: v.messages || [], byOrder: v.byOrder || {} });
+      }
+      // 발주확정 업로드 진행 상황(서허 알림 문구 포함).
+      if (changes.poConfirmUpload && changes.poConfirmUpload.newValue) {
+        const v = changes.poConfirmUpload.newValue;
+        reply({ type: 'PO_CONFIRM_STATUS', jobId: v.jobId, step: v.step, status: v.status, messages: v.messages || [] });
       }
       if (changes.shubPending && changes.shubPending.newValue) {
         const v = changes.shubPending.newValue;

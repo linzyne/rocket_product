@@ -448,7 +448,7 @@ export const closeShortOrder = (order: HanjungOrder): { order: HanjungOrder; rel
 
 // ---- 남은 것 정리 뒤 모자란 줄 채우기 ----
 // closeShortOrder로 떼어 낸 쿠팡 줄(released)을 발주 대기로 보내기 전에:
-//  1) 사무실 여유(다른 한중발주에 도착했고 아무 데도 배정 안 된 것)로 먼저 채운다. 입고예정일 빠른 줄부터.
+//  1) 여유(1688로 넉넉히 사서 아무 데도 배정 안 된 것)로 먼저 채운다: 도착한 여유 → 오는 중인 여유. 입고예정일 빠른 줄부터.
 //  2) (swap = true일 때) 그래도 모자라면, 같은 상품을 맡은 다른 한중발주(도착했든 오는 중이든)에서 입고예정일이 더 늦은
 //     쿠팡 줄의 배정을 가져온다(급한 발주가 그 물건을 먼저 받게). 그 늦은 줄은 가져간 만큼 발주 대기로 간다.
 //     이미 도착분이 있는 줄을 먼저, 그다음 늦은 날짜부터. 발송완료된 줄(skipKeys)은 건드리지 않는다.
@@ -462,7 +462,7 @@ export interface FillPlan {
   queue: (FillLine & { qty: number })[];                     // 발주 대기로 보낼 줄과 수량
   readyOn: FillLine[];
   readyOff: FillLine[];
-  spareFills: { line: FillLine; code: string; qty: number }[];
+  spareFills: { line: FillLine; code: string; qty: number; arrived: boolean }[];
   swaps: { to: FillLine; from: FillLine; code: string; qty: number; arrived: boolean }[];
   notes: string[];                                           // 다 못 채운 줄과 그 까닭
 }
@@ -526,17 +526,21 @@ export const planFill = (
   const touched = new Set<string>();
   const lostLines: FillLine[] = [];
   for (const n of needs) {
-    // 1) 사무실 여유
-    for (const o of [...work.values()].sort((a, b) => a.createdAt - b.createdAt)) {
-      if (n.need <= 0) break;
-      const p = productSummary(o).find(x => sameName(x.상품이름, n.line.상품이름));
-      const inOffice = p ? Math.min(p.spare, Math.max(0, p.received - p.allocated)) : 0;
-      if (inOffice <= 0) continue;
-      const take = Math.min(inOffice, n.need);
-      work.set(o.code, addAlloc(o, n.line, take, opts.keyOf(n.line)));
-      touched.add(o.code);
-      plan.spareFills.push({ line: n.line, code: o.code, qty: take });
-      n.need -= take;
+    // 1) 여유(1688로 넉넉히 사서 아무 데도 배정 안 된 것): 사무실에 도착한 여유 먼저, 그다음 오는 중인 여유.
+    for (const arrivedPass of [true, false]) {
+      for (const o of [...work.values()].sort((a, b) => a.createdAt - b.createdAt)) {
+        if (n.need <= 0) break;
+        const p = productSummary(o).find(x => sameName(x.상품이름, n.line.상품이름));
+        if (!p || p.spare <= 0) continue;
+        const inOffice = Math.min(p.spare, Math.max(0, p.received - p.allocated));
+        const avail = arrivedPass ? inOffice : p.spare - inOffice;
+        if (avail <= 0) continue;
+        const take = Math.min(avail, n.need);
+        work.set(o.code, addAlloc(o, n.line, take, opts.keyOf(n.line)));
+        touched.add(o.code);
+        plan.spareFills.push({ line: n.line, code: o.code, qty: take, arrived: arrivedPass });
+        n.need -= take;
+      }
     }
     // 2) 더 늦은 쿠팡 줄에서 가져오기
     let later = 0, shipped = 0, same = 0;

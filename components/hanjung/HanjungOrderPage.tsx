@@ -257,11 +257,11 @@ const PendingPanel: React.FC<{ orders: HanjungOrder[]; onRecord: (act: Act) => v
       alert(`바꿀 수 있는 게 없어요.\n\n${plan.notes.map(n => `· ${n}`).join('\n')}`);
       return;
     }
-    const spare = plan.spareFills.map(f => `· ${day(f.line.입고예정일)} 발주 ${f.line.발주번호} ${f.line.상품이름} ${f.qty}개 ← 사무실 여유(${f.code})`);
+    const spare = plan.spareFills.map(f => `· ${day(f.line.입고예정일)} 발주 ${f.line.발주번호} ${f.line.상품이름} ${f.qty}개 ← ${f.arrived ? '도착한' : '오는 중인'} 여유(${f.code})`);
     const sw = plan.swaps.map(x => `· ${x.to.상품이름} ${x.qty}개: ${day(x.from.입고예정일)} 발주 ${x.from.발주번호} → ${day(x.to.입고예정일)} 발주 ${x.to.발주번호} (${x.code} · ${x.arrived ? '도착분' : '오는 중'})`);
     if (!confirm(
-      `급한 발주와 늦은 발주의 자리를 바꿀까요?` +
-      (spare.length ? `\n\n사무실 여유로 채워요:\n${spare.join('\n')}` : '') +
+      `대기 줄을 채울까요?` +
+      (spare.length ? `\n\n여유분으로 채워요:\n${spare.join('\n')}` : '') +
       (sw.length ? `\n\n자리 바꾸기(급한 발주가 물건을 받고, 늦은 발주는 다음 주문으로):\n${sw.join('\n')}` : '') +
       (plan.notes.length ? `\n\n그래도 대기에 남는 것:\n${plan.notes.map(n => `· ${n}`).join('\n')}` : '') +
       `\n\n(발송완료된 발주는 건드리지 않아요. 쉽먼트·발송대기에 있는 늦은 발주는 옮겨요.)`,
@@ -299,7 +299,7 @@ const PendingPanel: React.FC<{ orders: HanjungOrder[]; onRecord: (act: Act) => v
       setSaving(false);
     }
     onRecord({
-      label: '늦은 발주와 바꾸기',
+      label: '대기 줄 채우기',
       undo: async () => {
         for (const x of beforeOrders) await saveHanjungOrder(x);
         await removeFromHanjungQueue(allKeys);
@@ -343,9 +343,9 @@ const PendingPanel: React.FC<{ orders: HanjungOrder[]; onRecord: (act: Act) => v
             onClick={fillFromLater}
             disabled={saving}
             className={`${selected.some(r => r.fromQueue) ? '' : 'ml-auto '}px-3 py-1 rounded-lg border border-amber-300 bg-white text-amber-800 text-xs font-semibold hover:bg-amber-50 disabled:opacity-40`}
-            title="대기에 있는 급한 발주가, 같은 상품을 맡은 한중발주에서 입고예정일이 더 늦은 발주의 배정을 가져와요(늦은 발주는 대신 대기로). 고른 줄이 있으면 그 줄만."
+            title="대기 줄을 여유분(도착·오는 중)으로 채우고, 모자라면 늦은 발주와 자리를 바꿔요. 고른 줄이 있으면 그 줄만."
           >
-            {selected.some(r => r.fromQueue) ? '고른 줄 ' : ''}늦은 발주와 바꾸기
+            {selected.some(r => r.fromQueue) ? '고른 줄 ' : ''}대기 줄 채우기
           </button>
         )}
         {selected.some(r => r.fromQueue) && (
@@ -612,11 +612,11 @@ const HanjungOrderPage: React.FC = () => {
       const back = r.released.reduce((n, x) => n + x.qty, 0);
       return `· ${r.상품이름}: 도착 ${r.received}/${r.ordered}${back ? ` → 못 받은 쿠팡 배정 ${back}개` : ''}`;
     });
-    const spare = base.spareFills.map(f => `· ${day(f.line.입고예정일)} 발주 ${f.line.발주번호} ${f.line.상품이름} ${f.qty}개 ← 사무실 여유(${f.code})`);
+    const spare = base.spareFills.map(f => `· ${day(f.line.입고예정일)} 발주 ${f.line.발주번호} ${f.line.상품이름} ${f.qty}개 ← ${f.arrived ? '도착한' : '오는 중인'} 여유(${f.code})`);
     const left = base.queue.map(q => `· ${day(q.입고예정일)} 발주 ${q.발주번호} ${q.상품이름} ${q.qty}개`);
     if (!confirm(
       `${o.code}를 도착한 만큼으로 마무리할까요?\n\n${lines.join('\n')}` +
-      (spare.length ? `\n\n사무실 여유로 채워요:\n${spare.join('\n')}` : '') +
+      (spare.length ? `\n\n여유분으로 채워요:\n${spare.join('\n')}` : '') +
       (left.length ? `\n\n발주 대기로 가요(다음 한중발주로 주문):\n${left.join('\n')}` : '') +
       (!canSwap ? '\n\n⚠ 발주 목록을 아직 다 못 받아서 늦은 발주에서 옮기기는 이번엔 안 해요. 잠시 뒤 다시 눌러 주세요.'
         : !withSwap.swaps.length && withSwap.notes.length ? `\n\n늦은 발주에서 옮길 수 있는 게 없어요:\n${withSwap.notes.map(n => `· ${n}`).join('\n')}` : ''),

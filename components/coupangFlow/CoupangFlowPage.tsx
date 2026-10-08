@@ -179,7 +179,7 @@ export default function CoupangFlowPage({ onNavigate }: { onNavigate: (menu: App
   return (
     <div style={{ minHeight: '100vh', background: '#fff', color: '#1a1a1a', fontFamily: "'Apple SD Gothic Neo', 'Malgun Gothic', 'Noto Sans KR', sans-serif" }}>
       <header style={{ background: '#fff', borderBottom: '1px solid #f0f0f0', position: 'sticky', top: 0, zIndex: 10 }}>
-        <div style={{ maxWidth: 860, margin: '0 auto', padding: '8px clamp(12px, 4vw, 24px)', boxSizing: 'border-box', display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '6px 12px' }}>
+        <div style={{ maxWidth: 860, margin: 0, padding: '8px clamp(12px, 4vw, 24px)', boxSizing: 'border-box', display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '6px 12px' }}>
           <h1 style={{ fontSize: 17, fontWeight: 800, margin: 0 }}>발주 진행</h1>
           <span style={{ fontSize: 12, color: '#888' }}>발주서마다 지금 단계와 다음 할 일</span>
           <input
@@ -189,7 +189,7 @@ export default function CoupangFlowPage({ onNavigate }: { onNavigate: (menu: App
             style={{ marginLeft: 'auto', padding: '6px 10px', fontSize: 13, border: '1px solid #e0e0e0', borderRadius: 8, minWidth: 180 }}
           />
         </div>
-        <div style={{ maxWidth: 860, margin: '0 auto', padding: '0 clamp(12px, 4vw, 24px) 8px', display: 'flex', gap: 4, flexWrap: 'nowrap', overflowX: 'auto' }}>
+        <div style={{ maxWidth: 860, margin: 0, padding: '0 clamp(12px, 4vw, 24px) 8px', display: 'flex', gap: 4, flexWrap: 'nowrap', overflowX: 'auto' }}>
           {tabs.map(t => (
             <button
               key={String(t.id)}
@@ -206,7 +206,7 @@ export default function CoupangFlowPage({ onNavigate }: { onNavigate: (menu: App
         </div>
       </header>
 
-      <main style={{ maxWidth: 860, margin: '0 auto', padding: '14px clamp(10px, 4vw, 24px) 70px' }}>
+      <main style={{ maxWidth: 860, margin: 0, padding: '14px clamp(10px, 4vw, 24px) 70px' }}>
         {tab === 0 && shown.length > 1 && (
           <div style={{ marginBottom: 10, fontSize: 12, color: '#666', display: 'flex', alignItems: 'center', gap: 8 }}>
             서허에 한꺼번에 확정했으면

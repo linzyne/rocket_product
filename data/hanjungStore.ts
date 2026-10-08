@@ -504,12 +504,25 @@ export const planShortFill = (
   releases: ShortRelease[],
   others: HanjungOrder[],
   opts: { swap: boolean; skipKeys: Set<string>; keyOf: (l: FillLine) => string },
+): FillPlan => planFill(
+  releases.flatMap(r => r.released.map(({ line, qty }) => ({ line: toFill(line), need: qty }))),
+  others.filter(o => o.code !== closing.code),
+  opts,
+  { before: original, after: closing },
+);
+
+// 모자란 쿠팡 줄들(needs: 줄과 채울 수량)을 사무실 여유 → 더 늦은 발주의 배정 순으로 채운다. 남은 것은 queue.
+// 발주 대기에 있는 줄을 늦은 발주와 바꿀 때도 이걸 쓴다. extra: 같이 바뀐 한중발주(남은 것 정리로 닫는 건)의 전후.
+export const planFill = (
+  needsIn: { line: FillLine; need: number }[],
+  others: HanjungOrder[],
+  opts: { swap: boolean; skipKeys: Set<string>; keyOf: (l: FillLine) => string },
+  extra?: { before: HanjungOrder; after: HanjungOrder },
 ): FillPlan => {
   const plan: FillPlan = { orders: [], queue: [], readyOn: [], readyOff: [], spareFills: [], swaps: [], notes: [] };
-  const before = new Map(others.filter(o => o.code !== closing.code).map(o => [o.code, o]));
+  const before = new Map(others.map(o => [o.code, o]));
   const work = new Map(before);
-  const needs = releases.flatMap(r => r.released.map(({ line, qty }) => ({ line: toFill(line), need: qty })))
-    .sort((a, b) => a.line.입고예정일.localeCompare(b.line.입고예정일));
+  const needs = needsIn.map(n => ({ ...n })).sort((a, b) => a.line.입고예정일.localeCompare(b.line.입고예정일));
   const touched = new Set<string>();
   const lostLines: FillLine[] = [];
   for (const n of needs) {
@@ -587,8 +600,10 @@ export const planShortFill = (
   // 준비됨: 바뀐 한중발주(닫는 건 포함)에서 도착분으로 다 채워진 줄을 전후 비교.
   const pre = new Map<string, FillLine>();
   const post = new Map<string, FillLine>();
-  arrivedLineKeys(original).forEach((v, k) => pre.set(k, v));
-  arrivedLineKeys(closing).forEach((v, k) => post.set(k, v));
+  if (extra) {
+    arrivedLineKeys(extra.before).forEach((v, k) => pre.set(k, v));
+    arrivedLineKeys(extra.after).forEach((v, k) => post.set(k, v));
+  }
   for (const c of touched) {
     arrivedLineKeys(before.get(c)!).forEach((v, k) => pre.set(k, v));
     arrivedLineKeys(work.get(c)!).forEach((v, k) => post.set(k, v));

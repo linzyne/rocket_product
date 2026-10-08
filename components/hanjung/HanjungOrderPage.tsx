@@ -3,7 +3,7 @@ import {
   HanjungOrder, HanjungLine, subscribeHanjung, deleteHanjungOrder, saveHanjungOrder, productSummary, orderTotals, productOrderQty, productUnitCost, lineAlloc, sameName, nameKey, ordersNeedingAliasRename,
 } from '../../data/hanjungStore';
 import { ReceiveRow, subscribeReceives, settlementOf, sign } from '../../data/receiveStore';
-import { nextHanjungCode, closeShortOrder, planShortFill, FillPlan, FillLine } from '../../data/hanjungStore';
+import { nextHanjungCode, closeShortOrder, planShortFill, planFill, FillPlan, FillLine } from '../../data/hanjungStore';
 import { useReady } from '../coupangOrder/data/readyStore';
 import { linesAt, isLinesReady, startLines } from '../coupangOrder/data/lineStore';
 import { subscribeReservations, reservationKey, setReservationMemo } from '../coupangOrder/data/reservationStore';
@@ -224,6 +224,82 @@ const PendingPanel: React.FC<{ orders: HanjungOrder[]; onRecord: (act: Act) => v
   };
 
   // 주문하지 않을 줄을 대기에서 뺀다(한중 대기에서 온 줄만. 예전 예약 줄은 예약 목록에서 다룬다).
+  // 늦은 발주와 바꾸기: 발주 대기에 있는(=물건이 없는) 급한 쿠팡 줄이, 같은 상품을 맡은 한중발주에서 입고예정일이 더 늦은
+  // 쿠팡 줄의 배정을 가져온다(사무실 여유가 있으면 그것부터). 늦은 줄은 그만큼 대신 발주 대기로 온다.
+  // 쉽먼트로 넘어간 줄은 건드리지 않는다. 고른 줄이 있으면 그 줄만, 없으면 대기 줄 전부.
+  const ready = useReady();
+  useEffect(() => { startLines(); }, []);
+  const fillFromLater = async () => {
+    if (!isLinesReady()) { alert('발주 목록을 아직 받는 중이에요. 잠시 뒤 다시 눌러 주세요.'); return; }
+    const src = (selected.some(r => r.fromQueue) ? selected : pending).filter(r => r.fromQueue && r.need > 0);
+    if (!src.length) return;
+    const needs = src.map(r => ({
+      line: { 발주번호: r.발주번호, 물류센터: r.물류센터, 상품이름: r.상품이름, 확정수량: Number(r.확정수량) || 0, 입고예정일: dateKeyYMD(r.입고예정일).replace(/-/g, '') } as FillLine,
+      need: r.need,
+    }));
+    const lk = (l: { 발주번호: string; 상품이름: string; 확정수량: number | '' }) => `${l.발주번호}│${String(l.상품이름).trim()}│${l.확정수량}`;
+    const skipKeys = new Set(linesAt('ship').map(l => lk(l)));
+    const keyOf = (l: FillLine) => reservationKey({ 발주번호: l.발주번호, 상품이름: l.상품이름, 확정수량: l.확정수량, 입고예정일: normalizeDateValue(l.입고예정일) } as OrderRow);
+    const plan: FillPlan = planFill(needs, orders, { swap: true, skipKeys, keyOf });
+    const day = (d: string) => `${Number(d.slice(4, 6))}/${Number(d.slice(6, 8))}`;
+    if (!plan.spareFills.length && !plan.swaps.length) {
+      alert(`바꿀 수 있는 게 없어요.\n\n${plan.notes.map(n => `· ${n}`).join('\n')}`);
+      return;
+    }
+    const spare = plan.spareFills.map(f => `· ${day(f.line.입고예정일)} 발주 ${f.line.발주번호} ${f.line.상품이름} ${f.qty}개 ← 사무실 여유(${f.code})`);
+    const sw = plan.swaps.map(x => `· ${x.to.상품이름} ${x.qty}개: ${day(x.from.입고예정일)} 발주 ${x.from.발주번호} → ${day(x.to.입고예정일)} 발주 ${x.to.발주번호} (${x.code} · ${x.arrived ? '도착분' : '오는 중'})`);
+    if (!confirm(
+      `발주 대기의 급한 발주가 늦은 발주의 배정을 가져올까요?` +
+      (spare.length ? `\n\n사무실 여유로 채워요:\n${spare.join('\n')}` : '') +
+      (sw.length ? `\n\n늦은 발주에서 가져와요(늦은 발주는 대신 발주 대기로):\n${sw.join('\n')}` : '') +
+      (plan.notes.length ? `\n\n그래도 대기에 남는 것:\n${plan.notes.map(n => `· ${n}`).join('\n')}` : '') +
+      `\n\n(쉽먼트로 넘어간 발주는 건드리지 않아요.)`,
+    )) return;
+    const needKeys = needs.map(n => hanjungQueueKey(n.line));
+    const rows: QueueRow[] = plan.queue.map(q => ({
+      발주번호: q.발주번호, 물류센터: q.물류센터, 상품이름: q.상품이름, 확정수량: q.확정수량,
+      입고예정일: normalizeDateValue(q.입고예정일), 메모: '', 쉼먼트: '',
+      ...(q.qty !== q.확정수량 ? { 배정: q.qty } : {}),
+    }));
+    const allKeys = Array.from(new Set([...needKeys, ...rows.map(r => hanjungQueueKey(r))]));
+    const beforeQueue = queue.filter(q => allKeys.includes(q.key));
+    const beforeOrders = plan.orders.map(x => orders.find(y => y.code === x.code)!).filter(Boolean);
+    const rk = (l: FillLine) => ({ 발주번호: l.발주번호, 상품이름: l.상품이름, 확정수량: l.확정수량 });
+    const wasOn = plan.readyOff.filter(l => ready.isReady(rk(l)));
+    const wasOff = plan.readyOn.filter(l => !ready.isReady(rk(l)));
+    setSaving(true);
+    const run = async () => {
+      for (const x of plan.orders) await saveHanjungOrder(x);
+      // 채운 대기 줄은 빼고, 남은 수량과 대신 온 늦은 줄을 다시 넣는다(같은 줄은 합친다).
+      await removeFromHanjungQueue(needKeys);
+      const rest = queue.filter(q => !needKeys.includes(q.key));
+      if (rows.length) await returnToHanjungQueue(rows, rest);
+      if (plan.readyOff.length) await ready.setReady(plan.readyOff.map(rk), false);
+      if (plan.readyOn.length) await ready.setReady(plan.readyOn.map(rk), true);
+    };
+    try {
+      await run();
+      setChecked(new Set());
+    } catch (err: any) {
+      alert(`바꾸기 실패: ${err?.message || err}`);
+      setSaving(false);
+      return;
+    } finally {
+      setSaving(false);
+    }
+    onRecord({
+      label: '늦은 발주와 바꾸기',
+      undo: async () => {
+        for (const x of beforeOrders) await saveHanjungOrder(x);
+        await removeFromHanjungQueue(allKeys);
+        if (beforeQueue.length) await addToHanjungQueue(beforeQueue.map(queueItemToRow), []);
+        if (wasOn.length) await ready.setReady(wasOn.map(rk), true);
+        if (wasOff.length) await ready.setReady(wasOff.map(rk), false);
+      },
+      redo: run,
+    });
+  };
+
   const removeSelected = async () => {
     const rows = selected.filter(r => r.fromQueue);
     if (!rows.length) return;
@@ -251,6 +327,16 @@ const PendingPanel: React.FC<{ orders: HanjungOrder[]; onRecord: (act: Act) => v
       <div className="flex flex-wrap items-center gap-3 px-4 py-3 bg-amber-50 border-b border-amber-100">
         <span className="font-semibold text-amber-800">① 발주 대기 {groups.length ? `${groups.length}개 상품 · ${pending.length}줄` : '없음'}</span>
         <span className="text-xs text-amber-700">1688에 주문할 줄을 골라요</span>
+        {pending.some(r => r.fromQueue) && (
+          <button
+            onClick={fillFromLater}
+            disabled={saving}
+            className={`${selected.some(r => r.fromQueue) ? '' : 'ml-auto '}px-3 py-1 rounded-lg border border-amber-300 bg-white text-amber-800 text-xs font-semibold hover:bg-amber-50 disabled:opacity-40`}
+            title="대기에 있는 급한 발주가, 같은 상품을 맡은 한중발주에서 입고예정일이 더 늦은 발주의 배정을 가져와요(늦은 발주는 대신 대기로). 고른 줄이 있으면 그 줄만."
+          >
+            {selected.some(r => r.fromQueue) ? '고른 줄 ' : ''}늦은 발주와 바꾸기
+          </button>
+        )}
         {selected.some(r => r.fromQueue) && (
           <button
             onClick={removeSelected}

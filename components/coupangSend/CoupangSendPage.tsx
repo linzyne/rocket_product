@@ -7,7 +7,7 @@ import { useHanjungBadge } from '../coupangOrder/data/useHanjungBadge';
 import { useShipmentNoSync } from '../coupangOrder/data/useShipmentNoSync';
 import { useReady } from '../coupangOrder/data/readyStore';
 import { HanjungOrder, subscribeHanjung, makeHanjungOfficeLookup } from '../../data/hanjungStore';
-import { expandBoxSplit, parseBoxNo } from '../coupangOrder/utils/dataProcessor';
+import { expandBoxSplit, parseBoxNo, parseFile } from '../coupangOrder/utils/dataProcessor';
 import { ymdSortKey } from '../coupangOrder/utils/dateUtils';
 import { loadBarcodeBook, loadArchiveBarcodes, rememberBarcodes, nameKey } from '../../data/coupangBarcodeStore';
 import { writeBarcodeSheet, SheetItem } from '../../utils/barcodeSheet';
@@ -61,31 +61,91 @@ export default function CoupangSendPage({ onGoShip }: { onGoShip?: () => void } 
       g.qty += Number(l.확정수량) || 0;
       groups.set(key, g);
     }
-    const book = await loadBarcodeBook();
+    const title = `바코드 ${item.center} ${orderNo}`;
+    const errorPage = (t: string) => { if (!win.closed) win.document.body.innerHTML = `<p style="font:15px sans-serif;padding:32px;color:#c0392b">${t.replace(/</g, '&lt;')}</p>`; };
+    const draw = (items: SheetItem[]) => {
+      if (win.closed) return;
+      if (!items.length) { errorPage('바코드가 있는 상품이 없어요.'); return; }
+      try {
+        writeBarcodeSheet(win, title, items);
+      } catch (err: any) {
+        errorPage(`바코드를 그리지 못했어요: ${err?.message || err}`);
+      }
+    };
+    // 장부(발주서에서 기억) → 상품목록(이름이 같은 것 하나) 순서로 찾는다.
     let archive: { name: string; barcode: string }[] | null = null;
-    const items: SheetItem[] = [];
-    const learned: { sku: string; name: string; barcode: string }[] = [];
-    for (const g of groups.values()) {
-      let bc = (g.sku && book.bySku[g.sku]) || book.byName[g.name] || '';
-      if (!bc) {
-        archive = archive || await loadArchiveBarcodes();
-        const hits = Array.from(new Set(archive.filter(a => nameKey(a.name) === nameKey(g.name)).map(a => a.barcode)));
-        if (hits.length === 1) bc = hits[0];
+    const resolve = async () => {
+      const book = await loadBarcodeBook();
+      const found: SheetItem[] = [];
+      const missing: { sku: string; name: string; qty: number }[] = [];
+      for (const g of groups.values()) {
+        let bc = (g.sku && book.bySku[g.sku]) || book.byName[g.name] || '';
+        if (!bc) {
+          archive = archive || await loadArchiveBarcodes();
+          const hits = Array.from(new Set(archive.filter(a => nameKey(a.name) === nameKey(g.name)).map(a => a.barcode)));
+          if (hits.length === 1) bc = hits[0];
+        }
+        if (bc) found.push({ name: g.name, barcode: bc, qty: g.qty });
+        else missing.push(g);
       }
-      if (!bc) {
-        bc = (prompt(`바코드를 못 찾았어요. 적어 주면 기억해 둘게요(비우면 빼고 만들어요).\n\n${g.name}${g.sku ? `\n상품번호 ${g.sku}` : ''}`) || '').trim();
-        if (bc) learned.push({ sku: g.sku, name: g.name, barcode: bc });
-      }
-      if (bc) items.push({ name: g.name, barcode: bc, qty: g.qty });
-    }
-    if (learned.length) rememberBarcodes(learned).catch(err => console.error('바코드 기억 실패:', err));
+      return { found, missing };
+    };
+    const { found, missing } = await resolve();
+    if (!missing.length) { draw(found); return; }
     if (win.closed) return;
-    if (!items.length) { win.document.body.innerHTML = '<p style="font:15px sans-serif;padding:32px;color:#c0392b">바코드가 있는 상품이 없어요.</p>'; return; }
-    try {
-      writeBarcodeSheet(win, `바코드 ${item.center} ${orderNo}`, items);
-    } catch (err: any) {
-      win.document.body.innerHTML = `<p style="font:15px sans-serif;padding:32px;color:#c0392b">바코드를 그리지 못했어요: ${String(err?.message || err).replace(/</g, '&lt;')}</p>`;
-    }
+
+    // 못 찾은 상품은 바코드 탭 안에서 적게 한다(앱 탭의 입력 창은 뒤에 있어 크롬이 바로 닫아 버린다).
+    // 쿠팡 발주서 파일(PO_FOR_CONFIRM…xlsx)을 넣으면 그 안의 상품바코드로 한꺼번에 채운다.
+    const esc = (t: string) => String(t).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
+    win.document.open();
+    win.document.write(`<!doctype html><html lang="ko"><head><meta charset="utf-8"><title>${esc(title)}</title></head>
+<body style="font:14px -apple-system,'Apple SD Gothic Neo',sans-serif;padding:24px 32px;color:#1e293b;max-width:760px">
+<h3 style="margin:0 0 6px">바코드를 못 찾은 상품이 ${missing.length}개 있어요</h3>
+<p style="margin:0 0 16px;color:#64748b">쿠팡 발주서 파일을 넣으면 한꺼번에 채워져요. 아니면 바코드를 직접 적어 주세요. 한 번 적으면 기억해요.</p>
+<label style="display:inline-block;margin-bottom:16px;padding:8px 14px;border:1px dashed #94a3b8;border-radius:8px;cursor:pointer">📄 쿠팡 발주서 파일 넣기 <input id="po" type="file" accept=".xlsx,.xls,.csv" multiple style="display:none"></label>
+<span id="poNote" style="margin-left:8px;color:#64748b"></span>
+<table style="border-collapse:collapse;width:100%">${missing.map((g, i) => `
+<tr style="border-top:1px solid #e5e7eb"><td style="padding:8px 8px 8px 0">${esc(g.name)}<div style="font-size:12px;color:#94a3b8">${g.sku ? `상품번호 ${esc(g.sku)} · ` : ''}${g.qty}개</div></td>
+<td style="width:220px"><input id="bc${i}" placeholder="바코드" style="width:100%;font-size:14px;padding:6px 8px;font-family:monospace"></td></tr>`).join('')}
+</table>
+<p style="margin-top:16px"><button id="go" style="font-size:15px;font-weight:700;padding:8px 20px;border:0;border-radius:8px;background:#2563eb;color:#fff;cursor:pointer">라벨 만들기</button>
+<span style="margin-left:8px;color:#64748b">비워 둔 상품은 빼고 만들어요.</span></p>
+${found.length ? `<p style="color:#64748b">바코드를 찾은 상품 ${found.length}개는 같이 들어가요.</p>` : ''}
+</body></html>`);
+    win.document.close();
+    const $ = (id: string) => win.document.getElementById(id) as HTMLInputElement | null;
+    $('po')?.addEventListener('change', async () => {
+      const files = Array.from($('po')?.files || []);
+      const note = $('poNote');
+      if (note) note.textContent = '읽는 중…';
+      try {
+        // 발주서를 읽으면 상품바코드가 장부에 기억된다(dataProcessor). 다시 찾아서 칸을 채운다.
+        for (const f of files) await parseFile(f);
+        await new Promise(r => setTimeout(r, 300));
+        const book = await loadBarcodeBook();
+        let n = 0;
+        missing.forEach((g, i) => {
+          const bc = (g.sku && book.bySku[g.sku]) || book.byName[g.name] || '';
+          const input = $(`bc${i}`);
+          if (bc && input && !input.value) { input.value = bc; n++; }
+        });
+        if (note) note.textContent = n ? `${n}개 채웠어요.` : '이 파일에서는 못 찾았어요.';
+      } catch (err: any) {
+        if (note) note.textContent = `파일을 읽지 못했어요: ${err?.message || err}`;
+      }
+    });
+    $('go')?.addEventListener('click', () => {
+      const learned: { sku: string; name: string; barcode: string }[] = [];
+      const items = [...found];
+      missing.forEach((g, i) => {
+        const bc = ($(`bc${i}`)?.value || '').trim();
+        if (!bc) return;
+        learned.push({ sku: g.sku, name: g.name, barcode: bc });
+        items.push({ name: g.name, barcode: bc, qty: g.qty });
+      });
+      if (learned.length) rememberBarcodes(learned).catch(err => console.error('바코드 기억 실패:', err));
+      draw(items);
+    });
   };
   const printShipment = (item: ShipOut, orderNo: string, shipmentNo: string) => {
     // 새 탭은 누른 순간에 열어 둔다(파일이 다 온 뒤에 열면 크롬이 팝업으로 막는다).

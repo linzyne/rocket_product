@@ -449,9 +449,12 @@ export const closeShortOrder = (order: HanjungOrder): { order: HanjungOrder; rel
 // ---- 남은 것 정리 뒤 모자란 줄 채우기 ----
 // closeShortOrder로 떼어 낸 쿠팡 줄(released)을 발주 대기로 보내기 전에:
 //  1) 사무실 여유(다른 한중발주에 도착했고 아무 데도 배정 안 된 것)로 먼저 채운다. 입고예정일 빠른 줄부터.
-//  2) (swap = true일 때) 그래도 모자라면, 같은 상품이 다 도착한 다른 한중발주에서 입고예정일이 더 늦은 쿠팡 줄의 배정을
-//     가져온다. 그 늦은 줄은 가져간 만큼 발주 대기로 간다. 쉽먼트로 넘어간 줄(skipKeys)은 건드리지 않는다.
-// 채우고 남은 것은 발주 대기(queue)로. 준비됨: 실제 물건으로 다 채워진 줄은 켜고(readyOn), 배정을 빼앗긴 줄은 끈다(readyOff).
+//  2) (swap = true일 때) 그래도 모자라면, 같은 상품을 맡은 다른 한중발주(도착했든 오는 중이든)에서 입고예정일이 더 늦은
+//     쿠팡 줄의 배정을 가져온다(급한 발주가 그 물건을 먼저 받게). 그 늦은 줄은 가져간 만큼 발주 대기로 간다.
+//     이미 도착분이 있는 줄을 먼저, 그다음 늦은 날짜부터. 쉽먼트로 넘어간 줄(skipKeys)은 건드리지 않는다.
+// 채우고 남은 것은 발주 대기(queue)로.
+// 준비됨: 한중발주마다 "입고예정일 빠른 줄부터 도착분을 채운다"(도착 기록 때와 같은 규칙)로 바뀌기 전후를 비교해
+//  새로 다 채워진 줄은 켜고(readyOn), 더는 다 채워지지 않는 줄은 끈다(readyOff). 배정을 내준 줄도 끈다.
 // 저장하지 않고 계산만 한다(화면이 확인을 받고 저장한다).
 export type FillLine = { 발주번호: string; 물류센터: string; 상품이름: string; 확정수량: number; 입고예정일: string };
 export interface FillPlan {
@@ -460,10 +463,31 @@ export interface FillPlan {
   readyOn: FillLine[];
   readyOff: FillLine[];
   spareFills: { line: FillLine; code: string; qty: number }[];
-  swaps: { to: FillLine; from: FillLine; code: string; qty: number }[];
+  swaps: { to: FillLine; from: FillLine; code: string; qty: number; arrived: boolean }[];
+  notes: string[];                                           // 다 못 채운 줄과 그 까닭
 }
 const sameLineKey = (a: { 발주번호: string; 상품이름: string; 확정수량: number }, b: { 발주번호: string; 상품이름: string; 확정수량: number }) =>
   a.발주번호 === b.발주번호 && a.상품이름.trim() === b.상품이름.trim() && Number(a.확정수량) === Number(b.확정수량);
+const lineKeyOf = (l: { 발주번호: string; 상품이름: string; 확정수량: number }) => `${l.발주번호}│${l.상품이름.trim()}│${l.확정수량}`;
+const toFill = (l: HanjungLine): FillLine => ({ 발주번호: l.발주번호, 물류센터: l.물류센터, 상품이름: l.상품이름, 확정수량: l.확정수량, 입고예정일: l.입고예정일 });
+// 그 한중발주에서 줄마다 도착분: 상품마다 입고예정일 빠른 줄부터 도착 수량을 나눠 준다.
+const arrivedOf = (order: HanjungOrder): Map<HanjungLine, number> => {
+  const m = new Map<HanjungLine, number>();
+  for (const p of productSummary(order)) {
+    let left = p.received;
+    order.lines
+      .filter(l => sameName(l.상품이름, p.상품이름))
+      .sort((a, b) => String(a.입고예정일).localeCompare(String(b.입고예정일)))
+      .forEach(l => { const got = Math.min(lineAlloc(l), Math.max(0, left)); left -= got; m.set(l, got); });
+  }
+  return m;
+};
+// 도착분으로 다 채워진 줄(그 한중발주가 통째로 맡은 줄만. 도착 기록 때 준비됨을 켜는 규칙과 같다).
+export const arrivedLineKeys = (order: HanjungOrder): Map<string, FillLine> => {
+  const out = new Map<string, FillLine>();
+  arrivedOf(order).forEach((got, l) => { if (lineAlloc(l) === l.확정수량 && got >= l.확정수량) out.set(lineKeyOf(l), toFill(l)); });
+  return out;
+};
 // 그 한중발주에 쿠팡 줄 몫을 더한다(같은 줄이 이미 있으면 배정만 늘린다). 주문 수량은 그대로 둔다.
 const addAlloc = (order: HanjungOrder, line: FillLine, qty: number, key: string): HanjungOrder => {
   const orderQty = freezeOrderQty(order, line.상품이름);
@@ -475,23 +499,19 @@ const addAlloc = (order: HanjungOrder, line: FillLine, qty: number, key: string)
   return { ...order, orderQty, lines: [...order.lines, { key, ...line, ...(qty !== line.확정수량 ? { 배정: qty } : {}) }] };
 };
 export const planShortFill = (
+  original: HanjungOrder,
   closing: HanjungOrder,
   releases: ShortRelease[],
   others: HanjungOrder[],
   opts: { swap: boolean; skipKeys: Set<string>; keyOf: (l: FillLine) => string },
 ): FillPlan => {
-  const plan: FillPlan = { orders: [], queue: [], readyOn: [], readyOff: [], spareFills: [], swaps: [] };
-  const work = new Map(others.filter(o => o.code !== closing.code).map(o => [o.code, o]));
-  const lk = (l: { 발주번호: string; 상품이름: string; 확정수량: number }) => `${l.발주번호}│${l.상품이름.trim()}│${l.확정수량}`;
-  // 떼어 낸 줄들(빠른 입고예정일 먼저). kept: 닫는 한중발주에 남은(도착한) 몫.
-  // whole: 그 쿠팡 줄을 닫는 한중발주가 통째로 맡고 있었는지. 다른 곳(대기·다른 한중발주)과 나눠 맡던 줄은
-  // 여기서 다 채워도 나머지 몫이 어떤지 모르니 준비됨을 켜지 않는다(준비 안 된 걸 준비됐다고 보이면 안 된다).
-  const needs = releases.flatMap(r => r.released.map(({ line, qty }) => ({
-    line: { 발주번호: line.발주번호, 물류센터: line.물류센터, 상품이름: line.상품이름, 확정수량: line.확정수량, 입고예정일: line.입고예정일 } as FillLine,
-    need: qty,
-    whole: lineAlloc(line) === line.확정수량,
-  }))).sort((a, b) => a.line.입고예정일.localeCompare(b.line.입고예정일));
+  const plan: FillPlan = { orders: [], queue: [], readyOn: [], readyOff: [], spareFills: [], swaps: [], notes: [] };
+  const before = new Map(others.filter(o => o.code !== closing.code).map(o => [o.code, o]));
+  const work = new Map(before);
+  const needs = releases.flatMap(r => r.released.map(({ line, qty }) => ({ line: toFill(line), need: qty })))
+    .sort((a, b) => a.line.입고예정일.localeCompare(b.line.입고예정일));
   const touched = new Set<string>();
+  const lostLines: FillLine[] = [];
   for (const n of needs) {
     // 1) 사무실 여유
     for (const o of [...work.values()].sort((a, b) => a.createdAt - b.createdAt)) {
@@ -505,50 +525,77 @@ export const planShortFill = (
       plan.spareFills.push({ line: n.line, code: o.code, qty: take });
       n.need -= take;
     }
-    // 2) 더 늦은 쿠팡 줄에서 가져오기(다 도착한 한중발주에서만, 쉽먼트 안 간 줄만, 가장 늦은 줄부터)
+    // 2) 더 늦은 쿠팡 줄에서 가져오기
+    let later = 0, shipped = 0, same = 0;
     if (opts.swap && n.need > 0) {
-      const cands: { o: HanjungOrder; l: HanjungLine }[] = [];
-      for (const o of work.values()) {
-        const p = productSummary(o).find(x => sameName(x.상품이름, n.line.상품이름));
-        if (!p || p.received < p.allocated) continue;
-        for (const l of o.lines) {
-          if (!sameName(l.상품이름, n.line.상품이름) || sameLineKey(l, n.line)) continue;
-          if (String(l.입고예정일) <= n.line.입고예정일) continue;
-          if (opts.skipKeys.has(lk(l))) continue;
-          cands.push({ o, l });
-        }
-      }
-      cands.sort((a, b) => String(b.l.입고예정일).localeCompare(String(a.l.입고예정일)));
-      for (const { o: o0, l } of cands) {
+      for (;;) {
         if (n.need <= 0) break;
-        const o = work.get(o0.code)!;
-        const cur = o.lines.find(x => sameLineKey(x, l));
-        if (!cur) continue;
-        const take = Math.min(lineAlloc(cur), n.need);
-        const left = lineAlloc(cur) - take;
-        let next: HanjungOrder = { ...o, orderQty: freezeOrderQty(o, l.상품이름), lines: left > 0 ? o.lines.map(x => (x === cur ? { ...x, 배정: left } : x)) : o.lines.filter(x => x !== cur) };
+        const cands: { code: string; l: HanjungLine; got: number }[] = [];
+        later = 0; shipped = 0; same = 0;
+        for (const o of work.values()) {
+          const got = arrivedOf(o);
+          for (const l of o.lines) {
+            if (!sameName(l.상품이름, n.line.상품이름) || sameLineKey(l, n.line)) continue;
+            same++;
+            if (String(l.입고예정일) <= n.line.입고예정일) continue;
+            later++;
+            if (opts.skipKeys.has(lineKeyOf(l))) { shipped++; continue; }
+            cands.push({ code: o.code, l, got: got.get(l) || 0 });
+          }
+        }
+        // 도착분이 있는 줄 먼저, 그다음 입고예정일이 가장 늦은 줄부터.
+        cands.sort((a, b) => Number(b.got > 0) - Number(a.got > 0) || String(b.l.입고예정일).localeCompare(String(a.l.입고예정일)));
+        const c = cands[0];
+        if (!c) break;
+        const o = work.get(c.code)!;
+        const take = Math.min(lineAlloc(c.l), n.need);
+        if (take <= 0) break;
+        const left = lineAlloc(c.l) - take;
+        let next: HanjungOrder = {
+          ...o, orderQty: freezeOrderQty(o, c.l.상품이름),
+          lines: left > 0 ? o.lines.map(x => (x === c.l ? { ...x, 배정: left } : x)) : o.lines.filter(x => x !== c.l),
+        };
         next = addAlloc(next, n.line, take, opts.keyOf(n.line));
-        work.set(o.code, next);
-        touched.add(o.code);
-        const from: FillLine = { 발주번호: l.발주번호, 물류센터: l.물류센터, 상품이름: l.상품이름, 확정수량: l.확정수량, 입고예정일: l.입고예정일 };
-        plan.swaps.push({ to: n.line, from, code: o.code, qty: take });
+        work.set(c.code, next);
+        touched.add(c.code);
+        const from = toFill(c.l);
+        plan.swaps.push({ to: n.line, from, code: c.code, qty: take, arrived: c.got > 0 });
         plan.queue.push({ ...from, qty: take });
-        plan.readyOff.push(from);
+        lostLines.push(from);
         n.need -= take;
       }
     }
-    if (n.need > 0) plan.queue.push({ ...n.line, qty: n.need });
-    // 실제 물건(닫는 건에 남은 도착분 + 사무실 여유 + 다 도착한 건에서 가져온 것)으로 줄 전체가 채워졌으면 준비됨.
-    else if (n.whole) plan.readyOn.push(n.line);
+    if (n.need > 0) {
+      plan.queue.push({ ...n.line, qty: n.need });
+      const why = !opts.swap ? ''
+        : !same ? '같은 상품을 맡은 다른 한중발주가 없어요'
+        : !later ? '같은 상품을 맡은 발주가 모두 입고예정일이 같거나 더 빨라요'
+        : shipped >= later ? `더 늦은 발주 ${later}건이 이미 쉽먼트로 넘어갔어요`
+        : '';
+      plan.notes.push(`${n.line.발주번호} ${n.line.상품이름} ${n.need}개 → 발주 대기${why ? ` (${why})` : ''}`);
+    }
   }
   plan.orders = [...touched].map(c => work.get(c)!);
   // 같은 쿠팡 줄이 대기로 여러 번 가면 한 번으로 합친다(따로 보내면 나중 것이 앞의 것을 덮어쓴다).
   const merged = new Map<string, FillLine & { qty: number }>();
   for (const q of plan.queue) {
-    const k = lk(q);
+    const k = lineKeyOf(q);
     const was = merged.get(k);
     merged.set(k, was ? { ...was, qty: Math.min(q.확정수량, was.qty + q.qty) } : { ...q });
   }
   plan.queue = [...merged.values()];
+  // 준비됨: 바뀐 한중발주(닫는 건 포함)에서 도착분으로 다 채워진 줄을 전후 비교.
+  const pre = new Map<string, FillLine>();
+  const post = new Map<string, FillLine>();
+  arrivedLineKeys(original).forEach((v, k) => pre.set(k, v));
+  arrivedLineKeys(closing).forEach((v, k) => post.set(k, v));
+  for (const c of touched) {
+    arrivedLineKeys(before.get(c)!).forEach((v, k) => pre.set(k, v));
+    arrivedLineKeys(work.get(c)!).forEach((v, k) => post.set(k, v));
+  }
+  post.forEach((v, k) => { if (!pre.has(k)) plan.readyOn.push(v); });
+  pre.forEach((v, k) => { if (!post.has(k)) plan.readyOff.push(v); });
+  // 배정을 내준 줄은 더 이상 다 갖춰진 게 아니다.
+  for (const l of lostLines) if (!plan.readyOff.some(x => sameLineKey(x, l))) plan.readyOff.push(l);
   return plan;
 };

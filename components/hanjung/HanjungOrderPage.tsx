@@ -507,8 +507,8 @@ const HanjungOrderPage: React.FC = () => {
     const skipKeys = new Set(linesAt('ship').map(l => lk(l)));
     const keyOf = (l: FillLine) => reservationKey({ 발주번호: l.발주번호, 상품이름: l.상품이름, 확정수량: l.확정수량, 입고예정일: normalizeDateValue(l.입고예정일) } as OrderRow);
     const opts = { skipKeys, keyOf };
-    const base = planShortFill(closed, releases, orders, { ...opts, swap: false });
-    const withSwap = canSwap ? planShortFill(closed, releases, orders, { ...opts, swap: true }) : base;
+    const base = planShortFill(o, closed, releases, orders, { ...opts, swap: false });
+    const withSwap = canSwap ? planShortFill(o, closed, releases, orders, { ...opts, swap: true }) : base;
     const day = (d: string) => `${Number(d.slice(4, 6))}/${Number(d.slice(6, 8))}`;
 
     const lines = releases.map(r => {
@@ -520,14 +520,18 @@ const HanjungOrderPage: React.FC = () => {
     if (!confirm(
       `${o.code}를 도착한 만큼으로 마무리할까요?\n\n${lines.join('\n')}` +
       (spare.length ? `\n\n사무실 여유로 채워요:\n${spare.join('\n')}` : '') +
-      (left.length ? `\n\n발주 대기로 가요(다음 한중발주로 주문):\n${left.join('\n')}` : ''),
+      (left.length ? `\n\n발주 대기로 가요(다음 한중발주로 주문):\n${left.join('\n')}` : '') +
+      (!canSwap ? '\n\n⚠ 발주 목록을 아직 다 못 받아서 늦은 발주에서 옮기기는 이번엔 안 해요. 잠시 뒤 다시 눌러 주세요.'
+        : !withSwap.swaps.length && withSwap.notes.length ? `\n\n늦은 발주에서 옮길 수 있는 게 없어요:\n${withSwap.notes.map(n => `· ${n}`).join('\n')}` : ''),
     )) return;
 
     let plan: FillPlan = base;
     if (withSwap.swaps.length) {
-      const sw = withSwap.swaps.map(x => `· ${x.to.상품이름} ${x.qty}개: ${day(x.from.입고예정일)} 발주 ${x.from.발주번호} → ${day(x.to.입고예정일)} 발주 ${x.to.발주번호} (${x.code})`);
+      const sw = withSwap.swaps.map(x => `· ${x.to.상품이름} ${x.qty}개: ${day(x.from.입고예정일)} 발주 ${x.from.발주번호} → ${day(x.to.입고예정일)} 발주 ${x.to.발주번호} (${x.code} · ${x.arrived ? '도착분' : '오는 중'})`);
       if (confirm(
-        `입고예정일이 더 늦은 발주에 이미 도착한 같은 상품이 배정돼 있어요.\n급한 발주로 옮길까요? 옮긴 만큼 늦은 발주가 대신 발주 대기로 가요.\n\n${sw.join('\n')}\n\n(쉽먼트로 넘어간 발주는 건드리지 않아요. 취소를 누르면 옮기지 않고 위 내용대로만 해요.)`,
+        `같은 상품이 입고예정일이 더 늦은 발주에 배정돼 있어요.\n급한 발주로 옮길까요? 옮긴 만큼 늦은 발주가 대신 발주 대기로 가요.\n\n${sw.join('\n')}` +
+        (withSwap.notes.length ? `\n\n그래도 대기로 가는 것:\n${withSwap.notes.map(n => `· ${n}`).join('\n')}` : '') +
+        `\n\n(쉽먼트로 넘어간 발주는 건드리지 않아요. 취소를 누르면 옮기지 않고 앞 내용대로만 해요.)`,
       )) plan = withSwap;
     }
 

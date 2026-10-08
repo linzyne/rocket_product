@@ -875,7 +875,10 @@ const HanjungOrderPage: React.FC = () => {
                     )}
                   </div>
 
-                  {o.receipts.length > 0 && foldHead(`${o.code}|receipts`, `도착 기록 ${o.receipts.length}건`, `총원가 ${won(t.totalCost)}`)}
+                  {/* "건"이 상품 수로 읽혀서 헷갈렸다: 도착한 횟수(번)와 상품 종류·개수를 같이 적는다. */}
+                  {o.receipts.length > 0 && foldHead(`${o.code}|receipts`,
+                    `도착 ${o.receipts.length}번 · ${new Set(o.receipts.flatMap(r => r.items.map(it => it.상품이름))).size}종 ${o.receipts.reduce((n, r) => n + r.items.reduce((m, it) => m + (Number(it.qty) || 0), 0), 0)}개`,
+                    `총원가 ${won(t.totalCost)}`)}
                   {foldOpen(`${o.code}|receipts`) && <div className="pl-7"><ReceiptHistory order={o} /></div>}
 
                   {settle.rows.length > 0 && foldHead(`${o.code}|settle`, `쿠팡 입고 ${settle.rows.length}건`, `정산 ${won(settle.total)}`)}

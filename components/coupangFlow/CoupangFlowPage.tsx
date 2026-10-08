@@ -418,7 +418,8 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
           const now = draft.qty[l.상품이름] ?? full;
           return (
             <div key={i} style={{ padding: '2px 0', borderTop: i ? '1px dashed #f0f0f0' : 'none' }}>
-              <div style={{ display: 'flex', gap: 6, alignItems: 'baseline' }}>
+              {/* 한 줄 표: [체크] [상품 이름(넘치면 …)] [사무실] [수량]. 줄바꿈하지 않고 칸 너비를 맞춘다. */}
+              <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
                 {o.stage > 0 && (() => {
                   // 상품별 체크 → 준비됨 / 한중발주 배정 / 사무실 재고
                   const hl = { 발주번호: o.no, 물류센터: o.center, 상품이름: l.상품이름, 확정수량: l.확정수량, 입고예정일: o.date, 메모: '', 쉼먼트: '' };
@@ -450,9 +451,9 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
                   const faded = isReady || coming.length > 0;
                   return (
                     <span
-                      title={`${isReady ? '준비됨' : coming.length ? `입고중(한중발주 ${coming.map(p => p.code).join(', ')})` : waitingQueue ? '한중발주 대기(1688 주문 전)' : '준비중'} — 왼쪽 체크 칸에서 준비됨·한중발주 배정`}
+                      title={`${l.상품이름}\n${isReady ? '준비됨' : coming.length ? `입고중(한중발주 ${coming.map(p => p.code).join(', ')})` : waitingQueue ? '한중발주 대기(1688 주문 전)' : '준비중'} — 왼쪽 체크 칸에서 준비됨·한중발주 배정`}
                       style={{
-                        flex: 1, minWidth: 0, wordBreak: 'keep-all',
+                        flex: 1, minWidth: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
                         // 준비중(아무 진행 없음) = 검정 굵게, 입고중 = 중간 회색 + 번호 동그라미, 준비됨 = 회색 + 줄 긋기 + 초록 ✓
                         color: now < full ? RED : isReady ? '#a8a29e' : faded ? '#857f78' : '#111',
                         fontWeight: faded ? 400 : 700,
@@ -491,19 +492,20 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
                       const office = officeOf(l.상품이름);
                       const arrived = office.qty || 0;
                       const incoming = office.incoming || 0;
-                      if (!arrived && !incoming) return null;
+                      // 칸을 맞추려고 없을 때도 같은 너비를 비워 둔다.
+                      if (!arrived && !incoming) return <span style={{ flexShrink: 0, width: 46 }} />;
                       const need = Number(l.확정수량) || 0;
                       const color = arrived >= need ? GREEN : arrived + incoming >= need ? '#d97706' : RED;
                       return (
                         <span
                           title={`사무실 재고(한중 여유) · 도착 ${arrived}개${incoming ? ` · 오는 중 ${incoming}개` : ''}\n${office.names.join('\n')}`}
-                          style={{ flexShrink: 0, fontSize: 13, fontWeight: 800, color, whiteSpace: 'nowrap' }}
+                          style={{ flexShrink: 0, width: 46, textAlign: 'right', fontSize: 13, fontWeight: 800, color, whiteSpace: 'nowrap' }}
                         >
                           {arrived}{incoming > 0 && <span style={{ fontSize: 11, fontWeight: 700, color: '#d97706' }}> +{incoming}</span>}
                         </span>
                       );
                     })()}
-                    <b style={{ flexShrink: 0 }}>{l.확정수량}개</b>
+                    <b style={{ flexShrink: 0, width: 38, textAlign: 'right', whiteSpace: 'nowrap' }}>{l.확정수량}개</b>
                   </>
                 )}
               </div>
@@ -805,7 +807,7 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
       {/* 커다란 판 하나에 단계 칸이 옆으로 나란히(위쪽 머리줄 = 칸 제목). 발주서는 지금 단계 칸 안에 위아래 한 줄로 자리 잡는다. */}
       <main style={{ overflowX: 'auto', padding: '12px clamp(10px, 3vw, 20px) 70px' }}>
         <div style={{
-          display: 'inline-grid', gridTemplateColumns: `repeat(${BOARD_STAGES.length}, 460px)`,
+          display: 'inline-grid', gridTemplateColumns: `repeat(${BOARD_STAGES.length}, 380px)`,
           border: '1.5px solid #d6d3d1', borderRadius: 12, background: '#efedea', overflow: 'hidden', alignItems: 'stretch',
         }}>
           {/* 머리줄 */}

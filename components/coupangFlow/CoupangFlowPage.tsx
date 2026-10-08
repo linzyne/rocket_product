@@ -366,7 +366,8 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
         <span style={{ fontSize: size, fontWeight: 900, color: ORANGE }}>{o.center || '센터 없음'}</span>
       </div>
       <div style={{ fontSize: 11.5, color: '#888', marginTop: 2 }}>
-        발주 {o.no}
+        {/* 발주번호만 따로 감싼다: 앱 전체의 "발주번호 누르면 복사"(utils/copyOrderNo)가 글자가 번호 하나일 때만 복사한다. */}
+        발주 <span title="눌러서 발주번호 복사" style={{ cursor: 'copy', textDecoration: 'underline dotted', textUnderlineOffset: 2 }}>{o.no}</span>
       </div>
     </div>
   );

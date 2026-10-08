@@ -1,7 +1,8 @@
 import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import ProductQtySummary from '../coupangOrder/components/ProductQtySummary';
 import { useIsMobile } from '../../utils/useIsMobile';
-import { ShipOut, setShipOutDate, subscribeShipOuts, deleteShipOut, restoreShipOut, restoreOrders, updateShipOutLine, markShipOuts, applyShipOutRequest, snapshotShipOuts, restoreShipSnapshot, sameSnapshot } from '../coupangOrder/data/shipOutStore';
+import { ShipOut, setShipOutDate, subscribeShipOuts, deleteShipOut, restoreShipOut, restoreOrders, updateShipOutLine, markShipOuts, applyShipOutRequest, snapshotShipOuts, restoreShipSnapshot, sameSnapshot, findOrphanLines, restoreOrphanLines } from '../coupangOrder/data/shipOutStore';
+import type { OrphanLine } from '../coupangOrder/data/shipOutStore';
 import type { ShipSnapshot } from '../coupangOrder/data/shipOutStore';
 import { dateKeyYMD } from '../coupangOrder/utils/dateUtils';
 import OrderTable, { BoxPicker } from '../coupangOrder/components/OrderTable';
@@ -245,6 +246,9 @@ export default function CoupangShipPage({ onGoOrder }: { onGoOrder?: () => void 
 
   useEffect(() => subscribeShipOuts(setList), []);
   useEffect(() => subscribeShipments(setBatches), []);
+  // 사라진 발주 찾기: 쉽먼트 기록에는 있는데 어디에도 없는 줄. 고른 것을 발주확인으로 되살린다.
+  const [orphans, setOrphans] = useState<OrphanLine[] | null>(null);
+  const [orphanPick, setOrphanPick] = useState<Set<number>>(new Set());
   useEffect(() => subscribeShippingSettings(({ addresses, sender }) => { setAddresses(addresses); setSender(sender); }), []);
 
   // 박스 순으로 세운 줄 차례(눌렀을 때 한 번 정해 두고, 그 뒤로는 그대로 둔다).
@@ -1095,6 +1099,66 @@ export default function CoupangShipPage({ onGoOrder }: { onGoOrder?: () => void 
                     <button onClick={() => answerLink(c, false)} style={{ padding: '4px 10px', fontSize: 12, fontWeight: 700, borderRadius: 6, cursor: 'pointer', border: '1px solid #d1d5db', background: '#fff', color: '#6b7280', whiteSpace: 'nowrap' }}>다른 상품</button>
                   </div>
                 ))}
+              </div>
+            )}
+          </div>
+        )}
+        <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 8 }}>
+          <button
+            onClick={() => { setOrphans(findOrphanLines(batches)); setOrphanPick(new Set()); }}
+            title="쉽먼트 기록에는 있는데 발주확인·쉽먼트생성·발송대기·발송 완료 어디에도 없는 발주를 찾아 발주확인으로 되살려요"
+            style={{ padding: '4px 10px', fontSize: 12, fontWeight: 700, borderRadius: 6, cursor: 'pointer', border: '1px solid #d1d5db', background: '#fff', color: '#475569' }}
+          >
+            🔍 사라진 발주 찾기
+          </button>
+        </div>
+        {orphans && (
+          <div style={{ border: '1.5px solid #f59e0b', background: '#fffbeb', borderRadius: 10, padding: 12, marginBottom: 12 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+              <b style={{ fontSize: 13 }}>쉽먼트 기록에만 남은 발주 {orphans.length}줄</b>
+              <span style={{ fontSize: 11.5, color: '#92400e' }}>되살릴 줄을 체크하세요. 쿠팡이 취소했거나 일부러 지운 건은 빼세요.</span>
+              <span style={{ marginLeft: 'auto', display: 'flex', gap: 6 }}>
+                <button
+                  disabled={!orphanPick.size}
+                  onClick={() => {
+                    const pick = orphans.filter((_, i) => orphanPick.has(i));
+                    const n = restoreOrphanLines(pick);
+                    alert(`${n}줄을 발주확인으로 되살렸어요. 묶음·박스는 다시 정해 주세요.`);
+                    setOrphans(null);
+                  }}
+                  style={{ padding: '4px 12px', fontSize: 12, fontWeight: 800, borderRadius: 6, cursor: orphanPick.size ? 'pointer' : 'not-allowed', border: 0, background: orphanPick.size ? '#e67e22' : '#e5e7eb', color: '#fff' }}
+                >
+                  발주확인으로 되살리기 {orphanPick.size || ''}
+                </button>
+                <button onClick={() => setOrphans(null)} style={{ padding: '4px 10px', fontSize: 12, borderRadius: 6, cursor: 'pointer', border: '1px solid #d1d5db', background: '#fff' }}>닫기</button>
+              </span>
+            </div>
+            {orphans.length === 0 ? (
+              <div style={{ fontSize: 12.5, color: '#666' }}>없어요. 쉽먼트 기록에 있는 발주는 모두 어딘가에 있어요.</div>
+            ) : (
+              <div style={{ maxHeight: 360, overflowY: 'auto', background: '#fff', borderRadius: 8, border: '1px solid #fde68a' }}>
+                {orphans.map((l, i) => {
+                  const startOfGroup = i === 0 || orphans[i - 1].입고예정일 !== l.입고예정일 || orphans[i - 1].물류센터 !== l.물류센터;
+                  const group = orphans.map((x, j) => j).filter(j => orphans[j].입고예정일 === l.입고예정일 && orphans[j].물류센터 === l.물류센터);
+                  const allOn = group.every(j => orphanPick.has(j));
+                  return (
+                    <React.Fragment key={i}>
+                      {startOfGroup && (
+                        <label style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 10px', background: '#fef3c7', fontSize: 12.5, fontWeight: 800, cursor: 'pointer' }}>
+                          <input type="checkbox" checked={allOn} onChange={e => setOrphanPick(prev => { const n = new Set(prev); group.forEach(j => e.target.checked ? n.add(j) : n.delete(j)); return n; })} />
+                          {l.물류센터} · {l.입고예정일} 입고 · {group.length}줄
+                        </label>
+                      )}
+                      <label style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '4px 10px 4px 26px', fontSize: 12, borderTop: '1px solid #fef3c7', cursor: 'pointer' }}>
+                        <input type="checkbox" checked={orphanPick.has(i)} onChange={e => setOrphanPick(prev => { const n = new Set(prev); e.target.checked ? n.add(i) : n.delete(i); return n; })} />
+                        <span style={{ fontFamily: 'monospace', color: '#334155' }}>{l.발주번호}</span>
+                        <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={l.상품이름}>{l.상품이름}</span>
+                        <b>{l.확정수량}개</b>
+                        <span style={{ color: '#94a3b8', fontSize: 11 }}>{l.batchId}</span>
+                      </label>
+                    </React.Fragment>
+                  );
+                })}
               </div>
             )}
           </div>

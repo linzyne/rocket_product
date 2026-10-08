@@ -388,6 +388,37 @@ export function restoreOrders(orderNos: string[]): number {
   return backs.reduce((n, b) => n + pushBackToWork(b.lines, b.bundle), 0);
 }
 
+// 쉽먼트 기록에는 있는데 발주확인·쉽먼트생성·발송대기·발송 완료 어디에도 없는 줄(사라진 발주 찾기).
+// 쉽먼트 기록은 출고 건을 되돌리거나 지워도 남아 있어서, 거기서 발주번호·상품·수량·센터·입고예정일을 되찾는다.
+// 여러 박스로 나눈 줄은 합치고, 같은 줄이 여러 기록에 있으면 나중 기록을 쓴다.
+export type OrphanLine = { 발주번호: string; 물류센터: string; 상품이름: string; 확정수량: number; 입고예정일: string; batchId: string };
+export function findOrphanLines(batches: ShipmentBatch[]): OrphanLine[] {
+  const have = new Set([
+    ...readWork().rows.map(r => `${String(r.발주번호 ?? '').trim()}│${String(r.상품이름 ?? '').trim()}`),
+    ...read().flatMap(s => s.lines.map(l => `${String(l.발주번호).trim()}│${String(l.상품이름).trim()}`)),
+  ]);
+  const found = new Map<string, OrphanLine>();
+  for (const b of [...batches].sort((x, y) => (x.createdAt || 0) - (y.createdAt || 0))) {
+    const mine = new Map<string, OrphanLine>();
+    for (const box of allBoxes(b)) {
+      for (const l of box.lines) {
+        const k = `${String(l.발주번호).trim()}│${String(l.상품이름).trim()}`;
+        if (have.has(k)) continue;
+        const was = mine.get(k);
+        if (was) was.확정수량 += Number(l.확정수량) || 0;
+        else mine.set(k, { 발주번호: String(l.발주번호).trim(), 물류센터: box.center, 상품이름: String(l.상품이름).trim(), 확정수량: Number(l.확정수량) || 0, 입고예정일: dateKeyYMD(l.입고예정일), batchId: b.id });
+      }
+    }
+    mine.forEach((v, k) => found.set(k, v));
+  }
+  return Array.from(found.values()).sort((a, b) => ymdSortKey(b.입고예정일) - ymdSortKey(a.입고예정일) || a.물류센터.localeCompare(b.물류센터, 'ko', { numeric: true }) || a.발주번호.localeCompare(b.발주번호));
+}
+
+// 찾은 줄을 발주확인으로 되살린다(묶음 없이).
+export function restoreOrphanLines(lines: OrphanLine[]): number {
+  return pushBackToWork(lines.map(l => ({ 발주번호: l.발주번호, 물류센터: l.물류센터, 상품이름: l.상품이름, 확정수량: l.확정수량, 입고예정일: l.입고예정일 })), '');
+}
+
 // 쉽먼트생성·발송대기·발송 완료에 있는 모든 줄(발주서를 새로 받을 때 이미 있는 줄을 세는 데 쓴다).
 export function allShipOutLines(): ShipOutLine[] {
   return read().flatMap(s => s.lines);

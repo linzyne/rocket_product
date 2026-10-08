@@ -63,7 +63,9 @@ const daysAgo = (ymd: string) => {
   return Number.isFinite(t) ? (Date.now() - t) / 86400000 : 999;
 };
 
-export default function CoupangFlowPage({ onNavigate }: { onNavigate: (menu: AppMenuId) => void }) {
+// view: 'board' = 단계마다 상자를 옆으로(발주 진행 메뉴), 'list' = 발주서마다 단계 한 줄(발주 단계별 메뉴). 내용은 같다.
+export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavigate: (menu: AppMenuId) => void; view?: 'board' | 'list' }) {
+  const [tab, setTab] = useState<Stage | 'active'>('active');
   const [work, setWork] = useState(() => readWork().rows);
   // 발주번호 → 처음 들어온 시각(24시간 안에 들어온 것만 남아 있다). NEW 표시와 발주확정 상자 순서에 쓴다.
   const [seenAt, setSeenAt] = useState(() => readWork().seen);
@@ -199,58 +201,58 @@ export default function CoupangFlowPage({ onNavigate }: { onNavigate: (menu: App
     }
   };
 
-  // 발주서 카드 하나(상자 폭에 맞춘 세로 카드).
-  const card = (o: FlowOrder) => {
-    const r = run(o);
-    const qty = o.lines.reduce((sum, l) => sum + (Number(l.확정수량) || 0), 0);
-    const shipNo = o.item?.shipmentNos?.[o.no];
-    return (
-      <div key={o.no} style={{
-        background: '#fff', borderRadius: 9, padding: '9px 10px', boxShadow: '0 1px 3px rgba(0,0,0,0.06)',
-        border: `1px solid ${r?.state === 'error' ? '#fca5a5' : '#ececec'}`, display: 'flex', flexDirection: 'column', gap: 6,
-      }}>
-        {/* 입고예정일·센터를 가장 크게 */}
-        <div>
-          <div style={{ display: 'flex', alignItems: 'baseline', gap: 6, flexWrap: 'wrap', lineHeight: 1.2 }}>
-            <span style={{ fontSize: 17, fontWeight: 900, color: '#111' }}>{dayText(o.date)}</span>
-            <span style={{ fontSize: 17, fontWeight: 900, color: ORANGE }}>{o.center || '센터 없음'}</span>
-          </div>
-          <div style={{ fontSize: 11.5, color: '#888', marginTop: 2 }}>
-            발주 {o.no}
-            {seenAt[o.no] && Date.now() - seenAt[o.no] < 24 * 60 * 60 * 1000 && (
-              <span style={{ marginLeft: 5, padding: '0 5px', borderRadius: 4, background: RED, color: '#fff', fontSize: 10, fontWeight: 800 }}>NEW</span>
-            )}
-          </div>
-        </div>
-
-        {((o.bundle || o.hold) && o.stage === 1) || shipNo || o.partial ? (
-          <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
-            {o.bundle && o.stage === 1 && <Tag color="#6b7280">{o.bundle}</Tag>}
-            {o.hold && o.stage === 1 && <Tag color="#7c3aed">{o.hold}</Tag>}
-            {shipNo && <Tag color="#2563eb">쉽먼트 {shipNo}</Tag>}
-            {o.partial && <Tag color={RED}>일부만 넘어감</Tag>}
-          </div>
-        ) : null}
-
-        {r && r.state !== 'done' && (
-          <div style={{
-            padding: '5px 7px', borderRadius: 6, fontSize: 11.5, lineHeight: 1.45,
-            background: r.state === 'error' ? '#fef2f2' : '#eff6ff', color: r.state === 'error' ? '#b91c1c' : '#1d4ed8',
-          }}>
-            <b>{r.state === 'error' ? `⛔ ${STEP_LABEL[r.step]}에서 멈춤` : `⏳ ${STEP_LABEL[r.step]} 하는 중`}</b> · {r.message}
-          </div>
+  // ── 카드 조각들(상자 보기·단계별 보기가 같이 쓴다) ──
+  // 입고예정일·센터를 가장 크게, 그 아래 발주번호.
+  const headInfo = (o: FlowOrder, size: number) => (
+    <div>
+      <div style={{ display: 'flex', alignItems: 'baseline', gap: 6, flexWrap: 'wrap', lineHeight: 1.2 }}>
+        <span style={{ fontSize: size, fontWeight: 900, color: '#111' }}>{dayText(o.date)}</span>
+        <span style={{ fontSize: size, fontWeight: 900, color: ORANGE }}>{o.center || '센터 없음'}</span>
+      </div>
+      <div style={{ fontSize: 11.5, color: '#888', marginTop: 2 }}>
+        발주 {o.no}
+        {seenAt[o.no] && Date.now() - seenAt[o.no] < 24 * 60 * 60 * 1000 && (
+          <span style={{ marginLeft: 5, padding: '0 5px', borderRadius: 4, background: RED, color: '#fff', fontSize: 10, fontWeight: 800 }}>NEW</span>
         )}
-
-        {/* 상품. 다른 상자에 가 있는 줄은 어디 있는지 빨갛게 적는다. */}
-        <div style={{ fontSize: 12, borderTop: '1px solid #f3f3f3', paddingTop: 5 }}>
-          {o.lines.map((l, i) => {
-            // 발주확정 상자에서는 확정수량을 바로 고친다. 발주수량보다 줄이면 사유를 고른다(기본: 시장 단종).
-            const editable = o.stage === 0 && l.stage === 0;
-            const draft = readDraft(o.no);
-            const full = Number(l.확정수량) || 0;
-            const now = draft.qty[l.상품이름] ?? full;
-            return (
-            <div key={i} style={{ padding: '2px 0' }}>
+      </div>
+    </div>
+  );
+  const tags = (o: FlowOrder) => {
+    const shipNo = o.item?.shipmentNos?.[o.no];
+    if (!(((o.bundle || o.hold) && o.stage === 1) || shipNo || o.partial)) return null;
+    return (
+      <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+        {o.bundle && o.stage === 1 && <Tag color="#6b7280">{o.bundle}</Tag>}
+        {o.hold && o.stage === 1 && <Tag color="#7c3aed">{o.hold}</Tag>}
+        {shipNo && <Tag color="#2563eb">쉽먼트 {shipNo}</Tag>}
+        {o.partial && <Tag color={RED}>일부만 넘어감</Tag>}
+      </div>
+    );
+  };
+  const runNote = (o: FlowOrder) => {
+    const r = run(o);
+    if (!r || r.state === 'done') return null;
+    return (
+      <div style={{
+        padding: '5px 7px', borderRadius: 6, fontSize: 11.5, lineHeight: 1.45,
+        background: r.state === 'error' ? '#fef2f2' : '#eff6ff', color: r.state === 'error' ? '#b91c1c' : '#1d4ed8',
+      }}>
+        <b>{r.state === 'error' ? `⛔ ${STEP_LABEL[r.step]}에서 멈춤` : `⏳ ${STEP_LABEL[r.step]} 하는 중`}</b> · {r.message}
+      </div>
+    );
+  };
+  // 상품. 발주확정 단계에서는 확정수량을 바로 고친다(줄이면 사유, 기본 시장 단종). 다른 단계에 가 있는 줄은 어디 있는지 빨갛게.
+  const products = (o: FlowOrder) => {
+    const qty = o.lines.reduce((sum, l) => sum + (Number(l.확정수량) || 0), 0);
+    return (
+      <>
+        {o.lines.map((l, i) => {
+          const editable = o.stage === 0 && l.stage === 0;
+          const draft = readDraft(o.no);
+          const full = Number(l.확정수량) || 0;
+          const now = draft.qty[l.상품이름] ?? full;
+          return (
+            <div key={i} style={{ padding: '2px 0', borderTop: i ? '1px dashed #f0f0f0' : 'none' }}>
               <div style={{ display: 'flex', gap: 6, alignItems: 'baseline' }}>
                 <span style={{ flex: 1, minWidth: 0, color: now < full ? RED : '#333', wordBreak: 'keep-all', textDecoration: editable && now === 0 ? 'line-through' : 'none' }}>{l.상품이름}</span>
                 {editable ? (
@@ -283,111 +285,228 @@ export default function CoupangFlowPage({ onNavigate }: { onNavigate: (menu: App
                 <div style={{ color: RED, fontSize: 10.5 }}>{STAGES[l.stage]} · {l.where}</div>
               )}
             </div>
-            );
-          })}
-          {o.lines.length > 1 && <div style={{ fontSize: 10.5, color: '#aaa', textAlign: 'right' }}>{o.lines.length}종 · {qty}개</div>}
-        </div>
-
-        <div style={{ display: 'flex', gap: 4, flexWrap: 'nowrap', alignItems: 'center' }}>
-          {action(o)}
-          {o.confirmed && o.stage <= 1 && !o.bundle && (
-            <button onClick={() => confirm1([o.no], false)} style={{ marginLeft: 'auto', padding: 0, border: 'none', background: 'transparent', color: '#aaa', fontSize: 10.5, cursor: 'pointer', textDecoration: 'underline' }}>
-              확정 취소
-            </button>
-          )}
-        </div>
-      </div>
+          );
+        })}
+        {o.lines.length > 1 && <div style={{ fontSize: 10.5, color: '#aaa', textAlign: 'right' }}>{o.lines.length}종 · {qty}개</div>}
+      </>
     );
   };
+  const actionRow = (o: FlowOrder) => (
+    <div style={{ display: 'flex', gap: 4, flexWrap: 'nowrap', alignItems: 'center' }}>
+      {action(o)}
+      {o.confirmed && o.stage <= 1 && !o.bundle && (
+        <button onClick={() => confirm1([o.no], false)} style={{ marginLeft: 'auto', padding: 0, border: 'none', background: 'transparent', color: '#aaa', fontSize: 10.5, cursor: 'pointer', textDecoration: 'underline' }}>
+          확정 취소
+        </button>
+      )}
+    </div>
+  );
+  const borderOf = (o: FlowOrder) => `1px solid ${run(o)?.state === 'error' ? '#fca5a5' : '#ececec'}`;
 
+  // 상자 보기 카드: 상자 폭에 맞춰 위아래로.
+  const card = (o: FlowOrder) => (
+    <div key={o.no} style={{ background: '#fff', borderRadius: 9, padding: '9px 10px', boxShadow: '0 1px 3px rgba(0,0,0,0.06)', border: borderOf(o), display: 'flex', flexDirection: 'column', gap: 6 }}>
+      {headInfo(o, 17)}
+      {tags(o)}
+      {runNote(o)}
+      <div style={{ fontSize: 12, borderTop: '1px solid #f3f3f3', paddingTop: 5 }}>{products(o)}</div>
+      {actionRow(o)}
+    </div>
+  );
+
+  // 단계별 보기 카드: 왼쪽에 날짜·센터·단계·버튼, 오른쪽에 상품.
+  const row = (o: FlowOrder) => (
+    <div key={o.no} style={{ display: 'flex', flexWrap: 'wrap', border: borderOf(o), borderRadius: 10, background: '#fff', boxShadow: '0 1px 3px rgba(0,0,0,0.04)', overflow: 'hidden' }}>
+      <div style={{ flex: '0 0 auto', minWidth: 240, maxWidth: '100%', boxSizing: 'border-box', padding: '10px 12px', background: '#fafafa', borderRight: '1px solid #f0f0f0', display: 'flex', flexDirection: 'column', gap: 7 }}>
+        {headInfo(o, 20)}
+        <Stepper stage={o.stage} error={run(o)?.state === 'error'} />
+        {tags(o)}
+        {runNote(o)}
+        {actionRow(o)}
+      </div>
+      <div style={{ flex: '1 1 220px', minWidth: 0, padding: '10px 12px', fontSize: 12.5 }}>{products(o)}</div>
+    </div>
+  );
+
+  // 새 주문 수집 칸
+  const collectPanel = (
+    <div style={{ background: '#eff6ff', borderRadius: 12, padding: 8 }}>
+      <CollectPurchaseOrders onFile={handleOrderFile} compact label="📥 새 주문 수집" />
+      {collectNote && <div style={{ marginTop: 6, fontSize: 11.5, color: collectNote.startsWith('⛔') ? RED : '#1d4ed8', lineHeight: 1.4 }}>{collectNote}</div>}
+    </div>
+  );
+  // 발주확정 올리기 칸(발주확정 단계 발주서들)
+  const confirmPanel = (list: FlowOrder[]) => (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+      <button
+        style={{ ...btn(ORANGE, true), width: '100%', padding: '7px 8px', fontSize: 12.5 }}
+        onClick={() => {
+          // 진행 중인 게 있으면 조용히 막지 않고 물어본다.
+          if (confirmJob && !['applied', 'error'].includes(confirmJob.step) && Date.now() - confirmJob.at < 10 * 60 * 1000
+            && !window.confirm(`아직 진행 중인 발주확정 올리기가 있어요(${confirmJob.status}).\n새로 시작할까요?`)) return;
+          uploadConfirm(list);
+        }}
+        title="확정수량(I열)·납품부족사유(M열)를 채운 발주확정 파일을 만들어 서허 발주확정 업로드에 올립니다"
+      >
+        📤 발주확정 올리기 ({list.length}건)
+      </button>
+      <button
+        style={{ ...btn('#6b7280'), width: '100%' }}
+        onClick={() => { if (window.confirm(`서허에서 직접 확정한 발주서 ${list.length}건을 확정됨으로만 표시할까요?`)) confirm1(list.map(o => o.no), true); }}
+        title="서허에서 직접 확정했을 때: 올리지 않고 표시만 해서 다음 단계로 넘깁니다"
+      >
+        직접 확정함
+      </button>
+      {confirmJob && (
+        <div style={{
+          fontSize: 11.5, lineHeight: 1.45, padding: '5px 7px', borderRadius: 6,
+          background: confirmJob.step === 'error' ? '#fef2f2' : confirmJob.step === 'applied' ? '#ecfdf5' : '#eff6ff',
+          color: confirmJob.step === 'error' ? '#b91c1c' : confirmJob.step === 'applied' ? '#047857' : '#1d4ed8',
+        }}>
+          {confirmJob.status}
+          {(confirmJob.messages || []).length > 0 && <div>💬 {(confirmJob.messages || []).join(' / ')}</div>}
+          {['applied', 'error'].includes(confirmJob.step) && (
+            <button onClick={clearConfirmJob} style={{ marginLeft: 6, border: 'none', background: 'transparent', color: '#888', cursor: 'pointer', fontSize: 11, textDecoration: 'underline' }}>닫기</button>
+          )}
+        </div>
+      )}
+    </div>
+  );
+
+  const search = (
+    <input
+      value={query}
+      onChange={e => setQuery(e.target.value)}
+      placeholder="발주번호·센터·상품 찾기"
+      style={{ padding: '6px 10px', fontSize: 13, border: '1px solid #e0e0e0', borderRadius: 8, minWidth: 180 }}
+    />
+  );
+  const pageStyle: React.CSSProperties = { minHeight: '100vh', background: '#fff', color: '#1a1a1a', fontFamily: "'Apple SD Gothic Neo', 'Malgun Gothic', 'Noto Sans KR', sans-serif" };
+
+  // ── 단계별 보기: 발주서마다 한 장, 위쪽 탭으로 단계 고르기 ──
+  if (view === 'list') {
+    const active = orders.filter(match);
+    const shown = tab === 'active' ? active.filter(o => o.stage < 5) : boxes[tab];
+    const tabs: { id: Stage | 'active'; label: string; n: number }[] = [
+      { id: 'active', label: '진행 중 전체', n: active.filter(o => o.stage < 5).length },
+      ...STAGES.map((label, i) => ({ id: i as Stage, label, n: boxes[i].length })),
+    ];
+    return (
+      <div style={pageStyle}>
+        <header style={{ background: '#fff', borderBottom: '1px solid #f0f0f0', position: 'sticky', top: 0, zIndex: 10 }}>
+          <div style={{ maxWidth: 860, padding: '8px clamp(12px, 3vw, 20px)', display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '6px 12px' }}>
+            <h1 style={{ fontSize: 17, fontWeight: 800, margin: 0 }}>발주 단계별</h1>
+            <span style={{ fontSize: 12, color: '#888' }}>발주서마다 지금 단계와 다음 할 일</span>
+            {search}
+          </div>
+          <div style={{ maxWidth: 860, padding: '0 clamp(12px, 3vw, 20px) 8px', display: 'flex', gap: 4, flexWrap: 'nowrap', overflowX: 'auto' }}>
+            {tabs.map(t => (
+              <button
+                key={String(t.id)}
+                onClick={() => setTab(t.id)}
+                style={{
+                  padding: '4px 9px', fontSize: 12, fontWeight: 700, borderRadius: 999, cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0,
+                  border: `1.5px solid ${tab === t.id ? ORANGE : '#e5e5e5'}`,
+                  background: tab === t.id ? ORANGE : '#fff', color: tab === t.id ? '#fff' : '#555',
+                }}
+              >
+                {t.label} <span style={{ opacity: 0.8 }}>{t.n}</span>
+              </button>
+            ))}
+          </div>
+        </header>
+        <main style={{ maxWidth: 860, padding: '12px clamp(10px, 3vw, 20px) 70px' }}>
+          {/* 새 주문 수집과 발주확정 올리기는 위에 나란히(전체·발주확정 탭에서) */}
+          {(tab === 'active' || tab === 0) && (
+            <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginBottom: 12, alignItems: 'flex-start' }}>
+              <div style={{ flex: '0 0 250px' }}>{collectPanel}</div>
+              {boxes[0].length > 0 && <div style={{ flex: '0 0 250px', background: '#fff7ed', borderRadius: 12, padding: 8 }}>{confirmPanel(boxes[0])}</div>}
+            </div>
+          )}
+          {!shown.length && <div style={{ padding: '48px 0', textAlign: 'center', color: '#aaa', fontSize: 14 }}>{q ? '찾는 발주서가 없어요.' : '이 단계에 있는 발주서가 없어요.'}</div>}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>{shown.map(row)}</div>
+        </main>
+        {waybillBatch && <ShipmentWaybillModal batch={waybillBatch} onClose={() => setWaybillBatch(null)} />}
+      </div>
+    );
+  }
+
+  // ── 상자 보기 ──
   return (
-    <div style={{ minHeight: '100vh', background: '#fff', color: '#1a1a1a', fontFamily: "'Apple SD Gothic Neo', 'Malgun Gothic', 'Noto Sans KR', sans-serif" }}>
+    <div style={pageStyle}>
       <header style={{ background: '#fff', borderBottom: '1px solid #f0f0f0', position: 'sticky', top: 0, zIndex: 10 }}>
         <div style={{ padding: '8px clamp(12px, 3vw, 20px)', display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '6px 12px' }}>
           <h1 style={{ fontSize: 17, fontWeight: 800, margin: 0 }}>발주 진행</h1>
           <span style={{ fontSize: 12, color: '#888' }}>발주서가 지금 있는 상자 = 지금 단계</span>
-          <input
-            value={query}
-            onChange={e => setQuery(e.target.value)}
-            placeholder="발주번호·센터·상품 찾기"
-            style={{ padding: '6px 10px', fontSize: 13, border: '1px solid #e0e0e0', borderRadius: 8, minWidth: 180 }}
-          />
+          {search}
         </div>
       </header>
 
-      {/* 상자는 단계 순서대로 옆으로, 발주서는 상자 안에서 위아래 한 줄로. */}
-      <main style={{ display: 'flex', alignItems: 'flex-start', gap: 10, overflowX: 'auto', padding: '12px clamp(10px, 3vw, 20px) 70px' }}>
-        {STAGES.map((label, i) => {
-          const list = boxes[i];
-          const stuck = i === 2 ? list.filter(o => run(o)?.state === 'error').length : 0;
-          return (
-            <div key={label} style={{ flex: '0 0 250px', display: 'flex', flexDirection: 'column', gap: 8 }}>
-            {/* 1번 상자(발주확정) 위: 서허에서 새 주문 받아 오기 */}
-            {i === 0 && (
-              <div style={{ background: '#eff6ff', borderRadius: 12, padding: 8 }}>
-                <CollectPurchaseOrders onFile={handleOrderFile} compact label="📥 새 주문 수집" />
-                {collectNote && <div style={{ marginTop: 6, fontSize: 11.5, color: collectNote.startsWith('⛔') ? RED : '#1d4ed8', lineHeight: 1.4 }}>{collectNote}</div>}
-              </div>
-            )}
-            <section style={{ background: '#f5f5f4', borderRadius: 12, padding: 8, boxSizing: 'border-box' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '2px 4px 8px' }}>
-                <b style={{ fontSize: 14, color: '#333' }}>{label}</b>
+      {/* 커다란 판 하나에 단계 칸이 옆으로 나란히(위쪽 머리줄 = 칸 제목). 발주서는 지금 단계 칸 안에 위아래 한 줄로 자리 잡는다. */}
+      <main style={{ overflowX: 'auto', padding: '12px clamp(10px, 3vw, 20px) 70px' }}>
+        <div style={{
+          display: 'inline-grid', gridTemplateColumns: `repeat(${STAGES.length}, 250px)`,
+          border: '1.5px solid #d6d3d1', borderRadius: 12, background: '#fafaf9', overflow: 'hidden', alignItems: 'stretch',
+        }}>
+          {/* 머리줄 */}
+          {STAGES.map((label, i) => {
+            const list = boxes[i];
+            const stuck = i === 2 ? list.filter(o => run(o)?.state === 'error').length : 0;
+            return (
+              <div key={`h-${label}`} style={{
+                position: 'sticky', top: 0, zIndex: 2, display: 'flex', alignItems: 'center', gap: 6, padding: '9px 10px',
+                background: '#efedeb', borderBottom: '2px solid #d6d3d1', borderRight: i < STAGES.length - 1 ? '1px solid #d6d3d1' : 'none',
+              }}>
+                <span style={{ fontSize: 11, color: '#a8a29e', fontWeight: 800 }}>{i + 1}</span>
+                <b style={{ fontSize: 14, color: '#292524' }}>{label}</b>
                 <span style={{ fontSize: 12, fontWeight: 800, color: '#fff', background: list.length ? (i === 5 ? GREEN : ORANGE) : GRAY, borderRadius: 999, padding: '0 7px' }}>{list.length}</span>
-                {stuck > 0 && <span style={{ fontSize: 11.5, fontWeight: 800, color: RED }}>⛔ 멈춤 {stuck}</span>}
-                {i === 5 && <span style={{ fontSize: 10.5, color: '#999', marginLeft: 'auto' }}>최근 {SENT_DAYS}일</span>}
+                {stuck > 0 && <span style={{ fontSize: 11.5, fontWeight: 800, color: RED }}>⛔ {stuck}</span>}
+                {i === 5 && <span style={{ fontSize: 10.5, color: '#a8a29e', marginLeft: 'auto' }}>최근 {SENT_DAYS}일</span>}
               </div>
-              {i === 0 && list.length > 0 && (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 5, marginBottom: 8 }}>
-                  <button
-                    style={{ ...btn(ORANGE, true), width: '100%', padding: '7px 8px', fontSize: 12.5 }}
-                    onClick={() => {
-                      // 진행 중인 게 있으면 조용히 막지 않고 물어본다.
-                      if (confirmJob && !['applied', 'error'].includes(confirmJob.step) && Date.now() - confirmJob.at < 10 * 60 * 1000
-                        && !window.confirm(`아직 진행 중인 발주확정 올리기가 있어요(${confirmJob.status}).\n새로 시작할까요?`)) return;
-                      uploadConfirm(list);
-                    }}
-                    title="확정수량(I열)·납품부족사유(M열)를 채운 발주확정 파일을 만들어 서허 발주확정 업로드에 올립니다"
-                  >
-                    📤 발주확정 올리기 ({list.length}건)
-                  </button>
-                  <div style={{ display: 'flex', gap: 4 }}>
-                    <button
-                      style={{ ...btn('#6b7280'), flex: 1 }}
-                      onClick={() => { if (window.confirm(`서허에서 직접 확정한 발주서 ${list.length}건을 확정됨으로만 표시할까요?`)) confirm1(list.map(o => o.no), true); }}
-                      title="서허에서 직접 확정했을 때: 올리지 않고 표시만 해서 묶음 상자로 넘깁니다"
-                    >
-                      직접 확정함
-                    </button>
-                  </div>
-                  {confirmJob && (
-                    <div style={{
-                      fontSize: 11.5, lineHeight: 1.45, padding: '5px 7px', borderRadius: 6,
-                      background: confirmJob.step === 'error' ? '#fef2f2' : confirmJob.step === 'applied' ? '#ecfdf5' : '#eff6ff',
-                      color: confirmJob.step === 'error' ? '#b91c1c' : confirmJob.step === 'applied' ? '#047857' : '#1d4ed8',
-                    }}>
-                      {confirmJob.status}
-                      {(confirmJob.messages || []).length > 0 && <div>💬 {(confirmJob.messages || []).join(' / ')}</div>}
-                      {['applied', 'error'].includes(confirmJob.step) && (
-                        <button onClick={clearConfirmJob} style={{ marginLeft: 6, border: 'none', background: 'transparent', color: '#888', cursor: 'pointer', fontSize: 11, textDecoration: 'underline' }}>닫기</button>
-                      )}
-                    </div>
-                  )}
-                </div>
-              )}
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            );
+          })}
+          {/* 칸 */}
+          {STAGES.map((label, i) => {
+            const list = boxes[i];
+            return (
+              <div key={`c-${label}`} style={{
+                padding: 8, minHeight: '60vh', display: 'flex', flexDirection: 'column', gap: 8, boxSizing: 'border-box',
+                borderRight: i < STAGES.length - 1 ? '1px solid #e7e5e4' : 'none',
+              }}>
+                {/* 1번 칸(발주확정) 맨 위: 새 주문 받아 오기와 발주확정 올리기 */}
+                {i === 0 && collectPanel}
+                {i === 0 && list.length > 0 && <div style={{ background: '#fff7ed', borderRadius: 10, padding: 8 }}>{confirmPanel(list)}</div>}
                 {list.map(card)}
-                {!list.length && <div style={{ padding: '18px 0', textAlign: 'center', fontSize: 12, color: '#bbb' }}>{q ? '찾는 발주서 없음' : '비어 있음'}</div>}
+                {!list.length && <div style={{ padding: '18px 0', textAlign: 'center', fontSize: 12, color: '#c4c0bc' }}>{q ? '찾는 발주서 없음' : '비어 있음'}</div>}
               </div>
-            </section>
-            </div>
-          );
-        })}
+            );
+          })}
+        </div>
       </main>
 
       {waybillBatch && <ShipmentWaybillModal batch={waybillBatch} onClose={() => setWaybillBatch(null)} />}
     </div>
   );
 }
+
+// 6단계 한 줄: 끝난 단계는 초록, 지금 단계는 주황(멈췄으면 빨강), 남은 단계는 회색.
+const Stepper: React.FC<{ stage: Stage; error?: boolean }> = ({ stage, error }) => (
+  <div style={{ display: 'flex', flexWrap: 'nowrap', gap: 3 }}>
+    {STAGES.map((label, i) => {
+      const done = i < stage || stage === 5;
+      const now = i === stage && stage !== 5;
+      const color = done ? GREEN : now ? (error ? RED : ORANGE) : GRAY;
+      return (
+        <span key={label} style={{
+          padding: '2px 6px', fontSize: 11, fontWeight: now ? 800 : 600, flexShrink: 0, borderRadius: 999, whiteSpace: 'nowrap', textAlign: 'center',
+          border: `1.5px solid ${color}`, background: now ? color : done ? '#f0fdf4' : '#fff', color: now ? '#fff' : color,
+        }}>
+          {done ? '✓' : ''}{label}
+        </span>
+      );
+    })}
+  </div>
+);
 
 const Tag: React.FC<{ color: string; children: React.ReactNode }> = ({ color, children }) => (
   <span style={{ padding: '1px 7px', fontSize: 10.5, fontWeight: 700, borderRadius: 999, border: `1px solid ${color}`, color, whiteSpace: 'nowrap' }}>{children}</span>

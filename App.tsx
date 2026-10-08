@@ -3244,7 +3244,8 @@ const App: React.FC = () => {
       {activeMenu === 'rocket-stock' && <StockHistoryPage mode="rocket" />}
       {activeMenu === 'rocket-sales' && <StockHistoryPage mode="sales" />}
       {activeMenu === 'rocket-in' && <ReceiveHistoryPage />}
-      {activeMenu === 'coupang-flow' && <CoupangFlowPage onNavigate={setActiveMenu} />}
+      {activeMenu === 'coupang-flow' && <CoupangFlowPage onNavigate={setActiveMenu} view="board" />}
+      {activeMenu === 'coupang-flow-list' && <CoupangFlowPage onNavigate={setActiveMenu} view="list" />}
       {activeMenu === 'coupang-order' && <CoupangOrderPage onGoShipOut={() => setActiveMenu('coupang-ship')} />}
       {activeMenu === 'coupang-ship' && <CoupangShipPage onGoOrder={() => setActiveMenu('coupang-order')} />}
       {activeMenu === 'coupang-send' && <CoupangSendPage onGoShip={() => setActiveMenu('coupang-ship')} />}

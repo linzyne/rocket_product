@@ -335,19 +335,9 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
         // 쉽먼트로 보내기는 발주서를 고르면 아래쪽 메뉴에 나온다.
         return null;
       case 2:
-        return (
-          <>
-            {/* 서허 등록이 끝나 쉽먼트 번호가 있으면 출력만. 아니면 멈춘 쉽먼트 이어서 하기 + 출력(번호 찾기). */}
-            {o.item?.shipmentNos?.[o.no] ? printButton(o) : (
-              <>
-                {o.item && o.batch && r && r.state === 'error' && (
-                  <button style={btn(ORANGE, true)} onClick={() => resumeShipment(o.batch!, [o.item!])} title="멈춘 데서 이어서 합니다. 택배예약은 다시 하지 않아요.">▶ 이어서 하기</button>
-                )}
-                {printButton(o)}
-              </>
-            )}
-          </>
-        );
+        // 인쇄는 발주번호 옆 아이콘. 여기는 쉽먼트가 멈췄을 때 이어서 하기만.
+        if (o.item?.shipmentNos?.[o.no] || !o.item || !o.batch || !r || r.state !== 'error') return null;
+        return <button style={btn(ORANGE, true)} onClick={() => resumeShipment(o.batch!, [o.item!])} title="멈춘 데서 이어서 합니다. 택배예약은 다시 하지 않아요.">▶ 이어서 하기</button>;
       case 3:
       case 4:
         // 발송완료로 넘기기는 발주서를 고르면 아래쪽 메뉴에 나온다.
@@ -375,14 +365,22 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
       <div style={{ fontSize: 11.5, color: '#888', marginTop: 2 }}>
         {/* 발주번호만 따로 감싼다: 앱 전체의 "발주번호 누르면 복사"(utils/copyOrderNo)가 글자가 번호 하나일 때만 복사한다. */}
         발주 <span title="눌러서 발주번호 복사" style={{ cursor: 'copy', textDecoration: 'underline dotted', textUnderlineOffset: 2 }}>{o.no}</span>
+        {/* 쉽먼트 칸부터: 쉽먼트 번호와 인쇄 아이콘을 같은 줄에 */}
+        {o.stage >= 2 && o.item?.shipmentNos?.[o.no] && (
+          <span style={{ marginLeft: 10 }}>쉽먼트 <span
+            title="눌러서 쉽먼트 번호 복사"
+            onClick={() => { const v = o.item!.shipmentNos![o.no]; navigator.clipboard.writeText(v).then(() => setDateNote({ tone: 'ok', text: `쉽먼트 번호 ${v} 복사했어요` })).catch(() => {}); }}
+            style={{ cursor: 'copy', textDecoration: 'underline dotted', textUnderlineOffset: 2 }}
+          >{o.item.shipmentNos[o.no]}</span></span>
+        )}
+        {o.stage === 2 && o.item && <span style={{ marginLeft: 8 }}>{printButton(o)}</span>}
       </div>
     </div>
   );
   const tags = (o: FlowOrder) => {
-    const shipNo = o.item?.shipmentNos?.[o.no];
     const req = !!dateReqs[o.no] && !dateReqs[o.no].doneAt;
     const changedDate = dateReqs[o.no]?.doneAt ? dateReqs[o.no] : null;
-    if (!(((o.bundle || o.hold) && o.stage === 1) || shipNo || o.partial || req || changedDate)) return null;
+    if (!(((o.bundle || o.hold) && o.stage === 1) || o.partial || req || changedDate)) return null;
     return (
       <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', alignItems: 'center' }}>
         {req && <Tag color="#7c3aed">📅 날짜 변경 요청 중</Tag>}
@@ -397,7 +395,6 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
         )}
         {o.bundle && o.stage === 1 && <Tag color="#6b7280">{o.bundle}</Tag>}
         {o.hold && o.stage === 1 && <Tag color="#7c3aed">{o.hold}</Tag>}
-        {shipNo && <Tag color="#2563eb">쉽먼트 {shipNo}</Tag>}
         {o.partial && <Tag color={RED}>일부만 넘어감</Tag>}
       </div>
     );
@@ -582,9 +579,14 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
         title={!shipNo ? '쉽먼트 번호가 없어요. 눌러서 서허에서 찾아 와요(일괄등록을 서허에서 직접 한 건)'
           : printed ? '출력완료(초록). 누르면 다시 출력. 오른쪽 클릭: 출력완료 풀기'
           : '문서(Label·내역서)와 바코드 라벨을 새 탭에 열어요. 오른쪽 클릭: 출력완료로만 표시'}
-        style={{ ...btn(color, printed || !!shipNo) }}
+        style={{ display: 'inline-flex', alignItems: 'center', padding: 2, border: 'none', background: 'transparent', cursor: 'pointer', lineHeight: 0, verticalAlign: 'middle' }}
       >
-        🖨{printed ? ' 출력완료' : shipNo ? ' 출력' : ' 번호 찾기'}
+        {/* 프린터 아이콘: 초록 = 출력완료, 주황 = 출력할 수 있음, 회색 = 쉽먼트 번호 없음(누르면 찾기) */}
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M6 9V3h12v6" />
+          <path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2" />
+          <rect x="6" y="14" width="12" height="7" rx="1" fill={printed ? color : 'none'} />
+        </svg>
       </button>
     );
   };

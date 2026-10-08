@@ -3,7 +3,9 @@ import {
   HanjungOrder, HanjungLine, subscribeHanjung, deleteHanjungOrder, saveHanjungOrder, productSummary, orderTotals, productOrderQty, productUnitCost, lineAlloc, sameName, nameKey, ordersNeedingAliasRename,
 } from '../../data/hanjungStore';
 import { ReceiveRow, subscribeReceives, settlementOf, sign } from '../../data/receiveStore';
-import { nextHanjungCode, closeShortOrder } from '../../data/hanjungStore';
+import { nextHanjungCode, closeShortOrder, planShortFill, FillPlan, FillLine } from '../../data/hanjungStore';
+import { useReady } from '../coupangOrder/data/readyStore';
+import { linesAt, isLinesReady, startLines } from '../coupangOrder/data/lineStore';
 import { subscribeReservations, reservationKey, setReservationMemo } from '../coupangOrder/data/reservationStore';
 import type { OrderRow } from '../coupangOrder/types';
 import {
@@ -489,23 +491,66 @@ const HanjungOrderPage: React.FC = () => {
   };
 
   // 도착 안 한 것 정리: 일부만 오고 나머지는 다음 한중발주로 새로 주문할 때. 이 건은 도착한 만큼으로 마무리하고,
-  // 도착 못 한 만큼의 쿠팡 줄 배정을 발주 대기로 돌린다(다음 한중발주를 대기에서 만들면 그대로 따라간다).
+  // 도착 못 한 만큼의 쿠팡 줄 배정은
+  //  1) 사무실 여유(다른 한중발주에 도착해 남은 것)로 먼저 채우고(자동),
+  //  2) 그래도 모자라면 같은 상품이 다 도착한 한중발주의 더 늦은 쿠팡 줄 배정을 가져올지 묻고(그 늦은 줄이 대신 대기로),
+  //  3) 남은 것은 발주 대기로 돌린다(다음 한중발주를 대기에서 만들면 그대로 따라간다).
+  // 쉽먼트로 넘어간 줄은 건드리지 않는다. 준비됨은 실제 물건으로 다 채워진 줄만 켜고, 배정을 내준 줄은 끈다.
+  const ready = useReady();
+  useEffect(() => { startLines(); }, []);
   const handleCloseShort = async (o: HanjungOrder) => {
-    const { order: next, releases } = closeShortOrder(o);
+    const { order: closed, releases } = closeShortOrder(o);
     if (!releases.length) return;
-    const rows: QueueRow[] = releases.flatMap(r => r.released.map(({ line, qty }) => ({
-      발주번호: line.발주번호, 물류센터: line.물류센터, 상품이름: line.상품이름, 확정수량: line.확정수량,
-      입고예정일: normalizeDateValue(line.입고예정일), 메모: '', 쉼먼트: '',
-      ...(qty !== line.확정수량 ? { 배정: qty } : {}),
-    })));
+    const lk = (l: { 발주번호: string; 상품이름: string; 확정수량: number | '' }) => `${l.발주번호}│${String(l.상품이름).trim()}│${l.확정수량}`;
+    // 쉽먼트(출고)로 넘어간 쿠팡 줄. 목록을 아직 못 받았으면 가져오기는 하지 않는다(묵은 목록으로 옮기면 안 되므로).
+    const canSwap = isLinesReady();
+    const skipKeys = new Set(linesAt('ship').map(l => lk(l)));
+    const keyOf = (l: FillLine) => reservationKey({ 발주번호: l.발주번호, 상품이름: l.상품이름, 확정수량: l.확정수량, 입고예정일: normalizeDateValue(l.입고예정일) } as OrderRow);
+    const opts = { skipKeys, keyOf };
+    const base = planShortFill(closed, releases, orders, { ...opts, swap: false });
+    const withSwap = canSwap ? planShortFill(closed, releases, orders, { ...opts, swap: true }) : base;
+    const day = (d: string) => `${Number(d.slice(4, 6))}/${Number(d.slice(6, 8))}`;
+
     const lines = releases.map(r => {
       const back = r.released.reduce((n, x) => n + x.qty, 0);
-      return `· ${r.상품이름}: 도착 ${r.received}/${r.ordered}${back ? ` → 쿠팡 배정 ${back}개를 발주 대기로` : ''}`;
+      return `· ${r.상품이름}: 도착 ${r.received}/${r.ordered}${back ? ` → 못 받은 쿠팡 배정 ${back}개` : ''}`;
     });
-    if (!confirm(`${o.code}를 도착한 만큼으로 마무리할까요?\n\n${lines.join('\n')}\n\n도착 안 한 건 다음 한중발주로 새로 주문하면 돼요. 발주 대기로 돌린 줄은 다음 한중발주를 만들 때 그대로 들어가요.`)) return;
+    const spare = base.spareFills.map(f => `· ${day(f.line.입고예정일)} 발주 ${f.line.발주번호} ${f.line.상품이름} ${f.qty}개 ← 사무실 여유(${f.code})`);
+    const left = base.queue.map(q => `· ${day(q.입고예정일)} 발주 ${q.발주번호} ${q.상품이름} ${q.qty}개`);
+    if (!confirm(
+      `${o.code}를 도착한 만큼으로 마무리할까요?\n\n${lines.join('\n')}` +
+      (spare.length ? `\n\n사무실 여유로 채워요:\n${spare.join('\n')}` : '') +
+      (left.length ? `\n\n발주 대기로 가요(다음 한중발주로 주문):\n${left.join('\n')}` : ''),
+    )) return;
+
+    let plan: FillPlan = base;
+    if (withSwap.swaps.length) {
+      const sw = withSwap.swaps.map(x => `· ${x.to.상품이름} ${x.qty}개: ${day(x.from.입고예정일)} 발주 ${x.from.발주번호} → ${day(x.to.입고예정일)} 발주 ${x.to.발주번호} (${x.code})`);
+      if (confirm(
+        `입고예정일이 더 늦은 발주에 이미 도착한 같은 상품이 배정돼 있어요.\n급한 발주로 옮길까요? 옮긴 만큼 늦은 발주가 대신 발주 대기로 가요.\n\n${sw.join('\n')}\n\n(쉽먼트로 넘어간 발주는 건드리지 않아요. 취소를 누르면 옮기지 않고 위 내용대로만 해요.)`,
+      )) plan = withSwap;
+    }
+
+    const toRow = (q: FillLine & { qty: number }): QueueRow => ({
+      발주번호: q.발주번호, 물류센터: q.물류센터, 상품이름: q.상품이름, 확정수량: q.확정수량,
+      입고예정일: normalizeDateValue(q.입고예정일), 메모: '', 쉼먼트: '',
+      ...(q.qty !== q.확정수량 ? { 배정: q.qty } : {}),
+    });
+    const rows = plan.queue.map(toRow);
     const keys = rows.map(r => hanjungQueueKey(r));
-    const before = queueRef.current.filter(q => keys.includes(q.key));
-    const run = () => saveHanjungOrder(next).then(() => (rows.length ? returnToHanjungQueue(rows, queueRef.current) : 0));
+    const beforeQueue = queueRef.current.filter(q => keys.includes(q.key));
+    const beforeOrders = plan.orders.map(x => orders.find(y => y.code === x.code)!).filter(Boolean);
+    const rk = (l: FillLine) => ({ 발주번호: l.발주번호, 상품이름: l.상품이름, 확정수량: l.확정수량 });
+    // 되돌릴 때 원래대로 돌리려고, 바꾸기 전 준비됨 상태를 적어 둔다.
+    const wasOn = plan.readyOff.filter(l => ready.isReady(rk(l)));
+    const wasOff = plan.readyOn.filter(l => !ready.isReady(rk(l)));
+    const run = async () => {
+      await saveHanjungOrder(closed);
+      for (const x of plan.orders) await saveHanjungOrder(x);
+      if (rows.length) await returnToHanjungQueue(rows, queueRef.current);
+      if (plan.readyOff.length) await ready.setReady(plan.readyOff.map(rk), false);
+      if (plan.readyOn.length) await ready.setReady(plan.readyOn.map(rk), true);
+    };
     try {
       await run();
     } catch (err: any) {
@@ -514,9 +559,14 @@ const HanjungOrderPage: React.FC = () => {
     }
     record({
       label: `${o.code} 도착 안 한 것 정리`,
-      undo: () => saveHanjungOrder(o)
-        .then(() => removeFromHanjungQueue(keys))
-        .then(() => (before.length ? addToHanjungQueue(before.map(queueItemToRow), []) : 0)),
+      undo: async () => {
+        await saveHanjungOrder(o);
+        for (const x of beforeOrders) await saveHanjungOrder(x);
+        if (keys.length) await removeFromHanjungQueue(keys);
+        if (beforeQueue.length) await addToHanjungQueue(beforeQueue.map(queueItemToRow), []);
+        if (wasOn.length) await ready.setReady(wasOn.map(rk), true);
+        if (wasOff.length) await ready.setReady(wasOff.map(rk), false);
+      },
       redo: run,
     });
   };

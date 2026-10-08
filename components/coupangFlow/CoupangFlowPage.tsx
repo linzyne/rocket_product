@@ -365,9 +365,9 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
         }}>
           {confirmJob.status}
           {(confirmJob.messages || []).length > 0 && <div>💬 {(confirmJob.messages || []).join(' / ')}</div>}
-          {['applied', 'error'].includes(confirmJob.step) && (
-            <button onClick={clearConfirmJob} style={{ marginLeft: 6, border: 'none', background: 'transparent', color: '#888', cursor: 'pointer', fontSize: 11, textDecoration: 'underline' }}>닫기</button>
-          )}
+          <button onClick={clearConfirmJob} style={{ marginLeft: 6, border: 'none', background: 'transparent', color: '#888', cursor: 'pointer', fontSize: 11, textDecoration: 'underline' }}>
+            {['applied', 'error'].includes(confirmJob.step) ? '닫기' : '그만두기'}
+          </button>
         </div>
       )}
     </div>

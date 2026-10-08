@@ -11,7 +11,7 @@ const APP = 'rocket-app-hub';
 const EXT = 'rocket-hub-extension';
 const JOB_KEY = 'coupangPoConfirmJob';
 
-export interface ConfirmJob { jobId: string; orderNos: string[]; at: number; step: string; status: string; messages?: string[] }
+export interface ConfirmJob { jobId: string; orderNos: string[]; at: number; step: string; status: string; messages?: string[]; updatedAt?: number }
 
 // 확장이 요청을 받았다는 대답(ACK)이 5초 안에 안 오면, 확장이 꺼졌거나 새로고침 전의 옛 버전이다.
 let ackTimer: ReturnType<typeof setTimeout> | null = null;
@@ -31,6 +31,7 @@ const readJob = (): ConfirmJob | null => {
 };
 const listeners = new Set<(j: ConfirmJob | null) => void>();
 const setJob = (j: ConfirmJob | null) => {
+  if (j) j = { ...j, updatedAt: Date.now() };
   try {
     if (j) localStorage.setItem(JOB_KEY, JSON.stringify(j));
     else localStorage.removeItem(JOB_KEY);
@@ -101,10 +102,22 @@ async function finish(job: ConfirmJob) {
   await setConfirmed(job.orderNos, true);
 }
 
+// 3분 넘게 아무 소식이 없으면 멈춘 것으로 본다(서허 창을 닫았거나 확장이 멈춤).
+const STALE_MS = 3 * 60 * 1000;
+const checkStale = () => {
+  const j = readJob();
+  if (!j || ['applied', 'error', 'done'].includes(j.step)) return;
+  if (Date.now() - (j.updatedAt || j.at) > STALE_MS) {
+    setJob({ ...j, step: 'error', status: `3분 넘게 서허에서 소식이 없어요(마지막: ${j.status}). 서허 창을 확인하거나, 닫고 다시 눌러 주세요.` });
+  }
+};
+
 let started = false;
 export function startConfirmRunner() {
   if (started) return;
   started = true;
+  checkStale();
+  setInterval(checkStale, 20 * 1000);
   window.addEventListener('message', (event: MessageEvent) => {
     if (event.source !== window) return;
     const d = event.data;
@@ -115,6 +128,11 @@ export function startConfirmRunner() {
     if (job && job.step === 'fetching') {
       if (d.type === 'PO_COLLECT_ACK' && !d.ok) {
         setJob({ ...job, step: 'error', status: `서허에서 양식을 받지 못했어요: ${d.error || ''} ("로켓 서허 연동" 확장을 새로고침해 주세요)` });
+        return;
+      }
+      // 옛 확장은 "이 발주번호들만"을 몰라서 평소 새 주문 수집을 해 버린다(purpose 없이 소식이 온다).
+      if (d.type === 'PO_STATUS' && d.purpose !== 'form') {
+        setJob({ ...job, step: 'error', status: `확장 프로그램이 옛 버전이에요(양식 대신 새 주문 수집을 했어요). ${NO_EXT}` });
         return;
       }
       if (d.type === 'PO_STATUS' && d.purpose === 'form') {

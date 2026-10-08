@@ -29,6 +29,8 @@ const CollectPurchaseOrders: React.FC<{
   label?: string;
 }> = ({ onFile, style, runToken, onFinish, compact, label }) => {
   const [running, setRunning] = useState(false);
+  // 이 단추가 시작한 수집인지. 다른 곳(발주확정 올리기의 양식 받기 등)이 시작한 수집 결과는 받지 않는다.
+  const mineRef = React.useRef(false);
   const [status, setStatus] = useState('');
   const [lastOrderNo, setLastOrderNo] = useState(loadLocalPoCursor);
   // 다른 컴퓨터에서 받아 기준번호가 바뀌면 여기도 따라 바뀐다(내가 고치는 중이면 건드리지 않는다).
@@ -66,7 +68,8 @@ const CollectPurchaseOrders: React.FC<{
       }
       if (d.type !== 'PO_STATUS') return;
       // 발주확정 올리기가 양식만 다시 받는 중이면 새 주문 수집과 상관없다.
-      if (d.purpose === 'form') return;
+      if (d.purpose === 'form' || !mineRef.current) return;
+      if (['empty', 'error', 'file'].includes(d.step)) mineRef.current = false;
       if (d.status) setStatus(d.status);
       if (d.step === 'empty') {
         setRunning(false);
@@ -124,6 +127,7 @@ const CollectPurchaseOrders: React.FC<{
   }, [runToken]);
 
   const start = () => {
+    mineRef.current = true;
     setRunning(true);
     setStatus('서허 여는 중…');
     window.postMessage({ source: APP_SOURCE, type: 'PO_COLLECT', lastOrderNo }, window.location.origin);

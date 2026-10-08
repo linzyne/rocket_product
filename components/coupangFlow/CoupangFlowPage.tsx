@@ -18,7 +18,10 @@ import { addShipOut, markShipOuts } from '../coupangOrder/data/shipOutStore';
 import { linesAt } from '../coupangOrder/data/lineStore';
 import { boxLabel } from '../coupangOrder/utils/dataProcessor';
 import { LineCheckMenu } from '../coupangOrder/components/OrderTable';
-import { HanjungOrder, subscribeHanjung, productSummary, nameKey, makeHanjungOfficeLookup } from '../../data/hanjungStore';
+import { HanjungOrder, subscribeHanjung, productSummary, nameKey, makeHanjungOfficeLookup, sameName, saveHanjungOrder, assignRemaining } from '../../data/hanjungStore';
+import { returnToHanjungQueue } from '../coupangOrder/data/hanjungQueueStore';
+import { reservationKey } from '../coupangOrder/data/reservationStore';
+import { normalizeDateValue } from '../coupangOrder/utils/dateUtils';
 import { HanjungQueueItem, subscribeHanjungQueue, makePlaceLookup } from '../coupangOrder/data/hanjungQueueStore';
 import { subscribePoForms, readDraft, setDraftLine, SHORT_REASONS, DEFAULT_REASON } from '../coupangOrder/data/poFormStore';
 import { startConfirmUpload, subscribeConfirmJob, clearConfirmJob, ConfirmJob } from '../coupangOrder/data/poConfirmRunner';
@@ -84,6 +87,8 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
   const [tab, setTab] = useState<Stage | 'active'>('active');
   // 새 발주서 창(새 주문 수집 · 확정수량 고치기 · 발주확정 올리기)
   const [newOpen, setNewOpen] = useState(false);
+  // 남은 수량 배정 창(미배정 N을 눌렀을 때)
+  const [assignFor, setAssignFor] = useState<{ o: FlowOrder; l: FlowLine; left: number } | null>(null);
   // 상품 줄 준비 상태: 준비됨 체크(쿠팡발주확인·쉽먼트·발송대기와 같은 기록) + 한중발주(한중 대기·입고중·일부입고·준비됨).
   const ready = useReady();
   // 상품별 체크 메뉴(준비됨 · 한중발주에 맡기기 · 사무실 재고에서 쓰기). 쉽먼트생성대기와 같은 메뉴.
@@ -528,12 +533,12 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
                           title={[
                             assigned ? `배정: ${places.filter(p => p.code).map(p => `${p.code} ${p.qty}개`).join(', ')}` : '',
                             queued ? `한중발주 대기(1688 주문 전) ${queued}개` : '',
-                            showLeft ? `남은 ${left}개를 배정해 주세요(왼쪽 체크 칸 → 한중발주 또는 사무실 재고)` : '',
+                            showLeft ? `남은 ${left}개를 배정해 주세요 — "미배정"을 누르면 남은 수량만 배정해요` : '',
                           ].filter(Boolean).join('\n')}
                           style={{ flexShrink: 0, fontSize: 10.5, color: '#8a857f', whiteSpace: 'nowrap', letterSpacing: '-0.3px' }}
                         >
                           {assigned ? <>배정 <b>{assigned}</b></> : null}{assigned && queued ? ' · ' : ''}{queued ? <>대기 <b>{queued}</b></> : null}
-                          {showLeft && <> · <b style={{ color: RED }}>미배정 {left}</b></>}
+                          {showLeft && <> · <b onClick={() => setAssignFor({ o, l, left })} style={{ color: RED, cursor: 'pointer', textDecoration: 'underline dotted', textUnderlineOffset: 2 }}>미배정 {left}</b></>}
                         </span>
                       );
                     })()}
@@ -903,6 +908,71 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
     </div>
   );
 
+  // 남은 수량만 배정: 이미 맡긴 곳은 그대로 두고, 남은 수량을 고른 한중발주(여유 안에서 / 주문 늘려서)나 발주 대기로.
+  const doAssign = async (target: { code: string; grow: boolean; qty: number } | 'queue') => {
+    if (!assignFor) return;
+    const { o, l, left } = assignFor;
+    const line = { 발주번호: o.no, 물류센터: o.center, 상품이름: l.상품이름, 확정수량: Number(l.확정수량) || 0, 입고예정일: o.date.replace(/-/g, '') };
+    try {
+      if (target === 'queue') {
+        await returnToHanjungQueue([{ ...line, 입고예정일: normalizeDateValue(line.입고예정일), 메모: '', 쉼먼트: '', ...(left !== line.확정수량 ? { 배정: left } : {}) }], hjQueue);
+      } else {
+        const order = hjOrders.find(x => x.code === target.code);
+        if (!order) return;
+        const key = reservationKey({ 발주번호: line.발주번호, 상품이름: line.상품이름, 확정수량: line.확정수량, 입고예정일: normalizeDateValue(line.입고예정일) });
+        await saveHanjungOrder(assignRemaining(order, line, target.qty, key, target.grow));
+      }
+      setDateNote({ tone: 'ok', text: target === 'queue' ? `${l.상품이름} ${left}개를 발주 대기로 보냈어요.` : `${l.상품이름} ${target.qty}개를 ${target.code}에 배정했어요.` });
+      setAssignFor(null);
+    } catch (err) {
+      alert(`배정 실패: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  };
+  const assignWindow = assignFor && (() => {
+    const { l, left } = assignFor;
+    // 이 상품이 있는 한중발주: 여유(도착 → 오는 중)를 보여준다. 아직 다 안 온 건은 주문을 늘려 맡길 수도 있다.
+    const opts = hjOrders.map(o => {
+      const p = productSummary(o).find(x => sameName(x.상품이름, l.상품이름));
+      if (!p) return null;
+      const arrivedSpare = Math.min(p.spare, Math.max(0, p.received - p.allocated));
+      const open = p.received < p.ordered || !o.receipts.length;
+      if (p.spare <= 0 && !open) return null;
+      return { o, spare: p.spare, arrivedSpare, open };
+    }).filter(Boolean) as { o: HanjungOrder; spare: number; arrivedSpare: number; open: boolean }[];
+    const optBtn: React.CSSProperties = { padding: '6px 10px', fontSize: 12.5, fontWeight: 600, borderRadius: 8, border: '1px solid #e5e7eb', background: '#fff', cursor: 'pointer', whiteSpace: 'nowrap' };
+    return (
+      <div onClick={() => setAssignFor(null)} style={{ position: 'fixed', inset: 0, zIndex: 60, background: 'rgba(15,23,42,0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+        <div onClick={e => e.stopPropagation()} style={{ width: 'min(460px, 100%)', background: '#fff', borderRadius: 14, boxShadow: '0 20px 50px rgba(0,0,0,0.25)', padding: 16, display: 'flex', flexDirection: 'column', gap: 10 }}>
+          <div style={{ fontSize: 15, fontWeight: 800 }}>남은 {left}개 배정</div>
+          <div style={{ fontSize: 12.5, color: '#666', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={l.상품이름}>{l.상품이름}</div>
+          {opts.length === 0 && <div style={{ fontSize: 12.5, color: '#999' }}>이 상품의 여유가 있거나 아직 도착 전인 한중발주가 없어요.</div>}
+          {opts.map(({ o, spare, arrivedSpare, open }) => {
+            const take = Math.min(spare, left);
+            return (
+              <div key={o.code} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 10px', border: '1px solid #f0f0f0', borderRadius: 10 }}>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontWeight: 700, fontSize: 13 }}>{o.code}</div>
+                  <div style={{ fontSize: 11.5, color: '#888' }}>여유 {spare}개{spare ? ` (도착 ${arrivedSpare} · 오는 중 ${spare - arrivedSpare})` : ''}</div>
+                </div>
+                {take > 0 && <button style={optBtn} onClick={() => doAssign({ code: o.code, grow: false, qty: take })}>{take}개 배정</button>}
+                {take < left && open && (
+                  <button style={{ ...optBtn, borderColor: '#fcd34d' }} title={`이 한중발주 주문 수량을 ${left - take}개 늘려요(1688에 더 주문)`}
+                    onClick={() => doAssign({ code: o.code, grow: true, qty: left })}>
+                    주문 +{left - take} 늘려 {left}개
+                  </button>
+                )}
+              </div>
+            );
+          })}
+          <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+            <button style={optBtn} onClick={() => doAssign('queue')} title="다음 한중발주로 주문해요">발주 대기로 {left}개</button>
+            <button style={{ ...optBtn, border: 'none', color: '#888' }} onClick={() => setAssignFor(null)}>닫기</button>
+          </div>
+        </div>
+      </div>
+    );
+  })();
+
   const search = (
     <input
       value={query}
@@ -953,6 +1023,7 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
         </main>
         {layer}
         {newWindow}
+        {assignWindow}
         {waybillBatch && <ShipmentWaybillModal batch={waybillBatch} onClose={() => setWaybillBatch(null)} />}
       </div>
     );
@@ -1013,6 +1084,7 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
 
       {layer}
       {newWindow}
+      {assignWindow}
       {waybillBatch && <ShipmentWaybillModal batch={waybillBatch} onClose={() => setWaybillBatch(null)} />}
     </div>
   );

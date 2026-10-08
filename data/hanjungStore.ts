@@ -618,3 +618,16 @@ export const planFill = (
   for (const l of lostLines) if (!plan.readyOff.some(x => sameLineKey(x, l))) plan.readyOff.push(l);
   return plan;
 };
+
+// 쿠팡 줄의 남은 수량만 그 한중발주에 더 맡긴다(이미 맡긴 다른 곳은 그대로).
+//  grow = false: 그 건의 여유 안에서만(주문 수량 그대로). grow = true: 모자라는 만큼 그 건 주문 수량을 늘린다(1688에 더 주문).
+export const assignRemaining = (order: HanjungOrder, line: FillLine, qty: number, key: string, grow: boolean): HanjungOrder => {
+  const p = productSummary(order).find(x => sameName(x.상품이름, line.상품이름));
+  const spare = p ? p.spare : 0;
+  let next = addAlloc(order, line, qty, key);
+  if (grow && qty > spare) {
+    const name = orderQtyName(next.orderQty, line.상품이름);
+    next = { ...next, orderQty: { ...(next.orderQty || {}), [name]: (p ? p.ordered : 0) + (qty - spare) } };
+  }
+  return next;
+};

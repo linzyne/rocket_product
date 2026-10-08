@@ -113,6 +113,13 @@
       }
       return;
     }
+    // 입고일 변경 요청 때 기억해 둔 발주서별 변경 센터·날짜를 달라는 요청.
+    if (d.type === 'PO_DATE_REQUESTED_GET') {
+      try {
+        chrome.storage.local.get('poDateRequested', (r) => reply({ type: 'PO_DATE_REQUESTED', data: (r && r.poDateRequested) || {} }));
+      } catch (err) {}
+      return;
+    }
     // 채운 발주확정 파일을 서허 발주확정 업로드에 올리기.
     if (d.type === 'PO_CONFIRM_UPLOAD') {
       try {
@@ -254,6 +261,10 @@
       if (changes.shubUpload && changes.shubUpload.newValue) {
         const v = changes.shubUpload.newValue;
         reply({ type: 'SHUB_UPLOAD_STATUS', step: v.step, status: v.status, batchId: v.batchId, messages: v.messages || [], byOrder: v.byOrder || {} });
+      }
+      // 입고일 변경 요청을 등록하면 기억한 변경 센터·날짜를 앱에 바로 넘긴다.
+      if (changes.poDateRequested && changes.poDateRequested.newValue) {
+        reply({ type: 'PO_DATE_REQUESTED', data: changes.poDateRequested.newValue });
       }
       // 입고일 변경 요청에 발주서 넣기 진행 상황.
       if (changes.poDateChange && changes.poDateChange.newValue) {

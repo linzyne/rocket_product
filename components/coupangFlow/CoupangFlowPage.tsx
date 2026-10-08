@@ -25,7 +25,7 @@ import { normalizeDateValue } from '../coupangOrder/utils/dateUtils';
 import { HanjungQueueItem, subscribeHanjungQueue, makePlaceLookup } from '../coupangOrder/data/hanjungQueueStore';
 import { subscribePoForms, readDraft, setDraftLine, SHORT_REASONS, DEFAULT_REASON } from '../coupangOrder/data/poFormStore';
 import { startConfirmUpload, subscribeConfirmJob, clearConfirmJob, ConfirmJob } from '../coupangOrder/data/poConfirmRunner';
-import { subscribeDateRequests, markDateRequested, applyCurrent, DateReq } from '../coupangOrder/data/poDateStore';
+import { subscribeDateRequests, markDateRequested, applyCurrent, DateReq, rememberRequested, requestedOf } from '../coupangOrder/data/poDateStore';
 import { retargetBatches, saveShipmentBatch } from '../../data/shipmentStore';
 
 // 발주 > 발주 진행. 단계마다 상자를 옆으로 두고, 발주서가 지금 단계의 상자 안에 담긴다(상자 안에서는 위아래 한 줄).
@@ -171,6 +171,7 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
       if (!d || d.source !== 'rocket-hub-extension') return;
       if (d.type === 'PO_DATE_ACK' || d.type === 'PO_DATE_STATUS') { if (dateAck.current) clearTimeout(dateAck.current); dateAck.current = null; }
       if (d.type === 'PO_DATE_ACK' && !d.ok) setDateNote({ tone: 'error', text: `서허 창을 열지 못했어요: ${d.error || ''}` });
+      if (d.type === 'PO_DATE_REQUESTED' && d.data) rememberRequested(d.data);
       if (d.type === 'SHUB_FIND_ACK' && !d.ok) setDateNote({ tone: 'error', text: `서허 창을 열지 못했어요: ${d.error || ''} (확장 프로그램을 새로고침해 주세요)` });
       if (d.type === 'SHUB_UPLOAD_STATUS' && d.batchId === 'lookup') {
         const found = Object.values(d.byOrder || {}).filter(Boolean).length;
@@ -209,6 +210,8 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
       }
     };
     window.addEventListener('message', onMsg);
+    // 확장이 기억해 둔 요청 내용(변경 센터·날짜)을 받아 둔다.
+    window.postMessage({ source: 'rocket-app-hub', type: 'PO_DATE_REQUESTED_GET' }, window.location.origin);
     return () => window.removeEventListener('message', onMsg);
   }, []);
   // 날짜 바꾸기: 서허 입고일 변경 요청 화면을 새 창으로 열어 고른 발주서를 하나씩 검색해 "+추가"까지 해 둔다(날짜는 사람이 고른다).
@@ -226,8 +229,30 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
   };
   // 적용: 서허에서 승인을 확인한 뒤 누른다. 확장이 서허 발주서 목록에서 그 발주서들의 지금 입고예정일·센터를 읽어 온다.
   const applyDate = () => {
-    const nos: string[] = Array.from(picked);
-    if (!nos.length) return;
+    const picks: string[] = Array.from(picked);
+    if (!picks.length) return;
+    // 서허 요청 등록 때 기억한 변경 센터·날짜가 있으면 그 값으로 바로 바꾼다(승인을 확인한 뒤 누르는 버튼이므로).
+    const known = picks.filter(no => requestedOf(no));
+    if (known.length) {
+      const values = Object.fromEntries(known.map(no => [no, requestedOf(no)!]));
+      const list = known.map(no => `· ${no} → ${values[no].date || '날짜 그대로'} ${values[no].center || '센터 그대로'}`);
+      if (!window.confirm(`서허 요청 때 적은 값으로 바꿀까요?(승인을 확인했을 때만)\n\n${list.join('\n')}`)) return;
+      applyCurrent(known, values).then(res => {
+        for (const m of res.moved) {
+          for (const next of retargetBatches(batchesRef.current, m.before, m.to, shipOutBatch(m.before, batchesRef.current))) {
+            saveShipmentBatch(next).catch(err => console.error('쉽먼트 기록 옮기기 실패:', err));
+          }
+        }
+        const rest = picks.filter(no => !known.includes(no));
+        setDateNote({
+          tone: rest.length ? 'info' : 'ok',
+          text: `✅ ${res.changed.length}건 바꿨어요.` + (res.same.length ? ` 이미 같은 값 ${res.same.length}건.` : '') + (rest.length ? ` 요청 내용을 모르는 발주서 ${rest.length}건(${rest.join(', ')})은 서허 요청 등록 때 확장이 기억하지 못했어요.` : ''),
+        });
+        setPicked(new Set());
+      }).catch(err => setDateNote({ tone: 'error', text: `적용하지 못했어요: ${err instanceof Error ? err.message : String(err)}` }));
+      return;
+    }
+    const nos = picks;
     checkingRef.current = nos;
     setDateNote({ tone: 'info', text: `서허 발주서 목록에서 ${nos.length}건의 입고예정일·센터 확인 중…` });
     window.postMessage({ source: 'rocket-app-hub', type: 'PO_COLLECT', purpose: 'check', orderNos: nos, lastOrderNo: '' }, window.location.origin);
@@ -403,12 +428,16 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
     </div>
   );
   const tags = (o: FlowOrder) => {
+    // 요청 표시는 날짜 바꾸기를 눌렀거나(at) 서허 요청 등록 때 확장이 값을 기억했을 때(want).
     const req = !!dateReqs[o.no] && !dateReqs[o.no].doneAt;
     const changedDate = dateReqs[o.no]?.doneAt ? dateReqs[o.no] : null;
     if (!(((o.bundle || o.hold) && o.stage === 1) || o.partial || req || changedDate)) return null;
     return (
       <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', alignItems: 'center' }}>
-        {req && <Tag color="#7c3aed">📅 날짜 변경 요청 중</Tag>}
+        {req && (() => {
+          const w = dateReqs[o.no]?.want;
+          return <Tag color="#7c3aed">📅 날짜 변경 요청 중{w ? ` → ${w.date ? dayText(w.date) : ''} ${w.center || ''}` : ''}</Tag>;
+        })()}
         {changedDate && (
           <span title={`${changedDate.from} → ${changedDate.to}`} style={{ fontSize: 10.5, color: GREEN, fontWeight: 700 }}>✓ 날짜변경완료</span>
         )}

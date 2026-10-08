@@ -235,6 +235,67 @@
     }
   };
 
+  // ---- 요청 내용 기억하기 ----
+  // "요청 내용 입력/수정" 표에서 발주서마다 "변경 납품센터"·"변경 입고예정일"을 읽어 둔다. "요청 등록"을 누르는 순간의 값을
+  // poDateRequested에 적어 두면, 앱의 "적용"이 서허를 다시 읽지 않고 이 값으로 바꾼다. 이 화면을 사람이 직접 열었어도 기억한다.
+  const REQ_KEY = 'poDateRequested';
+  const readRequestTable = () => {
+    for (const table of document.querySelectorAll('table')) {
+      if (!visible(table)) continue;
+      const heads = Array.from(table.querySelectorAll('thead th, thead td')).map((x) => clean(x.textContent));
+      const iNo = heads.findIndex((h) => /발주\s*번호/.test(h));
+      const iCenter = heads.findIndex((h) => /변경\s*납품\s*센터/.test(h));
+      const iDate = heads.findIndex((h) => /변경\s*입고\s*예정일/.test(h));
+      if (iNo < 0 || (iCenter < 0 && iDate < 0)) continue;
+      const out = {};
+      for (const tr of table.querySelectorAll('tbody tr')) {
+        const tds = Array.from(tr.querySelectorAll('td'));
+        const cellVal = (i) => {
+          if (i < 0 || !tds[i]) return '';
+          const input = tds[i].querySelector('input, select, textarea');
+          return clean(input ? input.value : tds[i].textContent);
+        };
+        const no = (cellVal(iNo).match(/\d{8,12}/) || [])[0];
+        if (!no) continue;
+        const center = cellVal(iCenter);
+        const dm = /(\d{4})[-./]?\s*(\d{1,2})[-./]?\s*(\d{1,2})/.exec(cellVal(iDate));
+        const date = dm ? `${dm[1]}-${dm[2].padStart(2, '0')}-${dm[3].padStart(2, '0')}` : '';
+        if (center || date) out[no] = { center, date };
+      }
+      return out;
+    }
+    return null;
+  };
+  // 화면에서 계속 읽어 두고(누르는 순간 표가 사라질 수 있어서), "요청 등록"을 누르면 그때 값을 기억한다.
+  let draft = {};
+  // 서허는 화면을 새로 불러오지 않고 주소만 바꾸기도 해서, 늘 걸어 두고 이 화면일 때만 움직인다.
+  const onRequestPage = () => location.pathname.startsWith('/plan/ticket/reportIssue');
+  {
+    setInterval(() => {
+      if (!onRequestPage()) return;
+      const t = readRequestTable();
+      if (t && Object.keys(t).length) draft = t;
+    }, 800);
+    document.addEventListener('click', (e) => {
+      const btn = e.target && e.target.closest && e.target.closest('button, a, [role="button"], input[type="button"], input[type="submit"]');
+      if (!onRequestPage() || !btn || (panel && panel.contains(btn))) return;
+      const label = clean(btn.value || btn.textContent).replace(/\s+/g, '');
+      if (!/^(요청등록|등록|요청하기|요청|제출|저장)$/.test(label)) return;
+      const now = readRequestTable() || draft;
+      if (!now || !Object.keys(now).length) return;
+      try {
+        chrome.storage.local.get(REQ_KEY, (r) => {
+          const prev = (r && r[REQ_KEY]) || {};
+          const at = Date.now();
+          const next = { ...prev };
+          Object.entries(now).forEach(([no, v]) => { next[no] = { ...v, at }; });
+          chrome.storage.local.set({ [REQ_KEY]: next });
+          debug('requested', { label, count: Object.keys(now).length, now });
+        });
+      } catch (err) {}
+    }, true);
+  }
+
   setInterval(tick, 1200);
   try {
     chrome.storage.onChanged.addListener((changes, area) => {

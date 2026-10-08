@@ -555,7 +555,8 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
     const shipNo = item?.shipmentNos?.[o.no];
     const printed = !!item && (item.printedOrders || []).includes(o.no);
     if (!item) return null;
-    const color = printed ? GREEN : shipNo ? ORANGE : GRAY;
+    // 아이콘 색은 늘 회색. 출력완료면 아이콘 아래 종이 부분을 채워서 구분한다.
+    const color = '#6b7280';
     return (
       <button
         onClick={() => {
@@ -581,7 +582,7 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
           : '문서(Label·내역서)와 바코드 라벨을 새 탭에 열어요. 오른쪽 클릭: 출력완료로만 표시'}
         style={{ display: 'inline-flex', alignItems: 'center', padding: 2, border: 'none', background: 'transparent', cursor: 'pointer', lineHeight: 0, verticalAlign: 'middle' }}
       >
-        {/* 프린터 아이콘: 초록 = 출력완료, 주황 = 출력할 수 있음, 회색 = 쉽먼트 번호 없음(누르면 찾기) */}
+        {/* 프린터 아이콘(회색): 종이 부분이 채워져 있으면 출력완료 */}
         <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
           <path d="M6 9V3h12v6" />
           <path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2" />

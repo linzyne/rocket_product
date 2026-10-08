@@ -23,8 +23,8 @@ import { retargetBatches, saveShipmentBatch } from '../../data/shipmentStore';
 
 // 칸 이름: 1 새발주서(서허에 확정 올리기 전) → 2 발주확정(확정 끝, 쉽먼트 보내기 전) → 3 쉽먼트 → 4 출력 → 5 발송대기 → 6 발송완료
 const STAGES = ['새발주서', '발주확정', '쉽먼트', '출력', '발송대기', '발송완료'] as const;
-// 화면에 칸·탭으로 보여주는 단계(발송완료는 '발송완료' 메뉴에서 따로 본다).
-const BOARD = STAGES.slice(0, 5);
+// 화면에 칸·탭으로 보여주는 단계. 새발주서는 "새 발주서" 창에서, 발송완료는 '발송완료' 메뉴에서 따로 본다.
+const BOARD_STAGES: Stage[] = [1, 2, 3, 4];
 type Stage = 0 | 1 | 2 | 3 | 4 | 5;
 
 const ORANGE = '#e67e22';
@@ -71,6 +71,8 @@ const daysAgo = (ymd: string) => {
 // view: 'board' = 단계마다 상자를 옆으로(발주 진행 메뉴), 'list' = 발주서마다 단계 한 줄(발주 단계별 메뉴). 내용은 같다.
 export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavigate: (menu: AppMenuId) => void; view?: 'board' | 'list' }) {
   const [tab, setTab] = useState<Stage | 'active'>('active');
+  // 새 발주서 창(새 주문 수집 · 확정수량 고치기 · 발주확정 올리기)
+  const [newOpen, setNewOpen] = useState(false);
   const [work, setWork] = useState(() => readWork().rows);
   // 발주번호 → 처음 들어온 시각(24시간 안에 들어온 것만 남아 있다). NEW 표시에 쓴다.
   const [seenAt, setSeenAt] = useState(() => readWork().seen);
@@ -185,7 +187,7 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
   const handleOrderFile = async (file: File) => {
     try {
       const { added, skipped } = await appendOrderFile(file, reservations);
-      setCollectNote(added ? `✅ 새 발주 ${added}줄을 새발주서 칸에 넣었어요${skipped ? ` (이미 있는 ${skipped}줄 제외)` : ''}` : `새로 들어온 줄이 없어요${skipped ? ` (이미 있는 ${skipped}줄)` : ''}`);
+      setCollectNote(added ? `✅ 새 발주 ${added}줄을 받았어요${skipped ? ` (이미 있는 ${skipped}줄 제외)` : ''}` : `새로 들어온 줄이 없어요${skipped ? ` (이미 있는 ${skipped}줄)` : ''}`);
     } catch (err) {
       setCollectNote(`⛔ 발주서를 읽지 못했어요: ${err instanceof Error ? err.message : String(err)}`);
     }
@@ -518,6 +520,48 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
     </div>
   );
 
+  // 머리줄의 "새 발주서" 단추(아직 확정 안 한 발주서 수). 누르면 새 발주서 창이 뜬다.
+  const newCount = boxes[0].length;
+  const newButton = (
+    <button
+      onClick={() => setNewOpen(true)}
+      title="새 주문 수집 · 확정수량 고치기 · 발주확정 올리기"
+      style={{
+        padding: '6px 12px', fontSize: 13, fontWeight: 700, borderRadius: 8, cursor: 'pointer', whiteSpace: 'nowrap',
+        border: `1.5px solid ${newCount ? RED : '#2563eb'}`, background: newCount ? RED : '#2563eb', color: '#fff',
+      }}
+    >
+      📥 새 발주서{newCount ? ` ${newCount}건` : ''}
+    </button>
+  );
+  // 새 발주서 창: 서허에서 새 주문을 받아 오고, 상품마다 확정수량을 고친 뒤 발주확정을 올린다.
+  // 올리면 발주서가 발주확정 칸으로 넘어가서 이 창에서 빠진다.
+  const newWindow = newOpen && (
+    <div
+      onClick={() => setNewOpen(false)}
+      style={{ position: 'fixed', inset: 0, zIndex: 40, background: 'rgba(15,23,42,0.35)', display: 'flex', alignItems: 'flex-start', justifyContent: 'center', padding: '4vh 16px' }}
+    >
+      <div
+        onClick={e => e.stopPropagation()}
+        style={{ width: 'min(560px, 100%)', maxHeight: '92vh', display: 'flex', flexDirection: 'column', background: '#fff', borderRadius: 14, boxShadow: '0 20px 50px rgba(0,0,0,0.25)', overflow: 'hidden' }}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '12px 16px', borderBottom: '1px solid #f0f0f0' }}>
+          <b style={{ fontSize: 16 }}>📥 새 발주서</b>
+          <span style={{ fontSize: 12, color: '#888' }}>{newCount}건 · 확정수량을 고치고 발주확정을 올려요</span>
+          <button onClick={() => setNewOpen(false)} style={{ marginLeft: 'auto', border: 'none', background: 'transparent', fontSize: 20, color: '#999', cursor: 'pointer', lineHeight: 1 }}>×</button>
+        </div>
+        <div style={{ overflowY: 'auto', padding: 12, display: 'flex', flexDirection: 'column', gap: 10, background: '#fafaf9' }}>
+          <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'flex-start' }}>
+            <div style={{ flex: '1 1 230px' }}>{collectPanel}</div>
+            {newCount > 0 && <div style={{ flex: '1 1 230px', background: '#fff7ed', borderRadius: 12, padding: 8 }}>{confirmPanel(boxes[0])}</div>}
+          </div>
+          {boxes[0].map(card)}
+          {!newCount && <div style={{ padding: '30px 0', textAlign: 'center', fontSize: 13, color: '#aaa' }}>확정할 새 발주서가 없어요. 위 "새 주문 수집"으로 받아 오세요.</div>}
+        </div>
+      </div>
+    </div>
+  );
+
   const search = (
     <input
       value={query}
@@ -531,10 +575,11 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
   // ── 단계별 보기: 발주서마다 한 장, 위쪽 탭으로 단계 고르기 ──
   if (view === 'list') {
     const active = orders.filter(match);
-    const shown = tab === 'active' ? active.filter(o => o.stage < 5) : boxes[tab];
+    const inBoard = (o: FlowOrder) => BOARD_STAGES.includes(o.stage);
+    const shown = tab === 'active' ? active.filter(inBoard) : boxes[tab];
     const tabs: { id: Stage | 'active'; label: string; n: number }[] = [
-      { id: 'active', label: '진행 중 전체', n: active.filter(o => o.stage < 5).length },
-      ...BOARD.map((label, i) => ({ id: i as Stage, label, n: boxes[i].length })),
+      { id: 'active', label: '진행 중 전체', n: active.filter(inBoard).length },
+      ...BOARD_STAGES.map(st => ({ id: st, label: STAGES[st], n: boxes[st].length })),
     ];
     return (
       <div style={pageStyle}>
@@ -542,6 +587,7 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
           <div style={{ maxWidth: 860, padding: '8px clamp(12px, 3vw, 20px)', display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '6px 12px' }}>
             <h1 style={{ fontSize: 17, fontWeight: 800, margin: 0 }}>발주 단계별</h1>
             <span style={{ fontSize: 12, color: '#888' }}>발주서마다 지금 단계와 다음 할 일</span>
+            {newButton}
             {search}
           </div>
           <div style={{ maxWidth: 860, padding: '0 clamp(12px, 3vw, 20px) 8px', display: 'flex', gap: 4, flexWrap: 'nowrap', overflowX: 'auto' }}>
@@ -561,17 +607,11 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
           </div>
         </header>
         <main style={{ maxWidth: 860, padding: '12px clamp(10px, 3vw, 20px) 70px' }}>
-          {/* 새 주문 수집과 발주확정 올리기는 위에 나란히(전체·발주확정 탭에서) */}
-          {(tab === 'active' || tab === 0) && (
-            <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginBottom: 12, alignItems: 'flex-start' }}>
-              <div style={{ flex: '0 0 250px' }}>{collectPanel}</div>
-              {boxes[0].length > 0 && <div style={{ flex: '0 0 250px', background: '#fff7ed', borderRadius: 12, padding: 8 }}>{confirmPanel(boxes[0])}</div>}
-            </div>
-          )}
           {!shown.length && <div style={{ padding: '48px 0', textAlign: 'center', color: '#aaa', fontSize: 14 }}>{q ? '찾는 발주서가 없어요.' : '이 단계에 있는 발주서가 없어요.'}</div>}
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>{shown.map(row)}</div>
         </main>
         {layer}
+        {newWindow}
         {waybillBatch && <ShipmentWaybillModal batch={waybillBatch} onClose={() => setWaybillBatch(null)} />}
       </div>
     );
@@ -584,31 +624,28 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
         <div style={{ padding: '8px clamp(12px, 3vw, 20px)', display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '6px 12px' }}>
           <h1 style={{ fontSize: 17, fontWeight: 800, margin: 0 }}>발주 진행</h1>
           <span style={{ fontSize: 12, color: '#888' }}>발주서가 지금 있는 상자 = 지금 단계</span>
+          {newButton}
           {search}
         </div>
       </header>
 
       {/* 커다란 판 하나에 단계 칸이 옆으로 나란히(위쪽 머리줄 = 칸 제목). 발주서는 지금 단계 칸 안에 위아래 한 줄로 자리 잡는다. */}
       <main style={{ overflowX: 'auto', padding: '12px clamp(10px, 3vw, 20px) 70px' }}>
-        {/* 새 주문 수집·발주확정 올리기는 판 위에 따로 둔다(칸 안에 두면 1번 칸 발주서만 아래로 밀려 줄이 안 맞는다). */}
-        <div style={{ display: 'flex', gap: 10, alignItems: 'flex-start', marginBottom: 10 }}>
-          <div style={{ flex: '0 0 250px' }}>{collectPanel}</div>
-          {boxes[0].length > 0 && <div style={{ flex: '0 0 250px', background: '#fff7ed', borderRadius: 12, padding: 8 }}>{confirmPanel(boxes[0])}</div>}
-        </div>
         <div style={{
-          display: 'inline-grid', gridTemplateColumns: `repeat(${BOARD.length}, 250px)`,
+          display: 'inline-grid', gridTemplateColumns: `repeat(${BOARD_STAGES.length}, 250px)`,
           border: '1.5px solid #d6d3d1', borderRadius: 12, background: '#fafaf9', overflow: 'hidden', alignItems: 'stretch',
         }}>
           {/* 머리줄 */}
-          {BOARD.map((label, i) => {
+          {BOARD_STAGES.map((i, col) => {
+            const label = STAGES[i];
             const list = boxes[i];
             const stuck = i === 2 ? list.filter(o => run(o)?.state === 'error').length : 0;
             return (
               <div key={`h-${label}`} style={{
                 position: 'sticky', top: 0, zIndex: 2, display: 'flex', alignItems: 'center', gap: 6, padding: '9px 10px',
-                background: '#efedeb', borderBottom: '2px solid #d6d3d1', borderRight: i < BOARD.length - 1 ? '1px solid #d6d3d1' : 'none',
+                background: '#efedeb', borderBottom: '2px solid #d6d3d1', borderRight: col < BOARD_STAGES.length - 1 ? '1px solid #d6d3d1' : 'none',
               }}>
-                <span style={{ fontSize: 11, color: '#a8a29e', fontWeight: 800 }}>{i + 1}</span>
+                <span style={{ fontSize: 11, color: '#a8a29e', fontWeight: 800 }}>{col + 1}</span>
                 <b style={{ fontSize: 14, color: '#292524' }}>{label}</b>
                 <span style={{ fontSize: 12, fontWeight: 800, color: '#fff', background: list.length ? (i === 5 ? GREEN : ORANGE) : GRAY, borderRadius: 999, padding: '0 7px' }}>{list.length}</span>
                 {stuck > 0 && <span style={{ fontSize: 11.5, fontWeight: 800, color: RED }}>⛔ {stuck}</span>}
@@ -617,12 +654,13 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
             );
           })}
           {/* 칸 */}
-          {BOARD.map((label, i) => {
+          {BOARD_STAGES.map((i, col) => {
+            const label = STAGES[i];
             const list = boxes[i];
             return (
               <div key={`c-${label}`} style={{
                 padding: 8, minHeight: '60vh', display: 'flex', flexDirection: 'column', gap: 8, boxSizing: 'border-box',
-                borderRight: i < BOARD.length - 1 ? '1px solid #e7e5e4' : 'none',
+                borderRight: col < BOARD_STAGES.length - 1 ? '1px solid #e7e5e4' : 'none',
               }}>
                 {list.map(card)}
                 {!list.length && <div style={{ padding: '18px 0', textAlign: 'center', fontSize: 12, color: '#c4c0bc' }}>{q ? '찾는 발주서 없음' : '비어 있음'}</div>}
@@ -633,6 +671,7 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
       </main>
 
       {layer}
+      {newWindow}
       {waybillBatch && <ShipmentWaybillModal batch={waybillBatch} onClose={() => setWaybillBatch(null)} />}
     </div>
   );

@@ -753,51 +753,70 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
     setDateNote({ tone: 'ok', text: `발주 ${pickedWaiting.length + others.length}건을 발송완료(${date.trim()})로 넘겼어요. 발송완료 메뉴에서 볼 수 있어요.` });
   };
 
-  // 고르면 화면 아래 가운데에 뜨는 메뉴.
+  // 고르면 화면 아래 가운데에 뜨는 메뉴. 흰 띠 하나에 [고른 수] | 다음 단계로 넘기기 | 날짜 변경·적용 | 취소.
+  const pill = (kind: 'primary' | 'ghost'): React.CSSProperties => ({
+    height: 34, padding: '0 14px', fontSize: 13, fontWeight: 600, borderRadius: 9, cursor: 'pointer', whiteSpace: 'nowrap',
+    display: 'inline-flex', alignItems: 'center', gap: 6, letterSpacing: '-0.2px', transition: 'background .15s',
+    ...(kind === 'primary'
+      ? { border: 'none', background: '#111827', color: '#fff' }
+      : { border: '1px solid #e5e7eb', background: '#fff', color: '#374151' }),
+  });
+  const divider = <span style={{ width: 1, height: 22, background: '#e5e7eb', margin: '0 4px', flexShrink: 0 }} />;
+  const countOf = (n: number) => (n !== picked.size ? <span style={{ opacity: 0.6, fontWeight: 500 }}>{n}</span> : null);
+  const moves = [
+    pickedConfirmed.length > 0 && (
+      <button key="ship" onClick={sendToShip} style={pill('primary')} title="고른 발주확정 발주서를 센터·입고예정일이 같은 것끼리 묶어 쉽먼트로 보내요">
+        쉽먼트로 {countOf(pickedConfirmed.length)}<span style={{ opacity: 0.7 }}>→</span>
+      </button>
+    ),
+    pickedShipping.length > 0 && (
+      <button key="wait" onClick={sendToWaiting} style={pill('primary')} title="고른 쉽먼트 발주서를 발송대기로 넘겨요">
+        발송대기로 {countOf(pickedShipping.length)}<span style={{ opacity: 0.7 }}>→</span>
+      </button>
+    ),
+    pickedWaiting.length > 0 && (
+      <button key="sent" onClick={sendDone} style={pill('primary')} title="고른 발송대기 발주서를 발송완료로 넘겨요(보낸 날을 물어요)">
+        발송완료 {countOf(pickedWaiting.length)}<span style={{ opacity: 0.7 }}>→</span>
+      </button>
+    ),
+  ].filter(Boolean);
+  const calendar = (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="3" y="4" width="18" height="18" rx="2" /><path d="M16 2v4M8 2v4M3 10h18" />
+    </svg>
+  );
+  const check = (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6 9 17l-5-5" /></svg>
+  );
+  const noteColor = dateNote?.tone === 'error' ? '#b91c1c' : dateNote?.tone === 'ok' ? '#047857' : '#1d4ed8';
   const layer = (picked.size > 0 || dateNote) && (
     <div style={{
-      position: 'fixed', left: '50%', bottom: 18, transform: 'translateX(-50%)', zIndex: 50,
-      background: '#1f2937', color: '#fff', borderRadius: 12, boxShadow: '0 10px 30px rgba(0,0,0,0.25)',
-      padding: '10px 14px', display: 'flex', flexDirection: 'column', gap: 6, maxWidth: 'calc(100vw - 32px)',
+      position: 'fixed', left: '50%', bottom: 20, transform: 'translateX(-50%)', zIndex: 50,
+      background: 'rgba(255,255,255,0.97)', backdropFilter: 'blur(8px)', color: '#111827',
+      border: '1px solid #e5e7eb', borderRadius: 14, boxShadow: '0 12px 32px rgba(15,23,42,0.16), 0 2px 6px rgba(15,23,42,0.06)',
+      padding: 8, display: 'flex', flexDirection: 'column', gap: 6, maxWidth: 'calc(100vw - 32px)',
     }}>
       {picked.size > 0 && (
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <b style={{ fontSize: 13, whiteSpace: 'nowrap' }}>발주서 {picked.size}건 고름</b>
-          {pickedConfirmed.length > 0 && (
-            <button onClick={sendToShip} title="고른 발주확정 발주서를 센터·입고예정일이 같은 것끼리 출고 건으로 묶어 쉽먼트 칸으로 보냅니다"
-              style={{ padding: '6px 12px', fontSize: 13, fontWeight: 700, borderRadius: 8, border: 'none', background: '#2563eb', color: '#fff', cursor: 'pointer', whiteSpace: 'nowrap' }}>
-              쉽먼트로 →{pickedConfirmed.length !== picked.size ? ` (${pickedConfirmed.length}건)` : ''}
-            </button>
-          )}
-          {pickedWaiting.length > 0 && (
-            <button onClick={sendDone} title="고른 발송대기 발주서를 발송완료로 넘깁니다(보낸 날을 물어요)"
-              style={{ padding: '6px 12px', fontSize: 13, fontWeight: 700, borderRadius: 8, border: 'none', background: '#0f766e', color: '#fff', cursor: 'pointer', whiteSpace: 'nowrap' }}>
-              발송완료 →{pickedWaiting.length !== picked.size ? ` (${pickedWaiting.length}건)` : ''}
-            </button>
-          )}
-          {pickedShipping.length > 0 && (
-            <button onClick={sendToWaiting} title="고른 쉽먼트 발주서를 발송대기 칸으로 넘깁니다"
-              style={{ padding: '6px 12px', fontSize: 13, fontWeight: 700, borderRadius: 8, border: 'none', background: GREEN, color: '#fff', cursor: 'pointer', whiteSpace: 'nowrap' }}>
-              발송대기로 →{pickedShipping.length !== picked.size ? ` (${pickedShipping.length}건)` : ''}
-            </button>
-          )}
-          <button onClick={changeDate} style={{ padding: '6px 12px', fontSize: 13, fontWeight: 700, borderRadius: 8, border: 'none', background: ORANGE, color: '#fff', cursor: 'pointer', whiteSpace: 'nowrap' }}>
-            📅 날짜 바꾸기
-          </button>
-          <button onClick={applyDate} title="서허에서 승인된 것을 확인한 뒤 누르세요. 서허 발주서 목록의 지금 입고예정일·센터를 읽어 앱에 적어요."
-            style={{ padding: '6px 12px', fontSize: 13, fontWeight: 700, borderRadius: 8, border: 'none', background: '#16a34a', color: '#fff', cursor: 'pointer', whiteSpace: 'nowrap' }}>
-            ✅ 바뀐 날짜 적용
-          </button>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          <span style={{ height: 34, padding: '0 12px', display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 13, fontWeight: 700, whiteSpace: 'nowrap' }}>
+            <span style={{ minWidth: 22, height: 22, padding: '0 6px', borderRadius: 999, background: ORANGE, color: '#fff', fontSize: 12, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>{picked.size}</span>
+            선택됨
+          </span>
+          {moves.length > 0 && <>{divider}{moves}</>}
+          {divider}
+          <button onClick={changeDate} style={pill('ghost')} title="서허 입고일 변경 요청 화면에 고른 발주서를 넣어 둬요">{calendar}날짜 변경</button>
+          <button onClick={applyDate} style={pill('ghost')} title="서허에서 승인된 걸 확인한 뒤 누르세요. 서허 발주서 목록의 지금 입고예정일·센터를 읽어 앱에 적어요">{check}적용</button>
+          {divider}
           <button onClick={() => setPicked(new Set())} title="고른 발주서를 모두 해제해요"
-            style={{ padding: '6px 12px', fontSize: 13, fontWeight: 700, borderRadius: 8, border: '1px solid #9ca3af', background: '#fff', color: '#374151', cursor: 'pointer', whiteSpace: 'nowrap' }}>
-            ✕ 취소
+            style={{ ...pill('ghost'), border: 'none', color: '#6b7280', padding: '0 10px' }}>
+            취소
           </button>
         </div>
       )}
       {dateNote && (
-        <div style={{ fontSize: 12, lineHeight: 1.45, color: dateNote.tone === 'error' ? '#fca5a5' : dateNote.tone === 'ok' ? '#86efac' : '#bfdbfe', display: 'flex', gap: 8 }}>
-          <span>{dateNote.text}</span>
-          <button onClick={() => setDateNote(null)} style={{ border: 'none', background: 'transparent', color: '#9ca3af', cursor: 'pointer', fontSize: 12 }}>×</button>
+        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8, padding: '6px 10px', borderRadius: 9, background: '#f8fafc', fontSize: 12, lineHeight: 1.5, color: noteColor }}>
+          <span style={{ flex: 1 }}>{dateNote.text}</span>
+          <button onClick={() => setDateNote(null)} style={{ border: 'none', background: 'transparent', color: '#9ca3af', cursor: 'pointer', fontSize: 14, lineHeight: 1 }}>×</button>
         </div>
       )}
     </div>

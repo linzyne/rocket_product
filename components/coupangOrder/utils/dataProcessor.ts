@@ -2,6 +2,7 @@ import * as XLSX from 'xlsx';
 import Papa from 'papaparse';
 import type { OrderRow } from '../types';
 import { normalizeDateValue, dateKeyYMD, ymdSortKey } from './dateUtils';
+import { rememberBarcodes } from '../../../data/coupangBarcodeStore';
 
 function parseNumber(v: unknown): number {
   if (v === null || v === '') return NaN;
@@ -77,6 +78,13 @@ function mapRawToOrderRows(rawData: unknown[][]): OrderRow[] {
       SKU: String(sku ?? '').trim(),
     };
   });
+
+  // 발주서의 상품바코드를 기억해 둔다(발송대기에서 바코드 라벨을 뽑을 때 쓴다).
+  rememberBarcodes(data.map(r => ({
+    sku: String(r['상품번호'] ?? r['SKU ID'] ?? r['Product ID'] ?? ''),
+    name: String(r['상품이름'] ?? r['Product Name'] ?? ''),
+    barcode: String(r['상품바코드'] ?? r['Barcode'] ?? r['SKU Barcode'] ?? ''),
+  }))).catch(err => console.error('바코드 기억 실패:', err));
 
   rows = rows.filter(x => Number(x.확정수량) > 0);
 

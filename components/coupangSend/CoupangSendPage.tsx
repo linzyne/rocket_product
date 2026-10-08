@@ -9,6 +9,8 @@ import { useReady } from '../coupangOrder/data/readyStore';
 import { HanjungOrder, subscribeHanjung, makeHanjungOfficeLookup } from '../../data/hanjungStore';
 import { expandBoxSplit, parseBoxNo } from '../coupangOrder/utils/dataProcessor';
 import { ymdSortKey } from '../coupangOrder/utils/dateUtils';
+import { loadBarcodeBook, loadArchiveBarcodes, rememberBarcodes, nameKey } from '../../data/coupangBarcodeStore';
+import { writeBarcodeSheet, SheetItem } from '../../utils/barcodeSheet';
 
 // 발주 > 발송대기. 쉽먼트생성에서 "쉽먼트 완료"를 누른 건이 여기로 온다.
 // 아직 준비 안 된 상품(입고 기다리는 것 등)이 다 준비될 때까지 기다리는 곳이다.
@@ -46,9 +48,52 @@ export default function CoupangSendPage({ onGoShip }: { onGoShip?: () => void } 
   const [printNote, setPrintNote] = useState<Record<string, string>>({});
   const setPrinted = (item: ShipOut, no: string, on: boolean) =>
     markShipOuts([item.id], { printedOrders: on ? Array.from(new Set([...(item.printedOrders || []), no])) : (item.printedOrders || []).filter(x => x !== no) });
+  // 그 발주서 상품들의 바코드 라벨(폼텍 40칸)을 수량만큼 새 탭에 연다.
+  // 바코드는 발주서 파일에서 기억해 둔 것 → 로켓제안서 상품목록(이름이 같은 것) → 그래도 없으면 물어서 기억한다.
+  const openBarcodes = async (item: ShipOut, orderNo: string, opened?: Window | null) => {
+    const win = opened === undefined ? window.open('', '_blank') : opened;
+    if (!win) { alert('바코드 탭이 팝업으로 막혔어요. 🏷 버튼을 눌러 주세요.'); return; }
+    win.document.write('<p style="font:15px sans-serif;padding:32px;color:#555">바코드 라벨 만드는 중…</p>');
+    const groups = new Map<string, { sku: string; name: string; qty: number }>();
+    for (const l of item.lines.filter(l => String(l.발주번호) === orderNo)) {
+      const key = l.SKU || l.상품이름;
+      const g = groups.get(key) || { sku: l.SKU || '', name: l.상품이름, qty: 0 };
+      g.qty += Number(l.확정수량) || 0;
+      groups.set(key, g);
+    }
+    const book = await loadBarcodeBook();
+    let archive: { name: string; barcode: string }[] | null = null;
+    const items: SheetItem[] = [];
+    const learned: { sku: string; name: string; barcode: string }[] = [];
+    for (const g of groups.values()) {
+      let bc = (g.sku && book.bySku[g.sku]) || book.byName[g.name] || '';
+      if (!bc) {
+        archive = archive || await loadArchiveBarcodes();
+        const hits = Array.from(new Set(archive.filter(a => nameKey(a.name) === nameKey(g.name)).map(a => a.barcode)));
+        if (hits.length === 1) bc = hits[0];
+      }
+      if (!bc) {
+        bc = (prompt(`바코드를 못 찾았어요. 적어 주면 기억해 둘게요(비우면 빼고 만들어요).\n\n${g.name}${g.sku ? `\n상품번호 ${g.sku}` : ''}`) || '').trim();
+        if (bc) learned.push({ sku: g.sku, name: g.name, barcode: bc });
+      }
+      if (bc) items.push({ name: g.name, barcode: bc, qty: g.qty });
+    }
+    if (learned.length) rememberBarcodes(learned).catch(err => console.error('바코드 기억 실패:', err));
+    if (win.closed) return;
+    if (!items.length) { win.document.body.innerHTML = '<p style="font:15px sans-serif;padding:32px;color:#c0392b">바코드가 있는 상품이 없어요.</p>'; return; }
+    try {
+      writeBarcodeSheet(win, `바코드 ${item.center} ${orderNo}`, items);
+    } catch (err: any) {
+      win.document.body.innerHTML = `<p style="font:15px sans-serif;padding:32px;color:#c0392b">바코드를 그리지 못했어요: ${String(err?.message || err).replace(/</g, '&lt;')}</p>`;
+    }
+  };
   const printShipment = (item: ShipOut, orderNo: string, shipmentNo: string) => {
     // 새 탭은 누른 순간에 열어 둔다(파일이 다 온 뒤에 열면 크롬이 팝업으로 막는다).
     const win = window.open('', '_blank');
+    // 바코드 라벨 탭도 같이 연다(막히면 🏷 버튼으로).
+    const barcodeWin = window.open('', '_blank');
+    openBarcodes(item, orderNo, barcodeWin);
+    win?.focus();
     win?.document.write('<p style="font:15px sans-serif;padding:32px;color:#555">서허에서 Label·내역서 받는 중…<br><small>다 받으면 이 탭에 합친 PDF가 열려요.</small></p>');
     const requestId = `${shipmentNo}-${Date.now()}`;
     const note = (t: string) => setPrintNote(n => ({ ...n, [orderNo]: t }));
@@ -233,6 +278,13 @@ export default function CoupangSendPage({ onGoShip }: { onGoShip?: () => void } 
                                 style={{ width: 28, height: 24, padding: 0, fontSize: 15, borderRadius: 6, cursor: ship ? 'pointer' : 'not-allowed', border: '1px solid #d1d5db', background: '#fff', opacity: ship ? 1 : 0.4 }}
                               >
                                 🖨
+                              </button>
+                              <button
+                                onClick={() => openBarcodes(item, no)}
+                                title="이 발주서 상품들의 바코드 라벨(폼텍 40칸)을 수량만큼 새 탭에 열어요"
+                                style={{ width: 28, height: 24, padding: 0, fontSize: 14, borderRadius: 6, cursor: 'pointer', border: '1px solid #d1d5db', background: '#fff' }}
+                              >
+                                🏷
                               </button>
                               <button
                                 onClick={() => {

@@ -332,7 +332,8 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
         // 올리기는 상자 위 "발주확정 올리기"로 한꺼번에. 여기는 서허에서 직접 확정한 발주서를 표시만 할 때.
         return <button style={btn('#6b7280')} onClick={() => confirm1([o.no], true)} title="서허에서 직접 확정했으면 눌러서 발주확정 칸으로 넘깁니다">직접 확정함</button>;
       case 1:
-        return <button style={btn(ORANGE)} onClick={() => onNavigate('coupang-order')} title="쿠팡발주확인에서 묶고 쉽먼트생성으로 보냅니다">쉽먼트로 보내기 →</button>;
+        // 쉽먼트로 보내기는 발주서를 고르면 아래쪽 메뉴에 나온다.
+        return null;
       case 2:
         return (
           <>
@@ -591,19 +592,18 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
     );
   };
 
-  const actionRow = (o: FlowOrder) => (
-    <>
-    {printNote[o.no] && o.stage === 2 && <div style={{ fontSize: 11, color: '#1d4ed8' }}>{printNote[o.no]}</div>}
-    <div style={{ display: 'flex', gap: 4, flexWrap: 'nowrap', alignItems: 'center' }}>
-      {action(o)}
-      {o.confirmed && o.stage <= 1 && !o.bundle && (
-        <button onClick={() => confirm1([o.no], false)} style={{ marginLeft: 'auto', padding: 0, border: 'none', background: 'transparent', color: '#aaa', fontSize: 10.5, cursor: 'pointer', textDecoration: 'underline' }}>
-          확정 취소
-        </button>
-      )}
-    </div>
-    </>
-  );
+  // 카드 아래 단추 줄(할 일이 없으면 줄을 안 그린다).
+  const actionRow = (o: FlowOrder) => {
+    const act = action(o);
+    const note = printNote[o.no] && o.stage === 2 ? <div style={{ fontSize: 11, color: '#1d4ed8' }}>{printNote[o.no]}</div> : null;
+    if (!act && !note) return null;
+    return (
+      <>
+        {note}
+        {act && <div style={{ display: 'flex', gap: 4, flexWrap: 'nowrap', alignItems: 'center' }}>{act}</div>}
+      </>
+    );
+  };
   const borderOf = (o: FlowOrder) => picked.has(o.no) ? `2px solid ${ORANGE}` : `1px solid ${run(o)?.state === 'error' ? '#fca5a5' : '#ececec'}`;
 
   // 상자 보기 카드: 상자 폭에 맞춰 위아래로.

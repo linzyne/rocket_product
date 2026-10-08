@@ -100,6 +100,13 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
     });
     return m;
   }, [hjOrders]);
+  // 한중발주마다 동그라미 색(쉽먼트생성대기의 한중 뱃지와 같은 색 순서).
+  const hjColor = useMemo(() => {
+    const COLORS = ['#2563eb', '#7c3aed', '#db2777', '#0891b2', '#4f46e5', '#9333ea', '#0d9488', '#be185d', '#1d4ed8', '#6d28d9'];
+    const m = new Map<string, string>();
+    [...hjOrders].sort((a, b) => a.createdAt - b.createdAt).forEach((o, i) => m.set(o.code, COLORS[i % COLORS.length]));
+    return m;
+  }, [hjOrders]);
   // 한중발주 안에서 그 상품이 다 들어왔는지.
   const hjArrived = useMemo(() => {
     const m = new Map<string, { received: number; ordered: number }>();
@@ -454,7 +461,7 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
                       {!isReady && coming.map(p => (
                         <span key={p.code!} style={{
                           display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 16, height: 16, marginRight: 4,
-                          borderRadius: '50%', border: '1.5px solid #9ca3af', color: '#6b7280', fontSize: 10, fontWeight: 800, verticalAlign: 'middle',
+                          borderRadius: '50%', background: hjColor.get(p.code!) || '#2563eb', color: '#fff', fontSize: 10, fontWeight: 800, verticalAlign: 'middle',
                         }}>{hjNo.get(p.code!) ?? '?'}</span>
                       ))}
                       {waitingQueue && !isReady && !coming.length && <span style={{ marginRight: 4, fontSize: 10, color: '#9ca3af' }}>대기</span>}

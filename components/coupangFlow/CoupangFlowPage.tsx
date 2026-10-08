@@ -753,7 +753,7 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
     setDateNote({ tone: 'ok', text: `발주 ${pickedWaiting.length + others.length}건을 발송완료(${date.trim()})로 넘겼어요. 발송완료 메뉴에서 볼 수 있어요.` });
   };
 
-  // 고르면 화면 아래 가운데에 뜨는 메뉴. 흰 띠 하나에 [고른 수] | 다음 단계로 넘기기 | 날짜 변경·적용 | 취소.
+  // 고르면 화면 아래 가운데에 뜨는 메뉴. 흰 띠 하나에 날짜 변경·적용 | [고른 수] 다음 단계로 넘기기 | 취소.
   const pill = (kind: 'primary' | 'ghost'): React.CSSProperties => ({
     height: 34, padding: '0 14px', fontSize: 13, fontWeight: 600, borderRadius: 9, cursor: 'pointer', whiteSpace: 'nowrap',
     display: 'inline-flex', alignItems: 'center', gap: 6, letterSpacing: '-0.2px', transition: 'background .15s',
@@ -798,14 +798,14 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
     }}>
       {picked.size > 0 && (
         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-          <span style={{ height: 34, padding: '0 12px', display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 13, fontWeight: 700, whiteSpace: 'nowrap' }}>
+          <button onClick={changeDate} style={pill('ghost')} title="서허 입고일 변경 요청 화면에 고른 발주서를 넣어 둬요">{calendar}날짜 변경</button>
+          <button onClick={applyDate} style={pill('ghost')} title="서허에서 승인된 걸 확인한 뒤 누르세요. 서허 발주서 목록의 지금 입고예정일·센터를 읽어 앱에 적어요">{check}적용</button>
+          {divider}
+          <span style={{ height: 34, padding: '0 8px', display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 13, fontWeight: 700, whiteSpace: 'nowrap' }}>
             <span style={{ minWidth: 22, height: 22, padding: '0 6px', borderRadius: 999, background: ORANGE, color: '#fff', fontSize: 12, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>{picked.size}</span>
             선택됨
           </span>
-          {moves.length > 0 && <>{divider}{moves}</>}
-          {divider}
-          <button onClick={changeDate} style={pill('ghost')} title="서허 입고일 변경 요청 화면에 고른 발주서를 넣어 둬요">{calendar}날짜 변경</button>
-          <button onClick={applyDate} style={pill('ghost')} title="서허에서 승인된 걸 확인한 뒤 누르세요. 서허 발주서 목록의 지금 입고예정일·센터를 읽어 앱에 적어요">{check}적용</button>
+          {moves}
           {divider}
           <button onClick={() => setPicked(new Set())} title="고른 발주서를 모두 해제해요"
             style={{ ...pill('ghost'), border: 'none', color: '#6b7280', padding: '0 10px' }}>

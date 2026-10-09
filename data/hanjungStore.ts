@@ -631,3 +631,24 @@ export const assignRemaining = (order: HanjungOrder, line: FillLine, qty: number
   }
   return next;
 };
+
+// ---- 보유재고 ----
+// 한중발주로 산 게 아니라 원래 사무실에 있던 재고. "0) 보유재고"라는 한중발주 하나에 "주문 = 도착"으로 넣어 두면
+// 한중 여유와 똑같이 사무실 재고로 잡혀서, 쿠팡 발주에 배정할 때(사무실 재고에서 쓰기·대기 줄 채우기·미배정 배정) 쓰인다.
+// 가장 오래된 건으로 만들어서 여유를 쓸 때 이것부터 쓴다. 이미 산 물건이라 장부의 수입비용에는 넣지 않는다.
+export const HOLDING_CODE = '0) 보유재고';
+export const isHoldingOrder = (o: { code: string }) => o.code === HOLDING_CODE;
+export const addHoldingStock = async (orders: HanjungOrder[], name: string, qty: number, unitCost: number) => {
+  const nm = name.trim();
+  if (!nm || qty <= 0) return;
+  const base: HanjungOrder = orders.find(isHoldingOrder) || { code: HOLDING_CODE, createdAt: 1, memo: '원래 사무실에 있던 재고', lines: [], receipts: [] };
+  const key = orderQtyName(base.orderQty, nm);
+  const orderQty = { ...(base.orderQty || {}), [key]: productOrderQty(base, nm) + qty };
+  const d = new Date();
+  const date = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  const receipt: HanjungReceipt = {
+    id: `hold-${Date.now()}`, date, items: [{ 상품이름: key, qty, unitCost: Math.max(0, unitCost || 0) }],
+    관세사비: 0, 배송비: 0, 작업비: 0, memo: '보유재고 입력', createdAt: Date.now(),
+  };
+  await saveHanjungOrder({ ...base, orderQty, receipts: [...base.receipts, receipt] });
+};

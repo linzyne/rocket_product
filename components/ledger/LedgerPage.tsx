@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import {
   LedgerEntry, LedgerKind, OUT_CATEGORIES, IN_CATEGORIES, subscribeLedger, saveLedgerEntry, deleteLedgerEntry,
 } from '../../data/ledgerStore';
-import { HanjungOrder, subscribeHanjung, orderTotals, receiptTotalCost, inventoryOf } from '../../data/hanjungStore';
+import { HanjungOrder, subscribeHanjung, orderTotals, receiptTotalCost, inventoryOf, isHoldingOrder } from '../../data/hanjungStore';
 import { ReceiveRow, subscribeReceives, settlementOf, sign } from '../../data/receiveStore';
 
 // 장부(뼈대). 달마다 돈이 들고 난 것과, 한중발주 건별 차익·재고를 한 화면에서 본다.
@@ -68,7 +68,8 @@ const LedgerPage: React.FC = () => {
     const settleTotal = paid.reduce((s, r) => s + sign(r) * r.total, 0);
     const settleSupply = paid.reduce((s, r) => s + sign(r) * r.totalSupply, 0);
     // 출금: 수입비용(도착 기록 날짜가 이 달)
-    const importRows = orders.flatMap(o => o.receipts.filter(r => r.date.startsWith(month)).map(r => ({ code: o.code, r })));
+    // 보유재고(원래 있던 재고를 넣은 것)는 이 달에 산 게 아니라 뺀다.
+    const importRows = orders.filter(o => !isHoldingOrder(o)).flatMap(o => o.receipts.filter(r => r.date.startsWith(month)).map(r => ({ code: o.code, r })));
     const importCost = importRows.reduce((s, x) => s + receiptTotalCost(x.r), 0);
     const mine = entries.filter(e => e.date.startsWith(month));
     const sumBy = (kind: LedgerKind, cat?: string) => mine.filter(e => e.kind === kind && (!cat || e.category === cat)).reduce((s, e) => s + e.amount, 0);

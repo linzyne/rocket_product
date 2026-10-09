@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { HanjungOrder, subscribeHanjung, inventoryOf, nameKey } from '../data/hanjungStore';
+import { HanjungOrder, subscribeHanjung, inventoryOf, nameKey, addHoldingStock } from '../data/hanjungStore';
+import { useProductNames } from './hanjung/OrderItemsEditor';
 import ProductThumb, { useProductImage } from './hanjung/ProductThumb';
 
 // 사무실 > 사무실재고. 손으로 적지 않고 한중발주에서 자동으로 계산한다.
@@ -15,6 +16,26 @@ const OfficeStockPage: React.FC = () => {
   const [search, setSearch] = useState('');
   useEffect(() => subscribeHanjung(setOrders), []);
   const imageOf = useProductImage();
+  // 보유재고 넣기: 한중발주로 산 게 아니라 원래 있던 재고. 넣으면 사무실 재고로 잡혀 배정할 때 쓰인다.
+  const names = useProductNames(orders);
+  const [hName, setHName] = useState('');
+  const [hQty, setHQty] = useState('');
+  const [hCost, setHCost] = useState('');
+  const [hSaving, setHSaving] = useState(false);
+  const addHolding = async () => {
+    const qty = Math.floor(Number(hQty) || 0);
+    if (!hName.trim() || qty <= 0) { alert('상품 이름과 수량을 적어 주세요.'); return; }
+    if (!names.some(n => nameKey(n) === nameKey(hName)) && !window.confirm(`"${hName.trim()}"은 쿠팡 발주에 나온 이름이 아니에요. 이름이 다르면 배정할 때 짝이 안 맞아요. 그래도 넣을까요?`)) return;
+    setHSaving(true);
+    try {
+      await addHoldingStock(orders, hName, qty, Number(hCost) || 0);
+      setHName(''); setHQty(''); setHCost('');
+    } catch (err) {
+      alert(`넣기 실패: ${err instanceof Error ? err.message : String(err)}`);
+    } finally {
+      setHSaving(false);
+    }
+  };
 
   // 상품별로 모은다(같은 상품이 여러 한중발주에 나뉘어 있으면 합치고, 어느 건의 여유인지는 아래 줄로).
   const rows = useMemo(() => {
@@ -53,6 +74,18 @@ const OfficeStockPage: React.FC = () => {
           placeholder="상품명 검색"
           className="w-full sm:w-64 px-3 py-1.5 border border-gray-200 rounded-lg text-sm bg-white focus:outline-none focus:ring-1 focus:ring-blue-400"
         />
+      </div>
+
+      {/* 보유재고 넣기 */}
+      <div className="bg-white border border-gray-200 rounded-xl p-3 mb-4 flex flex-wrap items-center gap-2">
+        <span className="text-sm font-semibold text-gray-700">보유재고 넣기</span>
+        <span className="text-xs text-gray-400">한중발주 말고 원래 있던 재고</span>
+        <input list="holding-names" value={hName} onChange={e => setHName(e.target.value)} placeholder="상품 이름(쿠팡 발주 이름)"
+          className="flex-1 min-w-[220px] px-3 py-1.5 border border-gray-200 rounded-lg text-sm" />
+        <datalist id="holding-names">{names.map(n => <option key={n} value={n} />)}</datalist>
+        <input type="number" min={1} value={hQty} onChange={e => setHQty(e.target.value)} placeholder="수량" className="w-20 px-2 py-1.5 border border-gray-200 rounded-lg text-sm text-right" />
+        <input type="number" min={0} value={hCost} onChange={e => setHCost(e.target.value)} placeholder="개당 원가(선택)" title="재고 금액 계산용. 장부 수입비용에는 안 들어가요" className="w-32 px-2 py-1.5 border border-gray-200 rounded-lg text-sm text-right" />
+        <button onClick={addHolding} disabled={hSaving} className="px-3 py-1.5 rounded-lg bg-gray-900 text-white text-sm font-semibold disabled:opacity-40">넣기</button>
       </div>
 
       <div className="grid grid-cols-3 gap-3 mb-4">

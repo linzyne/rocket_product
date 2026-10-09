@@ -1824,7 +1824,15 @@ const DetailPageBuilderModal: React.FC<DetailPageBuilderModalProps> = ({ isOpen,
     const span = document.createElement('span');
     Object.assign(span.style, styles);
     try {
-      span.appendChild(range.extractContents());
+      const contents = range.extractContents();
+      // 안쪽에 같은 서식(복사해 온 글의 글자 크기 등)이 남아 있으면 바깥 span이 져서 아무
+      // 변화가 없다. 고른 범위 안의 같은 속성은 지워서 새로 정한 값이 먹게 한다.
+      contents.querySelectorAll<HTMLElement>('[style]').forEach(el => {
+        for (const key of Object.keys(styles)) el.style.removeProperty(key.replace(/[A-Z]/g, m => '-' + m.toLowerCase()));
+      });
+      if (styles.fontSize) contents.querySelectorAll('font[size]').forEach(el => el.removeAttribute('size'));
+      if (styles.color) contents.querySelectorAll('font[color]').forEach(el => el.removeAttribute('color'));
+      span.appendChild(contents);
       range.insertNode(span);
     } catch (err) {
       console.error('부분 서식 적용 실패:', err);

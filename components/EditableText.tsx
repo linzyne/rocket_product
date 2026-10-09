@@ -47,6 +47,13 @@ export const EditableText: React.FC<EditableTextProps> = ({ value, onChange, pla
         suppressContentEditableWarning
         // 서식 툴바가 DOM을 직접 손본 뒤 input 이벤트를 쏘면 여기로 들어와 값이 저장된다.
         onInput={() => commit(false)}
+        // 다른 곳에서 복사한 글은 원래 글자 크기·글꼴까지 딸려 와서 이 칸 스타일을 덮는다.
+        // 글자만 붙여 넣는다.
+        onPaste={e => {
+          e.preventDefault();
+          const text = e.clipboardData.getData('text/plain');
+          if (text) document.execCommand('insertText', false, text);
+        }}
         onFocus={() => setFocused(true)}
         onBlur={() => {
           setFocused(false);

@@ -478,6 +478,8 @@ const orderNum = (code: string) => {
   const m = /(\d+)\s*\)/.exec(code) || /(\d+)\s*$/.exec(code);
   return m ? String(Number(m[1])) : '?';
 };
+// 메뉴 아이콘 칸(너비를 맞춰 글씨가 세로로 줄 서게)
+const ICON: React.CSSProperties = { display: 'inline-block', width: 20, textAlign: 'center', flexShrink: 0 };
 const NumBadge: React.FC<{ code: string }> = ({ code }) => (
   <span title={code} style={{
     display: 'inline-flex', alignItems: 'center', justifyContent: 'center', minWidth: 18, height: 18, padding: '0 4px', borderRadius: 999,
@@ -492,7 +494,7 @@ export function LineCheckMenu({ ready, hanjung, onReady, onHanjung }: {
   const [menu, setMenu] = React.useState<{ left: number; top: number; up: boolean } | null>(null);
   // 메뉴 화면: main(준비됨/한중발주) → pick(한중발주 고르기) → short(여유가 모자랄 때 어떻게 할지)
   const [view, setView] = React.useState<
-    { kind: 'main' } | { kind: 'pick' } | { kind: 'link' } | { kind: 'short'; choice: HanjungChoice; linkFrom?: string }
+    { kind: 'main' } | { kind: 'pick' } | { kind: 'orders' } | { kind: 'link' } | { kind: 'short'; choice: HanjungChoice; linkFrom?: string }
     | { kind: 'release'; action: HanjungAction; from: { code: string; qty: number }[] }
   >({ kind: 'main' });
   const { need, places, choices } = hanjung;
@@ -571,12 +573,12 @@ export function LineCheckMenu({ ready, hanjung, onReady, onHanjung }: {
             {view.kind === 'main' && (
               <>
                 {ready
-                  ? item('ready', '준비됨 풀기', () => onReady(false), '#999')
-                  : item('ready', <><span>✓</span> 준비됨</>, () => onReady(true), '#27ae60')}
+                  ? item('ready', <><span style={ICON} /> 준비됨 풀기</>, () => onReady(false), '#999')
+                  : item('ready', <><span style={ICON}>✓</span> 준비됨</>, () => onReady(true), '#27ae60')}
                 {/* 재고에서 쓰기: 오래된 한중발주 여유부터 자동 배정 → 사무실 재고에서 빠진다. */}
                 {!places.length && (hanjung.stock || 0) > 0 && item('stock', (
                   <>
-                    <span>📦</span> 재고에서 쓰기
+                    <span style={ICON}>📦</span> 재고에서 쓰기
                     <span style={{ marginLeft: 'auto', fontSize: 11, color: (hanjung.stock || 0) >= need ? '#94a3b8' : '#dc2626' }}>
                       사무실 {hanjung.stock}{(hanjung.stock || 0) < need ? ` · ${need - (hanjung.stock || 0)}개 모자람` : ''}
                     </span>
@@ -584,7 +586,7 @@ export function LineCheckMenu({ ready, hanjung, onReady, onHanjung }: {
                 ), () => onHanjung({ type: 'stock' }), '#27ae60')}
                 {item('hj', (
                   <>
-                    <span>＋</span> 배정하기
+                    <span style={ICON}>＋</span> 배정하기
                     {placeText && <span style={{ marginLeft: 'auto', fontSize: 11, color: '#94a3b8' }}>{placeText}</span>}
                     <span style={{ marginLeft: placeText ? 4 : 'auto', fontSize: 10 }}>▶</span>
                   </>
@@ -597,29 +599,21 @@ export function LineCheckMenu({ ready, hanjung, onReady, onHanjung }: {
                 {/* 한중발주 고르기: 🚚 입고중에 배정(번호·여유) · 🛒 담기 · 취소 | 재매칭 */}
                 {item('back', <>◀ 뒤로<span style={{ marginLeft: 'auto', fontSize: 11.5, color: '#999', fontWeight: 600 }}>필요 {need}개</span></>, () => setView({ kind: 'main' }), '#999', false)}
                 {line}
-                {[...mine, ...others].map(c => {
-                  const free = c.has ? c.spare + placeQty(c.code) : 0;
-                  return item(`c${c.code}`, (
-                    <>
-                      <span>🚚</span>
-                      <NumBadge code={c.code} />
-                      <span style={{ fontWeight: 600 }}>입고중 담기</span>
-                      <span style={{ marginLeft: 'auto', fontSize: 12, fontWeight: 500, color: '#888' }}>
-                        {c.has ? <>여유 <span style={{ color: free >= need ? '#333' : '#dc2626', fontWeight: 700 }}>{free}</span></> : '추가 주문'}
-                      </span>
-                      {wholeIn(c.code) && <span style={{ color: '#27ae60' }}>✓</span>}
-                    </>
-                  ), wholeIn(c.code) ? null : () => pick(c), '#333', false);
-                })}
+                {/* 입고중 담기: 누르면 한중발주(번호·여유)를 고른다 */}
+                {(mine.length + others.length) > 0 && item('orders', (
+                  <><span style={ICON}>🚚</span> 입고중 담기
+                    {places.some(p => p.code) && <span style={{ marginLeft: 'auto', color: '#27ae60' }}>✓</span>}
+                    <span style={{ marginLeft: places.some(p => p.code) ? 4 : 'auto', fontSize: 10, color: '#bbb' }}>▶</span></>
+                ), () => setView({ kind: 'orders' }), '#333', false)}
                 {item('queue', (
                   <>
-                    <span>🛒</span> 장바구니 담기
+                    <span style={ICON}>🛒</span> 장바구니 담기
                     {wholeIn(null) && <span style={{ marginLeft: 'auto', color: '#27ae60' }}>✓</span>}
                   </>
                 ), wholeIn(null) ? null : () => act({ type: 'queue' }), '#333', false)}
                 {/* 이미 배정했거나 담은 줄만: 그걸 취소한다. */}
                 {places.length > 0 && item('out', (
-                  <><span>🛒</span> 장바구니 취소</>
+                  <><span style={ICON}>🛒</span> 장바구니 취소</>
                 ), () => act({ type: 'remove' }), '#888', false)}
                 {links.length > 0 && (
                   <>
@@ -627,6 +621,25 @@ export function LineCheckMenu({ ready, hanjung, onReady, onHanjung }: {
                     {item('link', <>재매칭<span style={{ marginLeft: 'auto', fontSize: 10, color: '#bbb' }}>▶</span></>, () => setView({ kind: 'link' }), '#555', false)}
                   </>
                 )}
+              </>
+            )}
+
+            {view.kind === 'orders' && (
+              <>
+                {item('back', <>◀ 뒤로<span style={{ marginLeft: 'auto', fontSize: 11.5, color: '#999', fontWeight: 600 }}>필요 {need}개</span></>, () => setView({ kind: 'pick' }), '#999', false)}
+                {line}
+                {[...mine, ...others].map(c => {
+                  const free = c.has ? c.spare + placeQty(c.code) : 0;
+                  return item(`c${c.code}`, (
+                    <>
+                      <NumBadge code={c.code} />
+                      <span style={{ marginLeft: 'auto', fontSize: 12, fontWeight: 500, color: '#888' }}>
+                        {c.has ? <>여유 <span style={{ color: free >= need ? '#333' : '#dc2626', fontWeight: 700 }}>{free}</span></> : '추가 주문'}
+                      </span>
+                      {wholeIn(c.code) && <span style={{ color: '#27ae60' }}>✓</span>}
+                    </>
+                  ), wholeIn(c.code) ? null : () => pick(c), '#333', false);
+                })}
               </>
             )}
 
@@ -666,7 +679,7 @@ export function LineCheckMenu({ ready, hanjung, onReady, onHanjung }: {
                   ), () => act({ type: 'order', code: c.code, mode: 'split', linkFrom }), '#333', false)}
                   {free <= 0 && item('grow', <><NumBadge code={c.code} /> {need}개 추가 주문</>, () => act({ type: 'order', code: c.code, mode: 'grow', linkFrom }), '#333', false)}
                   {line}
-                  {item('cancel', '취소', () => setView({ kind: 'pick' }), '#999', false)}
+                  {item('cancel', '취소', () => setView({ kind: 'orders' }), '#999', false)}
                 </>
               );
             })()}

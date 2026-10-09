@@ -483,7 +483,7 @@ const ICON: React.CSSProperties = { display: 'inline-block', width: 20, textAlig
 const NumBadge: React.FC<{ code: string }> = ({ code }) => (
   <span title={code} style={{
     display: 'inline-flex', alignItems: 'center', justifyContent: 'center', minWidth: 18, height: 18, padding: '0 4px', borderRadius: 999,
-    background: '#374151', color: '#fff', fontSize: 11, fontWeight: 800, lineHeight: 1,
+    background: '#fff', color: '#6b7280', border: '1.5px solid #9ca3af', fontSize: 11, fontWeight: 800, lineHeight: 1,
   }}>{orderNum(code)}</span>
 );
 

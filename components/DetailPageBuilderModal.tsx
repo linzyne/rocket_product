@@ -3175,6 +3175,62 @@ const DetailPageBuilderModal: React.FC<DetailPageBuilderModalProps> = ({ isOpen,
           {/* Side panel: inputs only — everything else is edited directly in the preview */}
           <div className="lg:w-80 flex-shrink-0 flex flex-col gap-4 overflow-y-auto pr-1">
             {isKimchi && <KimchiSectionAddBar sections={kimchiSections} addSection={addKimchiSection} removeSection={removeKimchiSectionById} />}
+            {isKimchi && (
+              <div className="space-y-2 pt-2 border-t border-slate-700">
+                <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">디자인</p>
+                <div className="flex gap-1.5">
+                  {([
+                    { id: 'basic' as const, label: '기본', hint: '굵고 꽉 찬 컬러 블록, 가운데 정렬' },
+                    { id: 'modern' as const, label: '모던', hint: '여백 넓은 왼쪽 정렬, 얇은 선' },
+                    { id: 'bold' as const, label: '컬러', hint: '둥근 색 상자, 배지, 좌우 번갈이 배치' },
+                    { id: 'sales' as const, label: '체크포인트', hint: '배지·말풍선·색 채운 인증 패널의 설득형 구성' },
+                  ]).map(skin => (
+                    <button
+                      key={skin.id}
+                      onClick={() => setKimchiSkin(skin.id)}
+                      title={skin.hint}
+                      className={`flex-1 px-2 py-1.5 text-xs font-semibold rounded-md border transition-colors ${
+                        kimchiSkin === skin.id
+                          ? 'bg-blue-600 border-blue-500 text-white'
+                          : 'bg-slate-800 border-slate-600 text-slate-300 hover:bg-slate-700'
+                      }`}
+                    >
+                      {skin.label}
+                    </button>
+                  ))}
+                </div>
+                <p className="text-xs text-slate-500 leading-relaxed">
+                  문구와 사진은 그대로 두고 디자인만 바뀝니다. 붙여넣기 라벨도 같아요.
+                </p>
+                {/* 시그니처 색은 템플릿마다 따로 기억한다 — 디자인을 바꾸면 그 템플릿에서 고른
+                    색으로 돌아온다. 섹션에서 색을 따로 지정하면 그 섹션만 예외가 된다. */}
+                <div className="flex items-center gap-1.5 pt-1">
+                  <span className="text-[11px] text-slate-400 flex-shrink-0">시그니처 색</span>
+                  {['#d4462a', '#c2410c', '#b45309', '#2f9e44', '#2f5d50', '#1e3a5f'].map(color => (
+                    <button
+                      key={color}
+                      onClick={() => setKimchiAccents(prev => ({ ...prev, [kimchiSkin]: color }))}
+                      title={color}
+                      className={`w-5 h-5 rounded-full flex-shrink-0 transition-transform ${
+                        kimchiAccent === color ? 'ring-2 ring-white scale-110' : 'border border-slate-600'
+                      }`}
+                      style={{ background: color }}
+                    />
+                  ))}
+                  <label
+                    title="색 직접 고르기"
+                    className="w-5 h-5 rounded-full flex-shrink-0 cursor-pointer border border-slate-600 bg-gradient-to-br from-pink-400 via-yellow-300 to-sky-400"
+                  >
+                    <input
+                      type="color"
+                      value={kimchiAccent}
+                      className="sr-only"
+                      onChange={e => setKimchiAccents(prev => ({ ...prev, [kimchiSkin]: e.target.value }))}
+                    />
+                  </label>
+                </div>
+              </div>
+            )}
 
             {isKimchi ? (
               <div className="space-y-2 pt-2 border-t border-slate-700">
@@ -3373,60 +3429,6 @@ const DetailPageBuilderModal: React.FC<DetailPageBuilderModalProps> = ({ isOpen,
 
             {isKimchi ? (
               <>
-              <div className="space-y-2 pt-2 border-t border-slate-700">
-                <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">디자인</p>
-                <div className="flex gap-1.5">
-                  {([
-                    { id: 'basic' as const, label: '기본', hint: '굵고 꽉 찬 컬러 블록, 가운데 정렬' },
-                    { id: 'modern' as const, label: '모던', hint: '여백 넓은 왼쪽 정렬, 얇은 선' },
-                    { id: 'bold' as const, label: '컬러', hint: '둥근 색 상자, 배지, 좌우 번갈이 배치' },
-                    { id: 'sales' as const, label: '체크포인트', hint: '배지·말풍선·색 채운 인증 패널의 설득형 구성' },
-                  ]).map(skin => (
-                    <button
-                      key={skin.id}
-                      onClick={() => setKimchiSkin(skin.id)}
-                      title={skin.hint}
-                      className={`flex-1 px-2 py-1.5 text-xs font-semibold rounded-md border transition-colors ${
-                        kimchiSkin === skin.id
-                          ? 'bg-blue-600 border-blue-500 text-white'
-                          : 'bg-slate-800 border-slate-600 text-slate-300 hover:bg-slate-700'
-                      }`}
-                    >
-                      {skin.label}
-                    </button>
-                  ))}
-                </div>
-                <p className="text-xs text-slate-500 leading-relaxed">
-                  문구와 사진은 그대로 두고 디자인만 바뀝니다. 붙여넣기 라벨도 같아요.
-                </p>
-                {/* 시그니처 색은 템플릿마다 따로 기억한다 — 디자인을 바꾸면 그 템플릿에서 고른
-                    색으로 돌아온다. 섹션에서 색을 따로 지정하면 그 섹션만 예외가 된다. */}
-                <div className="flex items-center gap-1.5 pt-1">
-                  <span className="text-[11px] text-slate-400 flex-shrink-0">시그니처 색</span>
-                  {['#d4462a', '#c2410c', '#b45309', '#2f9e44', '#2f5d50', '#1e3a5f'].map(color => (
-                    <button
-                      key={color}
-                      onClick={() => setKimchiAccents(prev => ({ ...prev, [kimchiSkin]: color }))}
-                      title={color}
-                      className={`w-5 h-5 rounded-full flex-shrink-0 transition-transform ${
-                        kimchiAccent === color ? 'ring-2 ring-white scale-110' : 'border border-slate-600'
-                      }`}
-                      style={{ background: color }}
-                    />
-                  ))}
-                  <label
-                    title="색 직접 고르기"
-                    className="w-5 h-5 rounded-full flex-shrink-0 cursor-pointer border border-slate-600 bg-gradient-to-br from-pink-400 via-yellow-300 to-sky-400"
-                  >
-                    <input
-                      type="color"
-                      value={kimchiAccent}
-                      className="sr-only"
-                      onChange={e => setKimchiAccents(prev => ({ ...prev, [kimchiSkin]: e.target.value }))}
-                    />
-                  </label>
-                </div>
-              </div>
               <KimchiSectionPanel
                 sections={kimchiSections}
                 photosBySection={photosBySection}

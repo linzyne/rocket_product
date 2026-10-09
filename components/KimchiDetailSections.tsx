@@ -1091,7 +1091,37 @@ interface KimchiSectionPanelProps {
 const KIND_BADGE: Record<KimchiSection['kind'], string> = {
   hero: '인트로', text: '글', list: '목록', pairs: '두 열', notice: '고지', review: '리뷰',
   feature: '특별한점', cert: '인증', point: '소구점', summary: '예고',
+  gHero: '인트로', gChat: '공감', gTitle: '소개', gCompare: '비교', gCheck: '체크포인트',
+  gCert: '인증', gSteps: '활용법', gPackage: '구성',
 };
+
+// 칸 수를 늘리고 줄일 수 있는 섹션들. 줄일 때는 뒤에서부터 뺀다.
+const COUNT_CONTROLS: Partial<Record<KimchiSection['kind'], { label: string; get: (s: KimchiSection) => unknown[]; grow: (s: KimchiSection) => Partial<KimchiSection>; shrink: (s: KimchiSection) => Partial<KimchiSection> }>> = (() => {
+  const highlights = (label: string) => ({
+    label,
+    get: (s: KimchiSection) => s.highlights || [],
+    grow: (s: KimchiSection) => ({ highlights: [...(s.highlights || []), { icon: '', title: '', desc: '' }] }),
+    shrink: (s: KimchiSection) => ({ highlights: (s.highlights || []).slice(0, -1) }),
+  });
+  const rows = (label: string) => ({
+    label,
+    get: (s: KimchiSection) => s.rows || [],
+    grow: (s: KimchiSection) => ({ rows: [...(s.rows || []), { label: '', value: '', other: '' }] }),
+    shrink: (s: KimchiSection) => ({ rows: (s.rows || []).slice(0, -1) }),
+  });
+  return {
+    summary: highlights('카드'),
+    gHero: highlights('장점'),
+    gSteps: highlights('단계'),
+    gCompare: rows('줄'),
+    gChat: {
+      label: '말풍선',
+      get: s => s.items || [],
+      grow: s => ({ items: [...(s.items || []), ''] }),
+      shrink: s => ({ items: (s.items || []).slice(0, -1) }),
+    },
+  };
+})();
 
 export const KimchiSectionPanel: React.FC<KimchiSectionPanelProps> = ({
   sections, photosBySection, updateSection, moveSection, removeSection,
@@ -1231,7 +1261,7 @@ export const KimchiSectionPanel: React.FC<KimchiSectionPanelProps> = ({
                   없앰
                 </button>
               )}
-              {['hero', 'review', 'feature', 'point', 'summary'].includes(section.kind) && (
+              {['hero', 'review', 'feature', 'point', 'summary', 'gHero', 'gChat', 'gTitle', 'gCompare', 'gCheck', 'gCert', 'gSteps', 'gPackage'].includes(section.kind) && (
                 <label className="flex items-center gap-1.5 text-[11px] text-slate-400">
                   강조색
                   <input
@@ -1251,29 +1281,34 @@ export const KimchiSectionPanel: React.FC<KimchiSectionPanelProps> = ({
                   템플릿색
                 </button>
               )}
-              {/* 예고 카드 수 — 특별한점 개수가 상품마다 달라서 여기서 늘리고 줄인다. 줄일 때는
+              {/* 칸 수 — 예고 카드·장점·단계·말풍선·비교 줄처럼 상품마다 개수가 다른 것. 줄일 때는
                   뒤에서부터 빼므로, 남기고 싶은 칸은 앞쪽에 두면 된다. */}
-              {section.kind === 'summary' && (
-                <div className="flex items-center gap-1 text-[11px] text-slate-400">
-                  카드
-                  <button
-                    onClick={() => updateSection(section.id, { highlights: (section.highlights || []).slice(0, -1) })}
-                    disabled={(section.highlights || []).length <= 1}
-                    title="맨 뒤 카드 빼기"
-                    className="w-5 h-5 flex items-center justify-center rounded bg-slate-700 text-slate-200 hover:bg-slate-600 transition-colors disabled:opacity-25 disabled:cursor-not-allowed"
-                  >
-                    −
-                  </button>
-                  <span className="tabular-nums w-3 text-center text-slate-300">{(section.highlights || []).length}</span>
-                  <button
-                    onClick={() => updateSection(section.id, { highlights: [...(section.highlights || []), { icon: '', title: '', desc: '' }] })}
-                    title="카드 더하기"
-                    className="w-5 h-5 flex items-center justify-center rounded bg-slate-700 text-slate-200 hover:bg-slate-600 transition-colors"
-                  >
-                    +
-                  </button>
-                </div>
-              )}
+              {(() => {
+                const control = COUNT_CONTROLS[section.kind];
+                if (!control) return null;
+                const count = control.get(section).length;
+                return (
+                  <div className="flex items-center gap-1 text-[11px] text-slate-400">
+                    {control.label}
+                    <button
+                      onClick={() => updateSection(section.id, control.shrink(section))}
+                      disabled={count <= 1}
+                      title="맨 뒤 칸 빼기"
+                      className="w-5 h-5 flex items-center justify-center rounded bg-slate-700 text-slate-200 hover:bg-slate-600 transition-colors disabled:opacity-25 disabled:cursor-not-allowed"
+                    >
+                      −
+                    </button>
+                    <span className="tabular-nums w-3 text-center text-slate-300">{count}</span>
+                    <button
+                      onClick={() => updateSection(section.id, control.grow(section))}
+                      title="칸 더하기"
+                      className="w-5 h-5 flex items-center justify-center rounded bg-slate-700 text-slate-200 hover:bg-slate-600 transition-colors"
+                    >
+                      +
+                    </button>
+                  </div>
+                );
+              })()}
               {section.kind === 'feature' && (
                 <label className="flex items-center gap-1.5 text-[11px] text-slate-400">
                   아래블록
@@ -1363,7 +1398,7 @@ export const KimchiSectionPanel: React.FC<KimchiSectionPanelProps> = ({
 
             {/* 사진 간격 — 사진 "사이"에 생기는 여백이라 두 장 이상 올린 섹션에만 뜬다.
                 리뷰(카드 오른쪽 썸네일)와 인증(가운데 로고)은 사진을 이어 붙이지 않으므로 제외한다. */}
-            {photos.length >= 2 && !['review', 'cert'].includes(section.kind) && (
+            {photos.length >= 2 && !['review', 'cert', 'gCompare', 'gCert', 'gSteps'].includes(section.kind) && (
               <div className="flex items-center gap-2">
                 <span className="text-[11px] text-slate-400 flex-shrink-0">사진 간격</span>
                 <input
@@ -1440,14 +1475,16 @@ export const KimchiSectionPanel: React.FC<KimchiSectionPanelProps> = ({
 // 종류마다 지금 몇 개 들어가 있는지 보여주고, ×로 그 종류의 맨 마지막 섹션을 지운다.
 export const KimchiSectionAddBar: React.FC<{
   sections: KimchiSection[];
+  // 이 틀에서 쓰는 섹션 종류(TEMPLATE_KINDS). 김치 틀과 초록 틀은 종류가 다르다.
+  kinds: KimchiSection['kind'][];
   addSection: (kind: KimchiSection['kind']) => void;
   removeSection: (id: string) => void;
-}> = ({ sections, addSection, removeSection }) => (
+}> = ({ sections, kinds, addSection, removeSection }) => (
   <div className="flex flex-wrap gap-1.5">
     <p className="text-xs font-bold text-slate-400 uppercase tracking-wider w-full">
       섹션 추가 <span className="text-slate-500 normal-case">· 총 {sections.length}개</span>
     </p>
-    {(Object.keys(KIND_BADGE) as KimchiSection['kind'][]).map(kind => {
+    {kinds.map(kind => {
       const ofKind = sections.filter(section => section.kind === kind);
       const last = ofKind[ofKind.length - 1];
       return (

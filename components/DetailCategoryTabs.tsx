@@ -1,11 +1,13 @@
 import React from 'react';
 import { STANDALONE_DRAFT_ID } from './DetailPageBuilderModal';
 
-// 상페작업 안의 카테고리 탭(김치, ...). 새 카테고리는 김치 틀을 그대로 복사해 시작하고,
+// 상페작업 안의 카테고리 탭(김치, ...). 새 카테고리는 김치 틀이나 초록 틀 중 하나로 시작하고,
 // 작업 내용은 카테고리마다 따로 저장된다(draftIdForCategory).
 export interface DetailCategory {
   id: string;
   name: string;
+  // 어느 틀로 시작했는지. 없으면 김치 틀(틀 고르기가 생기기 전에 만든 탭).
+  template?: 'kimchi' | 'green';
 }
 
 const CATEGORIES_KEY = 'detailPageCategories';
@@ -84,7 +86,7 @@ const DetailCategoryTabs: React.FC<DetailCategoryTabsProps> = ({ categories, pro
     <button
       onClick={onAdd}
       className="flex items-center justify-center w-9 h-9 text-lg text-slate-400 hover:text-slate-100 hover:bg-slate-800 rounded-t-lg transition-colors"
-      title="카테고리 추가 (김치 틀을 복사해서 시작)"
+      title="카테고리 추가 (김치 틀 / 초록 체크포인트 틀 중 골라서 시작)"
       aria-label="카테고리 추가"
     >
       +

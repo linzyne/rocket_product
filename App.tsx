@@ -2797,7 +2797,8 @@ const App: React.FC = () => {
     openStandaloneDetailPageBuilder(id);
   }, [openStandaloneDetailPageBuilder]);
 
-  // 새 카테고리는 김치 틀 그대로 시작한다(빈 작업이면 에디터가 김치 기본 섹션을 깔아준다).
+  // 새 카테고리는 김치 틀이나 초록(체크포인트형) 틀 중 하나로 시작한다(빈 작업이면 에디터가
+  // 그 틀의 기본 섹션을 깔아준다).
   const addDetailCategory = useCallback(() => {
     const name = window.prompt('새 카테고리 이름을 입력하세요 (예: 반찬, 젓갈)')?.trim();
     if (!name) return;
@@ -2805,7 +2806,10 @@ const App: React.FC = () => {
       alert(`"${name}" 카테고리가 이미 있습니다.`);
       return;
     }
-    const category = { id: generateId(), name };
+    const pick = window.prompt('어떤 틀로 시작할까요?\n1 = 김치 틀\n2 = 초록 체크포인트 틀 (인트로·공감·비교·Check Point·활용법)', '2')?.trim();
+    if (pick === undefined) return;
+    const template: DetailCategory['template'] = pick === '1' ? 'kimchi' : 'green';
+    const category: DetailCategory = { id: generateId(), name, template };
     const next = [...detailCategories, category];
     setDetailCategories(next);
     saveDetailCategories(next);
@@ -3294,6 +3298,7 @@ const App: React.FC = () => {
             onSaveThumbnail={handleSaveThumbnailFromDetailPageBuilder}
             templateId="kimchi"
             draftId={draftIdForCategory(activeDetailCategoryId)}
+            sectionTemplate={detailCategories.find(c => c.id === activeDetailCategoryId)?.template ?? 'kimchi'}
             embedded
           />
         </div>

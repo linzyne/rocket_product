@@ -31,9 +31,12 @@ import { KimchiPreview, KimchiSectionPanel, KimchiSectionAddBar, KIMCHI_TYPE_SCA
 import { KimchiPreviewModern } from './KimchiDetailSectionsModern';
 import { KimchiPreviewBold } from './KimchiDetailSectionsBold';
 import { KimchiPreviewSales } from './KimchiDetailSectionsSales';
+import { GreenPreview } from './GreenDetailSections';
 import {
   KimchiSection,
-  createDefaultKimchiSections,
+  createDefaultSectionsFor,
+  TEMPLATE_KINDS,
+  SectionTemplateId,
   ensureKimchiSummarySection,
   moveKimchiSection,
   removeKimchiSection,
@@ -89,6 +92,8 @@ interface DetailPageBuilderModalProps {
   // 김치 템플릿 작업을 이 컴퓨터에 자동 저장할 때 쓰는 이름. 상페작업의 카테고리 탭마다
   // 따로 저장되게 탭별로 다른 값을 준다(김치 탭은 예전 그대로 STANDALONE_DRAFT_ID).
   draftId?: string;
+  // 김치 템플릿 모드에서 어느 틀로 그릴지. 'green'은 초록 체크포인트형(섹션 종류·디자인이 다르다).
+  sectionTemplate?: SectionTemplateId;
 }
 
 // 창을 열 때의 미리보기 배율.
@@ -322,7 +327,7 @@ const BASE_FONT_SIZE = {
   productInfo: 46,
 };
 
-type KimchiSkin = 'basic' | 'modern' | 'bold' | 'sales';
+type KimchiSkin = 'basic' | 'modern' | 'bold' | 'sales' | 'green';
 
 // 이 컴퓨터에 저장해두는 "만들다 만 상세페이지". 사진은 이미 화면에서 쓰는 해상도까지 줄여
 // 들고 있으므로(MAX_PHOTO_WIDTH) 그대로 담는다 — 사진을 빼면 섹션 배정·순서·자른 모양이
@@ -350,22 +355,28 @@ interface BasicTextDraft {
   drawObjects: DrawObject[];
 }
 
-const DetailPageBuilderModal: React.FC<DetailPageBuilderModalProps> = ({ isOpen, onClose, product, groupProducts, onSave, onSaveThumbnail, templateId = 'basic', importedPhotos, onImportedPhotosUsed, embedded = false, draftId = STANDALONE_DRAFT_ID }) => {
+const DetailPageBuilderModal: React.FC<DetailPageBuilderModalProps> = ({ isOpen, onClose, product, groupProducts, onSave, onSaveThumbnail, templateId = 'basic', importedPhotos, onImportedPhotosUsed, embedded = false, draftId = STANDALONE_DRAFT_ID, sectionTemplate = 'kimchi' as SectionTemplateId }) => {
   const [photos, setPhotos] = useState<PhotoItem[]>([]);
   const isKimchi = templateId === 'kimchi';
   // 김치 템플릿 전용 상태. 사진 배열(photos)은 두 템플릿이 그대로 공유해서 자르기·드래그 정렬·
   // 스포이드 등 기존 기능이 전부 살아 있고, 여기에 "이 사진이 어느 섹션 것인지"만 따로 기억한다
   // (photoSectionMap: photoId → 섹션 id). 그래서 업로드 순서가 자리에 영향을 주지 않는다.
-  const [kimchiSections, setKimchiSections] = useState<KimchiSection[]>(createDefaultKimchiSections);
+  const isGreen = sectionTemplate === 'green';
+  const createDefaultSections = () => createDefaultSectionsFor(sectionTemplate);
+  // 저장본을 되살릴 때 김치 틀만 예고 섹션 자리를 채워 넣는다(초록 틀엔 예고가 없다).
+  const restoreSections = (saved?: KimchiSection[]) =>
+    !saved ? createDefaultSections() : isGreen ? saved : ensureKimchiSummarySection(saved);
+  const [kimchiSections, setKimchiSections] = useState<KimchiSection[]>(createDefaultSections);
   // 어떤 스킨으로 그릴지. 섹션 구조와 문구는 그대로 두고 그리는 방식만 바뀌므로, 같은 문구를
   // 붙여넣은 채로 왔다 갔다 하며 두 디자인을 비교할 수 있다.
-  const [kimchiSkin, setKimchiSkin] = useState<KimchiSkin>('basic');
+  const [kimchiSkin, setKimchiSkin] = useState<KimchiSkin>(isGreen ? 'green' : 'basic');
   // 템플릿마다 시그니처 색을 따로 기억한다. 섹션이 자기 강조색을 지정하지 않았으면 이 색을 쓴다.
   const [kimchiAccents, setKimchiAccents] = useState<Record<KimchiSkin, string>>({
     basic: '#d4462a',
     modern: '#2f5d50',
     bold: '#c2410c',
     sales: '#2f9e44',
+    green: '#1f9d4c',
   });
   const kimchiAccent = kimchiAccents[kimchiSkin];
   // 김치 템플릿의 글자 크기는 다섯 단계뿐이고(KIMCHI_TYPE_SCALE), 그 다섯 개의 실제 px을 여기서
@@ -584,13 +595,14 @@ const DetailPageBuilderModal: React.FC<DetailPageBuilderModalProps> = ({ isOpen,
         const d = saved.data;
         setPhotos(d.photos ?? []);
         setPhotoSectionMap(d.photoSectionMap ?? {});
-        setKimchiSections(d.kimchiSections ? ensureKimchiSummarySection(d.kimchiSections) : createDefaultKimchiSections());
+        setKimchiSections(restoreSections(d.kimchiSections));
         setKimchiPastedText(d.kimchiPastedText ?? '');
         setTextBoxes(d.textBoxes ?? []);
         setDrawObjects(d.drawObjects ?? []);
         setSellingPoints(d.sellingPoints ?? '');
-        if (d.kimchiSkin) setKimchiSkin(d.kimchiSkin);
-        if (d.kimchiAccents) setKimchiAccents(d.kimchiAccents);
+        if (d.kimchiSkin && !isGreen && d.kimchiSkin !== 'green') setKimchiSkin(d.kimchiSkin);
+        // 예전 저장본엔 나중에 생긴 스킨 색이 없으니 기본값 위에 덮는다.
+        if (d.kimchiAccents) setKimchiAccents(prev => ({ ...prev, ...d.kimchiAccents }));
         if (d.kimchiTypeScale) setKimchiTypeScale(d.kimchiTypeScale);
         if (d.templateStyle) setTemplateStyle(d.templateStyle);
         setDraftSavedAt(saved.savedAt);
@@ -639,7 +651,7 @@ const DetailPageBuilderModal: React.FC<DetailPageBuilderModalProps> = ({ isOpen,
     draftsRef.current.delete(draftId);
     setPhotos([]);
     setPhotoSectionMap({});
-    setKimchiSections(createDefaultKimchiSections());
+    setKimchiSections(createDefaultSections());
     setKimchiPastedText('');
     setTextBoxes([]);
     setDrawObjects([]);
@@ -670,7 +682,7 @@ const DetailPageBuilderModal: React.FC<DetailPageBuilderModalProps> = ({ isOpen,
       setPastedText(draft?.pastedText ?? product?.detailCopyText ?? '');
       setDrawObjects(draft?.drawObjects ?? []);
       setTextBoxes(draft?.textBoxes ?? []);
-      setKimchiSections(draft?.kimchiSections ? ensureKimchiSummarySection(draft.kimchiSections) : createDefaultKimchiSections());
+      setKimchiSections(restoreSections(draft?.kimchiSections));
       setPhotoSectionMap(draft?.photoSectionMap ?? {});
       setKimchiPastedText(draft?.kimchiPastedText ?? '');
     }
@@ -2141,7 +2153,7 @@ const DetailPageBuilderModal: React.FC<DetailPageBuilderModalProps> = ({ isOpen,
     const prompt = buildKimchiCopyPrompt(kimchiSections, {
       productName: kimchiSections.find(s => s.kind === 'hero')?.productName || product?.productName || '',
       sellingPoints,
-    });
+    }, sectionTemplate);
     try {
       await navigator.clipboard.writeText(prompt);
       setPromptCopyStatus('copied');
@@ -2928,7 +2940,8 @@ const DetailPageBuilderModal: React.FC<DetailPageBuilderModalProps> = ({ isOpen,
               >
                 {isKimchi ? (
                   React.createElement(
-                    kimchiSkin === 'modern' ? KimchiPreviewModern
+                    kimchiSkin === 'green' ? GreenPreview
+                      : kimchiSkin === 'modern' ? KimchiPreviewModern
                       : kimchiSkin === 'bold' ? KimchiPreviewBold
                       : kimchiSkin === 'sales' ? KimchiPreviewSales
                       : KimchiPreview,
@@ -3199,10 +3212,11 @@ const DetailPageBuilderModal: React.FC<DetailPageBuilderModalProps> = ({ isOpen,
 
           {/* Side panel: inputs only — everything else is edited directly in the preview */}
           <div className="lg:w-80 flex-shrink-0 flex flex-col gap-4 overflow-y-auto pr-1">
-            {isKimchi && <KimchiSectionAddBar sections={kimchiSections} addSection={addKimchiSection} removeSection={removeKimchiSectionById} />}
+            {isKimchi && <KimchiSectionAddBar sections={kimchiSections} kinds={TEMPLATE_KINDS[sectionTemplate]} addSection={addKimchiSection} removeSection={removeKimchiSectionById} />}
             {isKimchi && (
               <div className="space-y-2 pt-2 border-t border-slate-700">
-                <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">디자인</p>
+                <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">{isGreen ? '색' : '디자인'}</p>
+                {!isGreen && (<>
                 <div className="flex gap-1.5">
                   {([
                     { id: 'basic' as const, label: '기본', hint: '굵고 꽉 찬 컬러 블록, 가운데 정렬' },
@@ -3227,6 +3241,7 @@ const DetailPageBuilderModal: React.FC<DetailPageBuilderModalProps> = ({ isOpen,
                 <p className="text-xs text-slate-500 leading-relaxed">
                   문구와 사진은 그대로 두고 디자인만 바뀝니다. 붙여넣기 라벨도 같아요.
                 </p>
+                </>)}
                 {/* 시그니처 색은 템플릿마다 따로 기억한다 — 디자인을 바꾸면 그 템플릿에서 고른
                     색으로 돌아온다. 섹션에서 색을 따로 지정하면 그 섹션만 예외가 된다. */}
                 <div className="flex items-center gap-1.5 pt-1">

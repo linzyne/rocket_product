@@ -603,7 +603,7 @@ export function LineCheckMenu({ ready, hanjung, onReady, onHanjung }: {
                     <>
                       <span>🚚</span>
                       <NumBadge code={c.code} />
-                      <span style={{ fontWeight: 600 }}>배정</span>
+                      <span style={{ fontWeight: 600 }}>입고중 담기</span>
                       <span style={{ marginLeft: 'auto', fontSize: 12, fontWeight: 500, color: '#888' }}>
                         {c.has ? <>여유 <span style={{ color: free >= need ? '#333' : '#dc2626', fontWeight: 700 }}>{free}</span></> : '추가 주문'}
                       </span>
@@ -613,13 +613,13 @@ export function LineCheckMenu({ ready, hanjung, onReady, onHanjung }: {
                 })}
                 {item('queue', (
                   <>
-                    <span>🛒</span> 담기
+                    <span>🛒</span> 장바구니 담기
                     {wholeIn(null) && <span style={{ marginLeft: 'auto', color: '#27ae60' }}>✓</span>}
                   </>
                 ), wholeIn(null) ? null : () => act({ type: 'queue' }), '#333', false)}
                 {/* 이미 배정했거나 담은 줄만: 그걸 취소한다. */}
                 {places.length > 0 && item('out', (
-                  <><span>🛒</span> 취소</>
+                  <><span>🛒</span> 장바구니 취소</>
                 ), () => act({ type: 'remove' }), '#888', false)}
                 {links.length > 0 && (
                   <>

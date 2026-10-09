@@ -16,14 +16,16 @@ const totalOf = (items: [string, number][]) => items.reduce((sum, [, q]) => sum 
 
 // 화면 위쪽에 띄우는 상품별 수량 표. 기본은 접어 두고 머리줄(몇 종 · 총 몇 개)만 보여준다.
 // 줄에 ready가 있으면 펼쳤을 때 "준비 안 됨"과 "준비됨" 표를 양쪽으로 나눠 보여준다.
-export default function ProductQtySummary({ lines }: { lines: Line[] }) {
+// remember = false: 펼친 상태를 기억하지 않고 늘 접힌 채로 시작한다(발주 진행).
+export default function ProductQtySummary({ lines, remember = true }: { lines: Line[]; remember?: boolean }) {
   // 한 번 펼치면 접을 때까지(새로고침·메뉴 이동 후에도) 펼친 채로 둔다.
   const [open, setOpenState] = useState(() => {
+    if (!remember) return false;
     try { return localStorage.getItem(OPEN_KEY) === '1'; } catch { return false; }
   });
   const setOpen = (f: (o: boolean) => boolean) => setOpenState(o => {
     const next = f(o);
-    try { localStorage.setItem(OPEN_KEY, next ? '1' : '0'); } catch { /* 저장 못 해도 화면은 그대로 */ }
+    if (remember) { try { localStorage.setItem(OPEN_KEY, next ? '1' : '0'); } catch { /* 저장 못 해도 화면은 그대로 */ } }
     return next;
   });
   const withReady = lines.some(l => l.ready !== undefined);

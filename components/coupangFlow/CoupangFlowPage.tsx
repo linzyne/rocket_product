@@ -1094,7 +1094,7 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
       {/* 커다란 판 하나에 단계 칸이 옆으로 나란히(위쪽 머리줄 = 칸 제목). 발주서는 지금 단계 칸 안에 위아래 한 줄로 자리 잡는다. */}
       <main style={{ overflowX: 'hidden', padding: '12px clamp(10px, 3vw, 20px) 70px' }}>
         {/* 상품별 주문 수량(발주확정·쉽먼트·발송대기 칸의 발주서 합). 접었다 펼친다. 준비 안 됨 / 준비됨으로 나눠 보여준다. */}
-        <ProductQtySummary lines={BOARD_STAGES.flatMap(st => boxes[st]).flatMap(o => o.lines.map(l => ({ 상품이름: l.상품이름, 확정수량: l.확정수량, ready: lineIsReady(o, l) })))} />
+        <ProductQtySummary lines={BOARD_STAGES.flatMap(st => boxes[st]).flatMap(o => o.lines.map(l => ({ 상품이름: l.상품이름, 확정수량: l.확정수량, ready: lineIsReady(o, l) })))} remember={false} />
         <div style={{
           display: 'grid', width: '100%', boxSizing: 'border-box', gridTemplateColumns: `repeat(${BOARD_STAGES.length}, minmax(0, 1fr))`,
           border: '1.5px solid #d6d3d1', borderRadius: 12, background: '#efedea', overflow: 'hidden', alignItems: 'stretch',

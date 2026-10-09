@@ -574,7 +574,7 @@ export function LineCheckMenu({ ready, hanjung, onReady, onHanjung }: {
               <>
                 {ready
                   ? item('ready', <><span style={ICON} /> 준비됨 풀기</>, () => onReady(false), '#999')
-                  : item('ready', <><span style={ICON}>✓</span> 준비됨</>, () => onReady(true), '#27ae60')}
+                  : item('ready', <><span style={ICON}>✓</span> 준비됨</>, () => onReady(true), '#333')}
                 {/* 재고에서 쓰기: 오래된 한중발주 여유부터 자동 배정 → 사무실 재고에서 빠진다. */}
                 {!places.length && (hanjung.stock || 0) > 0 && item('stock', (
                   <>
@@ -583,14 +583,24 @@ export function LineCheckMenu({ ready, hanjung, onReady, onHanjung }: {
                       사무실 {hanjung.stock}{(hanjung.stock || 0) < need ? ` · ${need - (hanjung.stock || 0)}개 모자람` : ''}
                     </span>
                   </>
-                ), () => onHanjung({ type: 'stock' }), '#27ae60')}
+                ), () => onHanjung({ type: 'stock' }), '#333')}
                 {item('hj', (
                   <>
                     <span style={ICON}>＋</span> 배정하기
-                    {placeText && <span style={{ marginLeft: 'auto', fontSize: 11, color: '#94a3b8' }}>{placeText}</span>}
-                    <span style={{ marginLeft: placeText ? 4 : 'auto', fontSize: 10 }}>▶</span>
+                    {/* 지금 맡긴 곳: 한중발주 번호와 🛒(장바구니), 나눠 맡겼으면 수량 */}
+                    {places.length > 0 && (
+                      <span style={{ marginLeft: 'auto', display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, fontWeight: 600, color: '#333' }}>
+                        {places.map((p, i) => (
+                          <span key={i} style={{ display: 'inline-flex', alignItems: 'center', gap: 2 }}>
+                            {p.code ? <NumBadge code={p.code} /> : <span>🛒</span>}
+                            {(places.length > 1 || p.qty !== need) && <span>×{p.qty}</span>}
+                          </span>
+                        ))}
+                      </span>
+                    )}
+                    <span style={{ marginLeft: places.length ? 4 : 'auto', fontSize: 10, color: '#bbb' }}>▶</span>
                   </>
-                ), () => setView({ kind: 'pick' }), '#27ae60', false)}
+                ), () => setView({ kind: 'pick' }), '#333', false)}
               </>
             )}
 

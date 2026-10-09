@@ -29,6 +29,7 @@ import { subscribePoForms, readDraft, setDraftLine, SHORT_REASONS, DEFAULT_REASO
 import { startConfirmUpload, subscribeConfirmJob, clearConfirmJob, ConfirmJob } from '../coupangOrder/data/poConfirmRunner';
 import { subscribeDateRequests, markDateRequested, applyCurrent, DateReq, rememberRequested, requestedOf } from '../coupangOrder/data/poDateStore';
 import { retargetBatches, saveShipmentBatch } from '../../data/shipmentStore';
+import { useIsMobile } from '../../utils/useIsMobile';
 
 // 발주 > 발주 진행. 단계마다 상자를 옆으로 두고, 발주서가 지금 단계의 상자 안에 담긴다(상자 안에서는 위아래 한 줄).
 //   발주확정 → 묶음 → 쉽먼트(택배예약·서허 일괄등록) → 출력(문서·바코드) → 발송대기 → 발송완료
@@ -87,6 +88,9 @@ const daysAgo = (ymd: string) => {
 // view: 'board' = 단계마다 상자를 옆으로(발주 진행 메뉴), 'list' = 발주서마다 단계 한 줄(발주 단계별 메뉴). 내용은 같다.
 export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavigate: (menu: AppMenuId) => void; view?: 'board' | 'list' }) {
   const [tab, setTab] = useState<Stage | 'active'>('active');
+  // 휴대폰: 단계 칸을 옆으로 나누면 상품명이 안 보여서, 위 탭으로 한 칸만 화면 가득 보여 준다.
+  const isMobile = useIsMobile();
+  const [mobileStage, setMobileStage] = useState<Stage>(BOARD_STAGES[0]);
   // 새 발주서 창(새 주문 수집 · 확정수량 고치기 · 발주확정 올리기)
   const [newOpen, setNewOpen] = useState(false);
   // 인쇄 아이콘 옆 작은 체크칸(사람이 쓰는 표시, 켜면 그대로 남는다).
@@ -1080,6 +1084,7 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
   }
 
   // ── 상자 보기 ──
+  const shownStages = isMobile ? [mobileStage] : BOARD_STAGES;
   return (
     <div style={pageStyle}>
       <header style={{ background: '#fff', borderBottom: '1px solid #f0f0f0', position: 'sticky', top: 0, zIndex: 10 }}>
@@ -1095,21 +1100,36 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
       <main style={{ overflowX: 'hidden', padding: '12px clamp(10px, 3vw, 20px) 70px' }}>
         {/* 상품별 주문 수량(발주확정·쉽먼트·발송대기 칸의 발주서 합). 접었다 펼친다. 준비 안 됨 / 준비됨으로 나눠 보여준다. */}
         <ProductQtySummary lines={BOARD_STAGES.flatMap(st => boxes[st]).flatMap(o => o.lines.map(l => ({ 상품이름: l.상품이름, 확정수량: l.확정수량, ready: lineIsReady(o, l) })))} remember={false} />
+        {isMobile && (
+          <div style={{ display: 'flex', gap: 6, marginBottom: 10 }}>
+            {BOARD_STAGES.map(i => {
+              const on = i === mobileStage;
+              return (
+                <button key={i} onClick={() => setMobileStage(i)} style={{
+                  flex: 1, padding: '8px 4px', fontSize: 13, fontWeight: 800, borderRadius: 9, cursor: 'pointer',
+                  border: `1.5px solid ${on ? ORANGE : '#d6d3d1'}`, background: on ? ORANGE : '#fff', color: on ? '#fff' : '#57534e',
+                }}>
+                  {STAGES[i]} <span style={{ opacity: 0.8 }}>{boxes[i].length}</span>
+                </button>
+              );
+            })}
+          </div>
+        )}
         <div style={{
-          display: 'grid', width: '100%', boxSizing: 'border-box', gridTemplateColumns: `repeat(${BOARD_STAGES.length}, minmax(0, 1fr))`,
+          display: 'grid', width: '100%', boxSizing: 'border-box', gridTemplateColumns: `repeat(${shownStages.length}, minmax(0, 1fr))`,
           border: '1.5px solid #d6d3d1', borderRadius: 12, background: '#efedea', overflow: 'hidden', alignItems: 'stretch',
         }}>
           {/* 머리줄 */}
-          {BOARD_STAGES.map((i, col) => {
+          {shownStages.map((i, col) => {
             const label = STAGES[i];
             const list = boxes[i];
             const stuck = i === 2 ? list.filter(o => run(o)?.state === 'error').length : 0;
             return (
               <div key={`h-${label}`} style={{
                 position: 'sticky', top: 0, zIndex: 2, display: 'flex', alignItems: 'center', gap: 6, padding: '13px 14px',
-                background: '#efedeb', borderBottom: '2px solid #d6d3d1', borderRight: col < BOARD_STAGES.length - 1 ? '1px solid #d6d3d1' : 'none',
+                background: '#efedeb', borderBottom: '2px solid #d6d3d1', borderRight: col < shownStages.length - 1 ? '1px solid #d6d3d1' : 'none',
               }}>
-                <span style={{ fontSize: 11, color: '#a8a29e', fontWeight: 800 }}>{col + 1}</span>
+                <span style={{ fontSize: 11, color: '#a8a29e', fontWeight: 800 }}>{BOARD_STAGES.indexOf(i) + 1}</span>
                 <b style={{ fontSize: 14, color: '#292524' }}>{label}</b>
                 <span style={{ fontSize: 12, fontWeight: 800, color: '#fff', background: ORANGE, opacity: list.length ? 1 : 0.45, borderRadius: 999, padding: '0 7px' }}>{list.length}</span>
                 {stuck > 0 && <span style={{ fontSize: 11.5, fontWeight: 800, color: RED }}>⛔ {stuck}</span>}
@@ -1118,13 +1138,13 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
             );
           })}
           {/* 칸 */}
-          {BOARD_STAGES.map((i, col) => {
+          {shownStages.map((i, col) => {
             const label = STAGES[i];
             const list = boxes[i];
             return (
               <div key={`c-${label}`} style={{
                 padding: '18px 14px 32px', minHeight: '78vh', display: 'flex', flexDirection: 'column', gap: 20, boxSizing: 'border-box',
-                borderRight: col < BOARD_STAGES.length - 1 ? '1px solid #e7e5e4' : 'none',
+                borderRight: col < shownStages.length - 1 ? '1px solid #e7e5e4' : 'none',
               }}>
                 {list.map(card)}
                 {!list.length && <div style={{ padding: '18px 0', textAlign: 'center', fontSize: 12, color: '#c4c0bc' }}>{q ? '찾는 발주서 없음' : '비어 있음'}</div>}

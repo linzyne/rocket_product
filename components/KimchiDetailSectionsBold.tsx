@@ -30,6 +30,9 @@ interface BoldPreviewProps {
 const SPLIT_LEFT_WIDTH = 210;
 const DARK_PANEL = '#221f1c';
 const ON_DARK = '#ffffff';
+// 인트로 바탕 — 고춧가루 빨강. 그 위 강조 제목은 따뜻한 노랑.
+const HERO_RED = '#c8321f';
+const HERO_HIGHLIGHT = '#ffd66b';
 const CARD_RADIUS = 30;
 const CARD_MARGIN_X = 40;
 const CARD_PADDING = 40;
@@ -190,14 +193,14 @@ export const KimchiPreviewBold: React.FC<BoldPreviewProps> = ({
       // 인트로: 옅은 색을 깐 판 위에 흰 상자를 얹어 문구를 담는다.
       case 'hero':
         return (
-          <div style={{ background: DARK_PANEL, padding: `${SPACE.xl}px 0 ${SPACE.lg}px` }}>
+          <div style={{ background: HERO_RED, padding: `${SPACE.xl}px 0 ${SPACE.lg}px` }}>
             <div style={{ padding: `0 ${CARD_MARGIN_X}px` }}>
               {section.badge?.trim() && (
                 <div style={{ marginBottom: SPACE.md }}>
                   <Pill
                     value={section.badge}
-                    background={accent}
-                    style={{ ...styles.pillLabel, ...styles.heroBadge }}
+                    background={ON_DARK}
+                    style={{ ...styles.pillLabel, ...styles.heroBadge, color: HERO_RED }}
                     placeholder="배지"
                     onChange={v => updateSection(section.id, { badge: v })}
                   />
@@ -206,7 +209,7 @@ export const KimchiPreviewBold: React.FC<BoldPreviewProps> = ({
               {section.eyebrow?.trim() && (
                 <div style={{ marginBottom: SPACE.sm }}>
                   <EditableText value={section.eyebrow} onChange={v => updateSection(section.id, { eyebrow: v })}
-                    placeholder="작은 제목" style={{ ...styles.heroEyebrow, textAlign: 'left', color: ON_DARK, opacity: 0.6 }} />
+                    placeholder="작은 제목" style={{ ...styles.heroEyebrow, textAlign: 'left', color: ON_DARK, opacity: 0.8 }} />
                 </div>
               )}
               {section.headline?.trim() && (
@@ -218,13 +221,13 @@ export const KimchiPreviewBold: React.FC<BoldPreviewProps> = ({
               {section.headlineAccent?.trim() && (
                 <div style={{ marginBottom: SPACE.lg }}>
                   <EditableText value={section.headlineAccent} onChange={v => updateSection(section.id, { headlineAccent: v })}
-                    placeholder="큰 제목 2" style={{ ...styles.heroHeadlineAccent, textAlign: 'left', color: accent }} />
+                    placeholder="큰 제목 2" style={{ ...styles.heroHeadlineAccent, textAlign: 'left', color: HERO_HIGHLIGHT }} />
                 </div>
               )}
               {section.subtitle?.trim() && (
                 <div style={{ marginBottom: SPACE.lg }}>
                   <EditableText value={section.subtitle} onChange={v => updateSection(section.id, { subtitle: v })}
-                    placeholder="설명" style={{ ...styles.heroSubtitle, textAlign: 'left', color: ON_DARK, opacity: 0.7 }} />
+                    placeholder="설명" style={{ ...styles.heroSubtitle, textAlign: 'left', color: ON_DARK, opacity: 0.85 }} />
                 </div>
               )}
               {section.specValue?.trim() && (
@@ -234,10 +237,10 @@ export const KimchiPreviewBold: React.FC<BoldPreviewProps> = ({
                       value={section.specLabel || ''}
                       onChange={v => updateSection(section.id, { specLabel: v })}
                       placeholder="제품구성"
-                      style={{ ...styles.heroSpec, color: DARK_PANEL }}
+                      style={{ ...styles.heroSpec, color: HERO_RED }}
                     />
                   </div>
-                  <div style={{ background: accent, padding: '16px 34px' }}>
+                  <div style={{ background: DARK_PANEL, padding: '16px 34px' }}>
                     {edit('specValue', '제품 구성', styles.heroSpec)}
                   </div>
                 </div>

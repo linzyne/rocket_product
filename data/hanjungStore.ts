@@ -652,3 +652,36 @@ export const addHoldingStock = async (orders: HanjungOrder[], name: string, qty:
   };
   await saveHanjungOrder({ ...base, orderQty, receipts: [...base.receipts, receipt] });
 };
+
+// 사무실 재고(도착한 여유)를 직접 고친다(재고 조사로 맞출 때). target = 이 상품의 사무실 재고가 되어야 할 수.
+//  · 늘리면: 늘어난 만큼 "0) 보유재고"에 주문 = 도착으로 넣는다.
+//  · 줄이면: 보유재고 → 오래된 한중발주 순으로, 도착한 여유를 그만큼 없앤다(그 건의 주문 수량을 줄인다.
+//    보유재고는 도착 기록도 같이 줄인다). 도착 기록·금액(장부)은 그대로 둔다.
+export const setOfficeStock = async (orders: HanjungOrder[], name: string, target: number) => {
+  const nm = name.trim();
+  const arrivedOf = (o: HanjungOrder) => {
+    const p = productSummary(o).find(x => sameName(x.상품이름, nm));
+    return p ? Math.min(p.spare, Math.max(0, p.received - p.allocated)) : 0;
+  };
+  const now = orders.reduce((n, o) => n + arrivedOf(o), 0);
+  const diff = Math.max(0, Math.floor(target)) - now;
+  if (!diff) return;
+  if (diff > 0) { await addHoldingStock(orders, nm, diff, 0); return; }
+  let left = -diff;
+  const order = [...orders].sort((a, b) => Number(isHoldingOrder(b)) - Number(isHoldingOrder(a)) || a.createdAt - b.createdAt);
+  for (const o of order) {
+    if (left <= 0) break;
+    const take = Math.min(arrivedOf(o), left);
+    if (take <= 0) continue;
+    left -= take;
+    const key = orderQtyName(o.orderQty, nm);
+    const orderQty = { ...(o.orderQty || {}), [key]: productOrderQty(o, nm) - take };
+    let receipts = o.receipts;
+    if (isHoldingOrder(o)) {
+      const d = new Date();
+      const date = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+      receipts = [...receipts, { id: `hold-${Date.now()}`, date, items: [{ 상품이름: key, qty: -take, unitCost: 0 }], 관세사비: 0, 배송비: 0, 작업비: 0, memo: '재고 조사로 줄임', createdAt: Date.now() }];
+    }
+    await saveHanjungOrder({ ...o, orderQty, receipts });
+  }
+};

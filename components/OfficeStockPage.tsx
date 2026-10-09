@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { HanjungOrder, subscribeHanjung, inventoryOf, nameKey, addHoldingStock } from '../data/hanjungStore';
+import { HanjungOrder, subscribeHanjung, inventoryOf, nameKey, setOfficeStock } from '../data/hanjungStore';
 import { useProductNames } from './hanjung/OrderItemsEditor';
 import ProductThumb, { useProductImage } from './hanjung/ProductThumb';
 
@@ -16,25 +16,24 @@ const OfficeStockPage: React.FC = () => {
   const [search, setSearch] = useState('');
   useEffect(() => subscribeHanjung(setOrders), []);
   const imageOf = useProductImage();
-  // 보유재고 넣기: 한중발주로 산 게 아니라 원래 있던 재고. 넣으면 사무실 재고로 잡혀 배정할 때 쓰인다.
+  // 사무실 재고 숫자를 눌러 직접 고친다(재고 조사로 맞출 때). 늘리면 "0) 보유재고"에 넣고, 줄이면 여유에서 뺀다.
   const names = useProductNames(orders);
-  const [hName, setHName] = useState('');
-  const [hQty, setHQty] = useState('');
-  const [hCost, setHCost] = useState('');
-  const [hSaving, setHSaving] = useState(false);
-  const addHolding = async () => {
-    const qty = Math.floor(Number(hQty) || 0);
-    if (!hName.trim() || qty <= 0) { alert('상품 이름과 수량을 적어 주세요.'); return; }
-    if (!names.some(n => nameKey(n) === nameKey(hName)) && !window.confirm(`"${hName.trim()}"은 쿠팡 발주에 나온 이름이 아니에요. 이름이 다르면 배정할 때 짝이 안 맞아요. 그래도 넣을까요?`)) return;
-    setHSaving(true);
+  const [editing, setEditing] = useState<{ name: string; value: string } | null>(null);
+  const [adding, setAdding] = useState<{ name: string; value: string } | null>(null);
+  const saveStock = async (name: string, value: string) => {
+    const n = Math.floor(Number(value));
+    if (!name.trim() || !Number.isFinite(n) || n < 0) return;
     try {
-      await addHoldingStock(orders, hName, qty, Number(hCost) || 0);
-      setHName(''); setHQty(''); setHCost('');
+      await setOfficeStock(orders, name, n);
     } catch (err) {
-      alert(`넣기 실패: ${err instanceof Error ? err.message : String(err)}`);
-    } finally {
-      setHSaving(false);
+      alert(`재고 고치기 실패: ${err instanceof Error ? err.message : String(err)}`);
     }
+  };
+  const commitEdit = () => {
+    if (!editing) return;
+    const e = editing;
+    setEditing(null);
+    saveStock(e.name, e.value);
   };
 
   // 상품별로 모은다(같은 상품이 여러 한중발주에 나뉘어 있으면 합치고, 어느 건의 여유인지는 아래 줄로).
@@ -66,7 +65,7 @@ const OfficeStockPage: React.FC = () => {
       <div className="flex flex-wrap items-end justify-between gap-3 mb-4">
         <div>
           <h1 className="text-xl font-bold text-gray-900">사무실재고</h1>
-          <p className="text-sm text-gray-500">한중발주로 넉넉히 사 와서 남은 수량이에요. 도착 기록을 저장하면 늘고, 쿠팡 발주에 "재고에서 쓰기"를 하면 줄어요(자동).</p>
+          <p className="text-sm text-gray-500">사무실에 있는 여유 재고예요. 숫자를 눌러 직접 고칠 수 있어요(재고 조사로 맞출 때).</p>
         </div>
         <input
           value={search}
@@ -74,18 +73,6 @@ const OfficeStockPage: React.FC = () => {
           placeholder="상품명 검색"
           className="w-full sm:w-64 px-3 py-1.5 border border-gray-200 rounded-lg text-sm bg-white focus:outline-none focus:ring-1 focus:ring-blue-400"
         />
-      </div>
-
-      {/* 보유재고 넣기 */}
-      <div className="bg-white border border-gray-200 rounded-xl p-3 mb-4 flex flex-wrap items-center gap-2">
-        <span className="text-sm font-semibold text-gray-700">보유재고 넣기</span>
-        <span className="text-xs text-gray-400">한중발주 말고 원래 있던 재고</span>
-        <input list="holding-names" value={hName} onChange={e => setHName(e.target.value)} placeholder="상품 이름(쿠팡 발주 이름)"
-          className="flex-1 min-w-[220px] px-3 py-1.5 border border-gray-200 rounded-lg text-sm" />
-        <datalist id="holding-names">{names.map(n => <option key={n} value={n} />)}</datalist>
-        <input type="number" min={1} value={hQty} onChange={e => setHQty(e.target.value)} placeholder="수량" className="w-20 px-2 py-1.5 border border-gray-200 rounded-lg text-sm text-right" />
-        <input type="number" min={0} value={hCost} onChange={e => setHCost(e.target.value)} placeholder="개당 원가(선택)" title="재고 금액 계산용. 장부 수입비용에는 안 들어가요" className="w-32 px-2 py-1.5 border border-gray-200 rounded-lg text-sm text-right" />
-        <button onClick={addHolding} disabled={hSaving} className="px-3 py-1.5 rounded-lg bg-gray-900 text-white text-sm font-semibold disabled:opacity-40">넣기</button>
       </div>
 
       <div className="grid grid-cols-3 gap-3 mb-4">
@@ -117,12 +104,45 @@ const OfficeStockPage: React.FC = () => {
                     {r.parts.map(p => `${p.code} ${p.arrived}${p.incoming ? `(+${p.incoming})` : ''}개 × ${won(p.unit)}`).join(' · ')}
                   </div>
                 </td>
-                <td className={`text-right font-mono font-bold px-3 py-2 ${r.arrived > 0 ? 'text-gray-900' : 'text-gray-300'}`}>{r.arrived.toLocaleString()}</td>
+                <td className={`text-right font-mono font-bold px-3 py-2 ${r.arrived > 0 ? 'text-gray-900' : 'text-gray-300'}`}>
+                  {editing?.name === r.name ? (
+                    <input
+                      type="number" min={0} autoFocus value={editing.value}
+                      onChange={e => setEditing({ name: r.name, value: e.target.value })}
+                      onFocus={e => e.target.select()}
+                      onBlur={commitEdit}
+                      onKeyDown={e => { if (e.key === 'Enter') commitEdit(); if (e.key === 'Escape') setEditing(null); }}
+                      className="w-20 px-1.5 py-0.5 border border-blue-400 rounded text-right font-mono"
+                    />
+                  ) : (
+                    <span onClick={() => setEditing({ name: r.name, value: String(r.arrived) })} title="눌러서 고치기(재고 조사로 맞출 때)"
+                      className="cursor-pointer hover:underline decoration-dotted underline-offset-2">{r.arrived.toLocaleString()}</span>
+                  )}
+                </td>
                 <td className={`text-right font-mono px-3 py-2 ${r.incoming > 0 ? 'text-amber-600' : 'text-gray-300'}`}>{r.incoming ? `+${r.incoming.toLocaleString()}` : '-'}</td>
                 <td className="text-right font-mono px-3 py-2">{won(r.value)}</td>
               </tr>
             ))}
             {!rows.length && <tr><td colSpan={4} className="text-center text-gray-400 py-10">남은 재고가 없어요.</td></tr>}
+            {/* 목록에 없는 상품(여유가 하나도 없는 상품)의 재고를 적을 때 */}
+            <tr className="border-t border-gray-100">
+              <td colSpan={4} className="px-3 py-2">
+                {adding ? (
+                  <div className="flex flex-wrap items-center gap-2">
+                    <input list="stock-names" autoFocus value={adding.name} onChange={e => setAdding({ ...adding, name: e.target.value })} placeholder="상품 이름(쿠팡 발주 이름)"
+                      className="flex-1 min-w-[220px] px-2 py-1 border border-gray-200 rounded text-sm" />
+                    <datalist id="stock-names">{names.map(n => <option key={n} value={n} />)}</datalist>
+                    <input type="number" min={0} value={adding.value} onChange={e => setAdding({ ...adding, value: e.target.value })} placeholder="수량"
+                      onKeyDown={e => { if (e.key === 'Enter') { saveStock(adding.name, adding.value); setAdding(null); } }}
+                      className="w-20 px-2 py-1 border border-gray-200 rounded text-sm text-right" />
+                    <button onClick={() => { saveStock(adding.name, adding.value); setAdding(null); }} className="px-2.5 py-1 rounded bg-gray-900 text-white text-xs font-semibold">저장</button>
+                    <button onClick={() => setAdding(null)} className="px-2 py-1 text-xs text-gray-500">취소</button>
+                  </div>
+                ) : (
+                  <button onClick={() => setAdding({ name: '', value: '' })} className="text-xs text-gray-400 hover:text-gray-700">+ 목록에 없는 상품 재고 적기</button>
+                )}
+              </td>
+            </tr>
           </tbody>
         </table>
       </div>

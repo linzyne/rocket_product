@@ -619,7 +619,7 @@ export function LineCheckMenu({ ready, hanjung, onReady, onHanjung }: {
                 ), wholeIn(null) ? null : () => act({ type: 'queue' }), '#333', false)}
                 {/* 이미 배정했거나 담은 줄만: 그걸 취소한다. */}
                 {places.length > 0 && item('out', (
-                  <><span>{places.every(p => !p.code) ? '🛒' : '🚚'}</span> 취소</>
+                  <><span>🛒</span> 취소</>
                 ), () => act({ type: 'remove' }), '#888', false)}
                 {links.length > 0 && (
                   <>

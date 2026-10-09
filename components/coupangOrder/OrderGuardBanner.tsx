@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { startOrderGuard, subscribeRestored, clearRestored } from './data/orderGuard';
 import { startShipmentRunner } from './data/shipmentRunner';
 import { startConfirmRunner } from './data/poConfirmRunner';
+import { startCenterCleanup } from './data/centerCleanup';
 import { subscribeLines, linesError } from './data/lineStore';
 import type { RestoredNote } from './data/orderGuard';
 
@@ -10,7 +11,7 @@ import type { RestoredNote } from './data/orderGuard';
 const OrderGuardBanner: React.FC<{ onGoOrder?: () => void }> = ({ onGoOrder }) => {
   const [notes, setNotes] = useState<RestoredNote[]>([]);
   // 쉽먼트 자동 진행도 앱이 켜질 때 걸어 둔다(어느 화면에 있든 확장 소식을 받아 이어 간다).
-  useEffect(() => { startOrderGuard(); startShipmentRunner(); startConfirmRunner(); }, []);
+  useEffect(() => { startOrderGuard(); startShipmentRunner(); startConfirmRunner(); startCenterCleanup(); }, []);
   useEffect(() => subscribeRestored(setNotes), []);
   // 발주 줄을 클라우드에서 못 받으면 저장도 안 되므로 바로 알린다.
   const [error, setError] = useState(linesError);

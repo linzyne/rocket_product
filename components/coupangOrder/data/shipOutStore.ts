@@ -540,6 +540,22 @@ export function lockedLineKeys(batches: ShipmentBatch[]): Set<string> {
     .flatMap(item => item.lines.map(l => `${l.발주번호}│${String(l.상품이름).trim()}│${l.확정수량}`)));
 }
 
+// 출고 건과 줄의 센터 이름을 고친다(센터 이름 맞추기). 바뀐 게 있을 때만 저장한다.
+export function fixShipOutCenters(fix: (c: string) => string): number {
+  const list = read();
+  let n = 0;
+  for (const item of list) {
+    const c = fix(item.center);
+    if (c !== item.center) { item.center = c; n++; }
+    item.lines = item.lines.map(l => {
+      const lc = fix(l.물류센터);
+      return lc !== l.물류센터 ? { ...l, 물류센터: lc } : l;
+    });
+  }
+  if (n) write(list);
+  return n;
+}
+
 // 지금 출고 목록(이 기기에 받아 둔 것). 쉽먼트 자동 진행이 화면 밖에서 쓴다.
 export function readShipOuts(): ShipOut[] {
   return read();

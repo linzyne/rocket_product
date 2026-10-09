@@ -9,6 +9,7 @@ import { db, ensureSignedIn } from '../../../utils/firebase';
 import { allLines, commit, linesReady } from './lineStore';
 import type { Line } from './lineStore';
 import { retargetOrders } from './shipOutStore';
+import { normalizeCenter } from '../utils/centerName';
 import type { ShipOut } from './shipOutStore';
 
 const COLLECTION = 'coupangPoDateReq';
@@ -77,7 +78,7 @@ export function rememberRequested(data: Record<string, { center?: string; date?:
   const changed: string[] = [];
   const next = { ...reqs };
   for (const [no, v] of Object.entries(data || {})) {
-    const want = { center: String(v.center || '').trim(), date: String(v.date || '').trim() };
+    const want = { center: normalizeCenter(v.center), date: String(v.date || '').trim() };
     if (!want.center && !want.date) continue;
     const cur = next[no];
     if (cur?.doneAt) continue; // 이미 적용한 건 건드리지 않는다
@@ -116,7 +117,9 @@ export async function applyCurrent(nos: string[], current: Record<string, { cent
   const byOrder: Record<string, { center: string; date: string }> = {};
   const out: Line[] = [];
   for (const no of nos) {
-    const now = current[no];
+    const got = current[no];
+    // 센터 이름은 "지역+숫자"로 맞춘다(서허는 "수도권그룹(대구3센터)"처럼 적기도 한다).
+    const now = got ? { ...got, center: normalizeCenter(got.center) } : got;
     if (!now || (!now.center && !now.date)) { res.missing.push(no); continue; }
     const lines = allLines().filter(l => l.발주번호 === no && l.place !== 'trash');
     const first = lines[0];

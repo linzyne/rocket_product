@@ -538,7 +538,17 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
                           borderRadius: '50%', background: hjColor.get(p.code!) || '#2563eb', color: '#fff', fontSize: 10, fontWeight: 800, verticalAlign: 'middle',
                         }}>{hjNo.get(p.code!) ?? '?'}</span>
                       ))}
-                      {waitingQueue && !isReady && !coming.length && <span style={{ marginRight: 4, fontSize: 10, color: '#9ca3af' }}>주문할</span>}
+                      {/* 장바구니(1688 주문하기)에 든 몫: 주황 동그라미 장바구니 */}
+                      {waitingQueue && !isReady && (
+                        <span title="1688 주문하기(장바구니)에 담겨 있어요" style={{
+                          display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 16, height: 16, marginRight: 4,
+                          borderRadius: '50%', background: ORANGE, verticalAlign: 'middle',
+                        }}>
+                          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round">
+                            <circle cx="9" cy="20" r="1.6" /><circle cx="18" cy="20" r="1.6" /><path d="M2 3h3l2.6 12.4a1 1 0 0 0 1 .8h9.7a1 1 0 0 0 1-.8L21 7H6" />
+                          </svg>
+                        </span>
+                      )}
                       {l.상품이름}
                     </span>
                   );

@@ -271,37 +271,49 @@ export const KimchiPreviewBold: React.FC<BoldPreviewProps> = ({
         );
 
       // 고지: 왼쪽 칸에 아이콘과 라벨, 오른쪽 칸에 제목과 강조 문구를 세운다(2단 분할).
-      case 'notice':
+      case 'notice': {
+        const noticeIcon = section.icon?.trim() && (
+          <div style={{ marginBottom: SPACE.sm }}>
+            {edit('icon', '아이콘', { fontFamily, color: textColor, fontSize: Math.round(typeScale.title * fontScale), lineHeight: 1 })}
+          </div>
+        );
+        const noticeMain = (align: 'left' | 'center') => (
+          <>
+            {section.noticeTitle?.trim() && (
+              <div style={{ marginBottom: SPACE.sm }}>
+                <EditableText value={section.noticeTitle} onChange={v => updateSection(section.id, { noticeTitle: v })}
+                  placeholder="제목" style={{ ...styles.noticeTitle, textAlign: align }} />
+              </div>
+            )}
+            {section.bigText?.trim() && (
+              <div style={{ background: accent, borderRadius: CARD_RADIUS, padding: '28px 34px', display: 'inline-block' }}>
+                <EditableText value={section.bigText} onChange={v => updateSection(section.id, { bigText: v })}
+                  placeholder="강조 문구" style={{ ...styles.noticeBig, textAlign: 'center' }} />
+              </div>
+            )}
+          </>
+        );
         return (
           <div style={{ background: SOFT_TINT, padding: `${SPACE.xl}px 0` }}>
-            <Split
-              left={
-                <>
-                  {section.icon?.trim() && (
-                    <div style={{ marginBottom: SPACE.sm }}>
-                      {edit('icon', '아이콘', { fontFamily, color: textColor, fontSize: Math.round(typeScale.title * fontScale), lineHeight: 1 })}
-                    </div>
-                  )}
-                  {section.noticeSubtitle?.trim() && (
+            {/* 왼쪽 부제가 없으면 아이콘만 덩그러니 남으니, 좌우로 나누지 않고 가운데로 쌓는다. */}
+            {section.noticeSubtitle?.trim() ? (
+              <Split
+                left={
+                  <>
+                    {noticeIcon}
                     <EditableText value={section.noticeSubtitle} onChange={v => updateSection(section.id, { noticeSubtitle: v })}
                       placeholder="부제" style={{ ...styles.noticeSubtitle, textAlign: 'left' }} />
-                  )}
-                </>
-              }
-            >
-              {section.noticeTitle?.trim() && (
-                <div style={{ marginBottom: SPACE.sm }}>
-                  <EditableText value={section.noticeTitle} onChange={v => updateSection(section.id, { noticeTitle: v })}
-                    placeholder="제목" style={{ ...styles.noticeTitle, textAlign: 'left' }} />
-                </div>
-              )}
-              {section.bigText?.trim() && (
-                <div style={{ background: accent, borderRadius: CARD_RADIUS, padding: '28px 34px', display: 'inline-block' }}>
-                  <EditableText value={section.bigText} onChange={v => updateSection(section.id, { bigText: v })}
-                    placeholder="강조 문구" style={{ ...styles.noticeBig, textAlign: 'left' }} />
-                </div>
-              )}
-            </Split>
+                  </>
+                }
+              >
+                {noticeMain('left')}
+              </Split>
+            ) : (
+              <div style={{ textAlign: 'center', padding: `0 ${CARD_MARGIN_X}px` }}>
+                {noticeIcon}
+                {noticeMain('center')}
+              </div>
+            )}
             <div style={{ height: SPACE.lg }} />
             {(section.cards || []).map((card, idx) =>
               card.trim() ? (
@@ -323,6 +335,7 @@ export const KimchiPreviewBold: React.FC<BoldPreviewProps> = ({
             )}
           </div>
         );
+      }
 
       // 리뷰: 평점을 색 원에 흰 글씨로 넣고, 후기는 사진을 좌우 번갈아 붙인 흰 상자로.
       case 'review': {

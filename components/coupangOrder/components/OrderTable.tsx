@@ -582,18 +582,18 @@ export function LineCheckMenu({ ready, hanjung, onReady, onHanjung }: {
 
             {view.kind === 'pick' && (
               <>
-                {item('back', <>◀ 뒤로<span style={{ marginLeft: 'auto', fontSize: 11, color: '#999' }}>이 줄: {need}개</span></>, () => setView({ kind: 'main' }), '#999', false)}
+                {/* 한중발주 고르기: 줄마다 [이름 … 여유 N]만. 모자라면 그 숫자만 빨갛게. */}
+                {item('back', <>◀ 뒤로<span style={{ marginLeft: 'auto', fontSize: 11.5, color: '#999', fontWeight: 600 }}>필요 {need}개</span></>, () => setView({ kind: 'main' }), '#999', false)}
                 {line}
-                {head('이 상품이 있는 한중발주')}
                 {mine.map(c => {
                   const free = c.spare + placeQty(c.code);
                   return item(`c${c.code}`, (
                     <>
-                      <span style={{ fontFamily: 'monospace' }}>{c.code}</span>
-                      <span style={{ fontSize: 11, color: '#888', fontWeight: 600 }}>주문 {c.ordered} · 여유 <b style={{ color: free >= need ? '#27ae60' : '#dc2626' }}>{free}</b></span>
-                      <span style={{ marginLeft: 'auto', fontSize: 11, color: c.arrived ? '#27ae60' : '#d97706' }}>{c.arrived ? '도착' : '입고중'}</span>
-                      {free < need && <span style={{ fontSize: 11, color: '#dc2626' }}>⚠ 부족</span>}
-                      {wholeIn(c.code) && <span>✓</span>}
+                      <span style={{ fontWeight: 600 }}>{c.code}</span>
+                      <span style={{ marginLeft: 'auto', fontSize: 12, fontWeight: 500, color: '#888' }}>
+                        여유 <span style={{ color: free >= need ? '#333' : '#dc2626', fontWeight: 700 }}>{free}</span>
+                      </span>
+                      {wholeIn(c.code) && <span style={{ color: '#27ae60' }}>✓</span>}
                     </>
                   ), wholeIn(c.code) ? null : () => pick(c), '#333', false);
                 })}
@@ -601,29 +601,19 @@ export function LineCheckMenu({ ready, hanjung, onReady, onHanjung }: {
                 {others.length > 0 && (
                   <>
                     {line}
-                    {head('다른 한중발주에 새로 넣기(1688에 추가 주문)')}
-                    {others.map(c => item(`o${c.code}`, (
-                      <>
-                        <span style={{ fontFamily: 'monospace' }}>{c.code}</span>
-                        <span style={{ marginLeft: 'auto', fontSize: 11, color: '#999', fontWeight: 600 }}>이 상품 없음</span>
-                      </>
-                    ), () => pick(c), '#555', false))}
-                  </>
-                )}
-                {links.length > 0 && (
-                  <>
-                    {line}
-                    {item('link', <>이름이 다른 같은 상품에 연결<span style={{ marginLeft: 'auto', fontSize: 10 }}>▶</span></>, () => setView({ kind: 'link' }), '#2563eb', false)}
+                    {head('새로 넣기(1688에 추가 주문)')}
+                    {others.map(c => item(`o${c.code}`, <span style={{ fontWeight: 600 }}>{c.code}</span>, () => pick(c), '#555', false))}
                   </>
                 )}
                 {line}
                 {item('queue', (
                   <>
-                    1688 주문하기에 담기(새로 주문)
-                    {wholeIn(null) && <span style={{ marginLeft: 'auto' }}>✓</span>}
+                    1688 주문하기에 담기
+                    {wholeIn(null) && <span style={{ marginLeft: 'auto', color: '#27ae60' }}>✓</span>}
                   </>
                 ), wholeIn(null) ? null : () => act({ type: 'queue' }), '#555', false)}
-                {places.length > 0 && item('out', '한중에서 빼기', () => act({ type: 'remove' }), '#dc2626', false)}
+                {links.length > 0 && item('link', <span style={{ fontSize: 12, fontWeight: 500 }}>이름이 다른 같은 상품에 연결 ▸</span>, () => setView({ kind: 'link' }), '#888', false)}
+                {places.length > 0 && item('out', <span style={{ fontSize: 12, fontWeight: 500 }}>한중에서 빼기</span>, () => act({ type: 'remove' }), '#888', false)}
               </>
             )}
 

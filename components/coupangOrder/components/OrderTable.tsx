@@ -584,7 +584,7 @@ export function LineCheckMenu({ ready, hanjung, onReady, onHanjung }: {
                 ), () => onHanjung({ type: 'stock' }), '#27ae60')}
                 {item('hj', (
                   <>
-                    <span>＋</span> 한중발주
+                    <span>＋</span> 배정하기
                     {placeText && <span style={{ marginLeft: 'auto', fontSize: 11, color: '#94a3b8' }}>{placeText}</span>}
                     <span style={{ marginLeft: placeText ? 4 : 'auto', fontSize: 10 }}>▶</span>
                   </>

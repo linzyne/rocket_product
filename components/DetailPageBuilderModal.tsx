@@ -384,6 +384,10 @@ const DetailPageBuilderModal: React.FC<DetailPageBuilderModalProps> = ({ isOpen,
   // 시점의 범위를 들고 있다가 적용 직전에 되살린다.
   const [formatBar, setFormatBar] = useState<{ left: number; top: number } | null>(null);
   const savedRangeRef = useRef<Range | null>(null);
+  // 색 직접 고르기 창이 떠 있는 동안. 그 창이 포커스를 가져가 선택이 풀려도 툴바를 닫지 않고,
+  // 창에서 색을 움직일 때마다 새 span을 겹겹이 만들지 않게 처음 만든 span의 색만 바꾼다.
+  const colorPickingRef = useRef(false);
+  const colorPickSpanRef = useRef<HTMLSpanElement | null>(null);
   const [sellingPoints, setSellingPoints] = useState('');
   const [copy, setCopy] = useState<DetailPageCopy>(EMPTY_COPY);
   const [isExporting, setIsExporting] = useState(false);
@@ -1022,6 +1026,7 @@ const DetailPageBuilderModal: React.FC<DetailPageBuilderModalProps> = ({ isOpen,
   useEffect(() => {
     const handleSelectionChange = () => {
       const sel = window.getSelection();
+      if (colorPickingRef.current) return;
       if (!sel || sel.isCollapsed || sel.rangeCount === 0) {
         setFormatBar(null);
         return;
@@ -1811,11 +1816,11 @@ const DetailPageBuilderModal: React.FC<DetailPageBuilderModalProps> = ({ isOpen,
 
   // 고른 범위를 <span style="...">로 감싼다. EditableText는 비제어 DOM이라, 여기서 직접 고친 뒤
   // input 이벤트를 쏘면 그쪽 onInput이 받아서 값으로 저장한다.
-  const applyFormatToSelection = (styles: Partial<CSSStyleDeclaration>) => {
+  const applyFormatToSelection = (styles: Partial<CSSStyleDeclaration>): HTMLSpanElement | null => {
     const range = restoreSelection();
-    if (!range || range.collapsed) return;
+    if (!range || range.collapsed) return null;
     const editable = editableOfRange(range);
-    if (!editable) return;
+    if (!editable) return null;
     const span = document.createElement('span');
     Object.assign(span.style, styles);
     try {
@@ -1823,7 +1828,7 @@ const DetailPageBuilderModal: React.FC<DetailPageBuilderModalProps> = ({ isOpen,
       range.insertNode(span);
     } catch (err) {
       console.error('부분 서식 적용 실패:', err);
-      return;
+      return null;
     }
     const sel = window.getSelection();
     const next = document.createRange();
@@ -1832,6 +1837,18 @@ const DetailPageBuilderModal: React.FC<DetailPageBuilderModalProps> = ({ isOpen,
     sel?.addRange(next);
     savedRangeRef.current = next.cloneRange();
     editable.dispatchEvent(new Event('input', { bubbles: true }));
+    return span;
+  };
+
+  // 색 고르기 창에서 색을 바꿀 때: 처음엔 span으로 감싸고, 그 뒤로는 그 span 색만 바꾼다.
+  const applyPickedColor = (color: string) => {
+    const span = colorPickSpanRef.current;
+    if (span && span.isConnected) {
+      span.style.color = color;
+      span.closest('[contenteditable="true"]')?.dispatchEvent(new Event('input', { bubbles: true }));
+      return;
+    }
+    colorPickSpanRef.current = applyFormatToSelection({ color });
   };
 
   // 지금 고른 글자의 실제 크기(px)를 읽어서 한 단계씩 키우고 줄인다.
@@ -3736,12 +3753,14 @@ const DetailPageBuilderModal: React.FC<DetailPageBuilderModalProps> = ({ isOpen,
           ))}
           <label
             title="색 직접 고르기"
+            onClick={() => { colorPickingRef.current = true; colorPickSpanRef.current = null; }}
             className="w-5 h-5 rounded-full border border-slate-500 flex-shrink-0 cursor-pointer bg-gradient-to-br from-pink-400 via-yellow-300 to-sky-400"
           >
             <input
               type="color"
               className="sr-only"
-              onChange={e => applyFormatToSelection({ color: e.target.value })}
+              onChange={e => applyPickedColor(e.target.value)}
+              onBlur={() => { colorPickingRef.current = false; colorPickSpanRef.current = null; }}
             />
           </label>
           <span className="w-px h-5 bg-slate-600 mx-0.5" />

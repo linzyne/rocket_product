@@ -364,11 +364,10 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
   const boxes = STAGES.map((_, i) => {
     const list = orders.filter(o => o.stage === i && match(o));
     if (i === 5) list.sort((a, b) => (b.item?.sentDate || '').localeCompare(a.item?.sentDate || ''));
-    // 쉽먼트·발송대기: 상품이 다 준비된 발주서를 맨 위로(그 안에서는 원래 순서).
+    // 쉽먼트·발송대기: 상품이 다 준비된 발주서를 맨 위로, 인쇄 옆 체크칸을 켠 발주서는 맨 아래로(그 안에서는 원래 순서).
     if (i === 2 || i === 4) {
-      const done = list.filter(allReady);
-      const rest = list.filter(o => !allReady(o));
-      return [...done, ...rest];
+      const readyFirst = (xs: FlowOrder[]) => [...xs.filter(allReady), ...xs.filter(o => !allReady(o))];
+      return [...readyFirst(list.filter(o => !marks.has(o.no))), ...readyFirst(list.filter(o => marks.has(o.no)))];
     }
     return list;
   });

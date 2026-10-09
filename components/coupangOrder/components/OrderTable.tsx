@@ -473,6 +473,18 @@ export type HanjungAction = (
 // 상품 줄 체크 칸. 누르면 "준비됨"과 "한중발주" 중에서 고른다(둘 다 켤 수도 있다).
 // 한중발주를 누르면 이 상품의 여유가 있는 한중발주를 고르거나, 발주 대기에 담는다.
 // 준비됨이든 한중발주든 초록 체크로 보인다.
+// 한중발주 번호(동그라미 안 숫자): 고유번호의 "1)" 숫자, 없으면 끝 숫자.
+const orderNum = (code: string) => {
+  const m = /(\d+)\s*\)/.exec(code) || /(\d+)\s*$/.exec(code);
+  return m ? String(Number(m[1])) : '?';
+};
+const NumBadge: React.FC<{ code: string }> = ({ code }) => (
+  <span title={code} style={{
+    display: 'inline-flex', alignItems: 'center', justifyContent: 'center', minWidth: 18, height: 18, padding: '0 4px', borderRadius: 999,
+    background: '#374151', color: '#fff', fontSize: 11, fontWeight: 800, lineHeight: 1,
+  }}>{orderNum(code)}</span>
+);
+
 export function LineCheckMenu({ ready, hanjung, onReady, onHanjung }: {
   ready: boolean; hanjung: LineHanjung; onReady: (on: boolean) => void; onHanjung: (action: HanjungAction) => void;
 }) {
@@ -582,38 +594,39 @@ export function LineCheckMenu({ ready, hanjung, onReady, onHanjung }: {
 
             {view.kind === 'pick' && (
               <>
-                {/* 한중발주 고르기: 줄마다 [이름 … 여유 N]만. 모자라면 그 숫자만 빨갛게. */}
+                {/* 한중발주 고르기: 🚚 입고중에 배정(번호·여유) · 🛒 담기 · 취소 | 재매칭 */}
                 {item('back', <>◀ 뒤로<span style={{ marginLeft: 'auto', fontSize: 11.5, color: '#999', fontWeight: 600 }}>필요 {need}개</span></>, () => setView({ kind: 'main' }), '#999', false)}
                 {line}
-                {mine.map(c => {
-                  const free = c.spare + placeQty(c.code);
+                {[...mine, ...others].map(c => {
+                  const free = c.has ? c.spare + placeQty(c.code) : 0;
                   return item(`c${c.code}`, (
                     <>
-                      <span style={{ fontWeight: 600 }}>{c.code}</span>
+                      <span>🚚</span>
+                      <NumBadge code={c.code} />
+                      <span style={{ fontWeight: 600 }}>배정</span>
                       <span style={{ marginLeft: 'auto', fontSize: 12, fontWeight: 500, color: '#888' }}>
-                        여유 <span style={{ color: free >= need ? '#333' : '#dc2626', fontWeight: 700 }}>{free}</span>
+                        {c.has ? <>여유 <span style={{ color: free >= need ? '#333' : '#dc2626', fontWeight: 700 }}>{free}</span></> : '추가 주문'}
                       </span>
                       {wholeIn(c.code) && <span style={{ color: '#27ae60' }}>✓</span>}
                     </>
                   ), wholeIn(c.code) ? null : () => pick(c), '#333', false);
                 })}
-                {!mine.length && head(<span style={{ color: '#bbb' }}>이 상품이 있는 한중발주가 없어요</span>)}
-                {others.length > 0 && (
-                  <>
-                    {line}
-                    {head('새로 넣기(1688에 추가 주문)')}
-                    {others.map(c => item(`o${c.code}`, <span style={{ fontWeight: 600 }}>{c.code}</span>, () => pick(c), '#555', false))}
-                  </>
-                )}
-                {line}
                 {item('queue', (
                   <>
-                    1688 주문하기에 담기
+                    <span>🛒</span> 담기
                     {wholeIn(null) && <span style={{ marginLeft: 'auto', color: '#27ae60' }}>✓</span>}
                   </>
-                ), wholeIn(null) ? null : () => act({ type: 'queue' }), '#555', false)}
-                {links.length > 0 && item('link', <span style={{ fontSize: 12, fontWeight: 500 }}>이름이 다른 같은 상품에 연결 ▸</span>, () => setView({ kind: 'link' }), '#888', false)}
-                {places.length > 0 && item('out', <span style={{ fontSize: 12, fontWeight: 500 }}>한중에서 빼기</span>, () => act({ type: 'remove' }), '#888', false)}
+                ), wholeIn(null) ? null : () => act({ type: 'queue' }), '#333', false)}
+                {/* 이미 배정했거나 담은 줄만: 그걸 취소한다. */}
+                {places.length > 0 && item('out', (
+                  <><span>{places.every(p => !p.code) ? '🛒' : '🚚'}</span> 취소</>
+                ), () => act({ type: 'remove' }), '#888', false)}
+                {links.length > 0 && (
+                  <>
+                    {line}
+                    {item('link', <>재매칭<span style={{ marginLeft: 'auto', fontSize: 10, color: '#bbb' }}>▶</span></>, () => setView({ kind: 'link' }), '#555', false)}
+                  </>
+                )}
               </>
             )}
 
@@ -644,13 +657,15 @@ export function LineCheckMenu({ ready, hanjung, onReady, onHanjung }: {
               const lack = need - free;
               return (
                 <>
-                  {item('back', '◀ 뒤로', () => setView({ kind: 'pick' }), '#999', false)}
+                  {/* 여유가 모자랄 때: 여유만큼은 그 한중발주에, 나머지는 🛒 담기 */}
+                  {free > 0 && item('split', (
+                    <span style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                      <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>{free}개는 <NumBadge code={c.code} /></span>
+                      <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>{lack}개는 <span>🛒</span> 담기</span>
+                    </span>
+                  ), () => act({ type: 'order', code: c.code, mode: 'split', linkFrom }), '#333', false)}
+                  {free <= 0 && item('grow', <><NumBadge code={c.code} /> {need}개 추가 주문</>, () => act({ type: 'order', code: c.code, mode: 'grow', linkFrom }), '#333', false)}
                   {line}
-                  <div style={{ fontSize: 12.5, color: '#333', padding: '4px 10px 6px', lineHeight: 1.5, whiteSpace: 'nowrap' }}>
-                    <b style={{ fontFamily: 'monospace' }}>{c.code}</b> 여유가 <b>{free}</b>개뿐이에요.<br />이 줄은 <b>{need}</b>개 필요해요.
-                  </div>
-                  {free > 0 && item('split', <>① {free}개는 {c.code}에서, 모자란 {lack}개는 1688 주문하기</>, () => act({ type: 'order', code: c.code, mode: 'split', linkFrom }), '#27ae60', false)}
-                  {item('grow', <>② {c.code}에 {lack}개 더 주문했어요</>, () => act({ type: 'order', code: c.code, mode: 'grow', linkFrom }), '#555', false)}
                   {item('cancel', '취소', () => setView({ kind: 'pick' }), '#999', false)}
                 </>
               );

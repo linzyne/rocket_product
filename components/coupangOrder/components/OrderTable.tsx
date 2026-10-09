@@ -625,7 +625,7 @@ export function LineCheckMenu({ ready, hanjung, onReady, onHanjung }: {
                 {places.length > 0 && item('out', (
                   // 한중발주에 배정돼 있으면 배정 취소, 장바구니에만 있으면 장바구니 취소(둘 다 이 줄을 거기서 뺀다).
                   places.some(p => p.code)
-                    ? <><span style={ICON}>🚚</span> 배정 취소</>
+                    ? <><span style={ICON}>↩️</span> 배정 취소</>
                     : <><span style={ICON}>🛒</span> 장바구니 취소</>
                 ), () => act({ type: 'remove' }), '#888', false)}
                 {links.length > 0 && (

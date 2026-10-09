@@ -13,6 +13,7 @@ import CollectPurchaseOrders from '../coupangOrder/CollectPurchaseOrders';
 import { appendOrderFile } from '../coupangOrder/data/orderWorkStore';
 import { printShipment, setPrinted } from '../coupangSend/printShipment';
 import { useReady } from '../coupangOrder/data/readyStore';
+import { subscribeMarks, setMark } from '../coupangOrder/data/poMarkStore';
 import { useLineHanjung } from '../coupangOrder/data/useLineHanjung';
 import { addShipOut, markShipOuts } from '../coupangOrder/data/shipOutStore';
 import { linesAt } from '../coupangOrder/data/lineStore';
@@ -87,6 +88,9 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
   const [tab, setTab] = useState<Stage | 'active'>('active');
   // 새 발주서 창(새 주문 수집 · 확정수량 고치기 · 발주확정 올리기)
   const [newOpen, setNewOpen] = useState(false);
+  // 인쇄 아이콘 옆 작은 체크칸(사람이 쓰는 표시, 켜면 그대로 남는다).
+  const [marks, setMarks] = useState<Set<string>>(new Set());
+  useEffect(() => subscribeMarks(setMarks), []);
   // 남은 수량 배정 창(미배정 N을 눌렀을 때)
   const [assignFor, setAssignFor] = useState<{ o: FlowOrder; l: FlowLine; left: number } | null>(null);
   // 상품 줄 준비 상태: 준비됨 체크(쿠팡발주확인·쉽먼트·발송대기와 같은 기록) + 한중발주(한중 대기·입고중·일부입고·준비됨).
@@ -424,6 +428,13 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
           >{o.item.shipmentNos[o.no]}</span></span>
         )}
         {(o.stage === 2 || o.stage === 4) && o.item && <span style={{ marginLeft: 8 }}>{printButton(o)}</span>}
+        {(o.stage === 2 || o.stage === 4) && o.item && (
+          <input
+            type="checkbox" checked={marks.has(o.no)} onChange={e => setMark(o.no, e.target.checked)}
+            title="체크 표시(켜 두면 그대로 남아요)"
+            style={{ width: 13, height: 13, marginLeft: 4, verticalAlign: 'middle', cursor: 'pointer', accentColor: '#6b7280' }}
+          />
+        )}
       </div>
     </div>
   );

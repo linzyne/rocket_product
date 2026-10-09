@@ -512,7 +512,7 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
                   const faded = isReady || coming.length > 0;
                   return (
                     <span
-                      title={`${l.상품이름}\n${isReady ? '준비됨' : coming.length ? `입고중(한중발주 ${coming.map(p => p.code).join(', ')})` : waitingQueue ? '한중발주 대기(1688 주문 전)' : '준비중'} — 왼쪽 체크 칸에서 준비됨·한중발주 배정`}
+                      title={`${l.상품이름}\n${isReady ? '준비됨' : coming.length ? `입고중(한중발주 ${coming.map(p => p.code).join(', ')})` : waitingQueue ? '1688 주문하기' : '준비중'} — 왼쪽 체크 칸에서 준비됨·한중발주 배정`}
                       style={{
                         flex: 1, minWidth: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
                         // 준비중(아무 진행 없음) = 검정 굵게, 입고중 = 검정 보통 굵기 + 번호 동그라미, 준비됨 = 회색 + 줄 긋기 + 초록 ✓
@@ -528,7 +528,7 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
                           borderRadius: '50%', background: hjColor.get(p.code!) || '#2563eb', color: '#fff', fontSize: 10, fontWeight: 800, verticalAlign: 'middle',
                         }}>{hjNo.get(p.code!) ?? '?'}</span>
                       ))}
-                      {waitingQueue && !isReady && !coming.length && <span style={{ marginRight: 4, fontSize: 10, color: '#9ca3af' }}>대기</span>}
+                      {waitingQueue && !isReady && !coming.length && <span style={{ marginRight: 4, fontSize: 10, color: '#9ca3af' }}>주문할</span>}
                       {l.상품이름}
                     </span>
                   );
@@ -561,12 +561,12 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
                         <span
                           title={[
                             assigned ? `배정: ${places.filter(p => p.code).map(p => `${p.code} ${p.qty}개`).join(', ')}` : '',
-                            queued ? `한중발주 대기(1688 주문 전) ${queued}개` : '',
+                            queued ? `1688 주문하기 ${queued}개` : '',
                             showLeft ? `남은 ${left}개를 배정해 주세요 — "미배정"을 누르면 남은 수량만 배정해요` : '',
                           ].filter(Boolean).join('\n')}
                           style={{ flexShrink: 0, fontSize: 10.5, color: '#8a857f', whiteSpace: 'nowrap', letterSpacing: '-0.3px' }}
                         >
-                          {assigned ? <>배정 <b>{assigned}</b></> : null}{assigned && queued ? ' · ' : ''}{queued ? <>대기 <b>{queued}</b></> : null}
+                          {assigned ? <>배정 <b>{assigned}</b></> : null}{assigned && queued ? ' · ' : ''}{queued ? <>주문할 <b>{queued}</b></> : null}
                           {showLeft && <> · <b onClick={() => setAssignFor({ o, l, left })} style={{ color: RED, cursor: 'pointer', textDecoration: 'underline dotted', textUnderlineOffset: 2 }}>미배정 {left}</b></>}
                         </span>
                       );
@@ -951,7 +951,7 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
         const key = reservationKey({ 발주번호: line.발주번호, 상품이름: line.상품이름, 확정수량: line.확정수량, 입고예정일: normalizeDateValue(line.입고예정일) });
         await saveHanjungOrder(assignRemaining(order, line, target.qty, key, target.grow));
       }
-      setDateNote({ tone: 'ok', text: target === 'queue' ? `${l.상품이름} ${left}개를 발주 대기로 보냈어요.` : `${l.상품이름} ${target.qty}개를 ${target.code}에 배정했어요.` });
+      setDateNote({ tone: 'ok', text: target === 'queue' ? `${l.상품이름} ${left}개를 1688 주문하기로 보냈어요.` : `${l.상품이름} ${target.qty}개를 ${target.code}에 배정했어요.` });
       setAssignFor(null);
     } catch (err) {
       alert(`배정 실패: ${err instanceof Error ? err.message : String(err)}`);
@@ -994,7 +994,7 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
             );
           })}
           <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-            <button style={optBtn} onClick={() => doAssign('queue')} title="다음 한중발주로 주문해요">발주 대기로 {left}개</button>
+            <button style={optBtn} onClick={() => doAssign('queue')} title="다음 한중발주로 주문해요">1688 주문하기로 {left}개</button>
             <button style={{ ...optBtn, border: 'none', color: '#888' }} onClick={() => setAssignFor(null)}>닫기</button>
           </div>
         </div>

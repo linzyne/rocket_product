@@ -55,7 +55,7 @@ export function useHanjungBadge() {
       return (
         <span
           key={`${p.code || 'queue'}-${i}`}
-          title={p.code ? `1688 주문함 · 한중발주 ${p.code} · ${status} · 이 줄 ${p.qty}개` : `한중발주 발주 대기(1688 주문 전) · ${p.qty}개`}
+          title={p.code ? `1688 주문함 · 한중발주 ${p.code} · ${status} · 이 줄 ${p.qty}개` : `1688 주문하기(1688 주문 전) · ${p.qty}개`}
           style={style}
         >
           {p.code ? `한중 ${p.code} · ${status}` : '한중 대기'}{split ? ` ×${p.qty}` : ''}

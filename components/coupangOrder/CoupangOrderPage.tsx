@@ -326,12 +326,12 @@ export default function CoupangOrderPage({ onGoShipOut }: { onGoShipOut?: () => 
     const order = toOrderRow(row);
     const key = hanjungQueueKey(order);
     if (hanjungKeys.has(key)) {
-      if (!confirm(`"${row.상품이름}"을 한중발주 대기에서 뺄까요?`)) return;
+      if (!confirm(`"${row.상품이름}"을 1688 주문하기에서 뺄까요?`)) return;
       removeFromHanjungQueue([key]).catch(alertError);
       return;
     }
     addToHanjungQueue([order], hanjungQueue).catch(alertError);
-    setNotice(`"${row.상품이름}"을 한중발주 대기에 넣었어요.`);
+    setNotice(`"${row.상품이름}"을 1688 주문하기에 넣었어요.`);
   }, [leftRows, hanjungKeys, hanjungQueue]);
 
   // 체크한 발주서의 상품 줄을 모두 한중발주 대기에 넣는다(툴바 버튼).
@@ -339,7 +339,7 @@ export default function CoupangOrderPage({ onGoShipOut }: { onGoShipOut?: () => 
     const rows = leftRows.filter(r => !r.isBlank && selected.has(r._발주번호)).map(toOrderRow);
     if (!rows.length) return;
     addToHanjungQueue(rows, hanjungQueue)
-      .then(n => setNotice(`한중발주 대기에 ${n}줄 넣었어요${rows.length - n ? ` (이미 있던 ${rows.length - n}줄 제외)` : ''}.`))
+      .then(n => setNotice(`1688 주문하기에 ${n}줄 넣었어요${rows.length - n ? ` (이미 있던 ${rows.length - n}줄 제외)` : ''}.`))
       .catch(alertError);
     setSelected(new Set());
   }, [leftRows, selected, hanjungQueue]);
@@ -934,7 +934,7 @@ export default function CoupangOrderPage({ onGoShipOut }: { onGoShipOut?: () => 
               <div style={{ textAlign: 'center', padding: '16px 0' }}>
                 <p style={{ fontSize: 13, color: '#aaa', marginBottom: 10 }}>사용 방법</p>
                 <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'center', gap: 8 }}>
-                  {['발송 목록은 입고예정일 빠른 순으로 자동 정렬', '메모에 예약 → 예약 목록 · 한중발주 대기'].map(hint => (
+                  {['발송 목록은 입고예정일 빠른 순으로 자동 정렬', '메모에 예약 → 예약 목록 · 1688 주문하기'].map(hint => (
                     <span key={hint} style={{ fontSize: 12, background: '#f5f5f5', color: '#666', padding: '5px 12px', borderRadius: 20 }}>{hint}</span>
                   ))}
                 </div>
@@ -973,7 +973,7 @@ export default function CoupangOrderPage({ onGoShipOut }: { onGoShipOut?: () => 
                   {pendingCount > 0 && <button
                     onClick={handleReserve}
                     disabled={!pendingCount}
-                    title="메모에 &quot;예약&quot;을 누른 줄을 예약 목록으로 옮깁니다. 1688 주문은 한중발주 메뉴의 발주 대기에서 해요."
+                    title="메모에 &quot;예약&quot;을 누른 줄을 예약 목록으로 옮깁니다. 1688 주문은 한중발주 메뉴의 1688 주문하기에서 해요."
                     style={{
                       ...btnStyle(
                         pendingCount ? '#27ae60' : '#f5f5f5',
@@ -1006,7 +1006,7 @@ export default function CoupangOrderPage({ onGoShipOut }: { onGoShipOut?: () => 
               <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'flex-end', gap: '2px 10px', marginTop: -8, marginBottom: 14 }}>
                 <span style={{ fontSize: 11, color: '#bbb' }}>발주서 체크 → 새 묶음 만들기 / 이미 있는 묶음의 +담기로 추가</span>
                 <span style={{ fontSize: 11, color: '#ddd' }}>·</span>
-                <span style={{ fontSize: 11, color: '#bbb' }}>한중 = 한중발주 발주 대기로(발송 목록에는 남음) · 발주번호 누르면 복사</span>
+                <span style={{ fontSize: 11, color: '#bbb' }}>한중 = 1688 주문하기로(발송 목록에는 남음) · 발주번호 누르면 복사</span>
                 <span style={{ fontSize: 11, color: '#ddd' }}>·</span>
                 <span style={{ fontSize: 11, color: '#bbb' }}>↓ 발주서정리 저장 = 발송 목록 엑셀 저장</span>
                 <span style={{ fontSize: 11, color: '#ddd' }}>·</span>

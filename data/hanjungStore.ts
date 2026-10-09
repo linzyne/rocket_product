@@ -459,7 +459,7 @@ export const closeShortOrder = (order: HanjungOrder): { order: HanjungOrder; rel
 export type FillLine = { 발주번호: string; 물류센터: string; 상품이름: string; 확정수량: number; 입고예정일: string };
 export interface FillPlan {
   orders: HanjungOrder[];                                    // 바뀐 다른 한중발주들
-  queue: (FillLine & { qty: number })[];                     // 발주 대기로 보낼 줄과 수량
+  queue: (FillLine & { qty: number })[];                     // 1688 주문하기로 보낼 줄과 수량
   readyOn: FillLine[];
   readyOff: FillLine[];
   spareFills: { line: FillLine; code: string; qty: number; arrived: boolean }[];
@@ -589,7 +589,7 @@ export const planFill = (
         : !later ? '같은 상품을 맡은 발주가 모두 입고예정일이 같거나 더 빨라요'
         : shipped >= later ? `더 늦은 발주 ${later}건이 이미 발송완료됐어요`
         : '';
-      plan.notes.push(`${n.line.발주번호} ${n.line.상품이름} ${n.need}개 → 발주 대기${why ? ` (${why})` : ''}`);
+      plan.notes.push(`${n.line.발주번호} ${n.line.상품이름} ${n.need}개 → 1688 주문하기${why ? ` (${why})` : ''}`);
     }
   }
   plan.orders = [...touched].map(c => work.get(c)!);

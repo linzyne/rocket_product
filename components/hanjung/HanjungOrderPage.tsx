@@ -260,7 +260,7 @@ const PendingPanel: React.FC<{ orders: HanjungOrder[]; onRecord: (act: Act) => v
     const spare = plan.spareFills.map(f => `· ${day(f.line.입고예정일)} 발주 ${f.line.발주번호} ${f.line.상품이름} ${f.qty}개 ← ${f.arrived ? '도착한' : '오는 중인'} 여유(${f.code})`);
     const sw = plan.swaps.map(x => `· ${x.to.상품이름} ${x.qty}개: ${day(x.from.입고예정일)} 발주 ${x.from.발주번호} → ${day(x.to.입고예정일)} 발주 ${x.to.발주번호} (${x.code} · ${x.arrived ? '도착분' : '오는 중'})`);
     if (!confirm(
-      `대기 줄을 채울까요?` +
+      `주문할 줄을 채울까요?` +
       (spare.length ? `\n\n여유분으로 채워요:\n${spare.join('\n')}` : '') +
       (sw.length ? `\n\n자리 바꾸기(급한 발주가 물건을 받고, 늦은 발주는 다음 주문으로):\n${sw.join('\n')}` : '') +
       (plan.notes.length ? `\n\n그래도 대기에 남는 것:\n${plan.notes.map(n => `· ${n}`).join('\n')}` : '') +
@@ -299,7 +299,7 @@ const PendingPanel: React.FC<{ orders: HanjungOrder[]; onRecord: (act: Act) => v
       setSaving(false);
     }
     onRecord({
-      label: '대기 줄 채우기',
+      label: '주문할 줄 채우기',
       undo: async () => {
         for (const x of beforeOrders) await saveHanjungOrder(x);
         await removeFromHanjungQueue(allKeys);
@@ -314,13 +314,13 @@ const PendingPanel: React.FC<{ orders: HanjungOrder[]; onRecord: (act: Act) => v
   const removeSelected = async () => {
     const rows = selected.filter(r => r.fromQueue);
     if (!rows.length) return;
-    if (!confirm(`고른 ${rows.length}줄을 발주 대기에서 뺄까요?`)) return;
+    if (!confirm(`고른 ${rows.length}줄을 1688 주문하기에서 뺄까요?`)) return;
     const items = queue.filter(q => rows.some(r => r.qkey === q.key));
     try {
       await removeFromHanjungQueue(rows.map(r => r.qkey));
       setChecked(new Set());
       onRecord({
-        label: `발주 대기 ${rows.length}줄 빼기`,
+        label: `1688 주문하기 ${rows.length}줄 빼기`,
         undo: () => addToHanjungQueue(items.map(queueItemToRow), []),
         redo: () => removeFromHanjungQueue(items.map(q => q.key)),
       });
@@ -336,7 +336,7 @@ const PendingPanel: React.FC<{ orders: HanjungOrder[]; onRecord: (act: Act) => v
   return (
     <div className="bg-white border border-amber-200 rounded-xl mb-5 overflow-hidden">
       <div className="flex flex-wrap items-center gap-3 px-4 py-3 bg-amber-50 border-b border-amber-100">
-        <span className="font-semibold text-amber-800">① 발주 대기 {groups.length ? `${groups.length}개 상품 · ${pending.length}줄` : '없음'}</span>
+        <span className="font-semibold text-amber-800">① 1688 주문하기 {groups.length ? `${groups.length}개 상품 · ${pending.length}줄` : '없음'}</span>
         <span className="text-xs text-amber-700">1688에 주문할 줄을 골라요</span>
         {pending.some(r => r.fromQueue) && (
           <button
@@ -345,7 +345,7 @@ const PendingPanel: React.FC<{ orders: HanjungOrder[]; onRecord: (act: Act) => v
             className={`${selected.some(r => r.fromQueue) ? '' : 'ml-auto '}px-3 py-1 rounded-lg border border-amber-300 bg-white text-amber-800 text-xs font-semibold hover:bg-amber-50 disabled:opacity-40`}
             title="대기 줄을 여유분(도착·오는 중)으로 채우고, 모자라면 늦은 발주와 자리를 바꿔요. 고른 줄이 있으면 그 줄만."
           >
-            {selected.some(r => r.fromQueue) ? '고른 줄 ' : ''}대기 줄 채우기
+            {selected.some(r => r.fromQueue) ? '고른 줄 ' : ''}주문할 줄 채우기
           </button>
         )}
         {selected.some(r => r.fromQueue) && (
@@ -353,7 +353,7 @@ const PendingPanel: React.FC<{ orders: HanjungOrder[]; onRecord: (act: Act) => v
             onClick={removeSelected}
             disabled={saving}
             className="ml-auto px-3 py-1 rounded-lg border border-gray-200 bg-white text-gray-500 text-xs hover:bg-gray-50 disabled:opacity-40"
-            title="고른 줄을 발주 대기에서 뺍니다(주문 안 할 때)"
+            title="고른 줄을 1688 주문하기에서 뺍니다(주문 안 할 때)"
           >
             고른 줄 대기에서 빼기
           </button>
@@ -617,7 +617,7 @@ const HanjungOrderPage: React.FC = () => {
     if (!confirm(
       `${o.code}를 도착한 만큼으로 마무리할까요?\n\n${lines.join('\n')}` +
       (spare.length ? `\n\n여유분으로 채워요:\n${spare.join('\n')}` : '') +
-      (left.length ? `\n\n발주 대기로 가요(다음 한중발주로 주문):\n${left.join('\n')}` : '') +
+      (left.length ? `\n\n1688 주문하기로 가요(다음 한중발주로 주문):\n${left.join('\n')}` : '') +
       (!canSwap ? '\n\n⚠ 발주 목록을 아직 다 못 받아서 늦은 발주에서 옮기기는 이번엔 안 해요. 잠시 뒤 다시 눌러 주세요.'
         : !withSwap.swaps.length && withSwap.notes.length ? `\n\n늦은 발주에서 옮길 수 있는 게 없어요:\n${withSwap.notes.map(n => `· ${n}`).join('\n')}` : ''),
     )) return;
@@ -675,7 +675,7 @@ const HanjungOrderPage: React.FC = () => {
   // 입고 대기(아직 수입입고 기록이 없는 건)를 취소한다: 한중발주를 지우고 그 줄들을 다시 "발주 대기"로 돌린다.
   const handleCancel = async (o: HanjungOrder) => {
     if (o.receipts.length) return;
-    if (!confirm(`한중발주 ${o.code}의 주문을 취소할까요?\n상품 ${o.lines.length}줄이 다시 발주 대기로 돌아가요.`)) return;
+    if (!confirm(`한중발주 ${o.code}의 주문을 취소할까요?\n상품 ${o.lines.length}줄이 다시 1688 주문하기로 돌아가요.`)) return;
     const rows: QueueRow[] = o.lines.map(l => ({
       발주번호: l.발주번호, 물류센터: l.물류센터, 상품이름: l.상품이름, 확정수량: l.확정수량,
       입고예정일: normalizeDateValue(l.입고예정일), 메모: '', 쉼먼트: '',
@@ -885,7 +885,7 @@ const HanjungOrderPage: React.FC = () => {
 
       {!list.length && (
         <div className="bg-white border border-dashed border-gray-200 rounded-xl py-16 text-center text-gray-400 text-sm">
-          {search.trim() ? '검색 결과가 없어요.' : orders.length ? '이 단계의 한중발주가 없어요.' : '아직 한중발주가 없어요. 위 발주 대기에서 골라 주문완료하면 여기에 생겨요.'}
+          {search.trim() ? '검색 결과가 없어요.' : orders.length ? '이 단계의 한중발주가 없어요.' : '아직 한중발주가 없어요. 위 1688 주문하기에서 골라 주문완료하면 여기에 생겨요.'}
         </div>
       )}
 
@@ -939,7 +939,7 @@ const HanjungOrderPage: React.FC = () => {
                 {t.status === 'partial' && (
                   <button
                     onClick={e => { e.stopPropagation(); handleCloseShort(o); }}
-                    title="나머지는 더 오지 않고 다음 한중발주로 새로 주문할 때: 이 건을 도착한 만큼으로 마무리하고, 도착 못 한 쿠팡 배정은 발주 대기로 돌려요"
+                    title="나머지는 더 오지 않고 다음 한중발주로 새로 주문할 때: 이 건을 도착한 만큼으로 마무리하고, 도착 못 한 쿠팡 배정은 1688 주문하기로 돌려요"
                     className="text-xs px-2.5 py-1 rounded-lg font-semibold border border-gray-300 text-gray-600 bg-white hover:bg-gray-50"
                   >
                     남은 것 정리
@@ -1030,7 +1030,7 @@ const HanjungOrderPage: React.FC = () => {
                             <span className="font-mono">{lineAlloc(l)}개{lineAlloc(l) !== l.확정수량 && <span className="text-gray-400"> /{l.확정수량}</span>}</span>
                             <button
                               onClick={() => setEdit(cur => cur && { ...cur, lines: cur.lines.filter((_, j) => j !== i) })}
-                              title="이 줄을 빼요(저장하면 발주 대기로 돌아가요)"
+                              title="이 줄을 빼요(저장하면 1688 주문하기로 돌아가요)"
                               className="px-1.5 py-0.5 border border-red-200 text-red-500 rounded bg-white hover:bg-red-50"
                             >
                               빼기
@@ -1038,7 +1038,7 @@ const HanjungOrderPage: React.FC = () => {
                           </div>
                         ))}
                         {edit.lines.length < o.lines.length && (
-                          <div className="text-xs text-amber-700">뺀 줄 {o.lines.length - edit.lines.length}개는 저장하면 발주 대기로 돌아가요. 1688에서 안 샀으면 위 주문 수량도 줄여 주세요.</div>
+                          <div className="text-xs text-amber-700">뺀 줄 {o.lines.length - edit.lines.length}개는 저장하면 1688 주문하기로 돌아가요. 1688에서 안 샀으면 위 주문 수량도 줄여 주세요.</div>
                         )}
                         <div className="flex gap-2 justify-end pt-1">
                           <button onClick={() => setEdit(null)} className="px-3 py-1 text-xs border border-gray-200 rounded-lg bg-white hover:bg-gray-50">취소</button>
@@ -1105,7 +1105,7 @@ const HanjungOrderPage: React.FC = () => {
                       {!o.receipts.length && (
                         <button
                           onClick={() => startEdit(o)}
-                          title="주문 수량·금액을 고치거나 상품 줄을 빼요(뺀 줄은 발주 대기로 돌아가요)"
+                          title="주문 수량·금액을 고치거나 상품 줄을 빼요(뺀 줄은 1688 주문하기로 돌아가요)"
                           className="px-3 py-1.5 text-xs border border-blue-200 text-blue-600 rounded-lg hover:bg-blue-50"
                         >
                           수정
@@ -1113,7 +1113,7 @@ const HanjungOrderPage: React.FC = () => {
                       )}
                       {/* 도착 전이면 "주문 취소"(줄을 발주 대기로 돌림), 도착 기록이 있으면 "삭제". */}
                       {!o.receipts.length ? (
-                        <button onClick={() => handleCancel(o)} title="1688 주문을 취소했으면 누르세요. 이 건을 지우고 상품 줄을 다시 발주 대기로 돌립니다." className="px-3 py-1.5 text-xs border border-red-200 text-red-600 rounded-lg hover:bg-red-50">주문 취소</button>
+                        <button onClick={() => handleCancel(o)} title="1688 주문을 취소했으면 누르세요. 이 건을 지우고 상품 줄을 다시 1688 주문하기로 돌립니다." className="px-3 py-1.5 text-xs border border-red-200 text-red-600 rounded-lg hover:bg-red-50">주문 취소</button>
                       ) : (
                         <button onClick={() => handleDelete(o)} title="이 한중발주 건 전체를 지워요" className="px-3 py-1.5 text-xs border border-red-200 text-red-600 rounded-lg hover:bg-red-50">한중발주 삭제</button>
                       )}

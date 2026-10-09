@@ -619,7 +619,7 @@ export function LineCheckMenu({ ready, hanjung, onReady, onHanjung }: {
                 {line}
                 {item('queue', (
                   <>
-                    발주 대기에 담기(새로 주문)
+                    1688 주문하기에 담기(새로 주문)
                     {wholeIn(null) && <span style={{ marginLeft: 'auto' }}>✓</span>}
                   </>
                 ), wholeIn(null) ? null : () => act({ type: 'queue' }), '#555', false)}
@@ -659,7 +659,7 @@ export function LineCheckMenu({ ready, hanjung, onReady, onHanjung }: {
                   <div style={{ fontSize: 12.5, color: '#333', padding: '4px 10px 6px', lineHeight: 1.5, whiteSpace: 'nowrap' }}>
                     <b style={{ fontFamily: 'monospace' }}>{c.code}</b> 여유가 <b>{free}</b>개뿐이에요.<br />이 줄은 <b>{need}</b>개 필요해요.
                   </div>
-                  {free > 0 && item('split', <>① {free}개는 {c.code}에서, 모자란 {lack}개는 발주 대기</>, () => act({ type: 'order', code: c.code, mode: 'split', linkFrom }), '#27ae60', false)}
+                  {free > 0 && item('split', <>① {free}개는 {c.code}에서, 모자란 {lack}개는 1688 주문하기</>, () => act({ type: 'order', code: c.code, mode: 'split', linkFrom }), '#27ae60', false)}
                   {item('grow', <>② {c.code}에 {lack}개 더 주문했어요</>, () => act({ type: 'order', code: c.code, mode: 'grow', linkFrom }), '#555', false)}
                   {item('cancel', '취소', () => setView({ kind: 'pick' }), '#999', false)}
                 </>
@@ -1406,7 +1406,7 @@ export default function OrderTable({ rows, onMemoChange, onShipmentChange, color
                     <td style={{ ...cs(58), padding: '4px 4px' }}>
                       <button
                         onClick={() => onToggleHanjung(row.id)}
-                        title={on ? '한중발주 대기에 들어가 있어요. 누르면 대기에서 뺍니다.' : '1688 주문할 상품이면 누르세요. 한중발주의 발주 대기로 갑니다.'}
+                        title={on ? '1688 주문하기에 들어가 있어요. 누르면 대기에서 뺍니다.' : '1688 주문할 상품이면 누르세요. 1688 주문하기로 갑니다.'}
                         style={{
                           padding: '2px 8px', fontSize: 12, fontWeight: 700, borderRadius: 5, cursor: 'pointer', whiteSpace: 'nowrap',
                           border: `1.5px solid ${on ? '#2563eb' : '#d5d5d5'}`, background: on ? '#eff6ff' : '#fafafa', color: on ? '#2563eb' : '#999',

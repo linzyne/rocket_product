@@ -59,3 +59,20 @@ export async function deleteDetailPageDraft(id: string): Promise<void> {
     console.error('저장해둔 상세페이지를 지우지 못했습니다.', error);
   }
 }
+
+// id가 prefix로 시작하는 저장본을 최근 것부터. 중간저장 목록에 쓴다(사진이 크므로 목록 볼 때만 읽는다).
+export async function listDetailPageDrafts<T>(prefix: string): Promise<{ id: string; savedAt: number; data: T }[]> {
+  try {
+    const db = await openAppDb();
+    const records = await new Promise<DraftRecord<T>[]>((resolve, reject) => {
+      const range = IDBKeyRange.bound(prefix, prefix + '\uffff');
+      const request = db.transaction(STORE, 'readonly').objectStore(STORE).getAll(range);
+      request.onsuccess = () => resolve(request.result as DraftRecord<T>[]);
+      request.onerror = () => reject(request.error);
+    });
+    return records.sort((a, b) => b.savedAt - a.savedAt);
+  } catch (error) {
+    console.error('중간저장 목록을 불러오지 못했습니다.', error);
+    return [];
+  }
+}

@@ -22,7 +22,7 @@ import {
 } from '../utils/detailPageCopyPrompt';
 import { detailSliceFileNames, downloadBlob } from '../utils/fileSave';
 import { generateId } from '../utils/id';
-import { saveDetailPageDraft, loadDetailPageDraft, deleteDetailPageDraft } from '../data/detailPageDrafts';
+import { saveDetailPageDraft, loadDetailPageDraft, deleteDetailPageDraft, listDetailPageDrafts } from '../data/detailPageDrafts';
 import { loadDetailText, saveDetailText } from '../data/detailTextCloud';
 import { withTimeout, stripClonedScripts, stripEmptySections, withInlineImageMetrics } from '../utils/html2canvasHelpers';
 import ImageCropModal from './ImageCropModal';
@@ -582,6 +582,50 @@ const DetailPageBuilderModal: React.FC<DetailPageBuilderModalProps> = ({ isOpen,
     kimchiSkin, kimchiAccents, kimchiTypeScale, templateStyle,
   });
 
+  const applyKimchiDraft = (d: KimchiDraft) => {
+    setPhotos(d.photos ?? []);
+    setPhotoSectionMap(d.photoSectionMap ?? {});
+    setKimchiSections(restoreSections(d.kimchiSections));
+    setKimchiPastedText(d.kimchiPastedText ?? '');
+    setTextBoxes(d.textBoxes ?? []);
+    setDrawObjects(d.drawObjects ?? []);
+    setSellingPoints(d.sellingPoints ?? '');
+    if (d.kimchiSkin && !isGreen && d.kimchiSkin !== 'green') setKimchiSkin(d.kimchiSkin);
+    // 예전 저장본엔 나중에 생긴 스킨 색이 없으니 기본값 위에 덮는다.
+    if (d.kimchiAccents) setKimchiAccents(prev => ({ ...prev, ...d.kimchiAccents }));
+    if (d.kimchiTypeScale) setKimchiTypeScale(d.kimchiTypeScale);
+    if (d.templateStyle) setTemplateStyle(d.templateStyle);
+  };
+
+  // ── 중간저장 ── 자동 저장은 탭(·틀)마다 하나뿐이라, 하던 걸 이름 붙여 따로 떼어 두고 나중에
+  // 골라서 불러올 수 있게 한다. 같은 탭·같은 틀의 중간저장만 목록에 뜬다.
+  const snapshotPrefix = `snapshot:${draftId}:`;
+  const [snapshots, setSnapshots] = useState<{ id: string; savedAt: number; name: string }[] | null>(null);
+  const handleSaveSnapshot = async () => {
+    const hero = kimchiSections.find(s => s.headlineAccent?.trim() || s.headline?.trim());
+    const suggested = (hero?.headlineAccent || hero?.headline || '').replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim();
+    const name = window.prompt('중간저장 이름', suggested || new Date().toLocaleString('ko-KR'))?.trim();
+    if (!name) return;
+    await saveDetailPageDraft(`${snapshotPrefix}${Date.now()}`, { name, draft: collectKimchiDraft() });
+    alert(`"${name}" 중간저장했어요. "불러오기"에서 다시 열 수 있어요.`);
+  };
+  const openSnapshotList = async () => {
+    const list = await listDetailPageDrafts<{ name: string }>(snapshotPrefix);
+    setSnapshots(list.map(r => ({ id: r.id, savedAt: r.savedAt, name: r.data.name })));
+  };
+  const loadSnapshot = async (id: string, name: string) => {
+    if (!window.confirm(`"${name}"을(를) 불러올까요?\n지금 화면의 작업은 이걸로 바뀝니다. 지금 것도 남기려면 먼저 중간저장하세요.`)) return;
+    const saved = await loadDetailPageDraft<{ name: string; draft: KimchiDraft }>(id);
+    if (!saved) return;
+    applyKimchiDraft(saved.data.draft);
+    setSnapshots(null);
+  };
+  const removeSnapshot = async (id: string, name: string) => {
+    if (!window.confirm(`중간저장 "${name}"을(를) 지울까요?`)) return;
+    await deleteDetailPageDraft(id);
+    setSnapshots(prev => prev?.filter(s => s.id !== id) ?? null);
+  };
+
   // 상페작업 창을 처음 열 때 한 번 읽어 온다.
   useEffect(() => {
     if (!isOpen || !isKimchi || draftRestoreStartedRef.current) return;
@@ -594,19 +638,7 @@ const DetailPageBuilderModal: React.FC<DetailPageBuilderModalProps> = ({ isOpen,
       // 읽는 사이에 사용자가 벌써 뭔가 올렸다면 그쪽이 최신이다 — 덮지 않는다.
       const untouched = live.photos.length === 0 && live.textBoxes.length === 0 && live.drawObjects.length === 0;
       if (saved && untouched) {
-        const d = saved.data;
-        setPhotos(d.photos ?? []);
-        setPhotoSectionMap(d.photoSectionMap ?? {});
-        setKimchiSections(restoreSections(d.kimchiSections));
-        setKimchiPastedText(d.kimchiPastedText ?? '');
-        setTextBoxes(d.textBoxes ?? []);
-        setDrawObjects(d.drawObjects ?? []);
-        setSellingPoints(d.sellingPoints ?? '');
-        if (d.kimchiSkin && !isGreen && d.kimchiSkin !== 'green') setKimchiSkin(d.kimchiSkin);
-        // 예전 저장본엔 나중에 생긴 스킨 색이 없으니 기본값 위에 덮는다.
-        if (d.kimchiAccents) setKimchiAccents(prev => ({ ...prev, ...d.kimchiAccents }));
-        if (d.kimchiTypeScale) setKimchiTypeScale(d.kimchiTypeScale);
-        if (d.templateStyle) setTemplateStyle(d.templateStyle);
+        applyKimchiDraft(saved.data);
         setDraftSavedAt(saved.savedAt);
       }
       setDraftReady(true);
@@ -3706,6 +3738,20 @@ const DetailPageBuilderModal: React.FC<DetailPageBuilderModalProps> = ({ isOpen,
                   : '작업 내용은 이 컴퓨터에 자동 저장됩니다'}
               </span>
               <button
+                onClick={handleSaveSnapshot}
+                title="지금 작업을 이름 붙여 따로 저장해 둡니다"
+                className="px-3 py-2 text-sm bg-slate-800 border border-slate-600 rounded-lg text-slate-300 hover:bg-slate-700 transition-colors"
+              >
+                중간저장
+              </button>
+              <button
+                onClick={() => void openSnapshotList()}
+                title="중간저장한 작업 열기"
+                className="px-3 py-2 text-sm bg-slate-800 border border-slate-600 rounded-lg text-slate-300 hover:bg-slate-700 transition-colors"
+              >
+                불러오기
+              </button>
+              <button
                 onClick={handleResetKimchiDraft}
                 className="px-3 py-2 text-sm bg-slate-800 border border-slate-600 rounded-lg text-slate-400 hover:bg-slate-700 hover:text-slate-200 transition-colors"
               >
@@ -3732,6 +3778,32 @@ const DetailPageBuilderModal: React.FC<DetailPageBuilderModalProps> = ({ isOpen,
           </button>
         </div>
       </div>
+      {snapshots && (
+        <div className="fixed inset-0 z-[95] bg-black/60 flex items-center justify-center p-4" onClick={() => setSnapshots(null)}>
+          <div className="w-full max-w-sm bg-slate-900 border border-slate-700 rounded-xl p-4 space-y-3" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between">
+              <p className="text-sm font-bold text-slate-100">중간저장 불러오기</p>
+              <button onClick={() => setSnapshots(null)} className="text-slate-400 hover:text-slate-100">✕</button>
+            </div>
+            {snapshots.length === 0 ? (
+              <p className="text-xs text-slate-500">아직 중간저장한 작업이 없어요.</p>
+            ) : (
+              <div className="space-y-1.5 max-h-[60vh] overflow-y-auto">
+                {snapshots.map(snap => (
+                  <div key={snap.id} className="flex items-center gap-2 rounded-lg bg-slate-800 px-3 py-2">
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm text-slate-100 truncate">{snap.name}</p>
+                      <p className="text-[11px] text-slate-500">{new Date(snap.savedAt).toLocaleString('ko-KR', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</p>
+                    </div>
+                    <button onClick={() => void loadSnapshot(snap.id, snap.name)} className="px-2.5 py-1 text-xs font-semibold bg-blue-600 text-white rounded-md hover:bg-blue-500">열기</button>
+                    <button onClick={() => void removeSnapshot(snap.id, snap.name)} title="삭제" className="px-2 py-1 text-xs text-slate-400 rounded-md hover:bg-red-600 hover:text-white">✕</button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
       {/* 미리보기에서 우클릭한 자리에 사진을 끼워 넣는 작은 메뉴. 파일을 고르거나, 메뉴에 포커스를
           둔 채 Ctrl+V(⌘V)로 클립보드 이미지를 바로 넣을 수 있다. */}
       {photoInsertTarget && (

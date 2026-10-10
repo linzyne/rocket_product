@@ -2806,7 +2806,7 @@ const App: React.FC = () => {
       alert(`"${name}" 카테고리가 이미 있습니다.`);
       return;
     }
-    const pick = window.prompt('어떤 틀로 시작할까요?\n1 = 김치 틀\n2 = 초록 체크포인트 틀 (인트로·공감·비교·Check Point·활용법)', '2')?.trim();
+    const pick = window.prompt('어떤 틀로 시작할까요? (1번 / 2번)', '2')?.trim();
     if (pick === undefined) return;
     const template: DetailCategory['template'] = pick === '1' ? 'kimchi' : 'green';
     const category: DetailCategory = { id: generateId(), name, template };

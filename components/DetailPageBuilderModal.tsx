@@ -3220,8 +3220,8 @@ const DetailPageBuilderModal: React.FC<DetailPageBuilderModalProps> = ({ isOpen,
                 <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">틀</p>
                 <div className="flex gap-1.5">
                   {([
-                    { id: 'kimchi' as const, label: '김치' },
-                    { id: 'green' as const, label: '초록 체크포인트' },
+                    { id: 'kimchi' as const, label: '1번' },
+                    { id: 'green' as const, label: '2번' },
                   ]).map(t => (
                     <button
                       key={t.id}

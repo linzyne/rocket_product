@@ -45,6 +45,9 @@ import {
   kimchiSectionHasText,
   buildKimchiCopyPrompt,
   parseKimchiCopyText,
+  sectionCopyText,
+  applySectionCopyText,
+  sectionBaseLabel,
 } from '../utils/kimchiDetailTemplate';
 import {
   CANVAS_WIDTH,
@@ -2235,6 +2238,16 @@ const DetailPageBuilderModal: React.FC<DetailPageBuilderModalProps> = ({ isOpen,
     }
   };
 
+  // 섹션 하나만 문구 고치기. 큰 붙여넣기 칸은 건드리지 않는다.
+  const [copyEditor, setCopyEditor] = useState<{ sectionId: string; text: string } | null>(null);
+  const openSectionCopyEditor = (sectionId: string) =>
+    setCopyEditor({ sectionId, text: sectionCopyText(kimchiSections, sectionId) });
+  const applySectionCopyEditor = () => {
+    if (!copyEditor) return;
+    setKimchiSections(prev => applySectionCopyText(prev, copyEditor.sectionId, copyEditor.text));
+    setCopyEditor(null);
+  };
+
   // ── 섹션 목록 조작 ──
   const updateKimchiSection = (id: string, patch: Partial<KimchiSection>) => {
     setKimchiSections(prev => prev.map(section => (section.id === id ? { ...section, ...patch } : section)));
@@ -3559,6 +3572,7 @@ const DetailPageBuilderModal: React.FC<DetailPageBuilderModalProps> = ({ isOpen,
                 onPhotoClick={photo => startCropQueue([photo])}
                 defaultSectionGap={KIMCHI_SKIN_SECTION_GAP[kimchiSkin]}
                 setAllSectionGaps={gap => setKimchiSections(prev => prev.map(sec => ({ ...sec, sectionGap: gap })))}
+                onEditCopy={openSectionCopyEditor}
               />
               </>
             ) : (
@@ -3794,6 +3808,39 @@ const DetailPageBuilderModal: React.FC<DetailPageBuilderModalProps> = ({ isOpen,
           </button>
         </div>
       </div>
+      {copyEditor && (() => {
+        const target = kimchiSections.find(sec => sec.id === copyEditor.sectionId);
+        return (
+          <div className="fixed inset-0 z-[95] bg-black/60 flex items-center justify-center p-4" onClick={() => setCopyEditor(null)}>
+            <div className="w-full max-w-md bg-slate-900 border border-slate-700 rounded-xl p-4 space-y-3" onClick={e => e.stopPropagation()}>
+              <div className="flex items-center justify-between">
+                <p className="text-sm font-bold text-slate-100">"{target ? sectionBaseLabel(target) : ''}" 문구 고치기</p>
+                <button onClick={() => setCopyEditor(null)} className="text-slate-400 hover:text-slate-100">✕</button>
+              </div>
+              <p className="text-xs text-slate-500 leading-relaxed">
+                라벨은 그대로 두고 아래 내용만 고치세요. ChatGPT에 이 글을 주고 "이 섹션만 다시 써줘, 라벨은 그대로"라고 해서 받은 답을 통째로 붙여넣어도 돼요.
+                이 섹션만 바뀌고 다른 섹션과 붙여넣기 칸은 그대로예요.
+              </p>
+              <button
+                onClick={() => void navigator.clipboard.writeText(copyEditor.text)}
+                className="w-full px-3 py-1.5 text-xs bg-slate-700 text-slate-100 font-semibold rounded-md hover:bg-slate-600"
+              >
+                이 글 복사
+              </button>
+              <textarea
+                value={copyEditor.text}
+                onChange={e => setCopyEditor({ ...copyEditor, text: e.target.value })}
+                rows={14}
+                className="w-full px-2.5 py-2 bg-slate-800 border border-slate-600 rounded-md text-sm text-slate-100 resize-y"
+              />
+              <div className="flex justify-end gap-2">
+                <button onClick={() => setCopyEditor(null)} className="px-3 py-1.5 text-sm bg-slate-700 text-slate-300 rounded-md hover:bg-slate-600">취소</button>
+                <button onClick={applySectionCopyEditor} className="px-3 py-1.5 text-sm bg-emerald-600 text-white font-semibold rounded-md hover:bg-emerald-500">이 섹션에 적용</button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
       {snapshots && (
         <div className="fixed inset-0 z-[95] bg-black/60 flex items-center justify-center p-4" onClick={() => setSnapshots(null)}>
           <div className="w-full max-w-sm bg-slate-900 border border-slate-700 rounded-xl p-4 space-y-3" onClick={e => e.stopPropagation()}>

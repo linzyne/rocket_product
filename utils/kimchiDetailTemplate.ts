@@ -1042,54 +1042,150 @@ export function parseKimchiCopyText(text: string, sections: KimchiSection[]): Ki
     const slot = slots[slotIndex];
     const section = next[slot.sectionIndex];
     filledCount++;
-    switch (slot.field) {
-      case 'badge': section.badge = content; break;
-      case 'eyebrow': section.eyebrow = content; break;
-      case 'headline': section.headline = content; break;
-      case 'headlineAccent': section.headlineAccent = content; break;
-      case 'subtitle': section.subtitle = content; break;
-      case 'specValue': section.specValue = content; break;
-      case 'body': section.body = content; break;
-      case 'item': if (section.items) section.items[slot.itemIndex] = content; break;
-      case 'card': if (section.cards) section.cards[slot.itemIndex] = content; break;
-      case 'icon': section.icon = content; break;
-      case 'noticeTitle': section.noticeTitle = content; break;
-      case 'noticeSubtitle': section.noticeSubtitle = content; break;
-      case 'bigText': section.bigText = content; break;
-      case 'scoreSuffix': section.scoreSuffix = content; break;
-      case 'bandSmall': section.bandSmall = content; break;
-      case 'bandBig': section.bandBig = content; break;
-      case 'heading': section.heading = content; break;
-      case 'highlightIcon':
-        if (section.highlights) section.highlights[slot.itemIndex] = { ...section.highlights[slot.itemIndex], icon: content };
-        break;
-      case 'highlightTitle':
-        if (section.highlights) section.highlights[slot.itemIndex] = { ...section.highlights[slot.itemIndex], title: content };
-        break;
-      case 'highlightDesc':
-        if (section.highlights) section.highlights[slot.itemIndex] = { ...section.highlights[slot.itemIndex], desc: content };
-        break;
-      case 'reviewText':
-        if (section.reviews) section.reviews[slot.itemIndex] = { ...section.reviews[slot.itemIndex], text: content };
-        break;
-      case 'reviewAuthor':
-        if (section.reviews) section.reviews[slot.itemIndex] = { ...section.reviews[slot.itemIndex], author: content };
-        break;
-      case 'rowValue': if (section.rows) section.rows[slot.rowIndex] = { ...section.rows[slot.rowIndex], value: content }; break;
-      case 'rowLabel': if (section.rows) section.rows[slot.rowIndex] = { ...section.rows[slot.rowIndex], label: content }; break;
-      case 'rowOther': if (section.rows) section.rows[slot.rowIndex] = { ...section.rows[slot.rowIndex], other: content }; break;
-      case 'compareLeft': section.compareLeft = content; break;
-      case 'compareRight': section.compareRight = content; break;
-      case 'rowPair': {
-        if (!section.rows) break;
-        const { head, body } = splitTwoPart(content);
-        section.rows[slot.rowIndex] = { label: head, value: body };
-        break;
-      }
-    }
+    setSlotValue(section, slot, content);
   });
 
   return { sections: next, filledCount, unknownLabels };
+}
+
+// 슬롯 하나에 글을 넣는다(붙여넣기 적용과 섹션별 고치기가 같이 쓴다).
+function setSlotValue(section: KimchiSection, slot: KimchiSlot, content: string) {
+  switch (slot.field) {
+    case 'badge': section.badge = content; break;
+    case 'eyebrow': section.eyebrow = content; break;
+    case 'headline': section.headline = content; break;
+    case 'headlineAccent': section.headlineAccent = content; break;
+    case 'subtitle': section.subtitle = content; break;
+    case 'specValue': section.specValue = content; break;
+    case 'body': section.body = content; break;
+    case 'item': if (section.items) section.items[slot.itemIndex] = content; break;
+    case 'card': if (section.cards) section.cards[slot.itemIndex] = content; break;
+    case 'icon': section.icon = content; break;
+    case 'noticeTitle': section.noticeTitle = content; break;
+    case 'noticeSubtitle': section.noticeSubtitle = content; break;
+    case 'bigText': section.bigText = content; break;
+    case 'scoreSuffix': section.scoreSuffix = content; break;
+    case 'bandSmall': section.bandSmall = content; break;
+    case 'bandBig': section.bandBig = content; break;
+    case 'heading': section.heading = content; break;
+    case 'highlightIcon':
+      if (section.highlights) section.highlights[slot.itemIndex] = { ...section.highlights[slot.itemIndex], icon: content };
+      break;
+    case 'highlightTitle':
+      if (section.highlights) section.highlights[slot.itemIndex] = { ...section.highlights[slot.itemIndex], title: content };
+      break;
+    case 'highlightDesc':
+      if (section.highlights) section.highlights[slot.itemIndex] = { ...section.highlights[slot.itemIndex], desc: content };
+      break;
+    case 'reviewText':
+      if (section.reviews) section.reviews[slot.itemIndex] = { ...section.reviews[slot.itemIndex], text: content };
+      break;
+    case 'reviewAuthor':
+      if (section.reviews) section.reviews[slot.itemIndex] = { ...section.reviews[slot.itemIndex], author: content };
+      break;
+    case 'rowValue': if (section.rows) section.rows[slot.rowIndex] = { ...section.rows[slot.rowIndex], value: content }; break;
+    case 'rowLabel': if (section.rows) section.rows[slot.rowIndex] = { ...section.rows[slot.rowIndex], label: content }; break;
+    case 'rowOther': if (section.rows) section.rows[slot.rowIndex] = { ...section.rows[slot.rowIndex], other: content }; break;
+    case 'compareLeft': section.compareLeft = content; break;
+    case 'compareRight': section.compareRight = content; break;
+    case 'rowPair': {
+      if (!section.rows) break;
+      const { head, body } = splitTwoPart(content);
+      section.rows[slot.rowIndex] = { label: head, value: body };
+      break;
+    }
+  }
+}
+
+// 슬롯 하나의 지금 값(서식 HTML 그대로).
+function getSlotValue(section: KimchiSection, slot: KimchiSlot): string {
+  switch (slot.field) {
+    case 'item': return section.items?.[slot.itemIndex] || '';
+    case 'card': return section.cards?.[slot.itemIndex] || '';
+    case 'highlightIcon': return section.highlights?.[slot.itemIndex]?.icon || '';
+    case 'highlightTitle': return section.highlights?.[slot.itemIndex]?.title || '';
+    case 'highlightDesc': return section.highlights?.[slot.itemIndex]?.desc || '';
+    case 'reviewText': return section.reviews?.[slot.itemIndex]?.text || '';
+    case 'reviewAuthor': return section.reviews?.[slot.itemIndex]?.author || '';
+    case 'rowValue': return section.rows?.[slot.rowIndex]?.value || '';
+    case 'rowLabel': return section.rows?.[slot.rowIndex]?.label || '';
+    case 'rowOther': return section.rows?.[slot.rowIndex]?.other || '';
+    case 'rowPair': {
+      const row = section.rows?.[slot.rowIndex];
+      return row ? [row.label, row.value].filter(Boolean).join('\n') : '';
+    }
+    default: return (section[slot.field] as string | undefined) || '';
+  }
+}
+
+// 미리보기 문구(간단한 HTML)를 줄바꿈이 살아 있는 글자로. 섹션별 고치기 창에 띄울 때 쓴다.
+function htmlToPlain(value: string): string {
+  if (!/<\/?[a-z][\s\S]*>/i.test(value)) return value;
+  return value
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<(div|p)(\s[^>]*)?>/gi, '\n')
+    .replace(/<[^>]+>/g, '')
+    .replace(/&nbsp;/g, ' ').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&amp;/g, '&')
+    .replace(/^\n+/, '')
+    .trim();
+}
+
+// 섹션 하나의 문구를 붙여넣기와 같은 "라벨 + 내용" 글로 만든다. 고쳐서 applySectionCopyText로 넣는다.
+export function sectionCopyText(sections: KimchiSection[], sectionId: string): string {
+  const sectionIndex = sections.findIndex(s => s.id === sectionId);
+  if (sectionIndex === -1) return '';
+  return buildSlots(sections)
+    .filter(slot => slot.sectionIndex === sectionIndex)
+    .map(slot => `${slot.label}\n${htmlToPlain(getSlotValue(sections[sectionIndex], slot))}`)
+    .join('\n\n');
+}
+
+// 섹션 하나만 고친 글을 넣는다. 다른 섹션 라벨이 섞여 있어도 이 섹션 것만 반영하고, 글자가
+// 그대로인 칸은 원래 값(글자색·크기 같은 부분 서식 포함)을 그대로 둔다. 비운 칸은 비운다.
+export function applySectionCopyText(sections: KimchiSection[], sectionId: string, text: string): KimchiSection[] {
+  const sectionIndex = sections.findIndex(s => s.id === sectionId);
+  if (sectionIndex === -1) return sections;
+  const original = sections[sectionIndex];
+  const allSlots = buildSlots(sections);
+  const slots = allSlots.filter(slot => slot.sectionIndex === sectionIndex);
+  // 다른 섹션 라벨을 만나면 거기서 담기를 멈춘다(앞 칸 내용에 딸려 들어가지 않게).
+  const anyLabel = new Set(allSlots.flatMap(slot => [slot.label, ...(slot.aliases || [])]).map(l => l.replace(/\s/g, '')));
+  const parsed = parseKimchiCopyText(text, sections).sections[sectionIndex];
+  const section: KimchiSection = {
+    ...original,
+    items: original.items ? [...original.items] : undefined,
+    rows: original.rows ? original.rows.map(r => ({ ...r })) : undefined,
+    cards: original.cards ? [...original.cards] : undefined,
+    reviews: original.reviews ? original.reviews.map(r => ({ ...r })) : undefined,
+    highlights: original.highlights ? original.highlights.map(h => ({ ...h })) : undefined,
+  };
+  // 라벨 자리별로 붙여넣은 내용을 다시 뽑는다 — 라벨이 있는데 내용이 비었으면 비운 것으로 본다.
+  const labelSet = new Set(slots.map(slot => slot.label.replace(/\s/g, '')));
+  const contentByLabel = new Map<string, string>();
+  let current: string | null = null;
+  text.split(/\r?\n/).forEach(line => {
+    // ChatGPT가 라벨을 **굵게**·# 제목으로 감싸 보내도 라벨로 알아본다. 끝의 콜론도 뗀다.
+    const key = stripMarkdownNoise(line).replace(/[:：]\s*$/, '').replace(/\s/g, '');
+    if (labelSet.has(key)) {
+      current = key;
+      contentByLabel.set(key, '');
+      return;
+    }
+    if (anyLabel.has(key)) {
+      current = null;
+      return;
+    }
+    if (current !== null) contentByLabel.set(current, (contentByLabel.get(current) + '\n' + line).replace(/^\n/, ''));
+  });
+  slots.forEach(slot => {
+    const key = slot.label.replace(/\s/g, '');
+    if (!contentByLabel.has(key)) return;
+    const before = getSlotValue(original, slot);
+    const typed = contentByLabel.get(key)!.trim();
+    if (htmlToPlain(before).trim() === typed) return;
+    setSlotValue(section, slot, typed ? getSlotValue(parsed, slot) || typed : '');
+  });
+  return sections.map((s, i) => (i === sectionIndex ? section : s));
 }
 
 // 섹션이 프롬프트 라벨에서 쓰는 이름(예: '특별한점 01', '배송', '재료').

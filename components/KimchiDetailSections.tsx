@@ -1086,6 +1086,8 @@ interface KimchiSectionPanelProps {
   // 슬라이더 옆 "전체" 버튼 — 지금 값을 모든 섹션에 한 번에 먹인다. 섹션이 열 개 넘는
   // 페이지에서 하나씩 끌지 않아도 되게.
   setAllSectionGaps: (gap: number) => void;
+  // ✎ — 이 섹션 문구만 라벨째 꺼내 고치는 창을 연다.
+  onEditCopy?: (sectionId: string) => void;
 }
 
 const KIND_BADGE: Record<KimchiSection['kind'], string> = {
@@ -1126,7 +1128,7 @@ const COUNT_CONTROLS: Partial<Record<KimchiSection['kind'], { label: string; get
 export const KimchiSectionPanel: React.FC<KimchiSectionPanelProps> = ({
   sections, photosBySection, updateSection, moveSection, removeSection,
   duplicateSection, templateAccent, movePhoto, onAddFiles, onRemovePhoto, onPhotoClick,
-  defaultSectionGap, setAllSectionGaps,
+  defaultSectionGap, setAllSectionGaps, onEditCopy,
 }) => {
   // 끌고 있는 사진 id와, 지금 올라가 있는 드롭 지점. 드롭 지점은 사진 위(그 앞에 끼워 넣기)이거나
   // 섹션의 빈 자리(맨 뒤로 보내기)다.
@@ -1193,6 +1195,15 @@ export const KimchiSectionPanel: React.FC<KimchiSectionPanelProps> = ({
                 placeholder="화면에 보일 제목 (없어도 됨)"
                 className="flex-1 min-w-0 px-1.5 py-1 bg-slate-900 border border-slate-600 rounded text-xs text-slate-100 placeholder:text-slate-600"
               />
+              {onEditCopy && (
+                <button
+                  onClick={() => onEditCopy(section.id)}
+                  title="이 섹션 문구만 고치기 (다른 섹션은 그대로)"
+                  className="w-6 h-6 flex-shrink-0 flex items-center justify-center rounded bg-slate-700 text-slate-300 hover:bg-blue-600 hover:text-white transition-colors text-xs"
+                >
+                  ✎
+                </button>
+              )}
               <button
                 onClick={() => moveSection(section.id, -1)}
                 disabled={index === 0}

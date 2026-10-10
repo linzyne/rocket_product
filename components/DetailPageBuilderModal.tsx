@@ -94,6 +94,8 @@ interface DetailPageBuilderModalProps {
   draftId?: string;
   // 김치 템플릿 모드에서 어느 틀로 그릴지. 'green'은 초록 체크포인트형(섹션 종류·디자인이 다르다).
   sectionTemplate?: SectionTemplateId;
+  // 틀 바꾸기 버튼. 없으면 버튼을 안 보인다.
+  onChangeSectionTemplate?: (template: SectionTemplateId) => void;
 }
 
 // 창을 열 때의 미리보기 배율.
@@ -355,7 +357,7 @@ interface BasicTextDraft {
   drawObjects: DrawObject[];
 }
 
-const DetailPageBuilderModal: React.FC<DetailPageBuilderModalProps> = ({ isOpen, onClose, product, groupProducts, onSave, onSaveThumbnail, templateId = 'basic', importedPhotos, onImportedPhotosUsed, embedded = false, draftId = STANDALONE_DRAFT_ID, sectionTemplate = 'kimchi' as SectionTemplateId }) => {
+const DetailPageBuilderModal: React.FC<DetailPageBuilderModalProps> = ({ isOpen, onClose, product, groupProducts, onSave, onSaveThumbnail, templateId = 'basic', importedPhotos, onImportedPhotosUsed, embedded = false, draftId = STANDALONE_DRAFT_ID, sectionTemplate = 'kimchi' as SectionTemplateId, onChangeSectionTemplate }) => {
   const [photos, setPhotos] = useState<PhotoItem[]>([]);
   const isKimchi = templateId === 'kimchi';
   // 김치 템플릿 전용 상태. 사진 배열(photos)은 두 템플릿이 그대로 공유해서 자르기·드래그 정렬·
@@ -3213,6 +3215,32 @@ const DetailPageBuilderModal: React.FC<DetailPageBuilderModalProps> = ({ isOpen,
           {/* Side panel: inputs only — everything else is edited directly in the preview */}
           <div className="lg:w-80 flex-shrink-0 flex flex-col gap-4 overflow-y-auto pr-1">
             {isKimchi && <KimchiSectionAddBar sections={kimchiSections} kinds={TEMPLATE_KINDS[sectionTemplate]} addSection={addKimchiSection} removeSection={removeKimchiSectionById} />}
+            {isKimchi && onChangeSectionTemplate && (
+              <div className="space-y-2 pt-2 border-t border-slate-700">
+                <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">틀</p>
+                <div className="flex gap-1.5">
+                  {([
+                    { id: 'kimchi' as const, label: '김치' },
+                    { id: 'green' as const, label: '초록 체크포인트' },
+                  ]).map(t => (
+                    <button
+                      key={t.id}
+                      onClick={() => t.id !== sectionTemplate && onChangeSectionTemplate(t.id)}
+                      className={`flex-1 px-2 py-1.5 text-xs font-semibold rounded-md border transition-colors ${
+                        sectionTemplate === t.id
+                          ? 'bg-blue-600 border-blue-500 text-white'
+                          : 'bg-slate-800 border-slate-600 text-slate-300 hover:bg-slate-700'
+                      }`}
+                    >
+                      {t.label}
+                    </button>
+                  ))}
+                </div>
+                <p className="text-xs text-slate-500 leading-relaxed">
+                  틀마다 작업이 따로 저장돼요. 바꿔 봐도 원래 틀의 문구·사진은 그대로 남아요.
+                </p>
+              </div>
+            )}
             {isKimchi && (
               <div className="space-y-2 pt-2 border-t border-slate-700">
                 <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">{isGreen ? '색' : '디자인'}</p>

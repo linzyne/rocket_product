@@ -2816,6 +2816,15 @@ const App: React.FC = () => {
     selectDetailCategory(category.id);
   }, [detailCategories, selectDetailCategory]);
 
+  // 지금 탭의 틀을 바꾼다. 작업은 틀마다 따로 저장되므로(draftIdForCategory) 바꿔 봐도 원래 틀의
+  // 문구·사진은 그대로 남고, 다시 돌아오면 되살아난다.
+  const activeDetailTemplate = detailCategories.find(c => c.id === activeDetailCategoryId)?.template ?? 'kimchi';
+  const changeDetailCategoryTemplate = useCallback((template: 'kimchi' | 'green') => {
+    const next = detailCategories.map(c => (c.id === activeDetailCategoryId ? { ...c, template } : c));
+    setDetailCategories(next);
+    saveDetailCategories(next);
+  }, [detailCategories, activeDetailCategoryId]);
+
   const removeDetailCategory = useCallback((id: string) => {
     const category = detailCategories.find(c => c.id === id);
     if (!category || id === KIMCHI_CATEGORY_ID) return;
@@ -2825,7 +2834,10 @@ const App: React.FC = () => {
     saveDetailCategories(next);
     // 지우는 탭이 열려 있으면 김치로 옮긴 뒤에 저장본을 지운다(열린 채 지우면 닫히면서 다시 저장된다).
     if (id === activeDetailCategoryId) selectDetailCategory(KIMCHI_CATEGORY_ID);
-    window.setTimeout(() => void deleteDetailPageDraft(draftIdForCategory(id)), 300);
+    window.setTimeout(() => {
+      void deleteDetailPageDraft(draftIdForCategory(id, 'kimchi'));
+      void deleteDetailPageDraft(draftIdForCategory(id, 'green'));
+    }, 300);
   }, [detailCategories, activeDetailCategoryId, selectDetailCategory]);
 
   const closeDetailPageBuilder = useCallback(() => {
@@ -3289,7 +3301,7 @@ const App: React.FC = () => {
             embedded
           />
           <DetailPageBuilderModal
-            key={`category-${activeDetailCategoryId}`}
+            key={`category-${activeDetailCategoryId}-${activeDetailTemplate}`}
             isOpen={detailPageBuilderState.isOpen && detailPageBuilderState.standalone}
             onClose={leaveDetailPageBuilder}
             product={detailPageBuilderState.standalone ? detailPageBuilderState.product : null}
@@ -3297,8 +3309,9 @@ const App: React.FC = () => {
             onSave={handleSaveFromDetailPageBuilder}
             onSaveThumbnail={handleSaveThumbnailFromDetailPageBuilder}
             templateId="kimchi"
-            draftId={draftIdForCategory(activeDetailCategoryId)}
-            sectionTemplate={detailCategories.find(c => c.id === activeDetailCategoryId)?.template ?? 'kimchi'}
+            draftId={draftIdForCategory(activeDetailCategoryId, activeDetailTemplate)}
+            sectionTemplate={activeDetailTemplate}
+            onChangeSectionTemplate={changeDetailCategoryTemplate}
             embedded
           />
         </div>

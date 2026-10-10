@@ -16,8 +16,11 @@ export const KIMCHI_CATEGORY_ID = 'kimchi';
 const DEFAULT_CATEGORIES: DetailCategory[] = [{ id: KIMCHI_CATEGORY_ID, name: '김치' }];
 
 // 김치는 탭이 생기기 전부터 쓰던 저장 이름을 그대로 써야 예전 작업이 되살아난다.
-export const draftIdForCategory = (id: string) =>
-  id === KIMCHI_CATEGORY_ID ? STANDALONE_DRAFT_ID : `standalone-${id}`;
+// 초록 틀 작업은 이름 끝에 '-green'을 붙여 따로 둔다 — 한 탭에서 틀을 바꿔 봐도 서로 덮지 않는다.
+export const draftIdForCategory = (id: string, template: DetailCategory['template'] = 'kimchi') => {
+  const base = id === KIMCHI_CATEGORY_ID ? STANDALONE_DRAFT_ID : `standalone-${id}`;
+  return template === 'green' ? `${base}-green` : base;
+};
 
 export const loadDetailCategories = (): DetailCategory[] => {
   try {

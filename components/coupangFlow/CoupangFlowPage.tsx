@@ -1646,6 +1646,7 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
                       })()}
                       <span style={{ fontSize: 17, fontWeight: 900, color: '#111' }}>{dayText(g.date)}</span>
                       <span style={{ fontSize: 17, fontWeight: 900, color: ORANGE }}>{Array.from(new Set(g.list.map(o => o.center.trim()).filter(Boolean))).join(' · ') || '센터 없음'}</span>
+                      {i >= 2 && (() => { const n = summaryOf(g.list).boxes; return n > 0 ? <span style={{ fontSize: 17, fontWeight: 900, color: '#111', whiteSpace: 'nowrap' }}>📦 {n}</span> : null; })()}
                       {i < 2 && <span style={{ fontSize: 11.5, fontWeight: 700, color: '#a8a29e' }}>발주 {g.list.length}건</span>}
                       {i >= 2 && (() => {
                         // 날짜·센터 줄에 번호를 하나씩만. 여러 개면 "+N"을 눌러 아래로 펼친다.
@@ -1661,7 +1662,6 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
                           <>
                             {one('발주', sm.orders)}
                             {one('송장', sm.waybills)}
-                            {sm.boxes > 0 && <span style={{ fontSize: 12, fontWeight: 800, color: '#111', whiteSpace: 'nowrap' }}>📦 {sm.boxes}</span>}
                             {sm.ships.length ? one('쉽먼트', sm.ships) : (
                               <span onClick={() => setShipNos(g.list)} title="이 상자 발주서 전체에 쉽먼트 번호 넣기" style={{ fontSize: 11.5, color: '#b45309', cursor: 'pointer', whiteSpace: 'nowrap' }}>+쉽먼트</span>
                             )}

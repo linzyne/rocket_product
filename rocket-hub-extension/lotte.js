@@ -259,6 +259,8 @@
             chrome.storage.local.remove(KEY);
           } catch (err) {}
         } else if (act === 'dump') dumpStructure();
+        // 운송장 조회가 멈췄을 때: 예약은 다시 올리지 않고 운송장출력 화면의 조회부터 다시 한다.
+        else if (act === 'retry') patch({ step: 'waybillPage', status: '운송장 다시 조회하는 중…' });
       });
       document.body.appendChild(panel);
     }
@@ -269,6 +271,7 @@
       <div style="color:#64748b;font-size:12px;margin-bottom:6px">${p.file ? p.file.name : ''}</div>
       <div style="color:${color};font-size:13px;margin-bottom:8px">${p.status || '진행 중…'}</div>
       <div style="display:flex;gap:6px">
+        ${(p.step === 'manual' || p.step === 'error') && p.batchId && p.boxCount && p.uploadedAt ? `<button data-act="retry" style="${btn};border-color:#bfdbfe;background:#eff6ff;color:#1d4ed8" title="예약은 다시 올리지 않고 운송장 조회부터 다시 해요">다시 조회</button>` : ''}
         <button data-act="dump" style="${btn}" title="자동 진행이 안 될 때 화면 구조를 파일로 저장해 보내주세요">화면 구조 저장</button>
         <button data-act="close" style="${btn};border-color:#fecaca;background:#fff1f2;color:#b91c1c">멈춤</button>
       </div>`;
@@ -951,13 +954,13 @@
     if (p && p.step === 'uploading' && !IS_PREVIEW) {
       // 결과 안내창이 떠 있으면 확인을 누르고 다음 단계로.
       if (closeUploadResult()) {
-        await patch({ step: 'uploaded', status: '택배 예약 완료. 운송장 만드는 중…' });
+        await patch({ step: 'uploaded', uploadedAt: Date.now(), status: '택배 예약 완료. 운송장 만드는 중…' });
         return;
       }
       // 화면이 새로 떴거나(다른 프레임) 10초가 지나면 올리기가 끝난 것으로 본다.
       const moved = !IS_TOP && p.uploaderFrame !== FRAME_ID && find(TEXT.userFile);
       if (moved || Date.now() - (p.uploadingAt || 0) > 10000) {
-        await patch({ step: 'uploaded', status: '택배 예약 완료. 운송장 만드는 중…' });
+        await patch({ step: 'uploaded', uploadedAt: Date.now(), status: '택배 예약 완료. 운송장 만드는 중…' });
         return;
       }
     }
@@ -1136,9 +1139,19 @@
             setVal(box, ordNo);
             gridRows = [];
             await patch({ status: `${ordNo} 조회 중…` });
-            const search = find(TEXT.search);
-            if (search) realClick(search);
-            for (let t = 0; t < 30 && !gridRows.length; t++) await sleep(500);
+            // 로그인 바로 뒤에는 거래처코드 칸이 늦게 채워져서 "거래처코드를 입력 하십시오"가 뜬다. 닫고 기다렸다 다시 조회한다.
+            for (let round = 0; round < 4 && !gridRows.length; round++) {
+              const search = find(TEXT.search);
+              if (search) realClick(search);
+              for (let t = 0; t < 30 && !gridRows.length; t++) {
+                await sleep(500);
+                if (closeNotice(/거래처\s*코드/)) {
+                  await patch({ status: `거래처코드가 아직 안 들어와서 기다렸다 다시 조회해요… (${round + 1})` });
+                  await sleep(2500);
+                  break;
+                }
+              }
+            }
             if (!gridRows.length) {
               await patch({ step: 'manual', status: `${ordNo}로 조회했는데 목록을 읽지 못했어요. 직접 체크하고 출력해 주세요.` });
               return;

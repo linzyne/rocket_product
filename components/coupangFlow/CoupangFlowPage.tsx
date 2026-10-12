@@ -810,6 +810,27 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
     );
   };
 
+  // 날짜·센터 덩어리 안의 발주서: 날짜·센터는 덩어리 머리줄에 있으니 빼고 "발주번호 → 상품목록"만.
+  const slim = (o: FlowOrder) => (
+    <div key={o.no} style={{
+      background: '#fff', borderRadius: 8, padding: '8px 10px',
+      border: picked.has(o.no) ? `2px solid ${ORANGE}` : '1px solid #e2dfdb',
+      display: 'flex', flexDirection: 'column', gap: 4,
+    }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+        {PICKABLE.includes(o.stage) && (
+          <input type="checkbox" checked={picked.has(o.no)} onChange={() => togglePick(o.no)}
+            style={{ width: 15, height: 15, accentColor: ORANGE, cursor: 'pointer', flexShrink: 0 }} />
+        )}
+        <span title="눌러서 발주번호 복사" style={{ fontSize: 15, fontWeight: 900, color: '#111', cursor: 'copy' }}>{o.no}</span>
+      </div>
+      {tags(o)}
+      {runNote(o)}
+      <div style={{ fontSize: 13.5 }}>{products(o)}</div>
+      {actionRow(o)}
+    </div>
+  );
+
   // 단계별 보기 카드: 왼쪽에 날짜·센터·단계·버튼, 오른쪽에 상품.
   const row = (o: FlowOrder) => (
     <div key={o.no} style={{ display: 'flex', flexWrap: 'wrap', border: borderOf(o), borderRadius: 10, background: '#fff', boxShadow: '0 1px 3px rgba(0,0,0,0.04)', overflow: 'hidden' }}>
@@ -1419,7 +1440,7 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
                       {dayText(g.date)} <span style={{ color: ORANGE }}>{g.center}</span>
                       <span style={{ marginLeft: 6, fontSize: 11.5, fontWeight: 700, color: '#a8a29e' }}>발주 {g.list.length}건</span>
                     </div>
-                    {g.list.map(card)}
+                    {g.list.map(slim)}
                   </div>
                 )) : list.map(card)}
                 {!list.length && <div style={{ padding: '18px 0', textAlign: 'center', fontSize: 12, color: '#c4c0bc' }}>{q ? '찾는 발주서 없음' : '비어 있음'}</div>}

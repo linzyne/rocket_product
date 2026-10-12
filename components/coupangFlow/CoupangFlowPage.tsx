@@ -22,7 +22,7 @@ import { useLineHanjung } from '../coupangOrder/data/useLineHanjung';
 import { addShipOut, markShipOuts, splitShipOut, updateShipOutLine } from '../coupangOrder/data/shipOutStore';
 import type { ShipOutLine } from '../coupangOrder/data/shipOutStore';
 import { linesAt } from '../coupangOrder/data/lineStore';
-import { boxLabel, buildDisplayRows, expandBoxSplit, totalBoxCount, parseBoxNo, isBoxSplit, parseBoxSplit } from '../coupangOrder/utils/dataProcessor';
+import { boxLabel, buildDisplayRows, expandBoxSplit, totalBoxCount, parseBoxNo, isBoxSplit, parseBoxSplit, joinBoxSplit } from '../coupangOrder/utils/dataProcessor';
 import { LineCheckMenu, BoxPicker } from '../coupangOrder/components/OrderTable';
 import { HanjungOrder, subscribeHanjung, productSummary, nameKey, makeHanjungOfficeLookup, sameName, saveHanjungOrder, assignRemaining } from '../../data/hanjungStore';
 import { returnToHanjungQueue } from '../coupangOrder/data/hanjungQueueStore';
@@ -148,6 +148,8 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
   const [confirmed, setConfirmedMap] = useState<Record<string, number>>({});
   const [query, setQuery] = useState('');
   const [waybillBatch, setWaybillBatch] = useState<ShipmentBatch | null>(null);
+  // 박스 나누기 창(한 상품을 박스 여러 개에 나눠 담기). 쉽먼트생성 화면의 창과 같다.
+  const [splitting, setSplitting] = useState<{ itemId: string; line: ShipOutLine; total: number; boxMax: number; pieces: { no: number; qty: string }[] } | null>(null);
   // 발주확정 양식·고친 수량이 바뀌면 다시 그린다.
   const [, setFormTick] = useState(0);
   useEffect(() => subscribePoForms(() => setFormTick(t => t + 1)), []);
@@ -531,15 +533,32 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
                   // 박스: 택배예약 전에는 고를 수 있고, 예약한 뒤에는 보기만.
                   const item = o.item!;
                   const v = l.ship!.쉼먼트 || '';
-                  if (o.item?.shipmentNos?.[o.no] || isBoxSplit(v)) {
-                    const text = isBoxSplit(v) ? parseBoxSplit(v).map(p => `${p.no}번×${p.qty}`).join(' ') : parseBoxNo(v) ? `박스 ${parseBoxNo(v)}` : '';
+                  const maxNo = Math.max(1, ...shipOuts.filter(x => x.center.trim() === item.center.trim() && x.date === item.date).flatMap(x => x.lines).map(x => isBoxSplit(x.쉼먼트 || '') ? Math.max(...parseBoxSplit(x.쉼먼트 || '').map(p => p.no)) : parseBoxNo(x.쉼먼트 || '') || 0));
+                  const splitText = isBoxSplit(v) ? parseBoxSplit(v).map(p => `${p.no}번×${p.qty}`).join(' ') : '';
+                  if (o.item?.shipmentNos?.[o.no]) {
+                    const text = splitText || (parseBoxNo(v) ? `박스 ${parseBoxNo(v)}` : '');
                     return text ? <span style={{ flexShrink: 0, fontSize: 11, color: '#6b7280', whiteSpace: 'nowrap' }}>{text}</span> : null;
                   }
-                  const maxNo = Math.max(1, ...shipOuts.filter(x => x.center.trim() === item.center.trim() && x.date === item.date).flatMap(x => x.lines).map(x => isBoxSplit(x.쉼먼트 || '') ? Math.max(...parseBoxSplit(x.쉼먼트 || '').map(p => p.no)) : parseBoxNo(x.쉼먼트 || '') || 0));
+                  const openSplit = () => {
+                    const total = Number(l.ship!.확정수량) || 0;
+                    const now = isBoxSplit(v) ? parseBoxSplit(v) : [{ no: parseBoxNo(v) || 1, qty: total }];
+                    const nextNo = Math.min(9, Math.max(maxNo, ...now.map(p => p.no)) + 1);
+                    setSplitting({ itemId: item.id, line: l.ship!, total, boxMax: maxNo, pieces: [...now.map(p => ({ no: p.no, qty: String(p.qty) })), ...(isBoxSplit(v) ? [] : [{ no: nextNo, qty: '' }])] });
+                  };
+                  if (splitText) {
+                    return (
+                      <span onClick={openSplit} title="눌러서 박스 나누기 고치기"
+                        style={{ flexShrink: 0, fontSize: 11, color: '#e67e22', fontWeight: 700, whiteSpace: 'nowrap', cursor: 'pointer', textDecoration: 'underline dotted' }}>
+                        {splitText}
+                      </span>
+                    );
+                  }
                   return (
-                    <span style={{ flexShrink: 0 }}>
+                    <span style={{ flexShrink: 0, display: 'inline-flex', alignItems: 'center', gap: 3 }}>
                       <BoxPicker value={v} maxNo={maxNo} allowNone={false}
                         onChange={nv => updateShipOutLine(item.id, { 발주번호: l.ship!.발주번호, 상품이름: l.ship!.상품이름, 확정수량: l.ship!.확정수량, 입고예정일: l.ship!.입고예정일 }, { 쉼먼트: nv })} />
+                      <button onClick={openSplit} title="이 상품을 박스 여러 개에 나눠 담기"
+                        style={{ border: '1px solid #e5e7eb', background: '#fff', borderRadius: 6, padding: '1px 5px', fontSize: 11, cursor: 'pointer', color: '#6b7280' }}>✂</button>
                     </span>
                   );
                 })()}
@@ -1024,6 +1043,64 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
     </div>
   );
 
+  const saveSplit = () => {
+    if (!splitting) return;
+    const pieces = splitting.pieces.map(p => ({ no: p.no, qty: Math.floor(Number(p.qty) || 0) })).filter(p => p.qty > 0);
+    const sum = pieces.reduce((n, p) => n + p.qty, 0);
+    if (sum !== splitting.total) { alert(`박스별 수량 합계(${sum}개)가 전체 수량(${splitting.total}개)과 같아야 해요.`); return; }
+    // 같은 박스 번호가 두 번이면 합친다. 한 박스만 남으면 나누지 않은 줄로 둔다.
+    const merged = Array.from(pieces.reduce((m, p) => m.set(p.no, (m.get(p.no) || 0) + p.qty), new Map<number, number>()).entries()).map(([no, qty]) => ({ no, qty }));
+    const L = splitting.line;
+    updateShipOutLine(splitting.itemId, { 발주번호: L.발주번호, 상품이름: L.상품이름, 확정수량: L.확정수량, 입고예정일: L.입고예정일 },
+      { 쉼먼트: merged.length === 1 ? boxLabel(merged[0].no) : joinBoxSplit(merged) });
+    setSplitting(null);
+  };
+  const splitModal = splitting && (() => {
+    const sum = splitting.pieces.reduce((n, p) => n + (Math.floor(Number(p.qty) || 0)), 0);
+    const left = splitting.total - sum;
+    const boxMax = Math.max(splitting.boxMax, ...splitting.pieces.map(p => p.no));
+    const setPiece = (i: number, patch: Partial<{ no: number; qty: string }>) =>
+      setSplitting(prev => prev && { ...prev, pieces: prev.pieces.map((p, j) => (j === i ? { ...p, ...patch } : p)) });
+    return (
+      <div onClick={() => setSplitting(null)}
+        style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.35)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <div onClick={e => e.stopPropagation()} style={{ width: 380, maxWidth: 'calc(100vw - 32px)', background: '#fff', borderRadius: 12, padding: 18, boxShadow: '0 10px 30px rgba(0,0,0,0.2)' }}>
+          <div style={{ fontSize: 14, fontWeight: 800, marginBottom: 4 }}>박스 나누기</div>
+          <div style={{ fontSize: 12, color: '#666', marginBottom: 12 }}>
+            {splitting.line.상품이름} · 전체 <b>{splitting.total}개</b>
+          </div>
+          {splitting.pieces.map((p, i) => (
+            <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+              <BoxPicker value={`박스${p.no}`} maxNo={boxMax} allowNone={false} onChange={v => setPiece(i, { no: parseBoxNo(v) || p.no })} />
+              <input type="number" min={0} value={p.qty} placeholder="수량" autoFocus={i === splitting.pieces.length - 1}
+                onChange={e => setPiece(i, { qty: e.target.value })}
+                onKeyDown={e => { if (e.key === 'Enter') saveSplit(); }}
+                style={{ width: 90, padding: '5px 8px', fontSize: 13, borderRadius: 6, border: '1px solid #ddd', textAlign: 'right' }} />
+              <span style={{ fontSize: 12, color: '#888' }}>개</span>
+              <button onClick={() => setSplitting(prev => prev && { ...prev, pieces: prev.pieces.filter((_, j) => j !== i) })}
+                disabled={splitting.pieces.length <= 1} title="이 박스 줄 빼기"
+                style={{ marginLeft: 'auto', padding: '2px 8px', fontSize: 12, color: '#c0392b', background: '#fff', border: '1px solid #f0c4c0', borderRadius: 5, cursor: 'pointer' }}>×</button>
+            </div>
+          ))}
+          <button onClick={() => setSplitting(prev => prev && { ...prev, pieces: [...prev.pieces, { no: Math.min(9, Math.max(0, ...prev.pieces.map(p => p.no)) + 1), qty: left > 0 ? String(left) : '' }] })}
+            style={{ padding: '4px 10px', fontSize: 12, color: '#2980b9', background: '#fff', border: '1px dashed #2980b9', borderRadius: 6, cursor: 'pointer' }}>
+            + 박스 추가
+          </button>
+          <div style={{ marginTop: 12, fontSize: 12, fontWeight: 700, color: left === 0 ? '#27ae60' : '#c0392b' }}>
+            합계 {sum}개 / {splitting.total}개{left > 0 ? ` · ${left}개 남음` : left < 0 ? ` · ${-left}개 넘침` : ' ✓'}
+          </div>
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 14 }}>
+            <button onClick={() => setSplitting(null)} style={{ padding: '6px 14px', fontSize: 13, background: '#f3f3f3', border: 'none', borderRadius: 6, cursor: 'pointer' }}>취소</button>
+            <button onClick={saveSplit} disabled={left !== 0}
+              style={{ padding: '6px 14px', fontSize: 13, fontWeight: 700, color: '#fff', background: left === 0 ? '#2980b9' : '#a9c6dc', border: 'none', borderRadius: 6, cursor: left === 0 ? 'pointer' : 'default' }}>
+              저장
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  })();
+
   // 머리줄의 "새 발주서" 단추(아직 확정 안 한 발주서 수). 누르면 새 발주서 창이 뜬다.
   const newCount = boxes[0].length;
   const newButton = (
@@ -1183,6 +1260,7 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
         {newWindow}
         {assignWindow}
         {waybillBatch && <ShipmentWaybillModal batch={waybillBatch} onClose={() => setWaybillBatch(null)} />}
+        {splitModal}
       </div>
     );
   }
@@ -1262,6 +1340,7 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
       {newWindow}
       {assignWindow}
       {waybillBatch && <ShipmentWaybillModal batch={waybillBatch} onClose={() => setWaybillBatch(null)} />}
+      {splitModal}
     </div>
   );
 }

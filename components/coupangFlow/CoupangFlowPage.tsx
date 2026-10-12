@@ -688,9 +688,9 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
                           >
                             (
                             {assigned ? <>배정 <b>{assigned}</b></> : null}
-                            {queued ? <>{assigned ? ' · ' : ''}주문할 <b>{queued}</b></> : null}
+                            {queued ? <>{assigned ? ' · ' : ''}<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke={ORANGE} strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" style={{ verticalAlign: '-1px', marginRight: 1 }}><circle cx="9" cy="20" r="1.6" /><circle cx="18" cy="20" r="1.6" /><path d="M2 3h3l2.6 12.4a1 1 0 0 0 1 .8h9.7a1 1 0 0 0 1-.8L21 7H6" /></svg><b>{queued}</b></> : null}
                             {showLeft && <> · <b onClick={() => setAssignFor({ o, l, left })} style={{ color: RED, cursor: 'pointer', textDecoration: 'underline dotted', textUnderlineOffset: 2 }}>미배정 {left}</b></>}
-                            {hasOffice && <>{assigned || queued ? ' ' : ''}<b style={{ color: officeColor, fontSize: 12.5 }}>{arrived}</b><b style={{ color: covered || !incoming ? '#a8a29e' : '#d97706' }}>+{incoming}</b></>}
+                            {hasOffice && <>{assigned || queued ? ' · ' : ''}<b style={{ color: officeColor, fontSize: 12.5 }}>{arrived}</b><b style={{ color: covered || !incoming ? '#a8a29e' : '#d97706' }}>+{incoming}</b></>}
                             )
                           </span>
                         )}

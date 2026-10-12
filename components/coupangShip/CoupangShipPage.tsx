@@ -573,7 +573,7 @@ export default function CoupangShipPage({ onGoOrder }: { onGoOrder?: () => void 
     input.onchange = async () => {
       const f = input.files && input.files[0];
       if (!f) return;
-      fillAndUpload(await f.arrayBuffer(), id);
+      fillAndUpload(await f.arrayBuffer(), id, batches.find(b => b.id === id));
     };
     input.click();
   };

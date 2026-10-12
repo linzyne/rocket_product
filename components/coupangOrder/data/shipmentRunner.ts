@@ -166,9 +166,11 @@ const requestForm = (id: string) => {
 
 // ── 3. 양식 채우기 → 4. 서허 일괄등록 ──
 // 자동으로 받아온 양식이든, 사람이 고른 파일이든 같은 길.
-export function fillAndUpload(buf: ArrayBuffer, id: string) {
+export function fillAndUpload(buf: ArrayBuffer, id: string, known?: ShipmentBatch) {
+  // 새로고침 뒤에는 이 탭이 몰던 기록이 없다. 넘겨받은 쉽먼트 기록으로 이어서 할 수 있게 한다.
+  if (!owned.get(id) && known) owned.set(id, { batch: known, itemIds: readShipOuts().filter(i => i.batchId === id).map(i => i.id) });
   const o = owned.get(id);
-  if (!o) return;
+  if (!o) { alert('이 쉽먼트 기록을 찾지 못했어요. 카드의 "이어서 하기"를 먼저 눌러 주세요.'); return; }
   const batch = o.batch;
   try {
     const res = fillShubForm(buf, batch);
@@ -189,6 +191,11 @@ export function fillAndUpload(buf: ArrayBuffer, id: string) {
   }
 }
 
+const uploadAck = new Map<string, ReturnType<typeof setTimeout>>();
+const clearUploadAck = (id?: string) => {
+  const ids = id ? [id] : Array.from(uploadAck.keys());
+  ids.forEach(k => { const t = uploadAck.get(k); if (t) clearTimeout(t); uploadAck.delete(k); });
+};
 // 택배사 롯데택배 · 발송일 = 입고예정일 하루 전 · 23:55. 입고예정일이 여럿이면 가장 이른 날.
 const upload = (blob: Blob, fileName: string, id: string) => {
   const o = owned.get(id);
@@ -205,6 +212,11 @@ const upload = (blob: Blob, fileName: string, id: string) => {
   const reader = new FileReader();
   reader.onload = () => {
     mark(id, 'upload', 'running', `서허에 올리는 중… (발송일 ${shipDate} 23:55)`);
+    // 확장이 10초 안에 아무 대답이 없으면 멈춘 것으로 알린다(예전엔 "올리는 중"에서 말없이 멈췄다).
+    uploadAck.set(id, setTimeout(() => {
+      uploadAck.delete(id);
+      fail(id, 'upload', '확장이 대답하지 않아요. chrome://extensions 에서 "로켓 서허 연동"을 새로고침(↻)하고 앱도 새로고침한 뒤 "이어서 하기"를 눌러 주세요.');
+    }, 10000));
     window.postMessage({
       source: APP, type: 'SHUB_UPLOAD', batchId: id,
       file: { name: fileName, dataUrl: reader.result as string }, shipDate, shipTime: '23:55', carrier: '롯데택배',
@@ -263,6 +275,8 @@ export function startShipmentRunner() {
       const o = Array.from(owned.values()).find(x => x.batch.run?.step === 'form' && x.batch.run.state === 'running');
       if (o) fail(o.batch.id, 'form', `서허 창을 열지 못했어요: ${d.error || ''}`);
     }
+    if (d.type === 'SHUB_UPLOAD_ACK') clearUploadAck();
+    if (d.type === 'SHUB_UPLOAD_STATUS' && d.batchId) clearUploadAck(d.batchId);
     if (d.type === 'SHUB_UPLOAD_ACK' && !d.ok) {
       const o = Array.from(owned.values()).find(x => x.batch.run?.step === 'upload' && x.batch.run.state === 'running');
       if (o) fail(o.batch.id, 'upload', `서허 업로드를 시작하지 못했어요: ${d.error || ''}`);

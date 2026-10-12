@@ -441,6 +441,9 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
         return (
           <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
             <button style={btn(ORANGE, true)} onClick={() => resumeShipment(o.batch!, [o.item!])} title="멈춘 데서 이어서 합니다. 택배예약은 다시 하지 않아요.">▶ 이어서 하기</button>
+            {(r.step === 'form' || r.step === 'upload') && (
+              <button style={btn('#2980b9')} onClick={() => pickFormFile(o.batch!.id)} title="다운로드 폴더의 서허 양식(쉽먼트양식_… 또는 서허에서 받은 양식)을 골라 채우고 서허에 올려요">양식 직접 고르기</button>
+            )}
             <button title="이어서 하기 버튼 지우기" onClick={() => patchShipmentBatch(o.batch!.id, { resumeHiddenFor: `${r.step}|${r.state}` }).catch(err => alert(`지우기 실패: ${err?.message || err}`))}
               style={{ border: 'none', background: 'transparent', color: '#9ca3af', cursor: 'pointer', fontSize: 15, lineHeight: 1, padding: 0 }}>×</button>
           </span>
@@ -999,7 +1002,7 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
     input.accept = '.xlsx,.xls';
     input.onchange = async () => {
       const f = input.files && input.files[0];
-      if (f) fillAndUpload(await f.arrayBuffer(), id);
+      if (f) fillAndUpload(await f.arrayBuffer(), id, batchesRef.current.find(b => b.id === id));
     };
     input.click();
   };

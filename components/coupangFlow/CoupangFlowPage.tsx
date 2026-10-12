@@ -382,8 +382,9 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
   const boxes = STAGES.map((_, i) => {
     const list = orders.filter(o => o.stage === i && match(o));
     if (i === 5) list.sort((a, b) => (b.item?.sentDate || '').localeCompare(a.item?.sentDate || ''));
-    // 쉽먼트·발송대기: 상품이 다 준비된 발주서를 맨 위로(그 안에서는 원래 순서). 인쇄 옆 체크칸을 켜도 자리는 그대로.
-    if (i === 2 || i === 4) return [...list.filter(allReady), ...list.filter(o => !allReady(o))];
+    // 쉽먼트: 발주확정에서 막 넘어온 것(출고 건을 늦게 만든 것)이 위로. 준비됨·재고에서 쓰기·체크칸 같은
+    // 상태가 바뀌어도 자리는 움직이지 않는다(그 안에서는 원래 순서).
+    if (i === 2) list.sort((a, b) => (b.item?.createdAt || 0) - (a.item?.createdAt || 0));
     return list;
   });
 

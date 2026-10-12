@@ -1146,6 +1146,9 @@ const DetailPageBuilderModal: React.FC<DetailPageBuilderModalProps> = ({ isOpen,
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen, importedPhotos]);
 
+  // 섹션 문구 고치기 창(✎). 훅이라 아래 return null보다 위에 둔다.
+  const [copyEditor, setCopyEditor] = useState<{ sectionId: string; text: string } | null>(null);
+
   if (!isOpen) return null;
 
   // sectionId를 주면 그 사진을 해당 섹션에 배정한다(김치 템플릿의 섹션별 업로드). 기본 템플릿은
@@ -2239,7 +2242,6 @@ const DetailPageBuilderModal: React.FC<DetailPageBuilderModalProps> = ({ isOpen,
   };
 
   // 섹션 하나만 문구 고치기. 큰 붙여넣기 칸은 건드리지 않는다.
-  const [copyEditor, setCopyEditor] = useState<{ sectionId: string; text: string } | null>(null);
   const openSectionCopyEditor = (sectionId: string) =>
     setCopyEditor({ sectionId, text: sectionCopyText(kimchiSections, sectionId) });
   const applySectionCopyEditor = () => {

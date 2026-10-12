@@ -1551,9 +1551,11 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
                     const pickedAny = g.list.some(o => picked.has(o.no));
                     const doneAll = (i === 2 || i === 4) && g.list.every(allReady);
                     const errAny = g.list.some(o => run(o)?.state === 'error');
+                    // 상자 안 발주서를 다 인쇄했으면(출력완료) 옅은 회색 바탕.
+                    const printedAll = (i === 2 || i === 4) && g.list.every(o => (o.item?.printedOrders || []).includes(o.no));
                     return (
                   <div key={g.key} style={{
-                    background: doneAll ? '#f0faf3' : '#fff', borderRadius: 10, padding: '10px 12px 10px 14px', boxShadow: '0 2px 6px rgba(0,0,0,0.10)',
+                    background: printedAll ? '#ececec' : doneAll ? '#f0faf3' : '#fff', borderRadius: 10, padding: '10px 12px 10px 14px', boxShadow: '0 2px 6px rgba(0,0,0,0.10)',
                     border: pickedAny ? `2px solid ${ORANGE}` : doneAll ? `2px solid ${GREEN}` : `1px solid ${errAny ? '#f87171' : '#b8b2ab'}`,
                     borderLeft: `5px solid ${pickedAny ? ORANGE : errAny ? RED : doneAll ? GREEN : '#a8a29e'}`,
                     display: 'flex', flexDirection: 'column', gap: 6,

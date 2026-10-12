@@ -502,7 +502,7 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
     // 요청 표시는 날짜 바꾸기를 눌렀거나(at) 서허 요청 등록 때 확장이 값을 기억했을 때(want).
     const req = !!dateReqs[o.no] && !dateReqs[o.no].doneAt && !dateReqs[o.no].dismissedAt;
     const changedDate = dateReqs[o.no]?.doneAt ? dateReqs[o.no] : null;
-    if (!(((o.bundle || o.hold) && o.stage === 1) || o.partial || req || changedDate)) return null;
+    if (!((o.hold && o.stage === 1) || o.partial || req || changedDate)) return null;
     return (
       <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', alignItems: 'center' }}>
         {req && (() => {
@@ -518,7 +518,6 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
             표시 지우기
           </button>
         )}
-        {o.bundle && o.stage === 1 && <Tag color="#6b7280">{o.bundle}</Tag>}
         {o.hold && o.stage === 1 && <Tag color="#7c3aed">{o.hold}</Tag>}
         {o.partial && <Tag color={RED}>일부만 넘어감</Tag>}
       </div>

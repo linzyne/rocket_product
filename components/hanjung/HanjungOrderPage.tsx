@@ -49,7 +49,7 @@ const stageOf = (o: HanjungOrder, settleQty: number): Stage => {
   return settleQty >= allocated ? 'settled' : 'arrived';
 };
 const TABS: { id: 'arriving' | 'arrived' | 'settled' | 'all'; text: string; has: (st: Stage) => boolean }[] = [
-  { id: 'arriving', text: '✈️ 오는 중', has: st => st === 'ordered' || st === 'partial' },
+  { id: 'arriving', text: '⏳ 도착 전', has: st => st === 'ordered' || st === 'partial' },
   { id: 'arrived', text: '🏠 쿠팡입고 대기', has: st => st === 'arrived' },
   { id: 'settled', text: '🎉 완료', has: st => st === 'settled' },
   { id: 'all', text: '📋 전체', has: () => true },
@@ -337,8 +337,8 @@ const PendingPanel: React.FC<{ orders: HanjungOrder[]; onRecord: (act: Act) => v
     <div className="bg-white border-2 border-amber-200 rounded-3xl mb-6 overflow-hidden shadow-sm">
       <div className="flex flex-wrap items-center gap-3 px-5 py-4 bg-gradient-to-r from-amber-50 to-orange-50 border-b border-amber-100">
         <span className="text-2xl leading-none">🛒</span>
-        <span className="text-base font-bold text-amber-900">1688 주문하기 {groups.length ? <span className="ml-1 px-2 py-0.5 rounded-full bg-white text-amber-700 text-sm">{groups.length}개 상품 · {pending.length}줄</span> : <span className="text-amber-500 font-medium">· 지금은 없어요</span>}</span>
-        <span className="text-sm text-amber-700">주문할 상품을 눌러서 골라요</span>
+        <span className="text-base font-bold text-amber-900">장바구니 <span className="font-medium text-amber-600">· 1688에 주문할 것</span> {groups.length ? <span className="ml-1 px-2 py-0.5 rounded-full bg-white text-amber-700 text-sm">{groups.length}개 상품 · {pending.length}줄</span> : <span className="text-amber-500 font-medium">· 지금은 없어요</span>}</span>
+        <span className="text-sm text-amber-700">골라서 주문완료하면 ✈️ 오는 중으로 가요</span>
         {pending.some(r => r.fromQueue) && (
           <button
             onClick={fillFromLater}
@@ -858,16 +858,14 @@ const HanjungOrderPage: React.FC = () => {
               ↷ 다시실행
             </button>
           </div>
-          {/* 할 일 순서를 그림처럼: 고르기 → 적기 → 주문완료 → 도착 기록 */}
-          <div className="flex flex-wrap items-center gap-1.5 mt-2 text-sm">
-            {[['🛒', '고르기'], ['✍️', '수량 적기'], ['✅', '주문완료'], ['📦', '도착 기록']].map(([e, t], i) => (
-              <React.Fragment key={t}>
-                {i > 0 && <span className="text-gray-300">→</span>}
-                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-white border border-gray-200 text-gray-700"><span>{e}</span>{t}</span>
-              </React.Fragment>
-            ))}
+          {/* 이 화면은 바구니 두 개: 장바구니(주문할 것) → 오는 중(주문한 것) */}
+          <div className="flex flex-wrap items-center gap-1.5 mt-2 text-sm text-gray-600">
+            바구니 두 개만 보면 돼요
+            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-amber-50 border border-amber-200 text-amber-800 font-semibold">🛒 장바구니</span>
+            <span className="text-gray-300">→</span>
+            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-sky-50 border border-sky-200 text-sky-800 font-semibold">✈️ 오는 중</span>
           </div>
-          <p className="text-xs text-gray-400 mt-1.5">쿠팡 입고(정산)는 알아서 모아져요 😊</p>
+          <p className="text-xs text-gray-400 mt-1.5">물건이 오면 📦 도착 기록만 눌러 주세요. 쿠팡 입고(정산)는 알아서 모아져요 😊</p>
         </div>
         <input
           value={search}
@@ -879,6 +877,14 @@ const HanjungOrderPage: React.FC = () => {
 
       <PendingPanel orders={orders} onRecord={record} />
 
+      {/* 두 번째 바구니: 오는 중(주문한 것). 장바구니와 같은 모양. */}
+      <div className="bg-white border-2 border-sky-200 rounded-3xl overflow-hidden shadow-sm">
+      <div className="flex flex-wrap items-center gap-3 px-5 py-4 bg-gradient-to-r from-sky-50 to-indigo-50 border-b border-sky-100">
+        <span className="text-2xl leading-none">✈️</span>
+        <span className="text-base font-bold text-sky-900">오는 중 <span className="font-medium text-sky-600">· 1688에 주문한 것</span></span>
+        <span className="text-sm text-sky-700">물건이 오면 📦 도착 기록을 눌러요</span>
+      </div>
+      <div className="p-4">
       {!search.trim() && (
         <div className="flex flex-wrap gap-2 mb-4">
           {TABS.map(t => (
@@ -894,9 +900,9 @@ const HanjungOrderPage: React.FC = () => {
       )}
 
       {!list.length && (
-        <div className="bg-white border-2 border-dashed border-gray-200 rounded-3xl py-14 text-center text-gray-500 text-sm">
+        <div className="bg-sky-50/30 border-2 border-dashed border-sky-100 rounded-3xl py-12 text-center text-gray-500 text-sm">
           <div className="text-5xl mb-3">{search.trim() ? '🔍' : '🐼'}</div>
-          {search.trim() ? '검색 결과가 없어요.' : orders.length ? '이 단계의 한중발주가 없어요.' : '아직 한중발주가 없어요. 위 1688 주문하기에서 골라 주문완료하면 여기에 생겨요.'}
+          {search.trim() ? '검색 결과가 없어요.' : orders.length ? '이 단계의 한중발주가 없어요.' : '아직 오는 게 없어요. 위 🛒 장바구니에서 골라 주문완료하면 여기에 생겨요.'}
         </div>
       )}
 
@@ -1135,6 +1141,8 @@ const HanjungOrderPage: React.FC = () => {
             </div>
           );
         })}
+      </div>
+      </div>
       </div>
     </div>
   );

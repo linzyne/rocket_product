@@ -1646,7 +1646,12 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
                       })()}
                       <span style={{ fontSize: 17, fontWeight: 900, color: '#111' }}>{dayText(g.date)}</span>
                       <span style={{ fontSize: 17, fontWeight: 900, color: ORANGE }}>{Array.from(new Set(g.list.map(o => o.center.trim()).filter(Boolean))).join(' · ') || '센터 없음'}</span>
-                      {i >= 2 && (() => { const n = summaryOf(g.list).boxes; return n > 0 ? <span style={{ fontSize: 17, fontWeight: 900, color: '#111', whiteSpace: 'nowrap' }}>📦 {n}</span> : null; })()}
+                      {i >= 2 && (() => {
+                        // 카드의 박스 번호(출고 건 줄)로 센다. 없으면 쉽먼트 기록의 박스 수.
+                        const nos = new Set(g.list.map(o => o.no));
+                        const items = Array.from(new Map(g.list.filter(o => o.item).map(o => [o.item!.id, o.item!])).values())
+                          .map(it => ({ ...it, lines: it.lines.filter(l => nos.has(String(l.발주번호 || '').trim())) }));
+                        const n = totalBoxCount(rowsOf(items)) || summaryOf(g.list).boxes; return n > 0 ? <span style={{ fontSize: 17, fontWeight: 900, color: '#111', whiteSpace: 'nowrap' }}>📦 {n}</span> : null; })()}
                       {i < 2 && <span style={{ fontSize: 11.5, fontWeight: 700, color: '#a8a29e' }}>발주 {g.list.length}건</span>}
                       {i >= 2 && (() => {
                         // 날짜·센터 줄에 번호를 하나씩만. 여러 개면 "+N"을 눌러 아래로 펼친다.

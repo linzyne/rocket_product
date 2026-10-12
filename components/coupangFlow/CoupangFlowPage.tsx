@@ -1035,7 +1035,9 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
     const pickedBundle = pickedUnbundle;
     const done = pickedBundle.filter(o => reservedOrder(o) || o.stage === 4);
     if (done.length) {
-      const waybillsOf = (o: FlowOrder) => summaryOf([o]).waybills.slice().sort().join(',');
+      // 출고 건에 쉽먼트 기록 번호가 안 붙어 있어도, 찾은 쉽먼트 기록의 박스에서 송장번호를 읽는다.
+      const waybillsOf = (o: FlowOrder) => (o.batch ? Array.from(new Set(allBoxes(o.batch)
+        .filter(b => b.lines.some(l => String(l.발주번호 || '').trim() === o.no)).map(b => (b.waybill || '').trim()).filter(Boolean))) : []).sort().join(',');
       const shipOf = (o: FlowOrder) => o.item?.shipmentNos?.[o.no] || '';
       const same = done.length === pickedBundle.length
         && new Set(pickedBundle.map(waybillsOf)).size === 1 && !!waybillsOf(pickedBundle[0])

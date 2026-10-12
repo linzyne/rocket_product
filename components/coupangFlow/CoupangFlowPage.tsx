@@ -91,10 +91,10 @@ const daysAgo = (ymd: string) => {
 };
 
 // 같은 입고예정일·센터끼리 이어진 발주서를 한 덩어리로(목록은 이미 날짜 → 센터 순으로 정렬돼 있다).
-const groupByCenterDate = (list: FlowOrder[]) => {
+const groupByCenterDate = (list: FlowOrder[], keyOf: (o: FlowOrder) => string = o => `${o.date}|${o.center.trim()}`) => {
   const groups: { key: string; date: string; center: string; list: FlowOrder[] }[] = [];
   for (const o of list) {
-    const key = `${o.date}|${o.center.trim()}`;
+    const key = keyOf(o);
     const last = groups[groups.length - 1];
     if (last && last.key === key) last.list.push(o);
     else groups.push({ key, date: o.date, center: o.center.trim(), list: [o] });
@@ -447,19 +447,9 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
 
   // ── 카드 조각들(상자 보기·단계별 보기가 같이 쓴다) ──
   // 입고예정일·센터를 가장 크게, 그 아래 발주번호.
-  const headInfo = (o: FlowOrder, size: number) => (
-    <div>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', lineHeight: 1.2 }}>
-        {PICKABLE.includes(o.stage) && (
-          <input
-            type="checkbox" checked={picked.has(o.no)} onChange={() => togglePick(o.no)}
-            title="골라서 아래 메뉴로 날짜 바꾸기 등을 합니다"
-            style={{ width: 16, height: 16, accentColor: ORANGE, cursor: 'pointer', flexShrink: 0 }}
-          />
-        )}
-        <span style={{ fontSize: size, fontWeight: 900, color: '#111' }}>{dayText(o.date)}</span>
-        <span style={{ fontSize: size, fontWeight: 900, color: ORANGE }}>{o.center || '센터 없음'}</span>
-      </div>
+  // 발주번호 줄(+쉽먼트 번호·인쇄·체크칸) + 송장번호 줄. 카드 머리와 날짜·센터 덩어리 안에서 같이 쓴다.
+  const subLine = (o: FlowOrder) => (
+    <>
       <div style={{ fontSize: 11.5, color: '#888', marginTop: 2 }}>
         {/* 발주번호만 따로 감싼다: 앱 전체의 "발주번호 누르면 복사"(utils/copyOrderNo)가 글자가 번호 하나일 때만 복사한다. */}
         발주 <span title="눌러서 발주번호 복사" style={{ cursor: 'copy', textDecoration: 'underline dotted', textUnderlineOffset: 2 }}>{o.no}</span>
@@ -496,6 +486,22 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
           </div>
         );
       })()}
+    </>
+  );
+  const headInfo = (o: FlowOrder, size: number) => (
+    <div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', lineHeight: 1.2 }}>
+        {PICKABLE.includes(o.stage) && (
+          <input
+            type="checkbox" checked={picked.has(o.no)} onChange={() => togglePick(o.no)}
+            title="골라서 아래 메뉴로 날짜 바꾸기 등을 합니다"
+            style={{ width: 16, height: 16, accentColor: ORANGE, cursor: 'pointer', flexShrink: 0 }}
+          />
+        )}
+        <span style={{ fontSize: size, fontWeight: 900, color: '#111' }}>{dayText(o.date)}</span>
+        <span style={{ fontSize: size, fontWeight: 900, color: ORANGE }}>{o.center || '센터 없음'}</span>
+      </div>
+      {subLine(o)}
     </div>
   );
   const tags = (o: FlowOrder) => {
@@ -816,15 +822,13 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
       borderTop: '1px solid #f3f3f3', paddingTop: 6, marginTop: 14,
       display: 'flex', flexDirection: 'column', gap: 4,
     }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+      <div style={{ display: 'flex', alignItems: 'flex-start', gap: 6 }}>
         {PICKABLE.includes(o.stage) && (
           <input type="checkbox" checked={picked.has(o.no)} onChange={() => togglePick(o.no)}
             style={{ width: 15, height: 15, accentColor: ORANGE, cursor: 'pointer', flexShrink: 0 }} />
         )}
-        {/* 발주번호 글씨는 쉽먼트·발송대기 카드와 같게 */}
-        <span style={{ fontSize: 11.5, color: '#888' }}>
-          발주 <span title="눌러서 발주번호 복사" style={{ cursor: 'copy', textDecoration: 'underline dotted', textUnderlineOffset: 2 }}>{o.no}</span>
-        </span>
+        {/* 발주번호·쉽먼트 번호·인쇄·송장: 쉽먼트·발송대기 카드와 같은 줄 */}
+        <div style={{ minWidth: 0 }}>{subLine(o)}</div>
       </div>
       {tags(o)}
       {runNote(o)}
@@ -1450,13 +1454,19 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
                 padding: '18px 14px 32px', minHeight: '78vh', display: 'flex', flexDirection: 'column', gap: 20, boxSizing: 'border-box',
                 borderRight: col < shownStages.length - 1 ? '1px solid #e7e5e4' : 'none',
               }}>
-                {i <= 1 ? groupByCenterDate(list).map(g => (
+                {i <= 4 ? groupByCenterDate(list, i >= 2 ? (o => o.item?.id || o.no) : undefined).map(g => (
                   // 새발주서·발주확정: 예전 쿠팡발주확인처럼 같은 입고예정일·센터끼리 한 덩어리로 모아 보여준다(묶음은 아니다).
                   // 겉모양은 쉽먼트·발송대기 카드와 같게(흰 바탕·테두리·그림자·왼쪽 띠). 고른 발주서가 있으면 주황.
+                  (() => {
+                    // 쉽먼트·발송대기: 상품이 다 준비된 출고 건은 초록, 멈춘 건 빨강(카드와 같은 색 규칙).
+                    const pickedAny = g.list.some(o => picked.has(o.no));
+                    const doneAll = (i === 2 || i === 4) && g.list.every(allReady);
+                    const errAny = g.list.some(o => run(o)?.state === 'error');
+                    return (
                   <div key={g.key} style={{
-                    background: '#fff', borderRadius: 10, padding: '10px 12px 10px 14px', boxShadow: '0 2px 6px rgba(0,0,0,0.10)',
-                    border: g.list.some(o => picked.has(o.no)) ? `2px solid ${ORANGE}` : '1px solid #b8b2ab',
-                    borderLeft: `5px solid ${g.list.some(o => picked.has(o.no)) ? ORANGE : '#a8a29e'}`,
+                    background: doneAll ? '#f0faf3' : '#fff', borderRadius: 10, padding: '10px 12px 10px 14px', boxShadow: '0 2px 6px rgba(0,0,0,0.10)',
+                    border: pickedAny ? `2px solid ${ORANGE}` : doneAll ? `2px solid ${GREEN}` : `1px solid ${errAny ? '#f87171' : '#b8b2ab'}`,
+                    borderLeft: `5px solid ${pickedAny ? ORANGE : errAny ? RED : doneAll ? GREEN : '#a8a29e'}`,
                     display: 'flex', flexDirection: 'column', gap: 6,
                   }}>
                     {/* 날짜·센터 글씨는 쉽먼트·발송대기 카드 머리와 같게 */}
@@ -1482,6 +1492,8 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
                     </div>
                     {g.list.map(slim)}
                   </div>
+                    );
+                  })()
                 )) : list.map(card)}
                 {!list.length && <div style={{ padding: '18px 0', textAlign: 'center', fontSize: 12, color: '#c4c0bc' }}>{q ? '찾는 발주서 없음' : '비어 있음'}</div>}
               </div>

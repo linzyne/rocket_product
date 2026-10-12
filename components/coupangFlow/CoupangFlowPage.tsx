@@ -385,6 +385,11 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
     // 쉽먼트: 발주확정에서 막 넘어온 것(출고 건을 늦게 만든 것)이 위로. 준비됨·재고에서 쓰기·체크칸 같은
     // 상태가 바뀌어도 자리는 움직이지 않는다(그 안에서는 원래 순서).
     if (i === 2) list.sort((a, b) => (b.item?.createdAt || 0) - (a.item?.createdAt || 0));
+    // 발송대기: 늦게 넘어온 것이 위, 먼저 넘어온 것은 아래로 쌓인다(넘어온 때 = 발송대기로 누른 때, 없으면 서허 등록 때).
+    if (i === 4) {
+      const at = (o: FlowOrder) => o.item?.doneAt || o.item?.uploadedAt || o.item?.createdAt || 0;
+      list.sort((a, b) => at(b) - at(a));
+    }
     return list;
   });
 

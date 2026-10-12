@@ -32,7 +32,7 @@ import { HanjungQueueItem, subscribeHanjungQueue, makePlaceLookup } from '../cou
 import { subscribePoForms, readDraft, setDraftLine, SHORT_REASONS, DEFAULT_REASON } from '../coupangOrder/data/poFormStore';
 import { startConfirmUpload, subscribeConfirmJob, clearConfirmJob, ConfirmJob } from '../coupangOrder/data/poConfirmRunner';
 import { subscribeDateRequests, markDateRequested, applyCurrent, DateReq, rememberRequested, requestedOf } from '../coupangOrder/data/poDateStore';
-import { retargetBatches, saveShipmentBatch } from '../../data/shipmentStore';
+import { retargetBatches, saveShipmentBatch, allBoxes } from '../../data/shipmentStore';
 import { useIsMobile } from '../../utils/useIsMobile';
 
 // 발주 > 발주 진행. 단계마다 상자를 옆으로 두고, 발주서가 지금 단계의 상자 안에 담긴다(상자 안에서는 위아래 한 줄).
@@ -392,6 +392,10 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
     setConfirmed(nos, on).catch(err => alert(`발주확정 표시 저장 실패: ${err instanceof Error ? err.message : String(err)}`));
 
   const run = (o: FlowOrder) => o.stage === 2 ? o.batch?.run : undefined;
+  // 택배예약을 한 발주서인지: 쉽먼트 번호가 있거나, 그 출고 건의 쉽먼트 기록 박스에 이 발주서가 실제로 들어 있을 때.
+  // (박스가 없어 기록에서 빠진 발주서는 예약 안 한 것으로 보고 다시 예약할 수 있게)
+  const reservedOrder = (o: FlowOrder) => !!o.item && (!!o.item.shipmentNos?.[o.no] || (!!o.item.batchId && !!o.batch && o.batch.id === o.item.batchId
+    && allBoxes(o.batch).some(b => b.lines.some(l => String(l.발주번호 || '').trim() === o.no))));
 
   // 상자마다 다음에 할 일 버튼.
   const action = (o: FlowOrder) => {
@@ -405,7 +409,9 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
         return null;
       case 2:
         // 인쇄는 발주번호 옆 아이콘. 여기는 쉽먼트가 멈췄을 때 이어서 하기만.
-        if (o.item?.shipmentNos?.[o.no] || !o.item || !o.batch || !r || r.state !== 'error') return null;
+        // 진행 중인 채로 3분 넘게 소식이 없으면(확장이 답을 안 줌) 멈춘 것으로 보고 이어서 하기를 보인다.
+        if (o.item?.shipmentNos?.[o.no] || !o.item || !o.batch || !r || r.state === 'done') return null;
+        if (r.state === 'running' && Date.now() - r.at < 3 * 60 * 1000) return null;
         return <button style={btn(ORANGE, true)} onClick={() => resumeShipment(o.batch!, [o.item!])} title="멈춘 데서 이어서 합니다. 택배예약은 다시 하지 않아요.">▶ 이어서 하기</button>;
       case 3:
       case 4:
@@ -525,7 +531,7 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
                   // 박스: 택배예약 전에는 고를 수 있고, 예약한 뒤에는 보기만.
                   const item = o.item!;
                   const v = l.ship!.쉼먼트 || '';
-                  if (item.batchId || isBoxSplit(v)) {
+                  if (reservedOrder(o) || isBoxSplit(v)) {
                     const text = isBoxSplit(v) ? parseBoxSplit(v).map(p => `${p.no}번×${p.qty}`).join(' ') : parseBoxNo(v) ? `박스 ${parseBoxNo(v)}` : '';
                     return text ? <span style={{ flexShrink: 0, fontSize: 11, color: '#6b7280', whiteSpace: 'nowrap' }}>{text}</span> : null;
                   }
@@ -859,9 +865,11 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
 
   // 고른 것 중 쉽먼트 칸에서 아직 택배예약 안 한 출고 건 → 택배예약 → 운송장 → 서허 양식 → 서허 일괄등록까지 한 번에.
   // 이미 예약한 건(쉽먼트 기록이 있는 건)은 두 번 예약하면 안 되므로 빼고, 멈춘 건은 카드의 "이어서 하기"로.
+  // 고른 것 중 아직 예약 안 한 발주서 번호.
+  const toReserve = new Set(pickedShipping.filter(o => !reservedOrder(o)).map(o => o.no));
   const reserveItems = (() => {
     const m = new Map<string, ShipOut>();
-    pickedShipping.forEach(o => { if (!o.item!.batchId && !o.item!.shipmentNos?.[o.no]) m.set(o.item!.id, o.item!); });
+    pickedShipping.forEach(o => { if (!reservedOrder(o)) m.set(o.item!.id, o.item!); });
     return Array.from(m.values());
   })();
   const rowsOf = (items: ShipOut[]) => buildDisplayRows(items.flatMap(item => item.lines.flatMap(l => expandBoxSplit({
@@ -876,10 +884,10 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
     묶음센터: item.center,
   }))));
   const reserveShip = () => {
-    const skipped = pickedShipping.filter(o => !reserveItems.some(i => i.id === o.item!.id)).map(o => o.no);
+    const skipped = pickedShipping.filter(o => !toReserve.has(o.no)).map(o => o.no);
     if (skipped.length && !window.confirm(`이미 택배예약한 발주서는 빼고 해요: ${skipped.join(', ')}\n(멈춘 건은 카드의 "▶ 이어서 하기"로)`)) return;
     // 고른 발주서 줄만 예약한다. 출고 건에 안 고른 발주서가 섞여 있으면, 예약이 시작된 뒤 고른 줄만 새 출고 건으로 떼어 낸다.
-    const pickedOnly = reserveItems.map(it => ({ ...it, lines: it.lines.filter(l => picked.has(l.발주번호)) }));
+    const pickedOnly = reserveItems.map(it => ({ ...it, lines: it.lines.filter(l => toReserve.has(l.발주번호)) }));
     const whole = pickedOnly.filter((it, i) => it.lines.length === reserveItems[i].lines.length);
     const b = startShipment(rowsOf(pickedOnly), whole.map(i => i.id), addresses, sender, batches);
     if (!b) return;
@@ -939,7 +947,7 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
     reserveItems.length > 0 && (
       <button key="lotte" onClick={reserveShip} style={{ ...pill('primary'), background: ORANGE }}
         title="고른 쉽먼트 발주서로 택배예약 → 운송장 → 서허 양식 → 서허 일괄등록까지 이어서 해요">
-        🚚 택배예약·일괄등록 <span style={{ opacity: 0.8, fontWeight: 500 }}>{totalBoxCount(rowsOf(reserveItems.map(it => ({ ...it, lines: it.lines.filter(l => picked.has(l.발주번호)) }))))}박스</span>
+        🚚 택배예약·일괄등록 <span style={{ opacity: 0.8, fontWeight: 500 }}>{totalBoxCount(rowsOf(reserveItems.map(it => ({ ...it, lines: it.lines.filter(l => toReserve.has(l.발주번호)) }))))}박스</span>
       </button>
     ),
     pickedShipping.length > 0 && (

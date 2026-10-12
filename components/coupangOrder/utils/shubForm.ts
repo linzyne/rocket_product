@@ -85,6 +85,12 @@ export const fillShubForm = (arrayBuffer: ArrayBuffer, batch: ShipmentBatch): Fi
       filled += 1;
     });
   }
+  // 반대로 우리 박스에는 있는데 양식에 없는 발주서도 빠뜨리면 안 된다(서허에 일부만 등록되는 일).
+  const formPos = new Set(rows.slice(1).map(r => digits(r[COL_PO])).filter(Boolean));
+  for (const e of entries) {
+    const po = digits(e.line.발주번호);
+    if (po && !formPos.has(po)) missed.push(`${po} · ${norm(e.line.상품이름).slice(0, 20)} (서허 양식에 이 발주서가 없음)`);
+  }
   // 복사해 붙인 줄까지 시트 범위를 늘린다.
   if (extraRow > rows.length) {
     const range = XLSX.utils.decode_range(ws['!ref'] || 'A1');

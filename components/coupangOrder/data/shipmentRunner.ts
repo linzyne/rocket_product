@@ -7,7 +7,7 @@
 // 다음 단계로 넘기는 일은 그 쉽먼트를 시작한(또는 이어서 하기를 누른) 탭만 한다(owned).
 // 결과를 적는 일(등록 완료·쉽먼트 번호)은 어느 탭이 해도 같아서 다 한다.
 import type { DisplayRow } from '../utils/dataProcessor';
-import { shipmentCenters, totalBoxCount } from '../utils/dataProcessor';
+import { shipmentCenters, totalBoxCount, parseBoxNo } from '../utils/dataProcessor';
 import { exportLotteExcel } from '../utils/excelExport';
 import { fillShubForm, dataUrlToBuffer } from '../utils/shubForm';
 import { dateKeyYMD } from '../utils/dateUtils';
@@ -77,6 +77,13 @@ export function startShipment(
   rows: DisplayRow[], itemIds: string[], addresses: AddressEntry[], sender: SenderInfo, batches: ShipmentBatch[],
 ): ShipmentBatch | null {
   if (!rows.length) return null;
+  // 박스 번호가 없는 줄은 택배 예약·쉽먼트 기록에서 조용히 빠진다(그래서 고른 발주서 중 일부만 올라간 일).
+  // 하나라도 있으면 시작하지 않는다.
+  const noBox = rows.filter(r => !r.isBlank && !parseBoxNo(r.쉼먼트));
+  if (noBox.length) {
+    alert(`박스를 안 고른 상품이 ${noBox.length}줄 있어서 시작하지 않았어요. 박스를 고른 뒤 다시 눌러 주세요.\n\n${noBox.slice(0, 10).map(r => `${r._발주번호} ${r.상품이름}`).join('\n')}${noBox.length > 10 ? '\n…' : ''}`);
+    return null;
+  }
   const id = makeBatchId(batches);
   const file = exportLotteExcel(rows, addresses, sender, id);
   if (!file) return null;

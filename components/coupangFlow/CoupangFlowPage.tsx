@@ -436,15 +436,15 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
       case 2:
         // 인쇄는 발주번호 옆 아이콘. 여기는 쉽먼트가 멈췄을 때 이어서 하기만.
         // 진행 중인 채로 3분 넘게 소식이 없으면(확장이 답을 안 줌) 멈춘 것으로 보고 이어서 하기를 보인다.
-        if (o.item?.shipmentNos?.[o.no] || !o.item || !o.batch || !r || r.state === 'done' || r.noResume || o.batch.resumeHiddenFor === `${r.step}|${r.state}`) return null;
-        if (r.state === 'running' && Date.now() - r.at < 3 * 60 * 1000) return null;
+        // 진행 중이어도 늘 보인다(멈췄는지 기다리지 않고 바로 다시 할 수 있게). 지운 표시는 그 진행 기록(시각)에만 해당한다.
+        if (o.item?.shipmentNos?.[o.no] || !o.item || !o.batch || !r || r.state === 'done' || o.batch.resumeHiddenFor === `${r.step}|${r.state}|${r.at}`) return null;
         return (
           <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
             <button style={btn(ORANGE, true)} onClick={() => resumeShipment(o.batch!, [o.item!])} title="멈춘 데서 이어서 합니다. 택배예약은 다시 하지 않아요.">▶ 이어서 하기</button>
             {(r.step === 'form' || r.step === 'upload') && (
               <button style={btn('#2980b9')} onClick={() => pickFormFile(o.batch!.id)} title="다운로드 폴더의 서허 양식(쉽먼트양식_… 또는 서허에서 받은 양식)을 골라 채우고 서허에 올려요">양식 직접 고르기</button>
             )}
-            <button title="이어서 하기 버튼 지우기" onClick={() => patchShipmentBatch(o.batch!.id, { resumeHiddenFor: `${r.step}|${r.state}` }).catch(err => alert(`지우기 실패: ${err?.message || err}`))}
+            <button title="이어서 하기 버튼 지우기" onClick={() => patchShipmentBatch(o.batch!.id, { resumeHiddenFor: `${r.step}|${r.state}|${r.at}` }).catch(err => alert(`지우기 실패: ${err?.message || err}`))}
               style={{ border: 'none', background: 'transparent', color: '#9ca3af', cursor: 'pointer', fontSize: 15, lineHeight: 1, padding: 0 }}>×</button>
           </span>
         );

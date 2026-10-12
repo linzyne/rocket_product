@@ -684,7 +684,7 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
                               showLeft ? `남은 ${left}개를 배정해 주세요 — "미배정"을 누르면 남은 수량만 배정해요` : '',
                               hasOffice ? `사무실 재고(한중 여유) · 도착 ${arrived}개 · 오는 중 ${incoming}개\n${office.names.join('\n')}` : '',
                             ].filter(Boolean).join('\n')}
-                            style={{ fontSize: 11, color: '#8a857f' }}
+                            style={{ fontSize: 11, color: '#8a857f', whiteSpace: 'nowrap', flexShrink: 0 }}
                           >
                             (
                             {assigned ? <><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#8a857f" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" style={{ verticalAlign: '-1px', marginRight: 1 }}><path d="M20 6 9 17l-5-5" /></svg><b>{assigned}</b></> : null}

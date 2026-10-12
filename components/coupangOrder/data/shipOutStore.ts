@@ -412,6 +412,36 @@ export function applyShipOutRequest(id: string) {
   write(list);
 }
 
+// 출고 건에서 고른 발주서 줄만 떼어 새 출고 건으로 만든다(같은 센터·날짜). 떼어 낸 새 건을 돌려준다.
+// 발주 진행에서 출고 건 안의 일부 발주서만 택배예약할 때 쓴다.
+export function splitShipOut(id: string, orderNos: string[], patch: Partial<Pick<ShipOut, 'batchId'>> = {}): ShipOut | null {
+  const want = new Set(orderNos);
+  const list = read();
+  const item = list.find(s => s.id === id);
+  if (!item) return null;
+  const take = item.lines.filter(l => want.has(l.발주번호));
+  if (!take.length) return null;
+  const rest = item.lines.filter(l => !want.has(l.발주번호));
+  if (!rest.length) { Object.assign(item, patch); write(list); return item; }
+  const keys = (xs?: string[]) => xs && xs.filter(k => want.has(k.split('│')[0]));
+  const made: ShipOut = {
+    id: nextId(list),
+    bundle: take.length && new Set(take.map(l => l.발주번호)).size === 1 ? take[0].발주번호 : `발주 ${new Set(take.map(l => l.발주번호)).size}건`,
+    center: item.center,
+    date: item.date,
+    createdAt: Date.now(),
+    readyKeys: keys(item.readyKeys),
+    printedOrders: item.printedOrders?.filter(no => want.has(no)),
+    ...patch,
+    lines: take,
+  };
+  item.lines = rest;
+  item.readyKeys = item.readyKeys?.filter(k => !want.has(k.split('│')[0]));
+  item.printedOrders = item.printedOrders?.filter(no => !want.has(no));
+  write([made, ...list]);
+  return made;
+}
+
 // 출고 건들에 진행 표시를 붙인다(쉽먼트 번호·양식 저장 시각).
 export function markShipOuts(ids: string[], patch: Partial<Pick<ShipOut, 'batchId' | 'formSavedAt' | 'uploadedAt' | 'doneAt' | 'undoneAt' | 'sentDate' | 'readyKeys' | 'request' | 'printedOrders' | 'shipmentNos'>>) {
   const want = new Set(ids);

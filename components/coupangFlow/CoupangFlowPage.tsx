@@ -19,7 +19,7 @@ import ProductQtySummary from '../coupangOrder/components/ProductQtySummary';
 import { useReady } from '../coupangOrder/data/readyStore';
 import { subscribeMarks, setMark } from '../coupangOrder/data/poMarkStore';
 import { useLineHanjung } from '../coupangOrder/data/useLineHanjung';
-import { addShipOut, markShipOuts } from '../coupangOrder/data/shipOutStore';
+import { addShipOut, markShipOuts, splitShipOut } from '../coupangOrder/data/shipOutStore';
 import { linesAt } from '../coupangOrder/data/lineStore';
 import { boxLabel, buildDisplayRows, expandBoxSplit, totalBoxCount } from '../coupangOrder/utils/dataProcessor';
 import { LineCheckMenu } from '../coupangOrder/components/OrderTable';
@@ -860,10 +860,15 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
   const reserveShip = () => {
     const skipped = pickedShipping.filter(o => !reserveItems.some(i => i.id === o.item!.id)).map(o => o.no);
     if (skipped.length && !window.confirm(`이미 택배예약한 발주서는 빼고 해요: ${skipped.join(', ')}\n(멈춘 건은 카드의 "▶ 이어서 하기"로)`)) return;
-    const others = reserveItems.flatMap(it => Array.from(new Set(it.lines.map(l => l.발주번호))).filter(no => !picked.has(no)));
-    if (others.length && !window.confirm(`같은 출고 건에 든 다른 발주서도 같이 예약돼요: ${others.join(', ')}`)) return;
-    const b = startShipment(rowsOf(reserveItems), reserveItems.map(i => i.id), addresses, sender, batches);
-    if (b) setPicked(new Set());
+    // 고른 발주서 줄만 예약한다. 출고 건에 안 고른 발주서가 섞여 있으면, 예약이 시작된 뒤 고른 줄만 새 출고 건으로 떼어 낸다.
+    const pickedOnly = reserveItems.map(it => ({ ...it, lines: it.lines.filter(l => picked.has(l.발주번호)) }));
+    const whole = pickedOnly.filter((it, i) => it.lines.length === reserveItems[i].lines.length);
+    const b = startShipment(rowsOf(pickedOnly), whole.map(i => i.id), addresses, sender, batches);
+    if (!b) return;
+    pickedOnly.forEach((it, i) => {
+      if (it.lines.length !== reserveItems[i].lines.length) splitShipOut(it.id, Array.from(new Set(it.lines.map(l => l.발주번호))), { batchId: b.id });
+    });
+    setPicked(new Set());
   };
   const pickFormFile = (id: string) => {
     const input = document.createElement('input');
@@ -916,7 +921,7 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
     reserveItems.length > 0 && (
       <button key="lotte" onClick={reserveShip} style={{ ...pill('primary'), background: ORANGE }}
         title="고른 쉽먼트 발주서로 택배예약 → 운송장 → 서허 양식 → 서허 일괄등록까지 이어서 해요">
-        🚚 택배예약·일괄등록 <span style={{ opacity: 0.8, fontWeight: 500 }}>{totalBoxCount(rowsOf(reserveItems))}박스</span>
+        🚚 택배예약·일괄등록 <span style={{ opacity: 0.8, fontWeight: 500 }}>{totalBoxCount(rowsOf(reserveItems.map(it => ({ ...it, lines: it.lines.filter(l => picked.has(l.발주번호)) }))))}박스</span>
       </button>
     ),
     pickedShipping.length > 0 && (

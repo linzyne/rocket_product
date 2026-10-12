@@ -90,6 +90,18 @@ const daysAgo = (ymd: string) => {
   return Number.isFinite(t) ? (Date.now() - t) / 86400000 : 999;
 };
 
+// 같은 입고예정일·센터끼리 이어진 발주서를 한 덩어리로(목록은 이미 날짜 → 센터 순으로 정렬돼 있다).
+const groupByCenterDate = (list: FlowOrder[]) => {
+  const groups: { key: string; date: string; center: string; list: FlowOrder[] }[] = [];
+  for (const o of list) {
+    const key = `${o.date}|${o.center.trim()}`;
+    const last = groups[groups.length - 1];
+    if (last && last.key === key) last.list.push(o);
+    else groups.push({ key, date: o.date, center: o.center.trim(), list: [o] });
+  }
+  return groups;
+};
+
 // view: 'board' = 단계마다 상자를 옆으로(발주 진행 메뉴), 'list' = 발주서마다 단계 한 줄(발주 단계별 메뉴). 내용은 같다.
 export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavigate: (menu: AppMenuId) => void; view?: 'board' | 'list' }) {
   const [tab, setTab] = useState<Stage | 'active'>('active');
@@ -1400,7 +1412,16 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
                 padding: '18px 14px 32px', minHeight: '78vh', display: 'flex', flexDirection: 'column', gap: 20, boxSizing: 'border-box',
                 borderRight: col < shownStages.length - 1 ? '1px solid #e7e5e4' : 'none',
               }}>
-                {list.map(card)}
+                {i <= 1 ? groupByCenterDate(list).map(g => (
+                  // 새발주서·발주확정: 예전 쿠팡발주확인처럼 같은 입고예정일·센터끼리 한 덩어리로 모아 보여준다(묶음은 아니다).
+                  <div key={g.key} style={{ display: 'flex', flexDirection: 'column', gap: 10, padding: '8px 8px 10px', borderRadius: 12, background: '#f5f4f2', border: '1px solid #e7e5e4' }}>
+                    <div style={{ fontSize: 13, fontWeight: 800, color: '#44403c', padding: '0 4px' }}>
+                      {dayText(g.date)} <span style={{ color: ORANGE }}>{g.center}</span>
+                      <span style={{ marginLeft: 6, fontSize: 11.5, fontWeight: 700, color: '#a8a29e' }}>발주 {g.list.length}건</span>
+                    </div>
+                    {g.list.map(card)}
+                  </div>
+                )) : list.map(card)}
                 {!list.length && <div style={{ padding: '18px 0', textAlign: 'center', fontSize: 12, color: '#c4c0bc' }}>{q ? '찾는 발주서 없음' : '비어 있음'}</div>}
               </div>
             );

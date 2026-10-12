@@ -1176,6 +1176,27 @@
               await patch({ step: 'manual', status: `${ordNo}로 조회했는데 목록을 읽지 못했어요. 직접 체크하고 출력해 주세요.` });
               return;
             }
+            // 아래에서 "첫 줄"을 눌러 체크하므로, 목록에 우리 주문번호 1줄만 남아 있어야 한다.
+            // 검색조건이 안 먹어 다른 줄(예전 예약)까지 보이면 남의 운송장을 출력하게 된다(출력의심목록이 뜬 일).
+            const ordOf = (r) => Object.values(r.raw || {}).map((v) => String(v == null ? '' : v).trim()).find((v) => ORD_RE.test(v)) || '';
+            const onlyOurs = () => gridRows.length === 1 && ordOf(gridRows[0]) === ordNo;
+            for (let again = 0; again < 3 && !onlyOurs(); again++) {
+              await patch({ status: `${ordNo} 조회 결과가 ${gridRows.length}줄이라 다시 조회해요… (${again + 1})` });
+              await pickOrderNoCond();
+              const box2 = document.querySelector('input[name="edtSrchCondVal"]');
+              if (box2) setVal(box2, ordNo);
+              gridRows = [];
+              const s2 = find(TEXT.search);
+              if (s2) realClick(s2);
+              for (let t = 0; t < 30 && !gridRows.length; t++) await sleep(500);
+            }
+            if (!onlyOurs()) {
+              await patch({
+                step: 'manual',
+                status: `${ordNo}로 조회했는데 목록에 ${gridRows.length}줄이 보여서(우리 건만 남지 않음) 체크·출력하지 않았어요. 검색조건이 "주문번호"인지 확인하고 "다시 조회"를 눌러 주세요.`,
+              });
+              return;
+            }
             // 출력 전에 목록에 있던 번호를 기억해 둔다. 출력 뒤에 "새로 생긴" 번호만 우리 것으로 가져간다
             // (남의 운송장번호를 절대 건드리지 않기 위한 안전장치).
             const before = gridRows.map((r) => r.waybill).filter(Boolean);

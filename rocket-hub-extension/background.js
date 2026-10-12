@@ -464,7 +464,24 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       try {
         if (!message.file || !message.file.dataUrl) throw new Error('양식 파일이 비어 있습니다.');
         if (!/^\d{4}-\d{2}-\d{2}$/.test(String(message.shipDate || ''))) throw new Error('발송일이 없습니다.');
-        const win = await chrome.windows.create({ url: SHUB_ASN_URL, type: 'popup', width: 1300, height: 900, focused: true });
+        // 양식을 받은 서허 창이 아직 열려 있으면 그 창에서 이어서 한다(없으면 새 창).
+        let win = null;
+        try {
+          const r = await chrome.storage.local.get(SHUB_KEY);
+          const prev = r && r[SHUB_KEY];
+          if (prev && prev.windowId && prev.batchId === message.batchId) {
+            const w = await chrome.windows.get(prev.windowId, { populate: true });
+            const tab = w && w.tabs && w.tabs[0];
+            if (tab) {
+              await chrome.tabs.update(tab.id, { url: SHUB_ASN_URL });
+              await chrome.windows.update(w.id, { focused: true });
+              win = w;
+            }
+          }
+        } catch (err) {
+          win = null;
+        }
+        if (!win) win = await chrome.windows.create({ url: SHUB_ASN_URL, type: 'popup', width: 1300, height: 900, focused: true });
         await chrome.storage.local.set({
           [SHUB_UPLOAD_KEY]: {
             batchId: message.batchId || '',
@@ -592,14 +609,8 @@ chrome.storage.onChanged.addListener((changes, area) => {
   if (now.step === 'waybills') setTimeout(() => chrome.windows.remove(now.windowId).catch(() => {}), 1500);
 });
 
-// 양식 파일까지 받으면 서허 창을 닫는다(오류면 확인할 수 있게 열어 둔다).
-chrome.storage.onChanged.addListener((changes, area) => {
-  if (area !== 'local' || !changes[SHUB_KEY]) return;
-  const now = changes[SHUB_KEY].newValue;
-  const before = changes[SHUB_KEY].oldValue;
-  if (!now || !now.windowId || (before && before.step === now.step)) return;
-  if (now.step === 'file') setTimeout(() => chrome.windows.remove(now.windowId).catch(() => {}), 1500);
-});
+// 양식 파일을 받아도 서허 창은 닫지 않는다. 앱이 양식을 채워 보내면 같은 창(로그인된 그대로)에서
+// 일괄등록 업로드를 이어서 한다. 창을 닫고 새로 열면 그다음 순서로 못 넘어가는 일이 있었다.
 
 // 발주서 양식을 받았거나 새 발주서가 없으면 창을 닫는다(오류면 확인할 수 있게 열어 둔다).
 chrome.storage.onChanged.addListener((changes, area) => {

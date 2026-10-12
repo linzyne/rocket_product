@@ -412,6 +412,27 @@ export function applyShipOutRequest(id: string) {
   write(list);
 }
 
+// 출고 건 여러 개를 하나로 묶는다(발주 진행 쉽먼트 칸의 "묶기"). 가장 먼저 만든 건에 나머지 줄을 옮기고
+// 빈 건은 지운다. 박스 번호는 그대로 둔다. 묶인 건을 돌려준다.
+export function mergeShipOuts(ids: string[]): ShipOut | null {
+  const want = new Set(ids);
+  const list = read();
+  const items = list.filter(s => want.has(s.id)).sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0));
+  if (items.length < 2) return items[0] || null;
+  const [target, ...others] = items;
+  const uniq = <T,>(xs: T[]) => Array.from(new Set(xs));
+  target.lines = [...target.lines, ...others.flatMap(o => o.lines)];
+  const readyKeys = uniq([...(target.readyKeys || []), ...others.flatMap(o => o.readyKeys || [])]);
+  const printed = uniq([...(target.printedOrders || []), ...others.flatMap(o => o.printedOrders || [])]);
+  if (readyKeys.length) target.readyKeys = readyKeys;
+  if (printed.length) target.printedOrders = printed;
+  const orders = uniq(target.lines.map(l => l.발주번호));
+  target.bundle = orders.length === 1 ? orders[0] : `발주 ${orders.length}건`;
+  const gone = new Set(others.map(o => o.id));
+  write(list.filter(s => !gone.has(s.id)));
+  return target;
+}
+
 // 출고 건에서 고른 발주서 줄만 떼어 새 출고 건으로 만든다(같은 센터·날짜). 떼어 낸 새 건을 돌려준다.
 // 발주 진행에서 출고 건 안의 일부 발주서만 택배예약할 때 쓴다.
 export function splitShipOut(id: string, orderNos: string[], patch: Partial<Pick<ShipOut, 'batchId'>> = {}): ShipOut | null {

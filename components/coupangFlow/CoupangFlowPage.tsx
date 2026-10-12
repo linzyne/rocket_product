@@ -19,7 +19,7 @@ import ProductQtySummary from '../coupangOrder/components/ProductQtySummary';
 import { useReady } from '../coupangOrder/data/readyStore';
 import { subscribeMarks, setMark } from '../coupangOrder/data/poMarkStore';
 import { useLineHanjung } from '../coupangOrder/data/useLineHanjung';
-import { addShipOut, markShipOuts, splitShipOut, updateShipOutLine } from '../coupangOrder/data/shipOutStore';
+import { addShipOut, markShipOuts, splitShipOut, updateShipOutLine, mergeShipOuts } from '../coupangOrder/data/shipOutStore';
 import type { ShipOutLine } from '../coupangOrder/data/shipOutStore';
 import { linesAt } from '../coupangOrder/data/lineStore';
 import { boxLabel, buildDisplayRows, expandBoxSplit, totalBoxCount, parseBoxNo, isBoxSplit, parseBoxSplit, joinBoxSplit } from '../coupangOrder/utils/dataProcessor';
@@ -949,6 +949,50 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
     input.click();
   };
 
+  // 묶기: 고른 쉽먼트 칸 발주서들의 출고 건을 하나로(= 같은 출고 건 안에서 박스를 나눈다). 센터·날짜가 같아야 하고,
+  // 택배예약·서허 등록을 한 발주서는 묶지 않는다.
+  const bundleShip = () => {
+    const done = pickedShipping.filter(o => reservedOrder(o)).map(o => o.no);
+    if (done.length) { alert(`이미 택배예약·서허 등록한 발주서는 묶을 수 없어요: ${done.join(', ')}`); return; }
+    const items = Array.from(new Map<string, ShipOut>(pickedShipping.map(o => [o.item!.id, o.item!])).values());
+    if (items.length < 2) { alert('이미 한 건으로 묶여 있어요. 다른 출고 건의 발주서를 같이 골라 주세요.'); return; }
+    const keys = new Set(items.map(it => `${it.center.trim()}|${it.date}`));
+    if (keys.size > 1) {
+      alert(`센터·입고예정일이 달라서 묶을 수 없어요. 날짜 변경·적용으로 먼저 맞춰 주세요.\n\n${pickedShipping.map(o => `${o.no} · ${o.center} · ${o.date}`).join('\n')}`);
+      return;
+    }
+    const others = items.flatMap(it => Array.from(new Set(it.lines.map(l => l.발주번호)))).filter(no => !picked.has(no));
+    if (!window.confirm(`발주서 ${pickedShipping.length + others.length}건을 한 건으로 묶을까요?\n(${items[0].center} · ${items[0].date})` +
+      (others.length ? `\n\n같은 출고 건에 든 다른 발주서도 같이 묶여요: ${others.join(', ')}` : ''))) return;
+    const t = mergeShipOuts(items.map(it => it.id));
+    setPicked(new Set());
+    setDateNote({ tone: 'ok', text: `발주서를 한 건(${t?.id || ''})으로 묶었어요. 박스는 카드에서 정하세요.` });
+  };
+  // 해제: 고른 발주서를 묶음에서 빼서 발주서마다 출고 건 하나씩으로.
+  const unbundleShip = () => {
+    const done = pickedShipping.filter(o => reservedOrder(o)).map(o => o.no);
+    if (done.length) { alert(`이미 택배예약·서허 등록한 발주서는 풀 수 없어요: ${done.join(', ')}`); return; }
+    const byItem = new Map<string, { item: ShipOut; nos: string[] }>();
+    pickedShipping.forEach(o => {
+      const e = byItem.get(o.item!.id) || { item: o.item!, nos: [] };
+      e.nos.push(o.no);
+      byItem.set(o.item!.id, e);
+    });
+    const jobs = Array.from(byItem.values()).filter(e => new Set(e.item.lines.map(l => l.발주번호)).size > 1);
+    if (!jobs.length) { alert('고른 발주서는 묶여 있지 않아요.'); return; }
+    if (!window.confirm(`고른 발주서를 묶음에서 풀어 발주서마다 따로 둘까요?`)) return;
+    for (const { item, nos } of jobs) {
+      const all = Array.from(new Set(item.lines.map(l => l.발주번호)));
+      // 출고 건의 발주서를 다 골랐으면 첫 발주서는 원래 건에 남기고 나머지만 뗀다.
+      const out = nos.length >= all.length ? all.slice(1) : nos;
+      for (const no of out) splitShipOut(item.id, [no]);
+    }
+    setPicked(new Set());
+    setDateNote({ tone: 'ok', text: '묶음을 풀었어요. 발주서마다 따로 있어요.' });
+  };
+  const pickedBundled = pickedShipping.some(o => new Set(o.item!.lines.map(l => l.발주번호)).size > 1);
+  const onlyShipping = pickedShipping.length > 0 && pickedShipping.length === picked.size;
+
   // 고른 것 중 발송대기 칸에 있는 발주서 → 발송완료. 보낸 날을 묻고 출고 건 단위로 넘긴다(발송대기 화면의 "발송 완료"와 같다).
   const pickedWaiting = orders.filter(o => o.stage === 4 && picked.has(o.no) && o.item);
   const sendDone = () => {
@@ -1021,8 +1065,11 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
     }}>
       {picked.size > 0 && (
         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-          <button onClick={changeDate} style={pill('ghost')} title="서허 입고일 변경 요청 화면에 고른 발주서를 넣어 둬요">{calendar}날짜 변경</button>
-          <button onClick={applyDate} style={pill('ghost')} title="서허에서 승인된 걸 확인한 뒤 누르세요. 서허 발주서 목록의 지금 입고예정일·센터를 읽어 앱에 적어요">{check}적용</button>
+          {/* 날짜 변경·적용·묶기·해제는 쉽먼트 칸 발주서만 골랐을 때 */}
+          {onlyShipping && <button onClick={changeDate} style={pill('ghost')} title="서허 입고일 변경 요청 화면에 고른 발주서를 넣어 둬요">{calendar}날짜 변경</button>}
+          {onlyShipping && <button onClick={applyDate} style={pill('ghost')} title="서허에서 승인된 걸 확인한 뒤 누르세요. 서허 발주서 목록의 지금 입고예정일·센터를 읽어 앱에 적어요">{check}적용</button>}
+          {onlyShipping && picked.size >= 2 && <button onClick={bundleShip} style={pill('ghost')} title="고른 발주서들을 한 건으로 묶어요(센터·입고예정일이 같아야 해요)">🔗 묶기</button>}
+          {onlyShipping && pickedBundled && <button onClick={unbundleShip} style={pill('ghost')} title="묶은 발주서를 풀어 발주서마다 따로 둬요">✂ 해제</button>}
           {divider}
           <span style={{ height: 34, padding: '0 8px', display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 13, fontWeight: 700, whiteSpace: 'nowrap' }}>
             <span style={{ minWidth: 22, height: 22, padding: '0 6px', borderRadius: 999, background: ORANGE, color: '#fff', fontSize: 12, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>{picked.size}</span>

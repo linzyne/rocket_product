@@ -655,7 +655,8 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
                     const office = officeOf(l.상품이름);
                     const arrived = office.qty || 0;
                     const incoming = office.incoming || 0;
-                    const hasOffice = arrived > 0 || incoming > 0;
+                    // 사무실 재고는 0이어도 늘 보여준다(0+0).
+                    const hasOffice = true;
                     // 사무실 숫자 색: 이 줄에 아직 채울 게 남았을 때만(이미 다 맡겼거나 준비됨이면 회색).
                     const need = Math.max(0, (Number(l.확정수량) || 0) - assigned - queued);
                     const covered = need === 0 || isReadyLine;

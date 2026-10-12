@@ -339,16 +339,6 @@ const PendingPanel: React.FC<{ orders: HanjungOrder[]; onRecord: (act: Act) => v
         <span className="text-2xl leading-none">🛒</span>
         <span className="text-base font-bold text-amber-900">장바구니 <span className="font-medium text-amber-600">· 1688에 주문할 것</span> {groups.length ? <span className="ml-1 px-2 py-0.5 rounded-full bg-white text-amber-700 text-sm">{groups.length}개 상품 · {pending.length}줄</span> : <span className="text-amber-500 font-medium">· 지금은 없어요</span>}</span>
         <span className="text-sm text-amber-700">골라서 주문완료하면 ✈️ 오는 중으로 가요</span>
-        {pending.some(r => r.fromQueue) && (
-          <button
-            onClick={fillFromLater}
-            disabled={saving}
-            className={`${selected.some(r => r.fromQueue) ? '' : 'ml-auto '}px-3.5 py-1.5 rounded-full border border-amber-300 bg-white text-amber-800 text-sm font-semibold hover:bg-amber-100 disabled:opacity-40`}
-            title="대기 줄을 여유분(도착·오는 중)으로 채우고, 모자라면 늦은 발주와 자리를 바꿔요. 고른 줄이 있으면 그 줄만."
-          >
-            {selected.some(r => r.fromQueue) ? '고른 줄 ' : ''}주문할 줄 채우기
-          </button>
-        )}
         {selected.some(r => r.fromQueue) && (
           <button
             onClick={removeSelected}

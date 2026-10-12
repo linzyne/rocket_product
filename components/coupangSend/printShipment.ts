@@ -54,6 +54,11 @@ export const openBarcodes = async (item: ShipOut, orderNo: string, opened?: Wind
   const { found, missing } = await resolve();
   if (!missing.length) { draw(found); return; }
   if (win.closed) return;
+  // 쉽먼트 출력과 같이 연 탭: 바코드 없는 상품은 빼고 바로 만든다(하나도 없으면 탭을 닫는다). 🏷 버튼으로 열 때만 물어본다.
+  if (opened !== undefined) {
+    if (found.length) draw(found); else win.close();
+    return;
+  }
 
   // 못 찾은 상품은 바코드 탭 안에서 적게 한다(앱 탭의 입력 창은 뒤에 있어 크롬이 바로 닫아 버린다).
   // 쿠팡 발주서 파일(PO_FOR_CONFIRM…xlsx)을 넣으면 그 안의 상품바코드로 한꺼번에 채운다.

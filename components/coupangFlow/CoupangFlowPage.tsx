@@ -457,6 +457,22 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
           />
         )}
       </div>
+      {/* 쉽먼트 이후: 이 발주서가 든 박스의 운송장번호(이 출고 건의 쉽먼트 기록에서). 누르면 복사. */}
+      {o.stage >= 2 && o.item && o.batch && o.item.batchId === o.batch.id && (() => {
+        const waybills = Array.from(new Set(allBoxes(o.batch).filter(b => b.lines.some(l => String(l.발주번호 || '').trim() === o.no)).map(b => (b.waybill || '').trim()).filter(Boolean)));
+        if (!waybills.length) return null;
+        return (
+          <div style={{ fontSize: 11.5, color: '#6b7280', marginTop: 2 }}>
+            송장 {waybills.map((w, i) => (
+              <span key={w}>
+                {i > 0 && ', '}
+                <span title="눌러서 송장번호 복사" style={{ cursor: 'copy', textDecoration: 'underline dotted', textUnderlineOffset: 2 }}
+                  onClick={() => navigator.clipboard.writeText(w).then(() => setDateNote({ tone: 'ok', text: `송장번호 ${w} 복사했어요` })).catch(() => {})}>{w}</span>
+              </span>
+            ))}
+          </div>
+        );
+      })()}
     </div>
   );
   const tags = (o: FlowOrder) => {

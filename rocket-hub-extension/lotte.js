@@ -271,7 +271,7 @@
       <div style="color:#64748b;font-size:12px;margin-bottom:6px">${p.file ? p.file.name : ''}</div>
       <div style="color:${color};font-size:13px;margin-bottom:8px">${p.status || '진행 중…'}</div>
       <div style="display:flex;gap:6px">
-        ${(p.step === 'manual' || p.step === 'error') && p.batchId && p.boxCount && p.uploadedAt ? `<button data-act="retry" style="${btn};border-color:#bfdbfe;background:#eff6ff;color:#1d4ed8" title="예약은 다시 올리지 않고 운송장 조회부터 다시 해요">다시 조회</button>` : ''}
+        ${(p.step === 'manual' || (p.step === 'error' && p.uploadedAt)) && p.batchId && p.boxCount ? `<button data-act="retry" style="${btn};border-color:#bfdbfe;background:#eff6ff;color:#1d4ed8" title="예약은 다시 올리지 않고 운송장 조회부터 다시 해요">다시 조회</button>` : ''}
         <button data-act="dump" style="${btn}" title="자동 진행이 안 될 때 화면 구조를 파일로 저장해 보내주세요">화면 구조 저장</button>
         <button data-act="close" style="${btn};border-color:#fecaca;background:#fff1f2;color:#b91c1c">멈춤</button>
       </div>`;

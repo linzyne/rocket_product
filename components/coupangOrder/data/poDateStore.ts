@@ -4,7 +4,7 @@
 //
 //  coupangPoDateReq/{발주번호} : { no, at, doneAt?, from?, to? }
 //    at만 있으면 변경 요청 중, doneAt이 있으면 날짜 변경 완료(from → to).
-import { collection, doc, onSnapshot, setDoc, deleteDoc } from 'firebase/firestore';
+import { collection, doc, onSnapshot, setDoc } from 'firebase/firestore';
 import { db, ensureSignedIn } from '../../../utils/firebase';
 import { allLines, commit, linesReady } from './lineStore';
 import type { Line } from './lineStore';
@@ -18,7 +18,8 @@ const CHANGED = 'coupang-po-date-req-changed';
 const docId = (no: string) => no.trim().replace(/\//g, '∕');
 
 // want: 서허 요청 등록 때 적은 변경 센터·입고예정일(확장이 기억해 넘겨준 값). "적용"은 이 값으로 바꾼다.
-export interface DateReq { at: number; doneAt?: number; from?: string; to?: string; want?: { center: string; date: string } }
+// dismissedAt: 사람이 "표시 지우기"를 누른 때. 그보다 오래된 요청 기억(확장)은 다시 살리지 않는다.
+export interface DateReq { at: number; doneAt?: number; from?: string; to?: string; want?: { center: string; date: string }; dismissedAt?: number }
 const asReq = (v: unknown): DateReq => (typeof v === 'number' ? { at: v } : { at: 0, ...(v as DateReq) });
 let reqs: Record<string, DateReq> = (() => {
   try { return Object.fromEntries(Object.entries(JSON.parse(localStorage.getItem(LOCAL_KEY) || '') || {}).map(([k, v]) => [k, asReq(v)])); } catch { return {}; }
@@ -43,6 +44,7 @@ export function subscribeDateRequests(cb: (r: Record<string, DateReq>) => void):
           at: Number(v.at) || 0,
           ...(v.doneAt ? { doneAt: v.doneAt, from: v.from || '', to: v.to || '' } : {}),
           ...(v.want ? { want: v.want } : {}),
+          ...(v.dismissedAt ? { dismissedAt: Number(v.dismissedAt) } : {}),
         }];
       }));
       notify();
@@ -55,14 +57,16 @@ export function markDateRequested(nos: string[], on: boolean) {
   const list = Array.from(new Set(nos.map(n => n.trim()).filter(Boolean)));
   if (!list.length) return;
   const next = { ...reqs };
-  list.forEach(n => { if (on) next[n] = { at: Date.now() }; else delete next[n]; });
+  const now = Date.now();
+  // 지울 때 문서를 없애면 앱을 열 때 확장이 기억한 요청으로 다시 생긴다. 그래서 "지움" 기록만 남긴다.
+  list.forEach(n => { next[n] = on ? { at: now } : { at: 0, dismissedAt: now }; });
   reqs = next;
   notify();
   if (!db) return;
   const firestore = db;
   ensureSignedIn().then(() => Promise.all(list.map(n => on
-    ? setDoc(doc(firestore, COLLECTION, docId(n)), { no: n, at: Date.now() })
-    : deleteDoc(doc(firestore, COLLECTION, docId(n))))))
+    ? setDoc(doc(firestore, COLLECTION, docId(n)), { no: n, at: now })
+    : setDoc(doc(firestore, COLLECTION, docId(n)), { no: n, at: 0, dismissedAt: now }))))
     .catch(err => console.error('날짜 변경 요청 저장 실패:', err));
 }
 
@@ -82,6 +86,8 @@ export function rememberRequested(data: Record<string, { center?: string; date?:
     if (!want.center && !want.date) continue;
     const cur = next[no];
     if (cur?.doneAt) continue; // 이미 적용한 건 건드리지 않는다
+    // 표시를 지운 뒤에 새로 한 요청이 아니면 다시 살리지 않는다.
+    if (cur?.dismissedAt && !(Number(v.at) > cur.dismissedAt)) continue;
     if (cur?.want && cur.want.center === want.center && cur.want.date === want.date) continue;
     next[no] = { at: cur?.at || Number(v.at) || Date.now(), want };
     changed.push(no);
@@ -94,7 +100,7 @@ export function rememberRequested(data: Record<string, { center?: string; date?:
   ensureSignedIn().then(() => Promise.all(changed.map(no => setDoc(doc(firestore, COLLECTION, docId(no)), { no, ...next[no] }))))
     .catch(err => console.error('요청 내용 저장 실패:', err));
 }
-export const requestedOf = (no: string) => reqs[no]?.want;
+export const requestedOf = (no: string) => (reqs[no]?.dismissedAt ? undefined : reqs[no]?.want);
 
 // 날짜 변경 완료로 적는다(카드에 작게 "날짜변경완료"를 보여준다).
 function markDateDone(done: { no: string; from: string; to: string }[]) {

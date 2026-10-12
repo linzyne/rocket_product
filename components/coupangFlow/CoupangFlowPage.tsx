@@ -415,12 +415,12 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
       case 2:
         // 인쇄는 발주번호 옆 아이콘. 여기는 쉽먼트가 멈췄을 때 이어서 하기만.
         // 진행 중인 채로 3분 넘게 소식이 없으면(확장이 답을 안 줌) 멈춘 것으로 보고 이어서 하기를 보인다.
-        if (o.item?.shipmentNos?.[o.no] || !o.item || !o.batch || !r || r.state === 'done' || r.noResume) return null;
+        if (o.item?.shipmentNos?.[o.no] || !o.item || !o.batch || !r || r.state === 'done' || r.noResume || o.batch.resumeHiddenFor === `${r.step}|${r.state}`) return null;
         if (r.state === 'running' && Date.now() - r.at < 3 * 60 * 1000) return null;
         return (
           <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
             <button style={btn(ORANGE, true)} onClick={() => resumeShipment(o.batch!, [o.item!])} title="멈춘 데서 이어서 합니다. 택배예약은 다시 하지 않아요.">▶ 이어서 하기</button>
-            <button title="이어서 하기 버튼 지우기" onClick={() => patchShipmentBatch(o.batch!.id, { run: { ...r, noResume: true } }).catch(err => alert(`지우기 실패: ${err?.message || err}`))}
+            <button title="이어서 하기 버튼 지우기" onClick={() => patchShipmentBatch(o.batch!.id, { resumeHiddenFor: `${r.step}|${r.state}` }).catch(err => alert(`지우기 실패: ${err?.message || err}`))}
               style={{ border: 'none', background: 'transparent', color: '#9ca3af', cursor: 'pointer', fontSize: 15, lineHeight: 1, padding: 0 }}>×</button>
           </span>
         );
@@ -488,7 +488,7 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
   );
   const tags = (o: FlowOrder) => {
     // 요청 표시는 날짜 바꾸기를 눌렀거나(at) 서허 요청 등록 때 확장이 값을 기억했을 때(want).
-    const req = !!dateReqs[o.no] && !dateReqs[o.no].doneAt;
+    const req = !!dateReqs[o.no] && !dateReqs[o.no].doneAt && !dateReqs[o.no].dismissedAt;
     const changedDate = dateReqs[o.no]?.doneAt ? dateReqs[o.no] : null;
     if (!(((o.bundle || o.hold) && o.stage === 1) || o.partial || req || changedDate)) return null;
     return (
@@ -514,7 +514,7 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
   };
   const runNote = (o: FlowOrder) => {
     const r = run(o);
-    if (!r || r.state === 'done' || r.hidden) return null;
+    if (!r || r.state === 'done' || r.hidden || o.batch?.noteHiddenFor === `${r.step}|${r.state}`) return null;
     const batchId = o.batch!.id;
     return (
       <div style={{
@@ -523,7 +523,7 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
         background: r.state === 'error' ? '#fef2f2' : '#eff6ff', color: r.state === 'error' ? '#b91c1c' : '#1d4ed8',
       }}>
         <span style={{ flex: 1 }}><b>{r.state === 'error' ? `⛔ ${STEP_LABEL[r.step]}에서 멈춤` : `⏳ ${STEP_LABEL[r.step]} 하는 중`}</b> · {r.message}</span>
-        <button title="이 안내문 닫기" onClick={() => patchShipmentBatch(batchId, { run: { ...r, hidden: true } }).catch(err => alert(`닫기 실패: ${err?.message || err}`))}
+        <button title="이 안내문 닫기" onClick={() => patchShipmentBatch(batchId, { noteHiddenFor: `${r.step}|${r.state}` }).catch(err => alert(`닫기 실패: ${err?.message || err}`))}
           style={{ border: 'none', background: 'transparent', color: '#9ca3af', cursor: 'pointer', fontSize: 14, lineHeight: 1, padding: 0 }}>×</button>
       </div>
     );

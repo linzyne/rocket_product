@@ -34,6 +34,9 @@ export interface ShipmentBatch {
   // 쉽먼트 자동 진행(택배예약 → 운송장 → 서허 양식 → 서허 일괄등록)이 어디까지 갔는지. 화면을 옮기거나
   // 새로고침해도 멈춘 자리와 까닭이 남아서 "이어서 하기"가 그 다음부터 한다.
   run?: ShipmentRun;
+  // 사람이 카드에서 닫은 안내문·이어서 하기. "단계|상태"를 적어 두고 진행 기록이 그 단계·상태인 동안 숨긴다.
+  noteHiddenFor?: string;
+  resumeHiddenFor?: string;
 }
 
 export type ShipmentRunStep = 'lotte' | 'waybill' | 'form' | 'upload' | 'done';

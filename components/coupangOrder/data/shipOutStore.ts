@@ -486,6 +486,25 @@ export function markShipOuts(ids: string[], patch: Partial<Pick<ShipOut, 'batchI
   if (touched) write(list);
 }
 
+// 출고 건 안의 발주번호를 고친다(줄·쉽먼트 번호·출력완료·준비됨 표시까지 같이).
+export function renameShipOutOrder(ids: string[], from: string, to: string) {
+  const want = new Set(ids);
+  const list = read();
+  let touched = false;
+  for (const item of list) {
+    if (!want.has(item.id)) continue;
+    item.lines.forEach(l => { if (String(l.발주번호 || '').trim() === from) { l.발주번호 = to; touched = true; } });
+    if (item.shipmentNos?.[from] != null) {
+      const next = { ...item.shipmentNos, [to]: item.shipmentNos[from] };
+      delete next[from];
+      item.shipmentNos = next;
+    }
+    if (item.printedOrders) item.printedOrders = item.printedOrders.map(n => (n === from ? to : n));
+    if (item.readyKeys) item.readyKeys = item.readyKeys.map(k => (k.startsWith(`${from}│`) ? `${to}${k.slice(from.length)}` : k));
+  }
+  if (touched) write(list);
+}
+
 export function deleteShipOut(id: string) {
   write(read().filter(s => s.id !== id));
 }

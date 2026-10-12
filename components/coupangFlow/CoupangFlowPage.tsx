@@ -19,7 +19,7 @@ import ProductQtySummary from '../coupangOrder/components/ProductQtySummary';
 import { useReady } from '../coupangOrder/data/readyStore';
 import { subscribeMarks, setMark } from '../coupangOrder/data/poMarkStore';
 import { useLineHanjung } from '../coupangOrder/data/useLineHanjung';
-import { addShipOut, markShipOuts, splitShipOut, updateShipOutLine, mergeShipOuts, restoreOrders, readShipOuts } from '../coupangOrder/data/shipOutStore';
+import { addShipOut, markShipOuts, splitShipOut, updateShipOutLine, mergeShipOuts, restoreOrders, readShipOuts, renameShipOutOrder } from '../coupangOrder/data/shipOutStore';
 import type { ShipOutLine } from '../coupangOrder/data/shipOutStore';
 import { linesAt } from '../coupangOrder/data/lineStore';
 import { boxLabel, buildDisplayRows, expandBoxSplit, totalBoxCount, parseBoxNo, isBoxSplit, parseBoxSplit, joinBoxSplit } from '../coupangOrder/utils/dataProcessor';
@@ -1128,6 +1128,48 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
     setDateNote({ tone: 'ok', text: no ? `쉽먼트 번호 ${no}을(를) 적었어요. 이제 🖨 인쇄할 수 있어요.` : '쉽먼트 번호를 지웠어요.' });
   };
 
+  // 상자의 발주번호 고치기: 출고 건 줄과 쉽먼트 기록 박스 안 번호를 같이 바꾼다.
+  const editOrderNo = (list: FlowOrder[], from: string) => {
+    const v = window.prompt(`발주번호 ${from}을(를) 무엇으로 고칠까요?`, from);
+    if (v == null) return;
+    const to = v.replace(/\s+/g, '');
+    if (!to || to === from) return;
+    if (!/^\d+$/.test(to)) { alert('발주번호는 숫자만 적어 주세요.'); return; }
+    if (orders.some(o => o.no === to)) { alert(`발주번호 ${to}은(는) 이미 있어요.`); return; }
+    const mine = list.filter(o => o.no === from);
+    renameShipOutOrder(Array.from(new Set(mine.map(o => o.item?.id).filter((x): x is string => !!x))), from, to);
+    const batches = new Map<string, ShipmentBatch>();
+    mine.forEach(o => { if (o.batch) batches.set(o.batch.id, o.batch); });
+    batches.forEach(b => {
+      const centers = b.centers.map(c => ({ ...c, boxes: c.boxes.map(x => ({ ...x, lines: x.lines.map(l => (String(l.발주번호 || '').trim() === from ? { ...l, 발주번호: to } : l)) })) }));
+      patchShipmentBatch(b.id, { centers }).catch(() => {});
+    });
+    setDateNote({ tone: 'ok', text: `발주번호 ${from} → ${to}(으)로 고쳤어요.` });
+  };
+  // 상자의 송장번호 넣기·고치기. from이 있으면 그 번호를 쓴 박스만, 없으면 이 상자 발주서가 든 빈 박스에 넣는다.
+  const editWaybill = (list: FlowOrder[], from: string) => {
+    const v = window.prompt(from ? `송장번호 ${from}을(를) 무엇으로 고칠까요? (비우면 지워요)` : '이 상자의 송장번호', from);
+    if (v == null) return;
+    const to = v.replace(/\s+/g, '');
+    if (to === from) return;
+    if (to && !/^\d+$/.test(to)) { alert('송장번호는 숫자만 적어 주세요.'); return; }
+    const nos = new Set(list.map(o => o.no));
+    const batches = new Map<string, ShipmentBatch>();
+    list.forEach(o => { if (o.item && o.batch && o.item.batchId === o.batch.id) batches.set(o.batch.id, o.batch); });
+    let n = 0;
+    batches.forEach(b => {
+      const centers = b.centers.map(c => ({ ...c, boxes: c.boxes.map(x => {
+        if (!x.lines.some(l => nos.has(String(l.발주번호 || '').trim()))) return x;
+        if ((x.waybill || '').trim() !== from) return x;
+        n += 1;
+        return { ...x, waybill: to };
+      }) }));
+      patchShipmentBatch(b.id, { centers }).catch(() => {});
+    });
+    if (!n) { setDateNote({ tone: 'error', text: '송장번호를 넣을 박스가 없어요(택배예약 전인 상자예요).' }); return; }
+    setDateNote({ tone: 'ok', text: to ? `송장번호 ${to}을(를) 박스 ${n}개에 적었어요.` : `송장번호를 박스 ${n}개에서 지웠어요.` });
+  };
+
   // 고른 것 중 발송대기 칸에 있는 발주서 → 발송완료. 보낸 날을 묻고 출고 건 단위로 넘긴다(발송대기 화면의 "발송 완료"와 같다).
   const pickedWaiting = orders.filter(o => o.stage === 4 && picked.has(o.no) && o.item);
   const sendDone = () => {
@@ -1624,8 +1666,18 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
                       );
                       return (
                         <div style={{ fontSize: 11.5, color: '#6b7280', lineHeight: 1.6, padding: '0 4px' }}>
-                          <div>발주 {sm.orders.map(v => chip('발주번호', v))}</div>
-                          {sm.waybills.length > 0 && <div>송장 {sm.waybills.map(v => chip('송장번호', v))}</div>}
+                          <div>발주 {sm.orders.map(v => (
+                            <React.Fragment key={'o' + v}>{chip('발주번호', v)}<span onClick={() => editOrderNo(g.list, v)} title="이 발주번호 고치기"
+                              style={{ cursor: 'pointer', color: '#2563eb', fontWeight: 700, marginRight: 8, marginLeft: -4 }}>✎</span></React.Fragment>
+                          ))}</div>
+                          <div>
+                            송장 {sm.waybills.map(v => (
+                              <React.Fragment key={'w' + v}>{chip('송장번호', v)}<span onClick={() => editWaybill(g.list, v)} title="이 송장번호 고치기"
+                                style={{ cursor: 'pointer', color: '#2563eb', fontWeight: 700, marginRight: 8, marginLeft: -4 }}>✎</span></React.Fragment>
+                            ))}
+                            {!sm.waybills.length && <><span style={{ color: '#b45309' }}>없음 </span><span onClick={() => editWaybill(g.list, '')} title="이 상자 박스에 송장번호 넣기"
+                              style={{ cursor: 'pointer', color: '#2563eb', fontWeight: 700 }}>+ 넣기</span></>}
+                          </div>
                           <div>
                             쉽먼트 {sm.ships.length ? sm.ships.map(v => chip('쉽먼트 번호', v)) : <span style={{ color: '#b45309' }}>없음</span>}
                             <span onClick={() => setShipNos(g.list)} title="이 상자 발주서 전체에 쉽먼트 번호 넣기·고치기"

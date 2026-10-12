@@ -19,7 +19,7 @@ import ProductQtySummary from '../coupangOrder/components/ProductQtySummary';
 import { useReady } from '../coupangOrder/data/readyStore';
 import { subscribeMarks, setMark } from '../coupangOrder/data/poMarkStore';
 import { useLineHanjung } from '../coupangOrder/data/useLineHanjung';
-import { addShipOut, markShipOuts, splitShipOut, updateShipOutLine, mergeShipOuts } from '../coupangOrder/data/shipOutStore';
+import { addShipOut, markShipOuts, splitShipOut, updateShipOutLine, mergeShipOuts, restoreOrders } from '../coupangOrder/data/shipOutStore';
 import type { ShipOutLine } from '../coupangOrder/data/shipOutStore';
 import { linesAt } from '../coupangOrder/data/lineStore';
 import { boxLabel, buildDisplayRows, expandBoxSplit, totalBoxCount, parseBoxNo, isBoxSplit, parseBoxSplit, joinBoxSplit } from '../coupangOrder/utils/dataProcessor';
@@ -1030,6 +1030,16 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
     setPicked(new Set());
     setDateNote({ tone: 'ok', text: '묶음을 풀었어요. 발주서마다 따로 있어요.' });
   };
+  // 쉽먼트 칸 → 발주확정으로 되돌리기. 택배예약·서허 등록을 한 발주서는 되돌리지 않는다.
+  const backToConfirmed = () => {
+    const done = pickedShipping.filter(o => reservedOrder(o)).map(o => o.no);
+    if (done.length) { alert(`이미 택배예약·서허 등록한 발주서는 발주확정으로 보낼 수 없어요: ${done.join(', ')}`); return; }
+    const nos = pickedShipping.map(o => o.no);
+    if (!window.confirm(`고른 발주서 ${nos.length}건을 발주확정으로 되돌릴까요?\n(박스 나누기는 첫 박스로 돌아가요)`)) return;
+    restoreOrders(nos);
+    setPicked(new Set());
+    setDateNote({ tone: 'ok', text: `발주 ${nos.length}건을 발주확정으로 되돌렸어요.` });
+  };
   const pickedBundled = pickedShipping.some(o => new Set(o.item!.lines.map(l => l.발주번호)).size > 1);
   const onlyShipping = pickedShipping.length > 0 && pickedShipping.length === picked.size;
 
@@ -1074,6 +1084,11 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
       <button key="lotte" onClick={reserveShip} style={{ ...pill('primary'), background: ORANGE }}
         title="고른 쉽먼트 발주서로 택배예약 → 운송장 → 서허 양식 → 서허 일괄등록까지 이어서 해요">
         🚚 택배예약·일괄등록 <span style={{ opacity: 0.8, fontWeight: 500 }}>{totalBoxCount(rowsOf(reserveItems.map(it => ({ ...it, lines: it.lines.filter(l => toReserve.has(l.발주번호)) }))))}박스</span>
+      </button>
+    ),
+    pickedShipping.length > 0 && (
+      <button key="back" onClick={backToConfirmed} style={pill('ghost')} title="고른 쉽먼트 발주서를 발주확정 칸으로 되돌려요">
+        <span style={{ opacity: 0.7 }}>←</span> 발주확정으로 {countOf(pickedShipping.length)}
       </button>
     ),
     pickedShipping.length > 0 && (

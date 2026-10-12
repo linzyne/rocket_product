@@ -121,7 +121,7 @@
     await sleep(300);
     const btn =
       Array.from(document.querySelectorAll('button, a, input[type="submit"], input[type="button"]')).find(
-        (el) => visible(el) && /^로그인$/.test(clean(el.textContent || el.value))
+        (el) => visible(el) && /^(로그인|login)$/i.test(clean(el.textContent || el.value))
       ) || (pw.form && pw.form.querySelector('[type="submit"]'));
     if (btn) realClick(btn);
     else {

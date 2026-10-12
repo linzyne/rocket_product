@@ -19,7 +19,7 @@ import ProductQtySummary from '../coupangOrder/components/ProductQtySummary';
 import { useReady } from '../coupangOrder/data/readyStore';
 import { subscribeMarks, setMark } from '../coupangOrder/data/poMarkStore';
 import { useLineHanjung } from '../coupangOrder/data/useLineHanjung';
-import { addShipOut, markShipOuts, splitShipOut, updateShipOutLine, mergeShipOuts, restoreOrders } from '../coupangOrder/data/shipOutStore';
+import { addShipOut, markShipOuts, splitShipOut, updateShipOutLine, mergeShipOuts, restoreOrders, readShipOuts } from '../coupangOrder/data/shipOutStore';
 import type { ShipOutLine } from '../coupangOrder/data/shipOutStore';
 import { linesAt } from '../coupangOrder/data/lineStore';
 import { boxLabel, buildDisplayRows, expandBoxSplit, totalBoxCount, parseBoxNo, isBoxSplit, parseBoxSplit, joinBoxSplit } from '../coupangOrder/utils/dataProcessor';
@@ -840,8 +840,21 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
           <input type="checkbox" checked={picked.has(o.no)} onChange={() => togglePick(o.no)}
             style={{ width: 15, height: 15, accentColor: ORANGE, cursor: 'pointer', flexShrink: 0 }} />
         )}
-        {/* 발주번호·쉽먼트 번호·인쇄·송장: 쉽먼트·발송대기 카드와 같은 줄 */}
-        <div style={{ minWidth: 0 }}>{subLine(o)}</div>
+        {/* 발주서마다는 발주번호(+인쇄·체크칸)만. 쉽먼트·송장 번호는 덩어리 머리에 한 번 */}
+        <div style={{ minWidth: 0, fontSize: 11.5, color: '#888', marginTop: 2 }}>
+          발주 <span title="눌러서 발주번호 복사" style={{ cursor: 'copy', textDecoration: 'underline dotted', textUnderlineOffset: 2 }}>{o.no}</span>
+          {o.stage >= 2 && o.item && (
+            <span title="이 발주서의 쉽먼트 번호 넣기·고치기" onClick={() => setShipNos([o])}
+              style={{ marginLeft: 6, cursor: 'pointer', color: o.item.shipmentNos?.[o.no] ? '#16a34a' : '#b45309' }}>
+              {o.item.shipmentNos?.[o.no] ? '✎' : '+쉽먼트'}
+            </span>
+          )}
+          {(o.stage === 2 || o.stage === 4) && o.item && <span style={{ marginLeft: 8 }}>{printButton(o)}</span>}
+          {(o.stage === 2 || o.stage === 4) && o.item && (
+            <input type="checkbox" checked={marks.has(o.no)} onChange={e => setMark(o.no, e.target.checked)} title="체크 표시(켜 두면 그대로 남아요)"
+              style={{ width: 13, height: 13, marginLeft: 4, verticalAlign: 'middle', cursor: 'pointer', accentColor: '#6b7280' }} />
+          )}
+        </div>
       </div>
       {tags(o)}
       {(o.stage < 2 || once) && runNote(o)}
@@ -1064,6 +1077,49 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
   // 날짜 변경·적용: 발주확정·쉽먼트 칸 발주서만 골랐을 때(발송대기는 빼고).
   const dateOk = picked.size > 0 && pickedConfirmed.length + pickedShipping.length === picked.size;
 
+  // 날짜·센터 직접 고치기: 고른 발주서(발주확정·쉽먼트)의 입고예정일·센터를 사람이 적은 값으로 바꾼다.
+  // "적용"과 같은 길(발주확인·예약·쉽먼트 줄과 출고 건·쉽먼트 기록까지)로 바꾼다.
+  const editDateCenter = () => {
+    const list = orders.filter(o => picked.has(o.no));
+    if (!list.length) return;
+    const date = window.prompt(`고른 발주서 ${list.length}건의 입고예정일(YYYY-MM-DD)`, list[0].date);
+    if (date == null) return;
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date.trim())) { alert('날짜는 2026-10-13처럼 적어 주세요.'); return; }
+    const center = window.prompt(`고른 발주서 ${list.length}건의 센터(예: 대구3)`, list[0].center);
+    if (center == null || !center.trim()) return;
+    const nos = list.map(o => o.no);
+    const values = Object.fromEntries(nos.map(no => [no, { center: center.trim(), date: date.trim() }]));
+    applyCurrent(nos, values).then(res => {
+      for (const m of res.moved) {
+        for (const next of retargetBatches(batchesRef.current, m.before, m.to, shipOutBatch(m.before, batchesRef.current))) {
+          saveShipmentBatch(next).catch(err => console.error('쉽먼트 기록 옮기기 실패:', err));
+        }
+      }
+      setPicked(new Set());
+      setDateNote({ tone: 'ok', text: `✅ ${res.changed.length}건을 ${date.trim()} ${center.trim()}(으)로 바꿨어요.` + (res.same.length ? ` 이미 같은 값 ${res.same.length}건.` : '') });
+    }).catch(err => setDateNote({ tone: 'error', text: `바꾸지 못했어요: ${err instanceof Error ? err.message : String(err)}` }));
+  };
+  // 쉽먼트 번호 직접 넣기(서허에서 직접 등록했을 때). 넣으면 인쇄할 수 있고 서허 등록 끝난 건으로 본다.
+  const setShipNos = (targets: FlowOrder[]) => {
+    const list = targets.filter(o => o.item);
+    if (!list.length) return;
+    const cur = Array.from(new Set(list.map(o => o.item!.shipmentNos?.[o.no] || '').filter(Boolean)));
+    const v = window.prompt(list.length > 1 ? `발주서 ${list.length}건(${list.map(o => o.no).join(', ')})의 쉽먼트 번호` : `${list[0].no}의 쉽먼트 번호`, cur.length === 1 ? cur[0] : '');
+    if (v == null) return;
+    const no = v.replace(/\s+/g, '');
+    if (no && !/^\d{6,}$/.test(no)) { alert('쉽먼트 번호는 숫자만 적어 주세요.'); return; }
+    const byItem = new Map<string, string[]>();
+    list.forEach(o => byItem.set(o.item!.id, [...(byItem.get(o.item!.id) || []), o.no]));
+    const fresh = readShipOuts();
+    byItem.forEach((nos, id) => {
+      const it = fresh.find(x => x.id === id);
+      const next = { ...(it?.shipmentNos || {}) };
+      nos.forEach(n => { if (no) next[n] = no; else delete next[n]; });
+      markShipOuts([id], { shipmentNos: next });
+    });
+    setDateNote({ tone: 'ok', text: no ? `쉽먼트 번호 ${no}을(를) 적었어요. 이제 🖨 인쇄할 수 있어요.` : '쉽먼트 번호를 지웠어요.' });
+  };
+
   // 고른 것 중 발송대기 칸에 있는 발주서 → 발송완료. 보낸 날을 묻고 출고 건 단위로 넘긴다(발송대기 화면의 "발송 완료"와 같다).
   const pickedWaiting = orders.filter(o => o.stage === 4 && picked.has(o.no) && o.item);
   const sendDone = () => {
@@ -1143,6 +1199,7 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
           {/* 날짜 변경·적용·묶기·해제는 쉽먼트 칸 발주서만 골랐을 때 */}
           {dateOk && <button onClick={changeDate} style={pill('ghost')} title="서허 입고일 변경 요청 화면에 고른 발주서를 넣어 둬요">{calendar}날짜 변경</button>}
+          {dateOk && <button onClick={editDateCenter} style={pill('ghost')} title="고른 발주서의 입고예정일·센터를 직접 적어 바꿔요">✏️ 날짜·센터</button>}
           {dateOk && <button onClick={applyDate} style={pill('ghost')} title="서허에서 승인된 걸 확인한 뒤 누르세요. 서허 발주서 목록의 지금 입고예정일·센터를 읽어 앱에 적어요">{check}적용</button>}
           {onlyShipping && picked.size >= 2 && <button onClick={bundleShip} style={pill('ghost')} title="고른 발주서들을 한 건으로 묶어요(센터·입고예정일이 같아야 해요)">🔗 묶기</button>}
           {onlyShipping && pickedBundled && <button onClick={unbundleShip} style={pill('ghost')} title="묶은 발주서를 풀어 발주서마다 따로 둬요">✂ 해제</button>}
@@ -1505,6 +1562,29 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
                       <span style={{ fontSize: 17, fontWeight: 900, color: ORANGE }}>{Array.from(new Set(g.list.map(o => o.center.trim()).filter(Boolean))).join(' · ') || '센터 없음'}</span>
                       <span style={{ fontSize: 11.5, fontWeight: 700, color: '#a8a29e' }}>발주 {g.list.length}건</span>
                     </div>
+                    {i >= 2 && (() => {
+                      // 이 상자에 든 발주번호·송장번호·쉽먼트번호를 한 번에(누르면 복사).
+                      const waybills = Array.from(new Set(g.list.flatMap(o => (o.item && o.batch && o.item.batchId === o.batch.id)
+                        ? allBoxes(o.batch).filter(b => b.lines.some(l => String(l.발주번호 || '').trim() === o.no)).map(b => (b.waybill || '').trim())
+                        : []).filter(Boolean)));
+                      const ships = Array.from(new Set(g.list.map(o => o.item?.shipmentNos?.[o.no] || '').filter(Boolean)));
+                      const copy = (label: string, v: string) => navigator.clipboard.writeText(v).then(() => setDateNote({ tone: 'ok', text: `${label} ${v} 복사했어요` })).catch(() => {});
+                      const chip = (label: string, v: string) => (
+                        <span key={label + v} title={`눌러서 ${label} 복사`} onClick={() => copy(label, v)}
+                          style={{ cursor: 'copy', textDecoration: 'underline dotted', textUnderlineOffset: 2, marginRight: 6 }}>{v}</span>
+                      );
+                      return (
+                        <div style={{ fontSize: 11.5, color: '#6b7280', lineHeight: 1.6, padding: '0 4px' }}>
+                          <div>발주 {g.list.map(o => chip('발주번호', o.no))}</div>
+                          {waybills.length > 0 && <div>송장 {waybills.map(w => chip('송장번호', w))}</div>}
+                          <div>
+                            쉽먼트 {ships.length ? ships.map(v => chip('쉽먼트 번호', v)) : <span style={{ color: '#b45309' }}>없음</span>}
+                            <span onClick={() => setShipNos(g.list)} title="이 상자 발주서 전체에 쉽먼트 번호 넣기·고치기"
+                              style={{ cursor: 'pointer', color: '#2563eb', fontWeight: 700 }}>{ships.length ? '✎' : '+ 넣기'}</span>
+                          </div>
+                        </div>
+                      );
+                    })()}
                     {(() => {
                       // 안내문·이어서 하기를 보일 발주서: 덩어리에서 처음으로 할 일이 있는 발주서 하나.
                       const first = Math.max(0, g.list.findIndex(o => !!action(o) || !!runNote(o)));

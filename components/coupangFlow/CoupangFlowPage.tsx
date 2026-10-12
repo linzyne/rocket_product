@@ -4,7 +4,10 @@ import { subscribeReservations } from '../coupangOrder/data/reservationStore';
 import { ShipOut, subscribeShipOuts, shipOutStage, shipOutBatch } from '../coupangOrder/data/shipOutStore';
 import { ShipmentBatch, subscribeShipments } from '../../data/shipmentStore';
 import { subscribeConfirmed, setConfirmed } from '../coupangOrder/data/poConfirmStore';
-import { resumeShipment, onNeedWaybill, STEP_LABEL } from '../coupangOrder/data/shipmentRunner';
+import { resumeShipment, onNeedWaybill, STEP_LABEL, startShipment, fillAndUpload, subscribeLive } from '../coupangOrder/data/shipmentRunner';
+import type { LiveStatus } from '../coupangOrder/data/shipmentRunner';
+import { loadLocalAddresses, loadLocalSender, subscribeShippingSettings } from '../coupangOrder/data/shippingSettingsStore';
+import type { AddressEntry, SenderInfo } from '../coupangOrder/types';
 import ShipmentWaybillModal from '../coupangOrder/components/ShipmentWaybillModal';
 import type { OrderRow } from '../coupangOrder/types';
 import { dateKeyYMD, ymdSortKey } from '../coupangOrder/utils/dateUtils';
@@ -18,7 +21,7 @@ import { subscribeMarks, setMark } from '../coupangOrder/data/poMarkStore';
 import { useLineHanjung } from '../coupangOrder/data/useLineHanjung';
 import { addShipOut, markShipOuts } from '../coupangOrder/data/shipOutStore';
 import { linesAt } from '../coupangOrder/data/lineStore';
-import { boxLabel } from '../coupangOrder/utils/dataProcessor';
+import { boxLabel, buildDisplayRows, expandBoxSplit, totalBoxCount } from '../coupangOrder/utils/dataProcessor';
 import { LineCheckMenu } from '../coupangOrder/components/OrderTable';
 import { HanjungOrder, subscribeHanjung, productSummary, nameKey, makeHanjungOfficeLookup, sameName, saveHanjungOrder, assignRemaining } from '../../data/hanjungStore';
 import { returnToHanjungQueue } from '../coupangOrder/data/hanjungQueueStore';
@@ -288,6 +291,12 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
   useEffect(() => subscribeShipments(setBatches), []);
   useEffect(() => subscribeConfirmed(setConfirmedMap), []);
   useEffect(() => onNeedWaybill(setWaybillBatch), []);
+  // 택배예약 → 서허 일괄등록 자동 진행(shipmentRunner). 보내는사람·택배주소는 쉽먼트생성 화면 설정 그대로 쓴다.
+  const [addresses, setAddresses] = useState<AddressEntry[]>(loadLocalAddresses);
+  const [sender, setSender] = useState<SenderInfo>(loadLocalSender);
+  useEffect(() => subscribeShippingSettings(({ addresses, sender }) => { setAddresses(addresses); setSender(sender); }), []);
+  const [live, setLive] = useState<LiveStatus | null>(null);
+  useEffect(() => subscribeLive(setLive), []);
 
   const orders = useMemo(() => {
     const map = new Map<string, FlowOrder>();
@@ -830,6 +839,43 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
     setDateNote({ tone: 'ok', text: `발주 ${pickedShipping.length + others.length}건을 발송대기로 넘겼어요.` });
   };
 
+  // 고른 것 중 쉽먼트 칸에서 아직 택배예약 안 한 출고 건 → 택배예약 → 운송장 → 서허 양식 → 서허 일괄등록까지 한 번에.
+  // 이미 예약한 건(쉽먼트 기록이 있는 건)은 두 번 예약하면 안 되므로 빼고, 멈춘 건은 카드의 "이어서 하기"로.
+  const reserveItems = (() => {
+    const m = new Map<string, ShipOut>();
+    pickedShipping.forEach(o => { if (!o.item!.batchId && !o.item!.shipmentNos?.[o.no]) m.set(o.item!.id, o.item!); });
+    return Array.from(m.values());
+  })();
+  const rowsOf = (items: ShipOut[]) => buildDisplayRows(items.flatMap(item => item.lines.flatMap(l => expandBoxSplit({
+    발주번호: l.발주번호,
+    물류센터: l.물류센터,
+    상품이름: l.상품이름,
+    확정수량: l.확정수량,
+    입고예정일: normalizeDateValue(l.입고예정일),
+    메모: l.메모 || '',
+    쉼먼트: l.쉼먼트 || '',
+    묶음: item.id,
+    묶음센터: item.center,
+  }))));
+  const reserveShip = () => {
+    const skipped = pickedShipping.filter(o => !reserveItems.some(i => i.id === o.item!.id)).map(o => o.no);
+    if (skipped.length && !window.confirm(`이미 택배예약한 발주서는 빼고 해요: ${skipped.join(', ')}\n(멈춘 건은 카드의 "▶ 이어서 하기"로)`)) return;
+    const others = reserveItems.flatMap(it => Array.from(new Set(it.lines.map(l => l.발주번호))).filter(no => !picked.has(no)));
+    if (others.length && !window.confirm(`같은 출고 건에 든 다른 발주서도 같이 예약돼요: ${others.join(', ')}`)) return;
+    const b = startShipment(rowsOf(reserveItems), reserveItems.map(i => i.id), addresses, sender, batches);
+    if (b) setPicked(new Set());
+  };
+  const pickFormFile = (id: string) => {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = '.xlsx,.xls';
+    input.onchange = async () => {
+      const f = input.files && input.files[0];
+      if (f) fillAndUpload(await f.arrayBuffer(), id);
+    };
+    input.click();
+  };
+
   // 고른 것 중 발송대기 칸에 있는 발주서 → 발송완료. 보낸 날을 묻고 출고 건 단위로 넘긴다(발송대기 화면의 "발송 완료"와 같다).
   const pickedWaiting = orders.filter(o => o.stage === 4 && picked.has(o.no) && o.item);
   const sendDone = () => {
@@ -867,6 +913,12 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
         쉽먼트로 {countOf(pickedConfirmed.length)}<span style={{ opacity: 0.7 }}>→</span>
       </button>
     ),
+    reserveItems.length > 0 && (
+      <button key="lotte" onClick={reserveShip} style={{ ...pill('primary'), background: ORANGE }}
+        title="고른 쉽먼트 발주서로 택배예약 → 운송장 → 서허 양식 → 서허 일괄등록까지 이어서 해요">
+        🚚 택배예약·일괄등록 <span style={{ opacity: 0.8, fontWeight: 500 }}>{totalBoxCount(rowsOf(reserveItems))}박스</span>
+      </button>
+    ),
     pickedShipping.length > 0 && (
       <button key="wait" onClick={sendToWaiting} style={pill('primary')} title="고른 쉽먼트 발주서를 발송대기로 넘겨요">
         발송대기로 {countOf(pickedShipping.length)}<span style={{ opacity: 0.7 }}>→</span>
@@ -887,7 +939,7 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6 9 17l-5-5" /></svg>
   );
   const noteColor = dateNote?.tone === 'error' ? '#b91c1c' : dateNote?.tone === 'ok' ? '#047857' : '#1d4ed8';
-  const layer = (picked.size > 0 || dateNote) && (
+  const layer = (picked.size > 0 || dateNote || live) && (
     <div style={{
       position: 'fixed', left: '50%', bottom: 20, transform: 'translateX(-50%)', zIndex: 50,
       background: 'rgba(255,255,255,0.97)', backdropFilter: 'blur(8px)', color: '#111827',
@@ -909,6 +961,22 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
             style={{ ...pill('ghost'), border: 'none', color: '#6b7280', padding: '0 10px' }}>
             취소
           </button>
+        </div>
+      )}
+      {live && (
+        <div style={{
+          display: 'flex', alignItems: 'flex-start', gap: 8, padding: '6px 10px', borderRadius: 9, fontSize: 12, lineHeight: 1.5,
+          background: live.tone === 'error' ? '#fef2f2' : live.tone === 'ok' ? '#ecfdf5' : '#eff6ff',
+          color: live.tone === 'error' ? '#b91c1c' : live.tone === 'ok' ? '#047857' : '#1d4ed8',
+        }}>
+          <span style={{ flex: 1 }}>{live.text}</span>
+          {live.canPickForm && (
+            <button onClick={() => pickFormFile(live.batchId)} title="다운로드 폴더에 받아진 서허 양식을 직접 골라 채우고 서허에 올려요"
+              style={{ border: 'none', borderRadius: 6, background: '#2980b9', color: '#fff', fontSize: 11.5, padding: '2px 8px', cursor: 'pointer', whiteSpace: 'nowrap' }}>
+              양식 직접 고르기
+            </button>
+          )}
+          <button onClick={() => setLive(null)} style={{ border: 'none', background: 'transparent', color: '#9ca3af', cursor: 'pointer', fontSize: 14, lineHeight: 1 }}>×</button>
         </div>
       )}
       {dateNote && (

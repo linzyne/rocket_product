@@ -242,7 +242,7 @@
   let panel = null;
   const render = (p) => {
     if (!IS_TOP) return;
-    if (!p) {
+    if (!p || p.hidden) {
       if (panel) panel.remove();
       panel = null;
       return;
@@ -261,6 +261,8 @@
         } else if (act === 'dump') dumpStructure();
         // 운송장 조회가 멈췄을 때: 예약은 다시 올리지 않고 운송장출력 화면의 조회부터 다시 한다.
         else if (act === 'retry') patch({ step: 'waybillPage', status: '운송장 다시 조회하는 중…' });
+        // 끝난 건: 기록은 남겨 두고 상자만 닫는다.
+        else if (act === 'hide') patch({ hidden: true });
       });
       document.body.appendChild(panel);
     }
@@ -273,7 +275,7 @@
       <div style="display:flex;gap:6px">
         ${(p.step === 'manual' || (p.step === 'error' && p.uploadedAt)) && p.batchId && p.boxCount ? `<button data-act="retry" style="${btn};border-color:#bfdbfe;background:#eff6ff;color:#1d4ed8" title="예약은 다시 올리지 않고 운송장 조회부터 다시 해요">다시 조회</button>` : ''}
         <button data-act="dump" style="${btn}" title="자동 진행이 안 될 때 화면 구조를 파일로 저장해 보내주세요">화면 구조 저장</button>
-        <button data-act="close" style="${btn};border-color:#fecaca;background:#fff1f2;color:#b91c1c">멈춤</button>
+        ${p.step === 'waybills' ? `<button data-act="hide" style="${btn};border-color:#bbf7d0;background:#f0fdf4;color:#047857">닫기</button>` : `<button data-act="close" style="${btn};border-color:#fecaca;background:#fff1f2;color:#b91c1c">멈춤</button>`}
       </div>`;
   };
 

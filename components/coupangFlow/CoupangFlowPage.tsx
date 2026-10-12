@@ -32,7 +32,7 @@ import { HanjungQueueItem, subscribeHanjungQueue, makePlaceLookup } from '../cou
 import { subscribePoForms, readDraft, setDraftLine, SHORT_REASONS, DEFAULT_REASON } from '../coupangOrder/data/poFormStore';
 import { startConfirmUpload, subscribeConfirmJob, clearConfirmJob, ConfirmJob } from '../coupangOrder/data/poConfirmRunner';
 import { subscribeDateRequests, markDateRequested, applyCurrent, DateReq, rememberRequested, requestedOf } from '../coupangOrder/data/poDateStore';
-import { retargetBatches, saveShipmentBatch, allBoxes } from '../../data/shipmentStore';
+import { retargetBatches, saveShipmentBatch, allBoxes, patchShipmentBatch } from '../../data/shipmentStore';
 import { useIsMobile } from '../../utils/useIsMobile';
 
 // 발주 > 발주 진행. 단계마다 상자를 옆으로 두고, 발주서가 지금 단계의 상자 안에 담긴다(상자 안에서는 위아래 한 줄).
@@ -487,13 +487,17 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
   };
   const runNote = (o: FlowOrder) => {
     const r = run(o);
-    if (!r || r.state === 'done') return null;
+    if (!r || r.state === 'done' || r.hidden) return null;
+    const batchId = o.batch!.id;
     return (
       <div style={{
+        display: 'flex', alignItems: 'flex-start', gap: 6,
         padding: '5px 7px', borderRadius: 6, fontSize: 11.5, lineHeight: 1.45,
         background: r.state === 'error' ? '#fef2f2' : '#eff6ff', color: r.state === 'error' ? '#b91c1c' : '#1d4ed8',
       }}>
-        <b>{r.state === 'error' ? `⛔ ${STEP_LABEL[r.step]}에서 멈춤` : `⏳ ${STEP_LABEL[r.step]} 하는 중`}</b> · {r.message}
+        <span style={{ flex: 1 }}><b>{r.state === 'error' ? `⛔ ${STEP_LABEL[r.step]}에서 멈춤` : `⏳ ${STEP_LABEL[r.step]} 하는 중`}</b> · {r.message}</span>
+        <button title="이 안내문 닫기" onClick={() => patchShipmentBatch(batchId, { run: { ...r, hidden: true } }).catch(err => alert(`닫기 실패: ${err?.message || err}`))}
+          style={{ border: 'none', background: 'transparent', color: '#9ca3af', cursor: 'pointer', fontSize: 14, lineHeight: 1, padding: 0 }}>×</button>
       </div>
     );
   };

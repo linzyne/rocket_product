@@ -95,7 +95,7 @@
   // ---- 진행 패널(오른쪽 아래) ----
   let panel = null;
   const render = (p) => {
-    if (!p || (p.windowId && myWindowId && p.windowId !== myWindowId) || Date.now() - (p.savedAt || 0) > MAX_AGE_MS * 3) {
+    if (!p || p.hidden || (p.windowId && myWindowId && p.windowId !== myWindowId) || Date.now() - (p.savedAt || 0) > MAX_AGE_MS * 3) {
       if (panel) panel.style.display = 'none';
       return;
     }
@@ -116,11 +116,19 @@
       `<div style="margin-top:6px;color:${color}">${p.status || ''}</div>${msgs}` +
       `<div style="margin-top:8px;text-align:right">` +
       (p.step === 'error' && onBulkPages() ? `<button data-act="retry" style="margin-right:6px;border:1px solid #bfdbfe;background:#eff6ff;color:#1d4ed8;border-radius:6px;padding:4px 10px;cursor:pointer;font-size:12px">번호 다시 찾기</button>` : '') +
-      `<button data-act="stop" style="border:1px solid #fecaca;background:#fff1f2;color:#b91c1c;border-radius:6px;padding:4px 10px;cursor:pointer;font-size:12px">멈춤</button></div>`;
+      (p.step === 'done'
+        ? `<button data-act="hide" style="border:1px solid #bbf7d0;background:#f0fdf4;color:#047857;border-radius:6px;padding:4px 10px;cursor:pointer;font-size:12px">닫기</button></div>`
+        : `<button data-act="stop" style="border:1px solid #fecaca;background:#fff1f2;color:#b91c1c;border-radius:6px;padding:4px 10px;cursor:pointer;font-size:12px">멈춤</button></div>`);
     panel.onclick = (e) => {
       // 등록은 됐는데 번호를 못 읽고 멈췄을 때: 내역 조회 맨 윗줄부터 다시 읽는다(업로드는 다시 안 한다).
       if (e.target && e.target.getAttribute && e.target.getAttribute('data-act') === 'retry') {
         patch({ step: 'submitted', submittedAt: Date.now(), resultAt: 0, status: '내역 조회에서 다시 찾는 중…' });
+        return;
+      }
+      // 끝난 건: 기록은 남겨 두고(앱이 다시 열 때 결과를 받아 감) 상자만 닫는다.
+      if (e.target && e.target.getAttribute && e.target.getAttribute('data-act') === 'hide') {
+        patch({ hidden: true });
+        panel.style.display = 'none';
         return;
       }
       if (e.target && e.target.getAttribute && e.target.getAttribute('data-act') === 'stop') {

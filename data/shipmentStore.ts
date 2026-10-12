@@ -42,6 +42,8 @@ export interface ShipmentRun {
   state: 'running' | 'error' | 'done';
   message: string;
   at: number;
+  // 사람이 카드의 안내문을 닫았으면 true(다음 단계 소식이 오면 새 기록이라 다시 보인다).
+  hidden?: boolean;
 }
 
 const COLLECTION = 'shipmentBatches';

@@ -571,22 +571,6 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
             <div key={i} style={{ padding: '2px 0', borderTop: i ? '1px dashed #f0f0f0' : 'none' }}>
               {/* 한 줄 표: [체크] [상품 이름(넘치면 …)] [사무실] [수량]. 줄바꿈하지 않고 칸 너비를 맞춘다. */}
               <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
-                {o.stage > 0 && (() => {
-                  // 상품별 체크 → 준비됨 / 한중발주 배정 / 사무실 재고
-                  const hl = { 발주번호: o.no, 물류센터: o.center, 상품이름: l.상품이름, 확정수량: l.확정수량, 입고예정일: o.date, 메모: '', 쉼먼트: '' };
-                  const key = { 발주번호: o.no, 상품이름: l.상품이름, 확정수량: l.확정수량 };
-                  const on = ready.isReady(key, o.item?.readyKeys);
-                  return (
-                    <span style={{ flexShrink: 0, alignSelf: 'center' }}>
-                      <LineCheckMenu
-                        ready={on}
-                        hanjung={lineHj.hanjungOf(hl)}
-                        onReady={v => ready.setReady([key], v).catch(err => alert(`준비 표시 저장 실패: ${err?.message || err}`))}
-                        onHanjung={action => { lineHj.setLineHanjung(hl, action, () => ready.setReady([key], true).catch(() => {})); }}
-                      />
-                    </span>
-                  );
-                })()}
                 {o.stage === 2 && l.stage === 2 && l.ship && o.item && (() => {
                   // 박스: 택배예약 전에는 고를 수 있고, 예약한 뒤에는 보기만.
                   const item = o.item!;
@@ -635,9 +619,10 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
                   const isReady = ready.isReady(key, o.item?.readyKeys) || arrived;
                   const waitingQueue = places.some(p => !p.code);
                   const faded = isReady || coming.length > 0;
-                  return (
+                  // 상품 이름을 누르면 준비됨 · 한중발주 배정 · 사무실 재고 메뉴(예전 체크칸 대신).
+                  const nameEl = (
                     <span
-                      title={`${l.상품이름}\n${isReady ? '준비됨' : coming.length ? `입고중(한중발주 ${coming.map(p => p.code).join(', ')})` : waitingQueue ? '1688 주문하기' : '준비중'} — 왼쪽 체크 칸에서 준비됨·한중발주 배정`}
+                      title={`${l.상품이름}\n${isReady ? '준비됨' : coming.length ? `입고중(한중발주 ${coming.map(p => p.code).join(', ')})` : waitingQueue ? '1688 주문하기' : '준비중'} — 눌러서 준비됨·한중발주 배정`}
                       style={{
                         flex: 1, minWidth: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
                         // 준비중(아무 진행 없음) = 검정 굵게, 입고중 = 검정 보통 굵기 + 번호 동그라미, 준비됨 = 회색 + 줄 긋기 + 초록 ✓
@@ -666,6 +651,18 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
                       )}
                       {l.상품이름}
                     </span>
+                  );
+                  if (o.stage === 0) return nameEl;
+                  const hl = { 발주번호: o.no, 물류센터: o.center, 상품이름: l.상품이름, 확정수량: l.확정수량, 입고예정일: o.date, 메모: '', 쉼먼트: '' };
+                  return (
+                    <LineCheckMenu
+                      ready={ready.isReady(key, o.item?.readyKeys)}
+                      hanjung={lineHj.hanjungOf(hl)}
+                      onReady={v => ready.setReady([key], v).catch(err => alert(`준비 표시 저장 실패: ${err?.message || err}`))}
+                      onHanjung={action => { lineHj.setLineHanjung(hl, action, () => ready.setReady([key], true).catch(() => {})); }}
+                      trigger={nameEl}
+                      triggerStyle={{ flex: 1, minWidth: 0, display: 'flex' }}
+                    />
                   );
                 })()}
                 {editable ? (

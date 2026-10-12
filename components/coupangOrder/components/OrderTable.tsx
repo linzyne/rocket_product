@@ -496,10 +496,12 @@ const NumBadge: React.FC<{ code: string }> = ({ code }) => (
   }}>{orderNum(code)}</span>
 );
 
-export function LineCheckMenu({ ready, hanjung, onReady, onHanjung }: {
+export function LineCheckMenu({ ready, hanjung, onReady, onHanjung, trigger, triggerStyle }: {
   ready: boolean; hanjung: LineHanjung; onReady: (on: boolean) => void; onHanjung: (action: HanjungAction) => void;
+  // 있으면 체크칸 대신 이것(예: 상품 이름)을 눌러 메뉴를 연다.
+  trigger?: React.ReactNode; triggerStyle?: React.CSSProperties;
 }) {
-  const btnRef = React.useRef<HTMLButtonElement>(null);
+  const btnRef = React.useRef<HTMLElement>(null);
   const [menu, setMenu] = React.useState<{ left: number; top: number; up: boolean } | null>(null);
   // 메뉴 화면: main(준비됨/한중발주) → pick(한중발주 고르기) → short(여유가 모자랄 때 어떻게 할지)
   const [view, setView] = React.useState<
@@ -557,8 +559,11 @@ export function LineCheckMenu({ ready, hanjung, onReady, onHanjung }: {
   };
   return (
     <>
+      {trigger ? (
+        <span ref={btnRef} onClick={() => (menu ? setMenu(null) : open())} style={{ cursor: 'pointer', ...triggerStyle }}>{trigger}</span>
+      ) : (
       <button
-        ref={btnRef}
+        ref={btnRef as React.RefObject<HTMLButtonElement>}
         onClick={() => (menu ? setMenu(null) : open())}
         title={[ready ? '준비됨' : '', placeText ? `한중 ${placeText}` : ''].filter(Boolean).join(' · ') || '눌러서 준비됨 또는 한중발주로 표시'}
         style={{
@@ -570,6 +575,7 @@ export function LineCheckMenu({ ready, hanjung, onReady, onHanjung }: {
       >
         {on ? '✓' : ''}
       </button>
+      )}
       {menu && (
         <>
           <div onClick={() => setMenu(null)} style={{ position: 'fixed', inset: 0, zIndex: 2000 }} />

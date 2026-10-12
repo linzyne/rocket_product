@@ -160,6 +160,17 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
   const [confirmed, setConfirmedMap] = useState<Record<string, number>>({});
   const [query, setQuery] = useState('');
   const [waybillBatch, setWaybillBatch] = useState<ShipmentBatch | null>(null);
+  // 상자 머리의 번호 모음을 펼친 상자들.
+  const [openSum, setOpenSum] = useState<Set<string>>(new Set());
+  const copyNo = (label: string, v: string) => navigator.clipboard.writeText(v).then(() => setDateNote({ tone: 'ok', text: `${label} ${v} 복사했어요` })).catch(() => {});
+  // 상자에 든 발주번호·송장번호·쉽먼트번호(겹치지 않게).
+  const summaryOf = (list: FlowOrder[]) => ({
+    orders: list.map(o => o.no),
+    waybills: Array.from(new Set(list.flatMap(o => (o.item && o.batch && o.item.batchId === o.batch.id)
+      ? allBoxes(o.batch).filter(b => b.lines.some(l => String(l.발주번호 || '').trim() === o.no)).map(b => (b.waybill || '').trim())
+      : []).filter(Boolean))),
+    ships: Array.from(new Set(list.map(o => o.item?.shipmentNos?.[o.no] || '').filter(Boolean))),
+  });
   // 박스 나누기 창(한 상품을 박스 여러 개에 나눠 담기). 쉽먼트생성 화면의 창과 같다.
   const [splitting, setSplitting] = useState<{ itemId: string; line: ShipOutLine; total: number; boxMax: number; pieces: { no: number; qty: string }[] } | null>(null);
   // 발주확정 양식·고친 수량이 바뀌면 다시 그린다.
@@ -1577,27 +1588,48 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
                       })()}
                       <span style={{ fontSize: 17, fontWeight: 900, color: '#111' }}>{dayText(g.date)}</span>
                       <span style={{ fontSize: 17, fontWeight: 900, color: ORANGE }}>{Array.from(new Set(g.list.map(o => o.center.trim()).filter(Boolean))).join(' · ') || '센터 없음'}</span>
-                      <span style={{ fontSize: 11.5, fontWeight: 700, color: '#a8a29e' }}>발주 {g.list.length}건</span>
+                      {i < 2 && <span style={{ fontSize: 11.5, fontWeight: 700, color: '#a8a29e' }}>발주 {g.list.length}건</span>}
+                      {i >= 2 && (() => {
+                        // 날짜·센터 줄에 번호를 하나씩만. 여러 개면 "+N"을 눌러 아래로 펼친다.
+                        const sm = summaryOf(g.list);
+                        const many = sm.orders.length > 1 || sm.waybills.length > 1 || sm.ships.length > 1;
+                        const one = (label: string, xs: string[]) => xs.length ? (
+                          <span style={{ fontSize: 11.5, color: '#6b7280', whiteSpace: 'nowrap' }}>
+                            {label} <span title={`눌러서 복사`} onClick={() => copyNo(label, xs[0])} style={{ cursor: 'copy', textDecoration: 'underline dotted', textUnderlineOffset: 2 }}>{xs[0]}</span>
+                            {xs.length > 1 && <b style={{ color: '#2563eb', marginLeft: 2 }}>+{xs.length - 1}</b>}
+                          </span>
+                        ) : null;
+                        return (
+                          <>
+                            {one('발주', sm.orders)}
+                            {one('송장', sm.waybills)}
+                            {sm.ships.length ? one('쉽먼트', sm.ships) : (
+                              <span onClick={() => setShipNos(g.list)} title="이 상자 발주서 전체에 쉽먼트 번호 넣기" style={{ fontSize: 11.5, color: '#b45309', cursor: 'pointer', whiteSpace: 'nowrap' }}>+쉽먼트</span>
+                            )}
+                            <button onClick={() => setOpenSum(prev => { const n = new Set(prev); if (n.has(g.key)) n.delete(g.key); else n.add(g.key); return n; })}
+                              title={openSum.has(g.key) ? '접기' : '발주·송장·쉽먼트 번호 다 보기'}
+                              style={{ border: 'none', background: 'transparent', color: '#2563eb', cursor: 'pointer', fontSize: 11.5, padding: 0, fontWeight: 700 }}>
+                              {openSum.has(g.key) ? '▲' : many ? '▼' : '⋯'}
+                            </button>
+                          </>
+                        );
+                      })()}
                     </div>
-                    {i >= 2 && (() => {
-                      // 이 상자에 든 발주번호·송장번호·쉽먼트번호를 한 번에(누르면 복사).
-                      const waybills = Array.from(new Set(g.list.flatMap(o => (o.item && o.batch && o.item.batchId === o.batch.id)
-                        ? allBoxes(o.batch).filter(b => b.lines.some(l => String(l.발주번호 || '').trim() === o.no)).map(b => (b.waybill || '').trim())
-                        : []).filter(Boolean)));
-                      const ships = Array.from(new Set(g.list.map(o => o.item?.shipmentNos?.[o.no] || '').filter(Boolean)));
-                      const copy = (label: string, v: string) => navigator.clipboard.writeText(v).then(() => setDateNote({ tone: 'ok', text: `${label} ${v} 복사했어요` })).catch(() => {});
+                    {i >= 2 && openSum.has(g.key) && (() => {
+                      // 펼친 상자: 발주·송장·쉽먼트 번호를 다(누르면 복사).
+                      const sm = summaryOf(g.list);
                       const chip = (label: string, v: string) => (
-                        <span key={label + v} title={`눌러서 ${label} 복사`} onClick={() => copy(label, v)}
+                        <span key={label + v} title={`눌러서 ${label} 복사`} onClick={() => copyNo(label, v)}
                           style={{ cursor: 'copy', textDecoration: 'underline dotted', textUnderlineOffset: 2, marginRight: 6 }}>{v}</span>
                       );
                       return (
                         <div style={{ fontSize: 11.5, color: '#6b7280', lineHeight: 1.6, padding: '0 4px' }}>
-                          <div>발주 {g.list.map(o => chip('발주번호', o.no))}</div>
-                          {waybills.length > 0 && <div>송장 {waybills.map(w => chip('송장번호', w))}</div>}
+                          <div>발주 {sm.orders.map(v => chip('발주번호', v))}</div>
+                          {sm.waybills.length > 0 && <div>송장 {sm.waybills.map(v => chip('송장번호', v))}</div>}
                           <div>
-                            쉽먼트 {ships.length ? ships.map(v => chip('쉽먼트 번호', v)) : <span style={{ color: '#b45309' }}>없음</span>}
+                            쉽먼트 {sm.ships.length ? sm.ships.map(v => chip('쉽먼트 번호', v)) : <span style={{ color: '#b45309' }}>없음</span>}
                             <span onClick={() => setShipNos(g.list)} title="이 상자 발주서 전체에 쉽먼트 번호 넣기·고치기"
-                              style={{ cursor: 'pointer', color: '#2563eb', fontWeight: 700 }}>{ships.length ? '✎' : '+ 넣기'}</span>
+                              style={{ cursor: 'pointer', color: '#2563eb', fontWeight: 700 }}>{sm.ships.length ? '✎' : '+ 넣기'}</span>
                           </div>
                         </div>
                       );

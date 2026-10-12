@@ -11,18 +11,20 @@ export const setPrinted = (item: ShipOut, no: string, on: boolean) =>
 
 // 그 발주서 상품들의 바코드 라벨(폼텍 40칸)을 수량만큼 새 탭에 연다.
 // 바코드는 발주서 파일에서 기억해 둔 것 → 로켓제안서 상품목록(이름이 같은 것) → 그래도 없으면 물어서 기억한다.
-export const openBarcodes = async (item: ShipOut, orderNo: string, opened?: Window | null) => {
+// orderNo에 여러 개를 주면 그 발주서들 상품을 한 장에 같이 만든다(상자째 출력).
+export const openBarcodes = async (item: ShipOut, orderNo: string | string[], opened?: Window | null) => {
+  const nos = new Set(Array.isArray(orderNo) ? orderNo : [orderNo]);
   const win = opened === undefined ? window.open('', '_blank') : opened;
   if (!win) { alert('바코드 탭이 팝업으로 막혔어요. 🏷 버튼을 눌러 주세요.'); return; }
   win.document.write('<p style="font:15px sans-serif;padding:32px;color:#555">바코드 라벨 만드는 중…</p>');
   const groups = new Map<string, { sku: string; name: string; qty: number }>();
-  for (const l of item.lines.filter(l => String(l.발주번호) === orderNo)) {
+  for (const l of item.lines.filter(l => nos.has(String(l.발주번호)))) {
     const key = l.SKU || l.상품이름;
     const g = groups.get(key) || { sku: l.SKU || '', name: l.상품이름, qty: 0 };
     g.qty += Number(l.확정수량) || 0;
     groups.set(key, g);
   }
-  const title = `바코드 ${item.center} ${orderNo}`;
+  const title = `바코드 ${item.center} ${Array.from(nos).join(',')}`;
   const errorPage = (t: string) => { if (!win.closed) win.document.body.innerHTML = `<p style="font:15px sans-serif;padding:32px;color:#c0392b">${t.replace(/</g, '&lt;')}</p>`; };
   const draw = (items: SheetItem[]) => {
     if (win.closed) return;
@@ -114,12 +116,14 @@ ${found.length ? `<p style="color:#64748b">바코드를 찾은 상품 ${found.le
   });
 };
 // note: 진행 문구를 화면에 보여줄 곳. 다 받으면 출력완료로 표시할지 묻는다.
-export const printShipment = (item: ShipOut, orderNo: string, shipmentNo: string, note: (text: string) => void = () => {}) => {
+// barcodeOrders: 바코드 라벨에 넣을 발주서들(없으면 orderNo 하나). onPrinted: 출력완료로 표시할 때 대신 부른다.
+export const printShipment = (item: ShipOut, orderNo: string, shipmentNo: string, note: (text: string) => void = () => {},
+  barcodeOrders?: string[], onPrinted?: () => void) => {
   // 새 탭은 누른 순간에 열어 둔다(파일이 다 온 뒤에 열면 크롬이 팝업으로 막는다).
   const win = window.open('', '_blank');
   // 바코드 라벨 탭도 같이 연다(막히면 🏷 버튼으로).
   const barcodeWin = window.open('', '_blank');
-  openBarcodes(item, orderNo, barcodeWin);
+  openBarcodes(item, barcodeOrders?.length ? barcodeOrders : orderNo, barcodeWin);
   win?.focus();
   win?.document.write('<p style="font:15px sans-serif;padding:32px;color:#555">서허에서 Label·내역서 받는 중…<br><small>다 받으면 이 탭에 합친 PDF가 열려요.</small></p>');
   const requestId = `${shipmentNo}-${Date.now()}`;
@@ -148,7 +152,9 @@ export const printShipment = (item: ShipOut, orderNo: string, shipmentNo: string
       else window.open(url, '_blank');
       note('✅ 합친 PDF를 새 탭에 열었어요');
       setTimeout(() => {
-        if (confirm(`쉽먼트 ${shipmentNo}(발주 ${orderNo})을 출력완료로 표시할까요?`)) setPrinted(item, orderNo, true);
+        if (confirm(`쉽먼트 ${shipmentNo}(발주 ${(barcodeOrders?.length ? barcodeOrders : [orderNo]).join(', ')})을 출력완료로 표시할까요?`)) {
+          if (onPrinted) onPrinted(); else setPrinted(item, orderNo, true);
+        }
       }, 800);
     } catch (err: any) {
       fail(`PDF를 합치지 못했어요: ${err?.message || err}`);

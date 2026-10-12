@@ -802,6 +802,21 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
     );
   };
 
+  // 상자째 출력: 쉽먼트 번호마다 한 번씩(같은 쉽먼트면 문서가 같다). 바코드는 그 쉽먼트 발주서 상품을 한 장에.
+  const printBox = (key: string, list: FlowOrder[]) => {
+    const withItem = list.filter(o => o.item);
+    const byShip = new Map<string, FlowOrder[]>();
+    withItem.forEach(o => { const s = o.item!.shipmentNos?.[o.no]; if (s) byShip.set(s, [...(byShip.get(s) || []), o]); });
+    if (!byShip.size) return;
+    if (withItem.length && withItem.every(o => marks.has(o.no)) && !window.confirm('이 상자는 이미 출력완료예요. 다시 출력할까요?')) return;
+    byShip.forEach((os, ship) => {
+      const nos = os.map(o => o.no);
+      const items = Array.from(new Map(os.map(o => [o.item!.id, o.item!])).values());
+      const item = { ...items[0], lines: items.flatMap(it => it.lines) };
+      printShipment(item, nos[0], ship, t => setPrintNote(n => ({ ...n, [key]: t })), nos, () => nos.forEach(no => setMark(no, true)));
+    });
+  };
+
   // 카드 아래 단추 줄(할 일이 없으면 줄을 안 그린다).
   const actionRow = (o: FlowOrder) => {
     const act = action(o);
@@ -851,7 +866,7 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
           <input type="checkbox" checked={picked.has(o.no)} onChange={() => togglePick(o.no)}
             style={{ width: 15, height: 15, accentColor: ORANGE, cursor: 'pointer', flexShrink: 0 }} />
         )}
-        {/* 발주서마다는 발주번호(+인쇄·체크칸)만. 쉽먼트·송장 번호는 덩어리 머리에 한 번 */}
+        {/* 발주서마다는 발주번호만. 쉽먼트·송장 번호·출력(📄)·출력완료 체크는 덩어리 머리에 한 번 */}
         <div style={{ minWidth: 0, fontSize: 11.5, color: '#888', marginTop: 2 }}>
           발주 <span title="눌러서 발주번호 복사" style={{ cursor: 'copy', textDecoration: 'underline dotted', textUnderlineOffset: 2 }}>{o.no}</span>
           {o.stage >= 2 && o.item && (
@@ -859,11 +874,6 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
               style={{ marginLeft: 6, cursor: 'pointer', color: o.item.shipmentNos?.[o.no] ? '#16a34a' : '#b45309' }}>
               {o.item.shipmentNos?.[o.no] ? '✎' : '+쉽먼트'}
             </span>
-          )}
-          {(o.stage === 2 || o.stage === 4) && o.item && <span style={{ marginLeft: 8 }}>{printButton(o)}</span>}
-          {(o.stage === 2 || o.stage === 4) && o.item && (
-            <input type="checkbox" checked={marks.has(o.no)} onChange={e => setMark(o.no, e.target.checked)} title="체크 표시(켜 두면 그대로 남아요)"
-              style={{ width: 13, height: 13, marginLeft: 4, verticalAlign: 'middle', cursor: 'pointer', accentColor: '#6b7280' }} />
           )}
         </div>
       </div>
@@ -1656,7 +1666,13 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
                         const st = { fontSize: 17, fontWeight: 900, color: '#111', whiteSpace: 'nowrap' } as const;
                         return <>
                           {n > 0 && <span style={st}>📦 {n}</span>}
-                          {ships > 0 && <span style={st} title="쉽먼트 개수">📄 {ships}</span>}
+                          {ships > 0 && <span style={{ ...st, cursor: 'pointer' }} onClick={() => printBox(g.key, g.list)}
+                            title="눌러서 이 상자 쉽먼트 출력(Label·내역서·바코드). 쉽먼트가 여럿이면 쉽먼트마다 열려요">📄 {ships}</span>}
+                          {(i === 2 || i === 4) && g.list.some(o => o.item) && (() => {
+                            const all = g.list.every(o => marks.has(o.no));
+                            return <input type="checkbox" checked={all} onChange={e => g.list.forEach(o => setMark(o.no, e.target.checked))}
+                              title="출력완료 체크(켜면 상자가 회색)" style={{ width: 16, height: 16, cursor: 'pointer', accentColor: '#6b7280' }} />;
+                          })()}
                         </>;
                       })()}
                       {i < 2 && <span style={{ fontSize: 11.5, fontWeight: 700, color: '#a8a29e' }}>발주 {g.list.length}건</span>}
@@ -1686,6 +1702,7 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
                         );
                       })()}
                     </div>
+                    {printNote[g.key] && <div style={{ fontSize: 11, color: '#1d4ed8', padding: '0 4px' }}>{printNote[g.key]}</div>}
                     {i >= 2 && openSum.has(g.key) && (() => {
                       // 펼친 상자: 발주·송장·쉽먼트 번호를 다(누르면 복사).
                       const sm = summaryOf(g.list);

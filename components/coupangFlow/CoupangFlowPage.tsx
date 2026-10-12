@@ -821,7 +821,10 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
           <input type="checkbox" checked={picked.has(o.no)} onChange={() => togglePick(o.no)}
             style={{ width: 15, height: 15, accentColor: ORANGE, cursor: 'pointer', flexShrink: 0 }} />
         )}
-        <span title="눌러서 발주번호 복사" style={{ fontSize: 15, fontWeight: 900, color: '#111', cursor: 'copy' }}>{o.no}</span>
+        {/* 발주번호 글씨는 쉽먼트·발송대기 카드와 같게 */}
+        <span style={{ fontSize: 11.5, color: '#888' }}>
+          발주 <span title="눌러서 발주번호 복사" style={{ cursor: 'copy', textDecoration: 'underline dotted', textUnderlineOffset: 2 }}>{o.no}</span>
+        </span>
       </div>
       {tags(o)}
       {runNote(o)}
@@ -1450,9 +1453,11 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
                 {i <= 1 ? groupByCenterDate(list).map(g => (
                   // 새발주서·발주확정: 예전 쿠팡발주확인처럼 같은 입고예정일·센터끼리 한 덩어리로 모아 보여준다(묶음은 아니다).
                   <div key={g.key} style={{ display: 'flex', flexDirection: 'column', gap: 10, padding: '8px 8px 10px', borderRadius: 12, background: '#f5f4f2', border: '1px solid #e7e5e4' }}>
-                    <div style={{ fontSize: 13, fontWeight: 800, color: '#44403c', padding: '0 4px' }}>
-                      {dayText(g.date)} <span style={{ color: ORANGE }}>{g.center}</span>
-                      <span style={{ marginLeft: 6, fontSize: 11.5, fontWeight: 700, color: '#a8a29e' }}>발주 {g.list.length}건</span>
+                    {/* 날짜·센터 글씨는 쉽먼트·발송대기 카드 머리와 같게 */}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', lineHeight: 1.2, padding: '0 4px' }}>
+                      <span style={{ fontSize: 17, fontWeight: 900, color: '#111' }}>{dayText(g.date)}</span>
+                      <span style={{ fontSize: 17, fontWeight: 900, color: ORANGE }}>{g.center || '센터 없음'}</span>
+                      <span style={{ fontSize: 11.5, fontWeight: 700, color: '#a8a29e' }}>발주 {g.list.length}건</span>
                     </div>
                     {g.list.map(slim)}
                   </div>

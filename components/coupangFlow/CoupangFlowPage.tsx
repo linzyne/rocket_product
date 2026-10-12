@@ -642,54 +642,49 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
                     <span style={{ fontSize: 11, color: '#999' }}>/{full}</span>
                   </span>
                 ) : (
-                  <>
-                    {/* 배정(한중발주에 맡긴 수) · 대기(1688 주문 전): 같은 줄에 작게 */}
-                    {(() => {
-                      const places = placesOf({ 발주번호: o.no, 상품이름: l.상품이름, 확정수량: l.확정수량 });
-                      const assigned = places.filter(p => p.code).reduce((n, p) => n + p.qty, 0);
-                      const queued = places.filter(p => !p.code).reduce((n, p) => n + p.qty, 0);
-                      if (!assigned && !queued) return null;
-                      // 일부만 맡겼으면 남은 수량을 빨갛게 알린다(준비됨으로 체크한 줄은 빼고).
-                      const left = Math.max(0, (Number(l.확정수량) || 0) - assigned - queued);
-                      const showLeft = left > 0 && !ready.isReady({ 발주번호: o.no, 상품이름: l.상품이름, 확정수량: l.확정수량 }, o.item?.readyKeys);
-                      return (
-                        <span
-                          title={[
-                            assigned ? `배정: ${places.filter(p => p.code).map(p => `${p.code} ${p.qty}개`).join(', ')}` : '',
-                            queued ? `1688 주문하기 ${queued}개` : '',
-                            showLeft ? `남은 ${left}개를 배정해 주세요 — "미배정"을 누르면 남은 수량만 배정해요` : '',
-                          ].filter(Boolean).join('\n')}
-                          style={{ flexShrink: 0, fontSize: 10.5, color: '#8a857f', whiteSpace: 'nowrap', letterSpacing: '-0.3px' }}
-                        >
-                          {assigned ? <>배정 <b>{assigned}</b></> : null}{assigned && queued ? ' · ' : ''}{queued ? <>주문할 <b>{queued}</b></> : null}
-                          {showLeft && <> · <b onClick={() => setAssignFor({ o, l, left })} style={{ color: RED, cursor: 'pointer', textDecoration: 'underline dotted', textUnderlineOffset: 2 }}>미배정 {left}</b></>}
-                        </span>
-                      );
-                    })()}
-                    {/* 사무실 재고(한중 여유): 도착 수 +오는 중. 필요한 만큼 도착했으면 초록, 오는 것까지 치면 되면 주황, 모자라면 빨강. */}
-                    {(() => {
-                      const office = officeOf(l.상품이름);
-                      const arrived = office.qty || 0;
-                      const incoming = office.incoming || 0;
-                      // 칸을 맞추려고 없을 때도 같은 너비를 비워 둔다.
-                      if (!arrived && !incoming) return <span style={{ flexShrink: 0, width: 38 }} />;
-                      // 색은 이 줄에 아직 채울 게 남았을 때만 매긴다. 이미 한중에 다 맡겼거나 준비됨이면 여유는 참고용(회색).
-                      const k = { 발주번호: o.no, 상품이름: l.상품이름, 확정수량: l.확정수량 };
-                      const placed = placesOf(k).reduce((n, p) => n + p.qty, 0);
-                      const need = Math.max(0, (Number(l.확정수량) || 0) - placed);
-                      const covered = need === 0 || ready.isReady(k, o.item?.readyKeys);
-                      const color = covered ? '#a8a29e' : arrived >= need ? GREEN : arrived + incoming >= need ? '#d97706' : RED;
-                      return (
-                        <span
-                          title={`사무실 재고(한중 여유) · 도착 ${arrived}개${incoming ? ` · 오는 중 ${incoming}개` : ''}\n${office.names.join('\n')}`}
-                          style={{ flexShrink: 0, width: 38, textAlign: 'right', fontSize: 13.5, fontWeight: 800, color, whiteSpace: 'nowrap', letterSpacing: '-0.3px' }}
-                        >
-                          {arrived}<span style={{ fontSize: 10.5, fontWeight: 700, color: covered || !incoming ? '#a8a29e' : '#d97706' }}>+{incoming}</span>
-                        </span>
-                      );
-                    })()}
-                    <b style={{ flexShrink: 0, width: 30, textAlign: 'right', whiteSpace: 'nowrap', letterSpacing: '-0.3px' }}>{l.확정수량}개</b>
-                  </>
+                  (() => {
+                    // 오른쪽: 주문수량 (배정 N · 사무실+오는 중). 배정·대기·미배정과 사무실 재고를 괄호 안에 같이 보여준다.
+                    const key = { 발주번호: o.no, 상품이름: l.상품이름, 확정수량: l.확정수량 };
+                    const places = placesOf(key);
+                    const assigned = places.filter(p => p.code).reduce((n, p) => n + p.qty, 0);
+                    const queued = places.filter(p => !p.code).reduce((n, p) => n + p.qty, 0);
+                    const isReadyLine = ready.isReady(key, o.item?.readyKeys);
+                    // 일부만 맡겼으면 남은 수량을 빨갛게 알린다(준비됨으로 체크한 줄은 빼고).
+                    const left = Math.max(0, (Number(l.확정수량) || 0) - assigned - queued);
+                    const showLeft = (assigned > 0 || queued > 0) && left > 0 && !isReadyLine;
+                    const office = officeOf(l.상품이름);
+                    const arrived = office.qty || 0;
+                    const incoming = office.incoming || 0;
+                    const hasOffice = arrived > 0 || incoming > 0;
+                    // 사무실 숫자 색: 이 줄에 아직 채울 게 남았을 때만(이미 다 맡겼거나 준비됨이면 회색).
+                    const need = Math.max(0, (Number(l.확정수량) || 0) - assigned - queued);
+                    const covered = need === 0 || isReadyLine;
+                    const officeColor = covered ? '#a8a29e' : arrived >= need ? GREEN : arrived + incoming >= need ? '#d97706' : RED;
+                    const hasParen = assigned > 0 || queued > 0 || hasOffice;
+                    return (
+                      <span style={{ flexShrink: 0, display: 'inline-flex', alignItems: 'baseline', gap: 3, whiteSpace: 'nowrap', letterSpacing: '-0.3px' }}>
+                        <b>{l.확정수량}개</b>
+                        {hasParen && (
+                          <span
+                            title={[
+                              assigned ? `배정: ${places.filter(p => p.code).map(p => `${p.code} ${p.qty}개`).join(', ')}` : '',
+                              queued ? `1688 주문하기 ${queued}개` : '',
+                              showLeft ? `남은 ${left}개를 배정해 주세요 — "미배정"을 누르면 남은 수량만 배정해요` : '',
+                              hasOffice ? `사무실 재고(한중 여유) · 도착 ${arrived}개 · 오는 중 ${incoming}개\n${office.names.join('\n')}` : '',
+                            ].filter(Boolean).join('\n')}
+                            style={{ fontSize: 11, color: '#8a857f' }}
+                          >
+                            (
+                            {assigned ? <>배정 <b>{assigned}</b></> : null}
+                            {queued ? <>{assigned ? ' · ' : ''}주문할 <b>{queued}</b></> : null}
+                            {showLeft && <> · <b onClick={() => setAssignFor({ o, l, left })} style={{ color: RED, cursor: 'pointer', textDecoration: 'underline dotted', textUnderlineOffset: 2 }}>미배정 {left}</b></>}
+                            {hasOffice && <>{assigned || queued ? ' ' : ''}<b style={{ color: officeColor, fontSize: 12.5 }}>{arrived}</b><b style={{ color: covered || !incoming ? '#a8a29e' : '#d97706' }}>+{incoming}</b></>}
+                            )
+                          </span>
+                        )}
+                      </span>
+                    );
+                  })()
                 )}
               </div>
               {editable && now < full && (

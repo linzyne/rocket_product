@@ -836,37 +836,8 @@ const HanjungOrderPage: React.FC = () => {
   return (
     // 가로로 길면 눈을 많이 움직여야 해서 화면 폭을 줄인다(왼쪽 정렬).
     <div className="p-4 sm:p-6 lg:p-8 text-gray-800 max-w-[1000px]">
-      <div className="flex flex-wrap items-end justify-between gap-3 mb-4">
-        <div>
-          <div className="flex items-center gap-2">
-            <h1 className="text-2xl font-extrabold text-gray-900">🧧 한중발주</h1>
-            {/* 방금 한 일 되돌리기 · 다시실행 (⌘Z / ⌘⇧Z) */}
-            <button
-              onClick={undo}
-              disabled={!history.undo.length}
-              title={history.undo.length ? `되돌리기: ${history.undo[history.undo.length - 1].label} (⌘Z)` : '되돌릴 일이 없어요'}
-              className="px-3 py-1 text-xs font-semibold rounded-full border bg-white text-gray-600 border-gray-200 hover:bg-gray-50 disabled:text-gray-300 disabled:border-gray-100 disabled:hover:bg-white"
-            >
-              ↶ 되돌리기
-            </button>
-            <button
-              onClick={redo}
-              disabled={!history.redo.length}
-              title={history.redo.length ? `다시실행: ${history.redo[history.redo.length - 1].label} (⌘⇧Z)` : '다시 할 일이 없어요'}
-              className="px-3 py-1 text-xs font-semibold rounded-full border bg-white text-gray-600 border-gray-200 hover:bg-gray-50 disabled:text-gray-300 disabled:border-gray-100 disabled:hover:bg-white"
-            >
-              ↷ 다시실행
-            </button>
-          </div>
-          {/* 이 화면은 바구니 두 개: 장바구니(주문할 것) → 오는 중(주문한 것) */}
-          <div className="flex flex-wrap items-center gap-1.5 mt-2 text-sm text-gray-600">
-            바구니 두 개만 보면 돼요
-            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-amber-50 border border-amber-200 text-amber-800 font-semibold">🛒 장바구니</span>
-            <span className="text-gray-300">→</span>
-            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-sky-50 border border-sky-200 text-sky-800 font-semibold">✈️ 오는 중</span>
-          </div>
-          <p className="text-xs text-gray-400 mt-1.5">물건이 오면 📦 도착 기록만 눌러 주세요. 쿠팡 입고(정산)는 알아서 모아져요 😊</p>
-        </div>
+      {/* 머리(제목·되돌리기 버튼·안내)는 뺐다. 되돌리기는 ⌘Z / ⌘⇧Z로. */}
+      <div className="flex justify-end mb-4">
         <input
           value={search}
           onChange={e => setSearch(e.target.value)}

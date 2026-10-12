@@ -1651,7 +1651,14 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
                         const nos = new Set(g.list.map(o => o.no));
                         const items = Array.from(new Map(g.list.filter(o => o.item).map(o => [o.item!.id, o.item!])).values())
                           .map(it => ({ ...it, lines: it.lines.filter(l => nos.has(String(l.발주번호 || '').trim())) }));
-                        const n = totalBoxCount(rowsOf(items)) || summaryOf(g.list).boxes; return n > 0 ? <span style={{ fontSize: 17, fontWeight: 900, color: '#111', whiteSpace: 'nowrap' }}>📦 {n}</span> : null; })()}
+                        const n = totalBoxCount(rowsOf(items)) || summaryOf(g.list).boxes;
+                        const ships = summaryOf(g.list).ships.length;
+                        const st = { fontSize: 17, fontWeight: 900, color: '#111', whiteSpace: 'nowrap' } as const;
+                        return <>
+                          {n > 0 && <span style={st}>📦 {n}</span>}
+                          {ships > 0 && <span style={st} title="쉽먼트 개수">📄 {ships}</span>}
+                        </>;
+                      })()}
                       {i < 2 && <span style={{ fontSize: 11.5, fontWeight: 700, color: '#a8a29e' }}>발주 {g.list.length}건</span>}
                       {i >= 2 && (() => {
                         // 날짜·센터 줄에 번호를 하나씩만. 여러 개면 "+N"을 눌러 아래로 펼친다.

@@ -1141,6 +1141,18 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
     setDateNote({ tone: 'ok', text: `발주 ${pickedWaiting.length + others.length}건을 발송완료(${date.trim()})로 넘겼어요. 발송완료 메뉴에서 볼 수 있어요.` });
   };
 
+  // 발송대기 → 쉽먼트로 되돌리기(쉽먼트생성 화면의 "완료 풀기"와 같다). 출고 건 단위로 돌아간다.
+  const backToShipping = () => {
+    const items = new Map<string, ShipOut>();
+    pickedWaiting.forEach(o => items.set(o.item!.id, o.item!));
+    const others = Array.from(items.values()).flatMap(it => Array.from(new Set(it.lines.map(l => l.발주번호))).filter(no => !picked.has(no)));
+    if (!window.confirm(`고른 발주서 ${pickedWaiting.length}건을 쉽먼트로 되돌릴까요?` +
+      (others.length ? `\n\n같은 출고 건에 든 다른 발주서도 같이 돌아가요: ${others.join(', ')}` : ''))) return;
+    markShipOuts(Array.from(items.keys()), { doneAt: undefined, undoneAt: Date.now() });
+    setPicked(new Set());
+    setDateNote({ tone: 'ok', text: `발주 ${pickedWaiting.length + others.length}건을 쉽먼트로 되돌렸어요.` });
+  };
+
   // 고르면 화면 아래 가운데에 뜨는 메뉴. 흰 띠 하나에 날짜 변경·적용 | [고른 수] 다음 단계로 넘기기 | 취소.
   const pill = (kind: 'primary' | 'ghost'): React.CSSProperties => ({
     height: 34, padding: '0 14px', fontSize: 13, fontWeight: 600, borderRadius: 9, cursor: 'pointer', whiteSpace: 'nowrap',
@@ -1171,6 +1183,11 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
     pickedShipping.length > 0 && (
       <button key="wait" onClick={sendToWaiting} style={pill('primary')} title="고른 쉽먼트 발주서를 발송대기로 넘겨요">
         발송대기로 {countOf(pickedShipping.length)}<span style={{ opacity: 0.7 }}>→</span>
+      </button>
+    ),
+    pickedWaiting.length > 0 && (
+      <button key="backship" onClick={backToShipping} style={pill('ghost')} title="고른 발송대기 발주서를 쉽먼트 칸으로 되돌려요">
+        <span style={{ opacity: 0.7 }}>←</span> 쉽먼트로 {countOf(pickedWaiting.length)}
       </button>
     ),
     pickedWaiting.length > 0 && (

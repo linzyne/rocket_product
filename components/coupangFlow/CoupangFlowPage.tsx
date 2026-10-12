@@ -535,7 +535,7 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
                     const text = isBoxSplit(v) ? parseBoxSplit(v).map(p => `${p.no}번×${p.qty}`).join(' ') : parseBoxNo(v) ? `박스 ${parseBoxNo(v)}` : '';
                     return text ? <span style={{ flexShrink: 0, fontSize: 11, color: '#6b7280', whiteSpace: 'nowrap' }}>{text}</span> : null;
                   }
-                  const maxNo = Math.max(1, ...item.lines.map(x => isBoxSplit(x.쉼먼트 || '') ? Math.max(...parseBoxSplit(x.쉼먼트 || '').map(p => p.no)) : parseBoxNo(x.쉼먼트 || '') || 0));
+                  const maxNo = Math.max(1, ...shipOuts.filter(x => x.center.trim() === item.center.trim() && x.date === item.date).flatMap(x => x.lines).map(x => isBoxSplit(x.쉼먼트 || '') ? Math.max(...parseBoxSplit(x.쉼먼트 || '').map(p => p.no)) : parseBoxNo(x.쉼먼트 || '') || 0));
                   return (
                     <span style={{ flexShrink: 0 }}>
                       <BoxPicker value={v} maxNo={maxNo} allowNone={false}
@@ -873,6 +873,8 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
     pickedShipping.forEach(o => { if (toReserve.has(o.no)) m.set(o.item!.id, o.item!); });
     return Array.from(m.values());
   })();
+  // 박스는 센터·입고예정일이 같으면 출고 건이 달라도 같은 박스로 본다(출고 건마다 따로 세면 박스1이 건마다 하나씩 생겨
+  // 택배가 더 많이 잡힌다). 그래서 묶음 값에 출고번호 대신 센터·날짜를 넣는다.
   const rowsOf = (items: ShipOut[]) => buildDisplayRows(items.flatMap(item => item.lines.flatMap(l => expandBoxSplit({
     발주번호: l.발주번호,
     물류센터: l.물류센터,
@@ -881,7 +883,7 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
     입고예정일: normalizeDateValue(l.입고예정일),
     메모: l.메모 || '',
     쉼먼트: l.쉼먼트 || '',
-    묶음: item.id,
+    묶음: `${item.center.trim()}|${item.date}`,
     묶음센터: item.center,
   }))));
   const reserveShip = () => {

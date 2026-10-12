@@ -946,6 +946,26 @@
   let busy = false;
   let lastMenuClick = 0;
 
+  // 출력을 누르면 "출력의심목록"(전에 출력됐을 수 있는 운송장) 창이 뜰 때가 있다. 그대로 두면 미리보기가 안 열린다.
+  // "운송장 출력이 되지 않았…"(다시 출력)을 고르고 적용을 눌러 출력이 이어지게 한다. 처리했으면 true.
+  const handleSuspect = async () => {
+    if (!find(/^출력의심\s*목록$/) && !find(/^출력의심\s*운송장\s*목록$/)) return false;
+    const label = findAll(/출력이\s*되지/).pop();
+    if (label) {
+      let radio = null;
+      for (let box = label, i = 0; i < 4 && box && !radio; i++, box = box.parentElement) {
+        radio = box.querySelector('input[type="radio"]');
+      }
+      realClick(radio && !radio.checked ? radio : label);
+      await sleep(400);
+    }
+    const apply = findAll(/^적용$/).pop();
+    if (!apply) return false;
+    realClick(apply);
+    await sleep(2500);
+    return true;
+  };
+
   const tick = async () => {
     if (busy) return;
     const p = await get();
@@ -1194,6 +1214,7 @@
               lastOpen = null;
               realClick(printBtn);
               await sleep(3000);
+              if (await handleSuspect()) await patch({ status: `${ordNo} 출력의심목록 창이 떠서 "출력 안 됨(다시 출력)"으로 적용했어요…` });
               if (lastOpen && lastOpen.blocked) {
                 await patch({
                   step: 'manual',

@@ -1461,6 +1461,21 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
                   }}>
                     {/* 날짜·센터 글씨는 쉽먼트·발송대기 카드 머리와 같게 */}
                     <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', lineHeight: 1.2, padding: '0 4px' }}>
+                      {/* 덩어리 전체 고르기: 안의 발주서를 한꺼번에 고르거나 풀기 */}
+                      {PICKABLE.includes(i as Stage) && (() => {
+                        const all = g.list.every(o => picked.has(o.no));
+                        const some = !all && g.list.some(o => picked.has(o.no));
+                        return (
+                          <input type="checkbox" checked={all} ref={el => { if (el) el.indeterminate = some; }}
+                            onChange={() => setPicked(prev => {
+                              const next = new Set(prev);
+                              g.list.forEach(o => { if (all) next.delete(o.no); else next.add(o.no); });
+                              return next;
+                            })}
+                            title="이 날짜·센터 발주서 전체 고르기"
+                            style={{ width: 16, height: 16, accentColor: ORANGE, cursor: 'pointer', flexShrink: 0 }} />
+                        );
+                      })()}
                       <span style={{ fontSize: 17, fontWeight: 900, color: '#111' }}>{dayText(g.date)}</span>
                       <span style={{ fontSize: 17, fontWeight: 900, color: ORANGE }}>{g.center || '센터 없음'}</span>
                       <span style={{ fontSize: 11.5, fontWeight: 700, color: '#a8a29e' }}>발주 {g.list.length}건</span>

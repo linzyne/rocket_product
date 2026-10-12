@@ -54,11 +54,6 @@ export const openBarcodes = async (item: ShipOut, orderNo: string, opened?: Wind
   const { found, missing } = await resolve();
   if (!missing.length) { draw(found); return; }
   if (win.closed) return;
-  // 쉽먼트 출력과 같이 연 탭: 바코드 없는 상품은 빼고 바로 만든다(하나도 없으면 탭을 닫는다). 🏷 버튼으로 열 때만 물어본다.
-  if (opened !== undefined) {
-    if (found.length) draw(found); else win.close();
-    return;
-  }
 
   // 못 찾은 상품은 바코드 탭 안에서 적게 한다(앱 탭의 입력 창은 뒤에 있어 크롬이 바로 닫아 버린다).
   // 쿠팡 발주서 파일(PO_FOR_CONFIRM…xlsx)을 넣으면 그 안의 상품바코드로 한꺼번에 채운다.
@@ -72,10 +67,12 @@ export const openBarcodes = async (item: ShipOut, orderNo: string, opened?: Wind
 <span id="poNote" style="margin-left:8px;color:#64748b"></span>
 <table style="border-collapse:collapse;width:100%">${missing.map((g, i) => `
 <tr style="border-top:1px solid #e5e7eb"><td style="padding:8px 8px 8px 0">${esc(g.name)}<div style="font-size:12px;color:#94a3b8">${g.sku ? `상품번호 ${esc(g.sku)} · ` : ''}${g.qty}개</div></td>
-<td style="width:220px"><input id="bc${i}" placeholder="바코드" style="width:100%;font-size:14px;padding:6px 8px;font-family:monospace"></td></tr>`).join('')}
+<td style="width:220px"><input id="bc${i}" placeholder="바코드" style="width:100%;font-size:14px;padding:6px 8px;font-family:monospace"></td>
+<td style="width:90px;padding-left:8px;white-space:nowrap"><label style="cursor:pointer;color:#64748b"><input id="skip${i}" type="checkbox"> 건너뛰기</label></td></tr>`).join('')}
 </table>
 <p style="margin-top:16px"><button id="go" style="font-size:15px;font-weight:700;padding:8px 20px;border:0;border-radius:8px;background:#2563eb;color:#fff;cursor:pointer">라벨 만들기</button>
-<span style="margin-left:8px;color:#64748b">비워 둔 상품은 빼고 만들어요.</span></p>
+<button id="skipAll" style="margin-left:8px;font-size:15px;padding:8px 16px;border:1px solid #cbd5e1;border-radius:8px;background:#fff;color:#334155;cursor:pointer">모두 건너뛰고 만들기</button>
+<span style="margin-left:8px;color:#64748b">건너뛰거나 비워 둔 상품은 빼고 만들어요.</span></p>
 ${found.length ? `<p style="color:#64748b">바코드를 찾은 상품 ${found.length}개는 같이 들어가요.</p>` : ''}
 </body></html>`);
   win.document.close();
@@ -100,17 +97,20 @@ ${found.length ? `<p style="color:#64748b">바코드를 찾은 상품 ${found.le
       if (note) note.textContent = `파일을 읽지 못했어요: ${err?.message || err}`;
     }
   });
+  // 바코드 없는 상품을 빼고 찾은 것만 만든다. 하나도 없으면 탭을 닫는다.
+  const finish = (items: SheetItem[]) => { if (items.length) draw(items); else win.close(); };
+  $('skipAll')?.addEventListener('click', () => finish(found));
   $('go')?.addEventListener('click', () => {
     const learned: { sku: string; name: string; barcode: string }[] = [];
     const items = [...found];
     missing.forEach((g, i) => {
       const bc = ($(`bc${i}`)?.value || '').trim();
-      if (!bc) return;
+      if (!bc || $(`skip${i}`)?.checked) return;
       learned.push({ sku: g.sku, name: g.name, barcode: bc });
       items.push({ name: g.name, barcode: bc, qty: g.qty });
     });
     if (learned.length) rememberBarcodes(learned).catch(err => console.error('바코드 기억 실패:', err));
-    draw(items);
+    finish(items);
   });
 };
 // note: 진행 문구를 화면에 보여줄 곳. 다 받으면 출력완료로 표시할지 묻는다.

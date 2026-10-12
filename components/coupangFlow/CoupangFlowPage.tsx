@@ -595,7 +595,7 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
                   }
                   return (
                     <span style={{ flexShrink: 0, display: 'inline-flex', alignItems: 'center', gap: 3 }}>
-                      <BoxPicker value={v} maxNo={maxNo} allowNone={false}
+                      <BoxPicker value={v} maxNo={maxNo} allowNone={false} compact
                         onChange={nv => updateShipOutLine(item.id, { 발주번호: l.ship!.발주번호, 상품이름: l.ship!.상품이름, 확정수량: l.ship!.확정수량, 입고예정일: l.ship!.입고예정일 }, { 쉼먼트: nv })} />
                       <button onClick={openSplit} title="이 상품을 박스 여러 개에 나눠 담기"
                         style={{ border: '1px solid #e5e7eb', background: '#fff', borderRadius: 6, padding: '1px 5px', fontSize: 11, cursor: 'pointer', color: '#6b7280' }}>✂</button>

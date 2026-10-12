@@ -361,10 +361,12 @@ function ActionLayer({ children }: { children: React.ReactNode }) {
 // 쉽먼트생성 표에서 쓴다. 목록에는 이 덩어리에 이미 있는 박스(1 ~ maxNo번)만 나오고,
 // 맨 아래 "새 박스"로 다음 번호를 연다. 택배는 센터·입고예정일마다 9박스까지라 9번이 끝이다.
 // 표가 가로로 스크롤되는 상자 안에 있어 메뉴가 잘리지 않게 화면 기준(fixed)으로 띄운다.
-export function BoxPicker({ value, maxNo, onChange, allowNone = true, color }: {
+export function BoxPicker({ value, maxNo, onChange, allowNone = true, color, compact }: {
   value: string; maxNo: number; onChange: (v: string) => void; allowNone?: boolean;
   // 있으면 박스 번호마다 다른 색 대신 이 한 색만 쓴다.
   color?: string;
+  // 작게: "박스1"만(점·세모 없이), 폭 최소. 발주 진행 카드에서 쓴다.
+  compact?: boolean;
 }) {
   const no = parseBoxNo(value);
   const [menu, setMenu] = React.useState<{ left: number; top: number; up: boolean } | null>(null);
@@ -412,17 +414,24 @@ export function BoxPicker({ value, maxNo, onChange, allowNone = true, color }: {
         ref={btnRef}
         onClick={() => (menu ? setMenu(null) : open())}
         title="이 상품을 담을 박스 번호"
-        style={{
+        style={compact ? {
+          padding: '1px 5px', fontSize: 11.5, fontWeight: 800, borderRadius: 6, cursor: 'pointer', whiteSpace: 'nowrap',
+          border: `1.5px solid ${no ? c : '#d5d5d5'}`, background: no ? '#fff' : '#fafafa', color: no ? c : '#aaa',
+        } : {
           display: 'inline-flex', alignItems: 'center', gap: 6, minWidth: 82, justifyContent: 'space-between',
           padding: '3px 8px 3px 9px', fontSize: 12, fontWeight: 800, borderRadius: 14, cursor: 'pointer',
           border: `1.5px solid ${no ? c : '#d5d5d5'}`, background: no ? '#fff' : '#fafafa', color: no ? c : '#aaa',
         }}
       >
-        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
-          <span style={{ width: 7, height: 7, borderRadius: '50%', background: c }} />
-          {no ? `박스 ${no}번` : '박스'}
-        </span>
-        <span style={{ fontSize: 9, opacity: 0.8 }}>▼</span>
+        {compact ? (no ? `박스${no}` : '박스') : (
+          <>
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+              <span style={{ width: 7, height: 7, borderRadius: '50%', background: c }} />
+              {no ? `박스 ${no}번` : '박스'}
+            </span>
+            <span style={{ fontSize: 9, opacity: 0.8 }}>▼</span>
+          </>
+        )}
       </button>
       {menu && (
         <>

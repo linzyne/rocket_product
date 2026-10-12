@@ -44,6 +44,8 @@ export interface ShipmentRun {
   at: number;
   // 사람이 카드의 안내문을 닫았으면 true(다음 단계 소식이 오면 새 기록이라 다시 보인다).
   hidden?: boolean;
+  // 사람이 카드의 "이어서 하기" 버튼을 지웠으면 true.
+  noResume?: boolean;
 }
 
 const COLLECTION = 'shipmentBatches';

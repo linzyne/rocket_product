@@ -410,9 +410,15 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
       case 2:
         // 인쇄는 발주번호 옆 아이콘. 여기는 쉽먼트가 멈췄을 때 이어서 하기만.
         // 진행 중인 채로 3분 넘게 소식이 없으면(확장이 답을 안 줌) 멈춘 것으로 보고 이어서 하기를 보인다.
-        if (o.item?.shipmentNos?.[o.no] || !o.item || !o.batch || !r || r.state === 'done') return null;
+        if (o.item?.shipmentNos?.[o.no] || !o.item || !o.batch || !r || r.state === 'done' || r.noResume) return null;
         if (r.state === 'running' && Date.now() - r.at < 3 * 60 * 1000) return null;
-        return <button style={btn(ORANGE, true)} onClick={() => resumeShipment(o.batch!, [o.item!])} title="멈춘 데서 이어서 합니다. 택배예약은 다시 하지 않아요.">▶ 이어서 하기</button>;
+        return (
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+            <button style={btn(ORANGE, true)} onClick={() => resumeShipment(o.batch!, [o.item!])} title="멈춘 데서 이어서 합니다. 택배예약은 다시 하지 않아요.">▶ 이어서 하기</button>
+            <button title="이어서 하기 버튼 지우기" onClick={() => patchShipmentBatch(o.batch!.id, { run: { ...r, noResume: true } }).catch(err => alert(`지우기 실패: ${err?.message || err}`))}
+              style={{ border: 'none', background: 'transparent', color: '#9ca3af', cursor: 'pointer', fontSize: 15, lineHeight: 1, padding: 0 }}>×</button>
+          </span>
+        );
       case 3:
       case 4:
         // 발송완료로 넘기기는 발주서를 고르면 아래쪽 메뉴에 나온다.

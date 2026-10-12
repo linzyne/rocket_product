@@ -426,6 +426,15 @@ export function mergeShipOuts(ids: string[]): ShipOut | null {
   const printed = uniq([...(target.printedOrders || []), ...others.flatMap(o => o.printedOrders || [])]);
   if (readyKeys.length) target.readyKeys = readyKeys;
   if (printed.length) target.printedOrders = printed;
+  // 이미 쉽먼트한 건끼리 묶을 때: 쉽먼트 번호·진행 표시를 같이 가져간다(target에 없는 것만).
+  const ships = Object.assign({}, ...others.map(o => o.shipmentNos || {}), target.shipmentNos || {});
+  if (Object.keys(ships).length) target.shipmentNos = ships;
+  for (const k of ['batchId', 'formSavedAt', 'uploadedAt', 'doneAt'] as const) {
+    if (target[k] == null) {
+      const v = others.find(o => o[k] != null)?.[k];
+      if (v != null) (target as any)[k] = v;
+    }
+  }
   const orders = uniq(target.lines.map(l => l.발주번호));
   target.bundle = orders.length === 1 ? orders[0] : `발주 ${orders.length}건`;
   const gone = new Set(others.map(o => o.id));

@@ -1661,7 +1661,7 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
                           <>
                             {one('발주', sm.orders)}
                             {one('송장', sm.waybills)}
-                            {sm.boxes > 0 && <span style={{ fontSize: 12, fontWeight: 800, color: '#111', whiteSpace: 'nowrap' }}>박스 {sm.boxes}개</span>}
+                            {sm.boxes > 0 && <span style={{ fontSize: 12, fontWeight: 800, color: '#111', whiteSpace: 'nowrap' }}>📦 {sm.boxes}</span>}
                             {sm.ships.length ? one('쉽먼트', sm.ships) : (
                               <span onClick={() => setShipNos(g.list)} title="이 상자 발주서 전체에 쉽먼트 번호 넣기" style={{ fontSize: 11.5, color: '#b45309', cursor: 'pointer', whiteSpace: 'nowrap' }}>+쉽먼트</span>
                             )}

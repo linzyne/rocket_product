@@ -684,7 +684,7 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
                           title={`사무실 재고(한중 여유) · 도착 ${arrived}개${incoming ? ` · 오는 중 ${incoming}개` : ''}\n${office.names.join('\n')}`}
                           style={{ flexShrink: 0, width: 38, textAlign: 'right', fontSize: 13.5, fontWeight: 800, color, whiteSpace: 'nowrap', letterSpacing: '-0.3px' }}
                         >
-                          {arrived}{incoming > 0 && <span style={{ fontSize: 10.5, fontWeight: 700, color: covered ? '#a8a29e' : '#d97706' }}>+{incoming}</span>}
+                          {arrived}<span style={{ fontSize: 10.5, fontWeight: 700, color: covered || !incoming ? '#a8a29e' : '#d97706' }}>+{incoming}</span>
                         </span>
                       );
                     })()}

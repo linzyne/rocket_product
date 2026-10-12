@@ -828,7 +828,8 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
   };
 
   // 날짜·센터 덩어리 안의 발주서: 날짜·센터는 덩어리 머리줄에 있으니 빼고 "발주번호 → 상품목록"만.
-  const slim = (o: FlowOrder) => (
+  // once: 쉽먼트 이후 덩어리(출고 건)에서는 진행 안내문·이어서 하기를 덩어리에 한 번만 보인다(같은 쉽먼트라 내용이 같다).
+  const slim = (o: FlowOrder, once = true) => (
     <div key={o.no} style={{
       // 발주서 사이에 빈 줄 하나만큼 띄운다(가독성).
       borderTop: '1px solid #f3f3f3', paddingTop: 6, marginTop: 14,
@@ -843,9 +844,9 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
         <div style={{ minWidth: 0 }}>{subLine(o)}</div>
       </div>
       {tags(o)}
-      {runNote(o)}
+      {(o.stage < 2 || once) && runNote(o)}
       <div style={{ fontSize: 13.5 }}>{products(o)}</div>
-      {actionRow(o)}
+      {(o.stage < 2 || once) ? actionRow(o) : (printNote[o.no] ? <div style={{ fontSize: 11, color: '#1d4ed8' }}>{printNote[o.no]}</div> : null)}
     </div>
   );
 
@@ -1504,7 +1505,11 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
                       <span style={{ fontSize: 17, fontWeight: 900, color: ORANGE }}>{Array.from(new Set(g.list.map(o => o.center.trim()).filter(Boolean))).join(' · ') || '센터 없음'}</span>
                       <span style={{ fontSize: 11.5, fontWeight: 700, color: '#a8a29e' }}>발주 {g.list.length}건</span>
                     </div>
-                    {g.list.map(slim)}
+                    {(() => {
+                      // 안내문·이어서 하기를 보일 발주서: 덩어리에서 처음으로 할 일이 있는 발주서 하나.
+                      const first = Math.max(0, g.list.findIndex(o => !!action(o) || !!runNote(o)));
+                      return g.list.map((o, idx) => slim(o, idx === first));
+                    })()}
                   </div>
                     );
                   })()

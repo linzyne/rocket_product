@@ -19,10 +19,11 @@ import ProductQtySummary from '../coupangOrder/components/ProductQtySummary';
 import { useReady } from '../coupangOrder/data/readyStore';
 import { subscribeMarks, setMark } from '../coupangOrder/data/poMarkStore';
 import { useLineHanjung } from '../coupangOrder/data/useLineHanjung';
-import { addShipOut, markShipOuts, splitShipOut } from '../coupangOrder/data/shipOutStore';
+import { addShipOut, markShipOuts, splitShipOut, updateShipOutLine } from '../coupangOrder/data/shipOutStore';
+import type { ShipOutLine } from '../coupangOrder/data/shipOutStore';
 import { linesAt } from '../coupangOrder/data/lineStore';
-import { boxLabel, buildDisplayRows, expandBoxSplit, totalBoxCount } from '../coupangOrder/utils/dataProcessor';
-import { LineCheckMenu } from '../coupangOrder/components/OrderTable';
+import { boxLabel, buildDisplayRows, expandBoxSplit, totalBoxCount, parseBoxNo, isBoxSplit, parseBoxSplit } from '../coupangOrder/utils/dataProcessor';
+import { LineCheckMenu, BoxPicker } from '../coupangOrder/components/OrderTable';
 import { HanjungOrder, subscribeHanjung, productSummary, nameKey, makeHanjungOfficeLookup, sameName, saveHanjungOrder, assignRemaining } from '../../data/hanjungStore';
 import { returnToHanjungQueue } from '../coupangOrder/data/hanjungQueueStore';
 import { reservationKey } from '../coupangOrder/data/reservationStore';
@@ -60,6 +61,7 @@ interface FlowLine {
   확정수량: number | '';
   stage: Stage;
   where: string;
+  ship?: ShipOutLine; // 쉽먼트 이후 단계 줄의 원래 출고 줄(박스 고르기에 쓴다)
 }
 
 interface FlowOrder {
@@ -338,7 +340,7 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
         // 쉽먼트 끝 + 출력완료면 발송대기. 사람이 "발송대기로"를 눌렀으면(doneAt) 출력 전이어도 발송대기.
         const stage: Stage = st === 'sent' ? 5 : st === 'waiting' && ((item.printedOrders || []).includes(no) || !!item.doneAt) ? 4 : 2;
         add(no, item.center, item.date,
-          { 상품이름: l.상품이름, 확정수량: l.확정수량, stage, where: `${item.bundle} (${item.id})` },
+          { 상품이름: l.상품이름, 확정수량: l.확정수량, stage, where: `${item.bundle} (${item.id})`, ship: l },
           { item, batch });
       }
     }
@@ -516,6 +518,22 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
                         onReady={v => ready.setReady([key], v).catch(err => alert(`준비 표시 저장 실패: ${err?.message || err}`))}
                         onHanjung={action => { lineHj.setLineHanjung(hl, action, () => ready.setReady([key], true).catch(() => {})); }}
                       />
+                    </span>
+                  );
+                })()}
+                {o.stage === 2 && l.stage === 2 && l.ship && o.item && (() => {
+                  // 박스: 택배예약 전에는 고를 수 있고, 예약한 뒤에는 보기만.
+                  const item = o.item!;
+                  const v = l.ship!.쉼먼트 || '';
+                  if (item.batchId || isBoxSplit(v)) {
+                    const text = isBoxSplit(v) ? parseBoxSplit(v).map(p => `${p.no}번×${p.qty}`).join(' ') : parseBoxNo(v) ? `박스 ${parseBoxNo(v)}` : '';
+                    return text ? <span style={{ flexShrink: 0, fontSize: 11, color: '#6b7280', whiteSpace: 'nowrap' }}>{text}</span> : null;
+                  }
+                  const maxNo = Math.max(1, ...item.lines.map(x => isBoxSplit(x.쉼먼트 || '') ? Math.max(...parseBoxSplit(x.쉼먼트 || '').map(p => p.no)) : parseBoxNo(x.쉼먼트 || '') || 0));
+                  return (
+                    <span style={{ flexShrink: 0 }}>
+                      <BoxPicker value={v} maxNo={maxNo} allowNone={false}
+                        onChange={nv => updateShipOutLine(item.id, { 발주번호: l.ship!.발주번호, 상품이름: l.ship!.상품이름, 확정수량: l.ship!.확정수량, 입고예정일: l.ship!.입고예정일 }, { 쉼먼트: nv })} />
                     </span>
                   );
                 })()}

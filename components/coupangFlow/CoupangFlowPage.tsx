@@ -1052,6 +1052,8 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
   };
   const pickedBundled = pickedShipping.some(o => new Set(o.item!.lines.map(l => l.발주번호)).size > 1);
   const onlyShipping = pickedShipping.length > 0 && pickedShipping.length === picked.size;
+  // 날짜 변경·적용: 발주확정·쉽먼트 칸 발주서만 골랐을 때(발송대기는 빼고).
+  const dateOk = picked.size > 0 && pickedConfirmed.length + pickedShipping.length === picked.size;
 
   // 고른 것 중 발송대기 칸에 있는 발주서 → 발송완료. 보낸 날을 묻고 출고 건 단위로 넘긴다(발송대기 화면의 "발송 완료"와 같다).
   const pickedWaiting = orders.filter(o => o.stage === 4 && picked.has(o.no) && o.item);
@@ -1131,8 +1133,8 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
       {picked.size > 0 && (
         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
           {/* 날짜 변경·적용·묶기·해제는 쉽먼트 칸 발주서만 골랐을 때 */}
-          {onlyShipping && <button onClick={changeDate} style={pill('ghost')} title="서허 입고일 변경 요청 화면에 고른 발주서를 넣어 둬요">{calendar}날짜 변경</button>}
-          {onlyShipping && <button onClick={applyDate} style={pill('ghost')} title="서허에서 승인된 걸 확인한 뒤 누르세요. 서허 발주서 목록의 지금 입고예정일·센터를 읽어 앱에 적어요">{check}적용</button>}
+          {dateOk && <button onClick={changeDate} style={pill('ghost')} title="서허 입고일 변경 요청 화면에 고른 발주서를 넣어 둬요">{calendar}날짜 변경</button>}
+          {dateOk && <button onClick={applyDate} style={pill('ghost')} title="서허에서 승인된 걸 확인한 뒤 누르세요. 서허 발주서 목록의 지금 입고예정일·센터를 읽어 앱에 적어요">{check}적용</button>}
           {onlyShipping && picked.size >= 2 && <button onClick={bundleShip} style={pill('ghost')} title="고른 발주서들을 한 건으로 묶어요(센터·입고예정일이 같아야 해요)">🔗 묶기</button>}
           {onlyShipping && pickedBundled && <button onClick={unbundleShip} style={pill('ghost')} title="묶은 발주서를 풀어 발주서마다 따로 둬요">✂ 해제</button>}
           {divider}

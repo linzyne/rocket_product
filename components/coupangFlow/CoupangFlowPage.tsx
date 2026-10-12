@@ -1041,11 +1041,11 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
     setDateNote({ tone: 'ok', text: `발주서를 한 건(${t?.id || ''})으로 묶었어요. 박스는 카드에서 정하세요.` });
   };
   // 해제: 고른 발주서를 묶음에서 빼서 발주서마다 출고 건 하나씩으로.
+  // 쉽먼트·발송대기 어디서든 풀 수 있다(택배예약·서허 등록 표시는 떼어 낸 건에도 그대로 남는다).
+  const pickedUnbundle = orders.filter(o => (o.stage === 2 || o.stage === 4) && picked.has(o.no) && o.item);
   const unbundleShip = () => {
-    const done = pickedShipping.filter(o => reservedOrder(o)).map(o => o.no);
-    if (done.length) { alert(`이미 택배예약·서허 등록한 발주서는 풀 수 없어요: ${done.join(', ')}`); return; }
     const byItem = new Map<string, { item: ShipOut; nos: string[] }>();
-    pickedShipping.forEach(o => {
+    pickedUnbundle.forEach(o => {
       const e = byItem.get(o.item!.id) || { item: o.item!, nos: [] };
       e.nos.push(o.no);
       byItem.set(o.item!.id, e);
@@ -1072,7 +1072,7 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
     setPicked(new Set());
     setDateNote({ tone: 'ok', text: `발주 ${nos.length}건을 발주확정으로 되돌렸어요.` });
   };
-  const pickedBundled = pickedShipping.some(o => new Set(o.item!.lines.map(l => l.발주번호)).size > 1);
+  const pickedBundled = pickedUnbundle.some(o => new Set(o.item!.lines.map(l => l.발주번호)).size > 1);
   const onlyShipping = pickedShipping.length > 0 && pickedShipping.length === picked.size;
   // 날짜 변경·적용: 발주확정·쉽먼트 칸 발주서만 골랐을 때(발송대기는 빼고).
   const dateOk = picked.size > 0 && pickedConfirmed.length + pickedShipping.length === picked.size;
@@ -1219,7 +1219,7 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
           {dateOk && <button onClick={editDateCenter} style={pill('ghost')} title="고른 발주서의 입고예정일·센터를 직접 적어 바꿔요">✏️ 날짜·센터</button>}
           {dateOk && <button onClick={applyDate} style={pill('ghost')} title="서허에서 승인된 걸 확인한 뒤 누르세요. 서허 발주서 목록의 지금 입고예정일·센터를 읽어 앱에 적어요">{check}적용</button>}
           {onlyShipping && picked.size >= 2 && <button onClick={bundleShip} style={pill('ghost')} title="고른 발주서들을 한 건으로 묶어요(센터·입고예정일이 같아야 해요)">🔗 묶기</button>}
-          {onlyShipping && pickedBundled && <button onClick={unbundleShip} style={pill('ghost')} title="묶은 발주서를 풀어 발주서마다 따로 둬요">✂ 해제</button>}
+          {pickedUnbundle.length === picked.size && pickedBundled && <button onClick={unbundleShip} style={pill('ghost')} title="묶은 발주서를 풀어 발주서마다 따로 둬요">✂ 해제</button>}
           {divider}
           <span style={{ height: 34, padding: '0 8px', display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 13, fontWeight: 700, whiteSpace: 'nowrap' }}>
             <span style={{ minWidth: 22, height: 22, padding: '0 6px', borderRadius: 999, background: ORANGE, color: '#fff', fontSize: 12, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>{picked.size}</span>

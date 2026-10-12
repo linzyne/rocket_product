@@ -445,14 +445,24 @@ export function splitShipOut(id: string, orderNos: string[], patch: Partial<Pick
   const rest = item.lines.filter(l => !want.has(l.발주번호));
   if (!rest.length) { Object.assign(item, patch); write(list); return item; }
   const keys = (xs?: string[]) => xs && xs.filter(k => want.has(k.split('│')[0]));
+  // 진행 표시(택배예약·서허 등록·발송대기 등)는 떼어 낸 건에도 그대로 이어 간다(이미 쉽먼트를 끝낸 묶음도 풀 수 있게).
+  const ships = item.shipmentNos && Object.fromEntries(Object.entries(item.shipmentNos).filter(([no]) => want.has(no)));
   const made: ShipOut = {
     id: nextId(list),
     bundle: take.length && new Set(take.map(l => l.발주번호)).size === 1 ? take[0].발주번호 : `발주 ${new Set(take.map(l => l.발주번호)).size}건`,
     center: item.center,
     date: item.date,
     createdAt: Date.now(),
+    batchId: item.batchId,
+    formSavedAt: item.formSavedAt,
+    uploadedAt: item.uploadedAt,
+    doneAt: item.doneAt,
+    undoneAt: item.undoneAt,
+    sentDate: item.sentDate,
+    request: item.request,
     readyKeys: keys(item.readyKeys),
     printedOrders: item.printedOrders?.filter(no => want.has(no)),
+    ...(ships && Object.keys(ships).length ? { shipmentNos: ships } : {}),
     ...patch,
     lines: take,
   };

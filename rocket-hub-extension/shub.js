@@ -116,32 +116,53 @@
   };
 
   // 팝업 목록에서 이 쉽먼트의 발주번호가 들어 있는 줄을 찾아 "선택"(또는 체크칸)을 누른다.
-  const pickOrders = (orderNos) => {
+  // 누르기만 하고 "골랐다"고 세면, 화면이 다시 그려지며 체크가 안 먹은 발주건이 빠진 채 양식을 받는다
+  // (고른 발주서 중 하나만 양식에 들어온 일). 그래서 체크칸은 누른 뒤 정말 켜졌는지 보고, 안 켜졌으면 한 번 더 누른다.
+  const rowOf = (no) => {
+    const cell = Array.from(document.querySelectorAll('td, th, span, div, li, a'))
+      .filter((el) => visible(el) && el.children.length === 0 && clean(el.textContent) === String(no))
+      .pop();
+    return cell ? cell.closest('tr, li, [role="row"]') || cell.parentElement : null;
+  };
+  const pickOnce = (no) => {
+    const row = rowOf(no);
+    if (!row) return '';
+    const box = row.querySelector('input[type="checkbox"]');
+    if (box) {
+      if (!box.checked) realClick(box);
+      return 'box';
+    }
+    const btn = Array.from(row.querySelectorAll('button, a, span')).find((el) => TEXT.pick.test(clean(el.textContent)));
+    if (btn) {
+      realClick(btn);
+      return 'btn';
+    }
+    return '';
+  };
+  const pickOrders = async (orderNos) => {
     const done = [];
     for (const no of orderNos) {
-      const cell = Array.from(document.querySelectorAll('td, th, span, div, li, a'))
-        .filter((el) => visible(el) && el.children.length === 0 && clean(el.textContent) === String(no))
-        .pop();
-      if (!cell) continue;
-      const row = cell.closest('tr, li, [role="row"]') || cell.parentElement;
-      if (!row) continue;
-      const box = row.querySelector('input[type="checkbox"]');
-      if (box && !box.checked) {
-        realClick(box);
+      const how = pickOnce(no);
+      if (!how) continue;
+      await sleep(250);
+      if (how === 'btn') {
         done.push(no);
         continue;
       }
-      if (box && box.checked) {
-        done.push(no);
-        continue;
+      let ok = isPicked(no);
+      for (let i = 0; i < 3 && !ok; i++) {
+        pickOnce(no);
+        await sleep(400);
+        ok = isPicked(no);
       }
-      const btn = Array.from(row.querySelectorAll('button, a, span')).find((el) => TEXT.pick.test(clean(el.textContent)));
-      if (btn) {
-        realClick(btn);
-        done.push(no);
-      }
+      if (ok) done.push(no);
     }
-    return done;
+    // 뒤에 누른 것 때문에 앞의 체크가 풀렸는지 마지막으로 한 번 더 본다.
+    await sleep(300);
+    return done.filter((no) => {
+      const row = rowOf(no);
+      return !(row && row.querySelector('input[type="checkbox"]')) || isPicked(no);
+    });
   };
 
   // 이 발주번호 줄의 체크가 켜져 있는지 본다(쪽을 넘겨도 선택이 남는지 확인할 때 쓴다).
@@ -315,7 +336,7 @@
 
   // 팝업 목록이 여러 쪽이면 쪽을 넘겨 가며 우리 발주건을 모두 고른다.
   const pickOrdersAcrossPages = async (orderNos) => {
-    const picked = new Set(pickOrders(orderNos));
+    const picked = new Set(await pickOrders(orderNos));
     const last = lastPageNo();
     const onPage1 = picked.size;
     if (picked.size >= orderNos.length) return { picked: Array.from(picked), last, onPage1 };
@@ -324,7 +345,7 @@
     for (let n = 2; n <= last && picked.size < orderNos.length; n++) {
       if (!(await goToPage(n))) return { stuck: n, picked: Array.from(picked), last, onPage1 };
       await sleep(500);
-      pickOrders(orderNos.filter((no) => !picked.has(no))).forEach((no) => picked.add(no));
+      (await pickOrders(orderNos.filter((no) => !picked.has(no)))).forEach((no) => picked.add(no));
     }
 
     // 1쪽으로 돌아가서, 쪽을 넘기는 사이에 앞서 고른 게 풀리지 않았는지 본다.

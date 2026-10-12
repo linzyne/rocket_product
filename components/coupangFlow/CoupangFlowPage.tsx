@@ -812,7 +812,8 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
   // 날짜·센터 덩어리 안의 발주서: 날짜·센터는 덩어리 머리줄에 있으니 빼고 "발주번호 → 상품목록"만.
   const slim = (o: FlowOrder) => (
     <div key={o.no} style={{
-      borderTop: '1px solid #f3f3f3', paddingTop: 6,
+      // 발주서 사이에 빈 줄 하나만큼 띄운다(가독성).
+      borderTop: '1px solid #f3f3f3', paddingTop: 6, marginTop: 14,
       display: 'flex', flexDirection: 'column', gap: 4,
     }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>

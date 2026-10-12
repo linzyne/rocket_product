@@ -170,6 +170,9 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
       ? allBoxes(o.batch).filter(b => b.lines.some(l => String(l.발주번호 || '').trim() === o.no)).map(b => (b.waybill || '').trim())
       : []).filter(Boolean))),
     ships: Array.from(new Set(list.map(o => o.item?.shipmentNos?.[o.no] || '').filter(Boolean))),
+    // 쉽먼트 기록에서 이 상자 발주서가 든 박스 수.
+    boxes: new Set(list.flatMap(o => o.batch ? allBoxes(o.batch)
+      .filter(b => b.lines.some(l => String(l.발주번호 || '').trim() === o.no)).map(b => `${o.batch!.id}|${b.center}|${b.boxNo}`) : [])).size,
   });
   // 박스 나누기 창(한 상품을 박스 여러 개에 나눠 담기). 쉽먼트생성 화면의 창과 같다.
   const [splitting, setSplitting] = useState<{ itemId: string; line: ShipOutLine; total: number; boxMax: number; pieces: { no: number; qty: string }[] } | null>(null);
@@ -1658,6 +1661,7 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
                           <>
                             {one('발주', sm.orders)}
                             {one('송장', sm.waybills)}
+                            {sm.boxes > 0 && <span style={{ fontSize: 12, fontWeight: 800, color: '#111', whiteSpace: 'nowrap' }}>박스 {sm.boxes}개</span>}
                             {sm.ships.length ? one('쉽먼트', sm.ships) : (
                               <span onClick={() => setShipNos(g.list)} title="이 상자 발주서 전체에 쉽먼트 번호 넣기" style={{ fontSize: 11.5, color: '#b45309', cursor: 'pointer', whiteSpace: 'nowrap' }}>+쉽먼트</span>
                             )}

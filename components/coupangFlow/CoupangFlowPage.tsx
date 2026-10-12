@@ -812,8 +812,7 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
   // 날짜·센터 덩어리 안의 발주서: 날짜·센터는 덩어리 머리줄에 있으니 빼고 "발주번호 → 상품목록"만.
   const slim = (o: FlowOrder) => (
     <div key={o.no} style={{
-      background: '#fff', borderRadius: 8, padding: '8px 10px',
-      border: picked.has(o.no) ? `2px solid ${ORANGE}` : '1px solid #e2dfdb',
+      borderTop: '1px solid #f3f3f3', paddingTop: 6,
       display: 'flex', flexDirection: 'column', gap: 4,
     }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
@@ -1452,7 +1451,13 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
               }}>
                 {i <= 1 ? groupByCenterDate(list).map(g => (
                   // 새발주서·발주확정: 예전 쿠팡발주확인처럼 같은 입고예정일·센터끼리 한 덩어리로 모아 보여준다(묶음은 아니다).
-                  <div key={g.key} style={{ display: 'flex', flexDirection: 'column', gap: 10, padding: '8px 8px 10px', borderRadius: 12, background: '#f5f4f2', border: '1px solid #e7e5e4' }}>
+                  // 겉모양은 쉽먼트·발송대기 카드와 같게(흰 바탕·테두리·그림자·왼쪽 띠). 고른 발주서가 있으면 주황.
+                  <div key={g.key} style={{
+                    background: '#fff', borderRadius: 10, padding: '10px 12px 10px 14px', boxShadow: '0 2px 6px rgba(0,0,0,0.10)',
+                    border: g.list.some(o => picked.has(o.no)) ? `2px solid ${ORANGE}` : '1px solid #b8b2ab',
+                    borderLeft: `5px solid ${g.list.some(o => picked.has(o.no)) ? ORANGE : '#a8a29e'}`,
+                    display: 'flex', flexDirection: 'column', gap: 6,
+                  }}>
                     {/* 날짜·센터 글씨는 쉽먼트·발송대기 카드 머리와 같게 */}
                     <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', lineHeight: 1.2, padding: '0 4px' }}>
                       <span style={{ fontSize: 17, fontWeight: 900, color: '#111' }}>{dayText(g.date)}</span>

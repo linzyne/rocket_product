@@ -1179,9 +1179,20 @@
             // 아래에서 "첫 줄"을 눌러 체크하므로, 목록에 우리 주문번호 1줄만 남아 있어야 한다.
             // 검색조건이 안 먹어 다른 줄(예전 예약)까지 보이면 남의 운송장을 출력하게 된다(출력의심목록이 뜬 일).
             const ordOf = (r) => Object.values(r.raw || {}).map((v) => String(v == null ? '' : v).trim()).find((v) => ORD_RE.test(v)) || '';
-            const onlyOurs = () => gridRows.length === 1 && ordOf(gridRows[0]) === ordNo;
+            // 롯데가 주는 데이터에는 같은 줄이 두 번 들어오기도 해서 줄 수 대신, 화면의 건수(1/1 총)와
+            // 데이터에 든 주문번호 종류로 본다: 화면 건수가 1이고, 주문번호가 우리 것 하나뿐이어야 한다.
+            const shownCount = () => {
+              const el = document.getElementById('spTotCnt');
+              const n = el ? Number(String(el.textContent || '').replace(/[^0-9]/g, '')) : NaN;
+              return Number.isFinite(n) ? n : -1;
+            };
+            const onlyOurs = () => {
+              const ords = new Set(gridRows.map(ordOf).filter(Boolean));
+              const n = shownCount();
+              return ords.size === 1 && ords.has(ordNo) && (n === 1 || (n === -1 && gridRows.length === 1));
+            };
             for (let again = 0; again < 3 && !onlyOurs(); again++) {
-              await patch({ status: `${ordNo} 조회 결과가 ${gridRows.length}줄이라 다시 조회해요… (${again + 1})` });
+              await patch({ status: `${ordNo} 조회 결과가 ${shownCount() >= 0 ? shownCount() : gridRows.length}건이라 다시 조회해요… (${again + 1})` });
               await pickOrderNoCond();
               const box2 = document.querySelector('input[name="edtSrchCondVal"]');
               if (box2) setVal(box2, ordNo);
@@ -1193,7 +1204,7 @@
             if (!onlyOurs()) {
               await patch({
                 step: 'manual',
-                status: `${ordNo}로 조회했는데 목록에 ${gridRows.length}줄이 보여서(우리 건만 남지 않음) 체크·출력하지 않았어요. 검색조건이 "주문번호"인지 확인하고 "다시 조회"를 눌러 주세요.`,
+                status: `${ordNo}로 조회했는데 목록에 ${shownCount() >= 0 ? shownCount() : gridRows.length}건이 보여서(우리 건만 남지 않음) 체크·출력하지 않았어요. 검색조건이 "주문번호"인지 확인하고 "다시 조회"를 눌러 주세요.`,
               });
               return;
             }

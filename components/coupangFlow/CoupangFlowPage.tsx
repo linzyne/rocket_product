@@ -400,7 +400,11 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
     // 발송대기: 늦게 넘어온 것이 위, 먼저 넘어온 것은 아래로 쌓인다(넘어온 때 = 발송대기로 누른 때, 없으면 서허 등록 때).
     if (i === 4) {
       const at = (o: FlowOrder) => o.item?.doneAt || o.item?.uploadedAt || o.item?.createdAt || 0;
-      list.sort((a, b) => at(b) - at(a));
+      // 같은 택배예약(쉽먼트 기록)끼리 붙어 있게: 예약 안의 가장 늦은 때로 덩어리 순서를 정한다.
+      const groupAt = new Map<string, number>();
+      list.forEach(o => { const k = o.item?.batchId || o.item?.id || o.no; groupAt.set(k, Math.max(groupAt.get(k) || 0, at(o))); });
+      const keyOf = (o: FlowOrder) => o.item?.batchId || o.item?.id || o.no;
+      list.sort((a, b) => (groupAt.get(keyOf(b))! - groupAt.get(keyOf(a))!) || keyOf(a).localeCompare(keyOf(b)) || at(b) - at(a));
     }
     return list;
   });
@@ -1454,7 +1458,7 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
                 padding: '18px 14px 32px', minHeight: '78vh', display: 'flex', flexDirection: 'column', gap: 20, boxSizing: 'border-box',
                 borderRight: col < shownStages.length - 1 ? '1px solid #e7e5e4' : 'none',
               }}>
-                {i <= 4 ? groupByCenterDate(list, i >= 2 ? (o => o.item?.id || o.no) : undefined).map(g => (
+                {i <= 4 ? groupByCenterDate(list, i >= 2 ? (o => (i === 4 ? o.item?.batchId : '') || o.item?.id || o.no) : undefined).map(g => (
                   // 새발주서·발주확정: 예전 쿠팡발주확인처럼 같은 입고예정일·센터끼리 한 덩어리로 모아 보여준다(묶음은 아니다).
                   // 겉모양은 쉽먼트·발송대기 카드와 같게(흰 바탕·테두리·그림자·왼쪽 띠). 고른 발주서가 있으면 주황.
                   (() => {
@@ -1487,7 +1491,7 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
                         );
                       })()}
                       <span style={{ fontSize: 17, fontWeight: 900, color: '#111' }}>{dayText(g.date)}</span>
-                      <span style={{ fontSize: 17, fontWeight: 900, color: ORANGE }}>{g.center || '센터 없음'}</span>
+                      <span style={{ fontSize: 17, fontWeight: 900, color: ORANGE }}>{Array.from(new Set(g.list.map(o => o.center.trim()).filter(Boolean))).join(' · ') || '센터 없음'}</span>
                       <span style={{ fontSize: 11.5, fontWeight: 700, color: '#a8a29e' }}>발주 {g.list.length}건</span>
                     </div>
                     {g.list.map(slim)}

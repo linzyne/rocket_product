@@ -87,7 +87,11 @@ export function startShipment(
   const id = makeBatchId(batches);
   const file = exportLotteExcel(rows, addresses, sender, id);
   if (!file) return null;
-  if (!confirm(`${file.name}을 내려받았어요.\n택배 예약 → 운송장 → 서허 양식 → 서허 일괄등록까지 이어서 할까요?`)) return null;
+  // 무엇이 몇 박스로 예약되는지 보여 주고 묻는다(고른 것과 다르면 여기서 멈출 수 있게).
+  const plan = shipmentCenters(rows).flatMap(c => c.boxes.map(b =>
+    `  ${c.center} 박스${b.boxNo}: ${Array.from(new Set(b.lines.map(l => l.발주번호))).join(', ')}`));
+  const orderCount = new Set(rows.filter(r => !r.isBlank).map(r => r._발주번호)).size;
+  if (!confirm(`${file.name}을 내려받았어요.\n\n발주서 ${orderCount}건 · 택배 ${plan.length}박스\n${plan.join('\n')}\n\n택배 예약 → 운송장 → 서허 양식 → 서허 일괄등록까지 이어서 할까요?`)) return null;
 
   const batch: ShipmentBatch = {
     id,

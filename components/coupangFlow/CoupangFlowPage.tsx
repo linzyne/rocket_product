@@ -531,7 +531,7 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
                   // 박스: 택배예약 전에는 고를 수 있고, 예약한 뒤에는 보기만.
                   const item = o.item!;
                   const v = l.ship!.쉼먼트 || '';
-                  if (reservedOrder(o) || isBoxSplit(v)) {
+                  if (o.item?.shipmentNos?.[o.no] || isBoxSplit(v)) {
                     const text = isBoxSplit(v) ? parseBoxSplit(v).map(p => `${p.no}번×${p.qty}`).join(' ') : parseBoxNo(v) ? `박스 ${parseBoxNo(v)}` : '';
                     return text ? <span style={{ flexShrink: 0, fontSize: 11, color: '#6b7280', whiteSpace: 'nowrap' }}>{text}</span> : null;
                   }
@@ -865,11 +865,12 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
 
   // 고른 것 중 쉽먼트 칸에서 아직 택배예약 안 한 출고 건 → 택배예약 → 운송장 → 서허 양식 → 서허 일괄등록까지 한 번에.
   // 이미 예약한 건(쉽먼트 기록이 있는 건)은 두 번 예약하면 안 되므로 빼고, 멈춘 건은 카드의 "이어서 하기"로.
-  // 고른 것 중 아직 예약 안 한 발주서 번호.
-  const toReserve = new Set(pickedShipping.filter(o => !reservedOrder(o)).map(o => o.no));
+  // 택배예약 대상: 고른 것 중 서허 등록(쉽먼트 번호)이 안 된 발주서. 이미 택배예약한 것도 사람이 원하면 다시 예약한다
+  // (예약은 됐는데 서허에 일부만 올라간 일처럼, 예약을 무시하고 처음부터 다시 해야 할 때).
+  const toReserve = new Set(pickedShipping.filter(o => !o.item!.shipmentNos?.[o.no]).map(o => o.no));
   const reserveItems = (() => {
     const m = new Map<string, ShipOut>();
-    pickedShipping.forEach(o => { if (!reservedOrder(o)) m.set(o.item!.id, o.item!); });
+    pickedShipping.forEach(o => { if (toReserve.has(o.no)) m.set(o.item!.id, o.item!); });
     return Array.from(m.values());
   })();
   const rowsOf = (items: ShipOut[]) => buildDisplayRows(items.flatMap(item => item.lines.flatMap(l => expandBoxSplit({
@@ -884,8 +885,10 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
     묶음센터: item.center,
   }))));
   const reserveShip = () => {
-    const skipped = pickedShipping.filter(o => !toReserve.has(o.no)).map(o => o.no);
-    if (skipped.length && !window.confirm(`이미 택배예약한 발주서는 빼고 해요: ${skipped.join(', ')}\n(멈춘 건은 카드의 "▶ 이어서 하기"로)`)) return;
+    const registered = pickedShipping.filter(o => !toReserve.has(o.no)).map(o => o.no);
+    const again = pickedShipping.filter(o => toReserve.has(o.no) && reservedOrder(o)).map(o => o.no);
+    if (registered.length && !window.confirm(`서허 등록까지 끝난 발주서는 빼고 해요: ${registered.join(', ')}`)) return;
+    if (again.length && !window.confirm(`이미 택배예약한 발주서 ${again.length}건이 있어요: ${again.join(', ')}\n\n예약을 무시하고 택배예약부터 다시 할까요?\n(롯데에 이미 잡힌 예약은 직접 취소해 주세요)`)) return;
     // 고른 발주서 줄만 예약한다. 출고 건에 안 고른 발주서가 섞여 있으면, 예약이 시작된 뒤 고른 줄만 새 출고 건으로 떼어 낸다.
     const pickedOnly = reserveItems.map(it => ({ ...it, lines: it.lines.filter(l => toReserve.has(l.발주번호)) }));
     const whole = pickedOnly.filter((it, i) => it.lines.length === reserveItems[i].lines.length);

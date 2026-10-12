@@ -836,8 +836,26 @@ const HanjungOrderPage: React.FC = () => {
   return (
     // 가로로 길면 눈을 많이 움직여야 해서 화면 폭을 줄인다(왼쪽 정렬).
     <div className="p-4 sm:p-6 lg:p-8 text-gray-800 max-w-[1000px]">
-      {/* 머리(제목·되돌리기 버튼·안내)는 뺐다. 되돌리기는 ⌘Z / ⌘⇧Z로. */}
-      <div className="flex justify-end mb-4">
+      {/* 머리: 되돌리기 · 다시실행 (⌘Z / ⌘⇧Z) + 검색 */}
+      <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+        <div className="flex items-center gap-2">
+          <button
+            onClick={undo}
+            disabled={!history.undo.length}
+            title={history.undo.length ? `되돌리기: ${history.undo[history.undo.length - 1].label} (⌘Z)` : '되돌릴 일이 없어요'}
+            className="px-3 py-1 text-xs font-semibold rounded-full border bg-white text-gray-600 border-gray-200 hover:bg-gray-50 disabled:text-gray-300 disabled:border-gray-100 disabled:hover:bg-white"
+          >
+            ↶ 되돌리기
+          </button>
+          <button
+            onClick={redo}
+            disabled={!history.redo.length}
+            title={history.redo.length ? `다시실행: ${history.redo[history.redo.length - 1].label} (⌘⇧Z)` : '다시 할 일이 없어요'}
+            className="px-3 py-1 text-xs font-semibold rounded-full border bg-white text-gray-600 border-gray-200 hover:bg-gray-50 disabled:text-gray-300 disabled:border-gray-100 disabled:hover:bg-white"
+          >
+            ↷ 다시실행
+          </button>
+        </div>
         <input
           value={search}
           onChange={e => setSearch(e.target.value)}

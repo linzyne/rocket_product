@@ -1552,7 +1552,8 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
                     const doneAll = (i === 2 || i === 4) && g.list.every(allReady);
                     const errAny = g.list.some(o => run(o)?.state === 'error');
                     // 상자 안 발주서를 다 인쇄했으면(출력완료) 옅은 회색 바탕.
-                    const printedAll = (i === 2 || i === 4) && g.list.every(o => (o.item?.printedOrders || []).includes(o.no));
+                    // 출력완료 체크칸(인쇄 옆)을 켰거나 인쇄 기록이 있으면 출력완료로 본다.
+                    const printedAll = (i === 2 || i === 4) && g.list.every(o => marks.has(o.no) || (o.item?.printedOrders || []).includes(o.no));
                     return (
                   <div key={g.key} style={{
                     background: printedAll ? '#ececec' : doneAll ? '#f0faf3' : '#fff', borderRadius: 10, padding: '10px 12px 10px 14px', boxShadow: '0 2px 6px rgba(0,0,0,0.10)',

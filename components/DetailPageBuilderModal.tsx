@@ -630,7 +630,11 @@ const DetailPageBuilderModal: React.FC<DetailPageBuilderModalProps> = ({ isOpen,
   };
   const handleSaveSnapshot = () => void openSnapshotList('save');
   const saveSnapshotAs = async (id: string, name: string) => {
-    await saveDetailPageDraft(id, { name, draft: collectKimchiDraft() });
+    const ok = await saveDetailPageDraft(id, { name, draft: collectKimchiDraft() });
+    if (!ok) {
+      alert(`"${name}" 중간저장에 실패했어요. 창을 닫지 말고 "상세 이미지로 저장"이나 "다운로드"로 먼저 남겨 두세요.`);
+      return;
+    }
     setSnapshots(null);
     alert(`"${name}" 중간저장했어요. "불러오기"에서 다시 열 수 있어요.`);
   };

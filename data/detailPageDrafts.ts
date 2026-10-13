@@ -13,7 +13,8 @@ interface DraftRecord<T> {
   data: T;
 }
 
-export async function saveDetailPageDraft<T>(id: string, data: T): Promise<void> {
+// 저장됐으면 true. 실패해도 던지지 않는다(자동 저장이 작업을 막으면 안 되므로).
+export async function saveDetailPageDraft<T>(id: string, data: T): Promise<boolean> {
   try {
     const db = await openAppDb();
     await new Promise<void>((resolve, reject) => {
@@ -23,9 +24,11 @@ export async function saveDetailPageDraft<T>(id: string, data: T): Promise<void>
       tx.onerror = () => reject(tx.error);
       tx.onabort = () => reject(tx.error);
     });
+    return true;
   } catch (error) {
     // 저장에 실패했다고 작업을 막을 이유는 없다 — 알려만 두고 넘어간다.
     console.error('상세페이지 작업 내용을 저장하지 못했습니다.', error);
+    return false;
   }
 }
 

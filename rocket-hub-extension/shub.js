@@ -259,7 +259,7 @@
 
     if (!used.length) return '';
     await sleep(400);
-    const search = findAll(/^검색$/).filter((el) => !el.closest('table')).pop();
+    const search = findAll(/^(검색|search)$/i).filter((el) => !el.closest('table')).pop();
     if (search) realClick(search.closest('button') || search);
     await sleep(1500);
     return used.join('+');
@@ -281,7 +281,7 @@
     }
     if (!done) return false;
     await sleep(400);
-    const search = findAll(/^검색$/).filter((el) => !el.closest('table')).pop();
+    const search = findAll(/^(검색|search)$/i).filter((el) => !el.closest('table')).pop();
     if (search) realClick(search.closest('button') || search);
     await sleep(1500);
     return true;
@@ -302,7 +302,7 @@
     input.dispatchEvent(new Event('change', { bubbles: true }));
     input.dispatchEvent(new Event('blur', { bubbles: true }));
     await sleep(400);
-    const search = findAll(/^검색$/).filter((el) => !el.closest('table')).pop();
+    const search = findAll(/^(검색|search)$/i).filter((el) => !el.closest('table')).pop();
     if (search) realClick(search.closest('button') || search);
     await sleep(1500);
     return true;

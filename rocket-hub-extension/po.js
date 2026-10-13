@@ -80,8 +80,8 @@
     const label = (el) => clean(el.value || el.textContent).replace(/\s+/g, '');
     const list = Array.from(document.querySelectorAll('button, a, [role="button"], input[type="submit"], input[type="button"]')).filter(visible);
     return (
-      list.find((el) => label(el) === '검색') ||
-      list.find((el) => /검색/.test(label(el)) && !/기간검색|상세검색|검색조건|검색어/.test(label(el))) ||
+      list.find((el) => /^(검색|search)$/i.test(label(el))) ||
+      list.find((el) => /검색|search/i.test(label(el)) && !/기간검색|상세검색|검색조건|검색어|advanced|keyword/i.test(label(el))) ||
       null
     );
   };

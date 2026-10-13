@@ -94,7 +94,7 @@
       box = box.parentElement;
     }
     return Array.from(document.querySelectorAll('button, a, [role="button"], input[type="button"], input[type="submit"]'))
-      .find((b) => visible(b) && /^(검색|조회)$/.test(clean(b.value || b.textContent))) || null;
+      .find((b) => visible(b) && /^(검색|조회|search)$/i.test(clean(b.value || b.textContent))) || null;
   };
   // 결과에서 이 발주번호가 든 줄과 그 줄의 "+추가" 단추.
   const addButtonFor = (no) => {

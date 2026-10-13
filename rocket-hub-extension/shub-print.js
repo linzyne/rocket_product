@@ -73,7 +73,7 @@
     return null;
   };
   const clickSearch = () => {
-    const btn = findAll(/^검색$/).map(clickable).filter((el) => !el.closest('table')).pop();
+    const btn = findAll(/^(검색|search)$/i).map(clickable).filter((el) => !el.closest('table')).pop();
     if (btn) realClick(btn);
   };
   // 조회 결과 표에서 쉽먼트 번호 칸이 이 번호인 줄.

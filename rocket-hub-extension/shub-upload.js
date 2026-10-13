@@ -231,7 +231,7 @@
     return null;
   };
   const clickSearch = () => {
-    const btn = findAll(/^검색$/).map(clickable).filter((el) => !el.closest('table')).pop();
+    const btn = findAll(/^(검색|search)$/i).map(clickable).filter((el) => !el.closest('table')).pop();
     if (btn) realClick(btn);
     return !!btn;
   };

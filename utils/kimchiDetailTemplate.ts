@@ -1130,6 +1130,20 @@ function htmlToPlain(value: string): string {
     .trim();
 }
 
+// 직접 쓸 빈 양식: 라벨(표시)만 "라벨: " 꼴로 늘어놓는다. 콜론 뒤에 이어 쓰면 붙여넣기 적용이
+// 그 칸에 넣는다(parseKimchiCopyText). 섹션 사이는 한 줄 띄워 어디까지가 한 섹션인지 보이게.
+export function buildKimchiBlankForm(sections: KimchiSection[]): string {
+  let prev = -1;
+  return buildSlots(sections)
+    .map(slot => {
+      const line = `${slot.label}: `;
+      const breakBefore = prev !== -1 && slot.sectionIndex !== prev;
+      prev = slot.sectionIndex;
+      return breakBefore ? `\n${line}` : line;
+    })
+    .join('\n');
+}
+
 // 섹션 하나의 문구를 붙여넣기와 같은 "라벨 + 내용" 글로 만든다. 고쳐서 applySectionCopyText로 넣는다.
 export function sectionCopyText(sections: KimchiSection[], sectionId: string): string {
   const sectionIndex = sections.findIndex(s => s.id === sectionId);

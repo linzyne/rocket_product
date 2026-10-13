@@ -46,6 +46,7 @@ import {
   kimchiSectionHasText,
   buildKimchiCopyPrompt,
   parseKimchiCopyText,
+  buildKimchiBlankForm,
   sectionCopyText,
   applySectionCopyText,
   sectionBaseLabel,
@@ -2235,6 +2236,12 @@ const DetailPageBuilderModal: React.FC<DetailPageBuilderModalProps> = ({ isOpen,
     }
   };
 
+  // AI 없이 직접 쓸 때: 표시(라벨)만 있는 빈 양식을 붙여넣기 칸에 넣는다. 콜론 뒤에 채우고 적용하면 된다.
+  const handleInsertKimchiBlankForm = () => {
+    if (kimchiPastedText.trim() && !window.confirm('붙여넣기 칸에 쓴 글을 지우고 빈 양식으로 바꿀까요?')) return;
+    setKimchiPastedText(buildKimchiBlankForm(kimchiSections));
+  };
+
   const handleApplyKimchiPasted = () => {
     if (!kimchiPastedText.trim()) return;
     // 라벨은 현재 섹션 구성에서 만들어지므로(buildKimchiCopyPrompt와 같은 함수), 섹션을 바꿨으면
@@ -3382,13 +3389,19 @@ const DetailPageBuilderModal: React.FC<DetailPageBuilderModalProps> = ({ isOpen,
               <div className="space-y-2 pt-2 border-t border-slate-700">
                 <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">문구 붙여넣기</p>
                 <p className="text-xs text-slate-500 leading-relaxed">
-                  프롬프트를 복사해 ChatGPT 등에 넣고, 받은 답변을 통째로 아래에 붙여넣으면 섹션별로 채워져요.
+                  프롬프트를 복사해 ChatGPT 등에 넣고, 받은 답변을 통째로 아래에 붙여넣으면 섹션별로 채워져요. 직접 쓸 때는 빈 양식을 넣고 각 줄 콜론(:) 뒤에 문구를 채운 뒤 적용하세요.
                 </p>
                 <button
                   onClick={handleCopyKimchiPrompt}
                   className="w-full flex items-center justify-center gap-2 px-3 py-2 text-sm bg-slate-700 text-slate-100 font-semibold rounded-lg hover:bg-slate-600 transition-colors"
                 >
                   {promptCopyStatus === 'copied' ? '복사됨!' : 'AI용 프롬프트 복사하기'}
+                </button>
+                <button
+                  onClick={handleInsertKimchiBlankForm}
+                  className="w-full px-3 py-2 text-sm bg-slate-800 text-slate-200 font-semibold rounded-lg border border-slate-600 hover:bg-slate-700 transition-colors"
+                >
+                  직접 쓸 빈 양식 넣기
                 </button>
                 <button
                   onClick={handleApplyKimchiPasted}

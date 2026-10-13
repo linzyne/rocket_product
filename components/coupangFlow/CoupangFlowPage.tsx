@@ -843,8 +843,8 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
 
   // 상자 보기 카드: 상자 폭에 맞춰 위아래로.
   const card = (o: FlowOrder) => {
-    // 쉽먼트·발송대기에서 상품이 다 준비된 발주서는 초록 테두리·띠 + 연한 초록 바탕으로 확 구분한다.
-    const done = (o.stage === 2 || o.stage === 4) && allReady(o);
+    // 발주확정·쉽먼트·발송대기에서 상품이 다 준비된 발주서는 초록 테두리·띠 + 연한 초록 바탕으로 확 구분한다.
+    const done = (o.stage === 1 || o.stage === 2 || o.stage === 4) && allReady(o);
     const err = run(o)?.state === 'error';
     return (
     // 카드끼리 잘 구분되게: 테두리 + 그림자 + 왼쪽 색 띠(고른 건 주황, 멈춘 건 빨강, 다 준비된 건 초록).
@@ -1633,9 +1633,9 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
                   // 새발주서·발주확정: 예전 쿠팡발주확인처럼 같은 입고예정일·센터끼리 한 덩어리로 모아 보여준다(묶음은 아니다).
                   // 겉모양은 쉽먼트·발송대기 카드와 같게(흰 바탕·테두리·그림자·왼쪽 띠). 고른 발주서가 있으면 주황.
                   (() => {
-                    // 쉽먼트·발송대기: 상품이 다 준비된 출고 건은 초록, 멈춘 건 빨강(카드와 같은 색 규칙).
+                    // 발주확정·쉽먼트·발송대기: 상품이 다 준비된 덩어리는 초록, 멈춘 건 빨강(카드와 같은 색 규칙).
                     const pickedAny = g.list.some(o => picked.has(o.no));
-                    const doneAll = (i === 2 || i === 4) && g.list.every(allReady);
+                    const doneAll = (i === 1 || i === 2 || i === 4) && g.list.every(allReady);
                     const errAny = g.list.some(o => run(o)?.state === 'error');
                     // 상자 안 발주서를 다 인쇄했으면(출력완료) 옅은 회색 바탕.
                     // 출력완료 체크칸(인쇄 옆)을 켰거나 인쇄 기록이 있으면 출력완료로 본다.

@@ -508,17 +508,21 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
                 <span title="눌러서 송장번호 복사" style={{ cursor: 'copy', textDecoration: 'underline dotted', textUnderlineOffset: 2 }}
                   onClick={() => navigator.clipboard.writeText(w).then(() => setDateNote({ tone: 'ok', text: `송장번호 ${w} 복사했어요` })).catch(() => {})}>{w}</span>
                 {/* 롯데 ALPS에서 이 송장을 다시 출력(미리보기 창까지 열고 표준라벨E로 골라 둔다). */}
-                <span title="롯데택배에서 이 송장 출력 창 열기" style={{ cursor: 'pointer', marginLeft: 3 }}
-                  onClick={() => {
-                    window.postMessage({ source: 'rocket-app-hub', type: 'LOTTE_REPRINT', waybill: w, edd: o.date }, window.location.origin);
-                    setDateNote({ tone: 'ok', text: `롯데택배 창을 열어 송장 ${w}를 찾는 중이에요` });
-                  }}>🖨</span>
+                {reprintIcon(w, o.date)}
               </span>
             ))}
           </div>
         );
       })()}
     </>
+  );
+  // 롯데 ALPS에서 이 송장을 다시 출력(미리보기 창까지 열고 표준라벨E로 골라 둔다).
+  const reprintIcon = (w: string, edd: string) => (
+    <span title="롯데택배에서 이 송장 출력 창 열기" style={{ cursor: 'pointer', marginLeft: 3 }}
+      onClick={() => {
+        window.postMessage({ source: 'rocket-app-hub', type: 'LOTTE_REPRINT', waybill: w, edd }, window.location.origin);
+        setDateNote({ tone: 'ok', text: `롯데택배 창을 열어 송장 ${w}를 찾는 중이에요` });
+      }}>🖨</span>
   );
   const headInfo = (o: FlowOrder, size: number) => (
     <div>
@@ -1689,6 +1693,7 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
                         const one = (label: string, xs: string[]) => xs.length ? (
                           <span style={{ fontSize: 11.5, color: '#6b7280', whiteSpace: 'nowrap' }}>
                             {label} <span title={`눌러서 복사`} onClick={() => copyNo(label, xs[0])} style={{ cursor: 'copy', textDecoration: 'underline dotted', textUnderlineOffset: 2 }}>{xs[0]}</span>
+                            {label === '송장' && reprintIcon(xs[0], g.date)}
                             {xs.length > 1 && <b style={{ color: '#2563eb', marginLeft: 2 }}>+{xs.length - 1}</b>}
                           </span>
                         ) : null;
@@ -1725,7 +1730,8 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
                           <div>
                             송장 {sm.waybills.map(v => (
                               <React.Fragment key={'w' + v}>{chip('송장번호', v)}<span onClick={() => editWaybill(g.list, v)} title="이 송장번호 고치기"
-                                style={{ cursor: 'pointer', color: '#2563eb', fontWeight: 700, marginRight: 8, marginLeft: -4 }}>✎</span></React.Fragment>
+                                style={{ cursor: 'pointer', color: '#2563eb', fontWeight: 700, marginLeft: -4 }}>✎</span>
+                                <span style={{ marginRight: 8 }}>{reprintIcon(v, g.date)}</span></React.Fragment>
                             ))}
                             {!sm.waybills.length && <><span style={{ color: '#b45309' }}>없음 </span><span onClick={() => editWaybill(g.list, '')} title="이 상자 박스에 송장번호 넣기"
                               style={{ cursor: 'pointer', color: '#2563eb', fontWeight: 700 }}>+ 넣기</span></>}

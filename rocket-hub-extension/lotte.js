@@ -98,15 +98,15 @@
 
   // 로그인 화면: 비밀번호 칸 바로 앞의 글자 입력칸을 아이디 칸으로 보고 채운 뒤 로그인 버튼을 누릅니다.
   // 틀린 비밀번호로 계속 시도해 계정이 잠기지 않도록 한 요청당 최대 2번, 15초 간격으로만 시도합니다.
-  const tryLogin = async (p, pw) => {
+  const tryLogin = async (p, pw, save = patch) => {
     const creds = await getCreds();
     if (!creds) {
-      await patch({ status: '로그인해 주세요. (확장 아이콘 › 설정에 아이디·비밀번호를 저장하면 자동으로 로그인해요)' });
+      await save({ status: '로그인해 주세요. (확장 아이콘 › 설정에 아이디·비밀번호를 저장하면 자동으로 로그인해요)' });
       return;
     }
     const tries = p.loginTries || 0;
     if (tries >= 2) {
-      await patch({ status: '자동 로그인이 두 번 실패했어요. 직접 로그인해 주세요(확장 설정의 비밀번호도 확인해 주세요).' });
+      await save({ status: '자동 로그인이 두 번 실패했어요. 직접 로그인해 주세요(확장 설정의 비밀번호도 확인해 주세요).' });
       return;
     }
     if (Date.now() - (p.loginAt || 0) < 15000) return;
@@ -115,7 +115,7 @@
     );
     const idInput = inputs.filter((el) => el.compareDocumentPosition(pw) & Node.DOCUMENT_POSITION_FOLLOWING).pop() || inputs[0];
     if (!idInput) return;
-    await patch({ loginTries: tries + 1, loginAt: Date.now(), status: '자동 로그인 중…' });
+    await save({ loginTries: tries + 1, loginAt: Date.now(), status: '자동 로그인 중…' });
     setValue(idInput, creds.id);
     setValue(pw, creds.pw);
     await sleep(300);
@@ -142,6 +142,7 @@
   const findAll = (re) =>
     Array.from(document.querySelectorAll('body *')).filter((el) => {
       if (panel && panel.contains(el)) return false;
+      if (rpPanel && rpPanel.contains(el)) return false;
       const own = clean(el.textContent);
       if (!re.test(own)) return false;
       return !Array.from(el.children).some((c) => re.test(clean(c.textContent))) && visible(el);
@@ -232,14 +233,20 @@
   // ---- 안내 창(맨 위 화면만) ----
   // 확장이 연 창(그리고 거기서 뜬 미리보기 창)에서만 움직인다. 사장님이 따로 열어둔 ALPS 창은 건드리지 않는다.
   let myWindowId = null;
+  // 미리보기 창이면 그 창을 연 창. 송장 다시 출력 창에서 뜬 미리보기인지 가린다.
+  let myOpenerWindowId = null;
+  let windowInfoReady = false;
   try {
     chrome.runtime.sendMessage({ type: 'MY_WINDOW' }, (res) => {
+      windowInfoReady = true;
       if (chrome.runtime.lastError) return;
       myWindowId = (res && res.windowId) || null;
+      myOpenerWindowId = (res && res.openerWindowId) || null;
     });
   } catch (err) {}
 
   let panel = null;
+  let rpPanel = null;
   const render = (p) => {
     if (!IS_TOP) return;
     if (!p || p.hidden) {
@@ -594,7 +601,7 @@
   // 왜 실패했는지 화면에 남기려고 후보를 짧게 적어 둔다.
   let condWhy = '';
 
-  const pickCombo = async (labelRe, optRe) => {
+  const pickCombo = async (labelRe, optRe, preferBelow = false) => {
     let el = comboNear(labelRe, optRe);
     condWhy = el ? `${el.tagName}${el.name ? `[${el.name}]` : ''}="${comboShown(el)}"` : '칸을 못 찾음';
     if (!el) return false;
@@ -612,7 +619,19 @@
 
     realClick(el);
     await sleep(600);
-    const item = findAll(optRe).find((x) => x !== el && visible(x) && x.children.length === 0);
+    let item = findAll(optRe).find((x) => x !== el && visible(x) && x.children.length === 0);
+    if (preferBelow) {
+      // 같은 글자("운송장번호")가 화면 다른 곳에도 있어서, 열린 목록(드롭다운 바로 아래)의 것을 고른다.
+      const er = el.getBoundingClientRect();
+      const below = findAll(optRe)
+        .filter((x) => x !== el && visible(x) && x.children.length === 0)
+        .filter((x) => {
+          const r = x.getBoundingClientRect();
+          return r.top >= er.bottom - 4 && Math.abs(r.left - er.left) < 60;
+        })
+        .sort((a, b) => a.getBoundingClientRect().top - b.getBoundingClientRect().top);
+      item = below[0] || null;
+    }
     if (item) {
       realClick(item);
       await sleep(500);
@@ -947,6 +966,8 @@
   // ---- 진행 ----
   let busy = false;
   let lastMenuClick = 0;
+  // 이 창이 송장 다시 출력 것이면 기존 안내 창을 띄우지 않는다.
+  let rpOwnsCache = false;
 
   // 출력을 누르면 "출력의심목록"(전에 출력됐을 수 있는 운송장) 창이 뜰 때가 있다. 그대로 두면 미리보기가 안 열린다.
   // "운송장 출력이 되지 않았…"(다시 출력)을 고르고 적용을 눌러 출력이 이어지게 한다. 처리했으면 true.
@@ -970,6 +991,11 @@
 
   const tick = async () => {
     if (busy) return;
+    rpOwnsCache = await reprintOwnsThisWindow();
+    if (rpOwnsCache) {
+      if (IS_TOP && panel) render(null);
+      return;
+    }
     const p = await get();
     if (IS_TOP) render(p);
     // 올리기 시작한 뒤 일괄주문접수 화면이 새로 떴다 = 서버가 파일을 받았다 → 끝(창 닫기 신호).
@@ -1010,6 +1036,8 @@
       // ---- 2단계: 운송장 만들기 ----
       // 미리보기 창에서는 출력·관리번호 클릭만 한다.
       if (IS_PREVIEW) {
+        // 다른 창(예: 송장 다시 출력 창)이 연 미리보기는 건드리지 않는다.
+        if (myOpenerWindowId && p.windowId && myOpenerWindowId !== p.windowId) return;
         if (['uploaded', 'waybillMenu', 'waybillPage', 'preview'].includes(p.step)) await runPreviewWindow(p);
         return;
       }
@@ -1395,10 +1423,324 @@
     }
   };
 
+  // ==== 송장 다시 출력(lotteReprint) ====
+  // 앱의 발주서 박스 운송장번호 옆 🖨를 누르면 시작한다. 예약 올리기(lottePending)와는 저장 칸·창이 따로라
+  // 서로 섞이지 않는다: 이 흐름은 자기가 연 창과 그 창에서 뜬 미리보기 창에서만 움직이고, 기존 흐름은 그 창들에서 쉰다.
+  // 집하일자(입고예정일 7일 전 ~ 입고예정일) → 검색조건 운송장번호 → 조회 → 그 한 줄 체크 → 출력 → 미리보기 창에서
+  // 운송장종류를 표준라벨E로 골라 두고 멈춘다(출력은 사람이 누른다). 관리번호 누르기(번호 발급)는 절대 하지 않는다.
+  const RP_KEY = 'lotteReprint';
+  const RP_DONE = ['done', 'error', 'manual'];
+  const getRp = () =>
+    new Promise((resolve) => {
+      try {
+        chrome.storage.local.get(RP_KEY, (r) => resolve((r && r[RP_KEY]) || null));
+      } catch (err) {
+        resolve(null);
+      }
+    });
+  const patchRp = async (updates) => {
+    const cur = await getRp();
+    if (!cur) return;
+    await new Promise((resolve) => {
+      try {
+        chrome.storage.local.set({ [RP_KEY]: { ...cur, ...updates } }, () => resolve());
+      } catch (err) {
+        resolve();
+      }
+    });
+  };
+  const rpLive = (rp) => !!rp && !!rp.windowId && Date.now() - (rp.savedAt || 0) < 30 * 60 * 1000;
+  const rpMine = (rp) => rpLive(rp) && (myWindowId === rp.windowId || (IS_PREVIEW && myOpenerWindowId === rp.windowId));
+  // 기존 흐름이 이 창에서 쉬어야 하는지. 창 정보를 아직 못 받았으면 받을 때까지 쉰다.
+  const reprintOwnsThisWindow = async () => {
+    const rp = await getRp();
+    if (!rpLive(rp)) return false;
+    if (!windowInfoReady) return true;
+    if (rpMine(rp)) return true;
+    // 미리보기 창인데 누가 열었는지 모르고, 송장 다시 출력이 미리보기를 기다리는 중이면 손대지 않는다.
+    if (IS_PREVIEW && !myOpenerWindowId && rp.step === 'preview') return true;
+    return false;
+  };
+
+  const renderRp = (rp) => {
+    if (!IS_TOP) return;
+    if (!rp || rp.hidden) {
+      if (rpPanel) rpPanel.remove();
+      rpPanel = null;
+      return;
+    }
+    if (!rpPanel) {
+      rpPanel = document.createElement('div');
+      rpPanel.style.cssText =
+        'position:fixed;right:16px;bottom:16px;z-index:2147483647;width:280px;background:#fff;border:1px solid #d0d7e2;' +
+        'border-radius:10px;box-shadow:0 6px 20px rgba(0,0,0,.15);font:13px/1.5 -apple-system,sans-serif;color:#1f2937;padding:12px;';
+      rpPanel.addEventListener('click', (e) => {
+        const act = e.target && e.target.getAttribute && e.target.getAttribute('data-act');
+        if (act === 'close') {
+          try {
+            chrome.storage.local.remove(RP_KEY);
+          } catch (err) {}
+        } else if (act === 'dump') dumpStructure();
+        else if (act === 'hide') patchRp({ hidden: true });
+      });
+      document.body.appendChild(rpPanel);
+    }
+    const color = rp.step === 'error' ? '#dc2626' : rp.step === 'manual' ? '#b45309' : rp.step === 'done' ? '#059669' : '#1d4ed8';
+    const btn = 'border:1px solid #d0d7e2;background:#f8fafc;border-radius:6px;padding:4px 8px;cursor:pointer;font-size:12px;';
+    rpPanel.innerHTML = `
+      <div style="font-weight:700;margin-bottom:4px">🖨 송장 다시 출력</div>
+      <div style="color:#64748b;font-size:12px;margin-bottom:6px">${rp.waybill || ''}${rp.edd ? ` · 입고예정 ${rp.edd}` : ''}</div>
+      <div style="color:${color};font-size:13px;margin-bottom:8px">${rp.status || '진행 중…'}</div>
+      <div style="display:flex;gap:6px">
+        <button data-act="dump" style="${btn}" title="자동 진행이 안 될 때 화면 구조를 파일로 저장해 보내주세요">화면 구조 저장</button>
+        ${RP_DONE.includes(rp.step) ? `<button data-act="hide" style="${btn};border-color:#bbf7d0;background:#f0fdf4;color:#047857">닫기</button>` : `<button data-act="close" style="${btn};border-color:#fecaca;background:#fff1f2;color:#b91c1c">멈춤</button>`}
+      </div>`;
+  };
+
+  const ymd = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  // 입고예정일 7일 전 ~ 입고예정일(ALPS는 7일까지만 고를 수 있다).
+  const rpRange = (edd) => {
+    const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(edd || ''));
+    const end = m ? new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3])) : new Date();
+    const start = new Date(end);
+    start.setDate(start.getDate() - 7);
+    return { from: ymd(start), to: ymd(end) };
+  };
+
+  // "집하일자" 오른쪽 같은 줄의 날짜 칸 두 개에 적는다. 적은 값이 그대로 남았는지까지 본다.
+  const setPickupDates = async (from, to) => {
+    const label = find(/^집하일자$/);
+    if (!label) return '집하일자 칸을 못 찾음';
+    const lr = label.getBoundingClientRect();
+    const midY = lr.top + lr.height / 2;
+    const boxes = Array.from(document.querySelectorAll('input'))
+      .filter((el) => visible(el) && isTextBox(el) && /\d{4}\D?\d{2}\D?\d{2}/.test(el.value || ''))
+      .filter((el) => {
+        const r = el.getBoundingClientRect();
+        return r.left >= lr.right - 6 && Math.abs(r.top + r.height / 2 - midY) < 20;
+      })
+      .sort((x, y) => x.getBoundingClientRect().left - y.getBoundingClientRect().left)
+      .slice(0, 2);
+    if (boxes.length < 2) return `날짜 칸을 ${boxes.length}개만 찾음`;
+    const digits = (v) => String(v || '').replace(/\D/g, '');
+    const write = async (el, v) => {
+      for (const form of [v, digits(v)]) {
+        el.focus();
+        setVal(el, form);
+        el.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', keyCode: 13, bubbles: true }));
+        el.dispatchEvent(new Event('blur', { bubbles: true }));
+        el.blur();
+        await sleep(300);
+        if (digits(el.value) === digits(v)) return true;
+      }
+      return false;
+    };
+    const ok1 = await write(boxes[0], from);
+    const ok2 = await write(boxes[1], to);
+    // 끝 날짜를 적으면서 시작 날짜가 바뀌었을 수 있어 한 번 더 본다.
+    if (ok1 && digits(boxes[0].value) !== digits(from)) await write(boxes[0], from);
+    if (digits(boxes[0].value) === digits(from) && digits(boxes[1].value) === digits(to)) return '';
+    return `날짜가 ${boxes[0].value} ~ ${boxes[1].value}로 남음`;
+  };
+
+  const RP_TRIES = [
+    { dom: true, label: '화면 체크박스' },
+    { x: 37, y: 41, label: '첫 줄 37' },
+    { x: 33, y: 41, label: '첫 줄 33' },
+    { x: 41, y: 41, label: '첫 줄 41' },
+    { x: 29, y: 41, label: '첫 줄 29' },
+    { x: 45, y: 41, label: '첫 줄 45' },
+    { x: 37, y: 13, label: '머리줄 37' },
+    { x: 33, y: 13, label: '머리줄 33' },
+    { x: 41, y: 13, label: '머리줄 41' },
+  ];
+
+  // 운송장출력 화면: 날짜 → 검색조건 → 조회 → 우리 한 줄만 남았는지 확인 → 체크 → 출력.
+  const runReprintSearch = async (rp) => {
+    const digitsOf = (v) => String(v == null ? '' : v).replace(/\D/g, '');
+    const target = digitsOf(rp.waybill);
+    const { from, to } = rpRange(rp.edd);
+    await patchRp({ step: 'search', searchStartedAt: Date.now(), status: `집하일자를 ${from} ~ ${to}로 맞추는 중…` });
+    const dateWhy = await setPickupDates(from, to);
+    if (dateWhy) {
+      await patchRp({ step: 'manual', status: `집하일자를 못 맞췄어요(${dateWhy}). ${from} ~ ${to}로 고르고 검색조건 "운송장번호"에 ${rp.waybill}를 넣어 조회·출력해 주세요.` });
+      return;
+    }
+    await patchRp({ status: '검색조건을 운송장번호로 바꾸는 중…' });
+    if (!(await pickCombo(TEXT.condLabel, /^운송장\s*번호$/, true))) {
+      await patchRp({ step: 'manual', status: `검색조건을 "운송장번호"로 바꾸지 못했어요(${condWhy}). 직접 바꿔 ${rp.waybill}로 조회·출력해 주세요.` });
+      return;
+    }
+    const box = document.querySelector('input[name="edtSrchCondVal"]');
+    if (!box) {
+      await patchRp({ step: 'manual', status: '검색값 칸을 못 찾았어요. 직접 조회·출력해 주세요.' });
+      return;
+    }
+    setVal(box, target);
+    const hasOurs = () => gridRows.some((r) => Object.values(r.raw || {}).some((v) => digitsOf(v) === target));
+    const total = () => {
+      const el = document.getElementById('spTotCnt');
+      const n = el ? Number(String(el.textContent || '').replace(/[^0-9]/g, '')) : NaN;
+      return Number.isFinite(n) ? n : -1;
+    };
+    gridRows = [];
+    await patchRp({ status: `${rp.waybill} 조회 중…` });
+    const searchedAt = Date.now();
+    for (let round = 0; round < 4 && !hasOurs(); round++) {
+      const search = find(TEXT.search);
+      if (search) realClick(search);
+      for (let t = 0; t < 20 && !hasOurs(); t++) {
+        await sleep(500);
+        if (closeNotice(/거래처\s*코드/)) {
+          await patchRp({ status: `거래처코드가 아직 안 들어와서 기다렸다 다시 조회해요… (${round + 1})` });
+          await sleep(2500);
+          break;
+        }
+        const notice = closeNotice(/(\d+\s*일|기간).{0,20}(초과|넘|이내|까지|선택|조회)/);
+        if (notice) {
+          await patchRp({ step: 'manual', status: `ALPS 안내: ${notice}` });
+          return;
+        }
+        if (lastAlert && lastAlert.at >= searchedAt && /일|기간/.test(lastAlert.text)) {
+          await patchRp({ step: 'manual', status: `ALPS 안내: ${lastAlert.text}` });
+          return;
+        }
+      }
+    }
+    if (!hasOurs()) {
+      await patchRp({ step: 'manual', status: `${from} ~ ${to} 사이에서 ${rp.waybill}를 찾지 못했어요. 집하일자를 넓혀 직접 조회해 주세요.` });
+      return;
+    }
+    // 첫 줄을 눌러 체크하므로 목록에 이 송장 한 줄만 있어야 한다(남의 송장을 출력하지 않게).
+    const n = total();
+    if (n !== 1 && !(n === -1 && gridRows.length === 1)) {
+      await patchRp({ step: 'manual', status: `${rp.waybill}로 조회했는데 ${n >= 0 ? n : gridRows.length}건이 보여서 체크·출력하지 않았어요. 직접 체크하고 출력해 주세요.` });
+      return;
+    }
+    for (let t = 0; t < RP_TRIES.length; t++) {
+      const tr = RP_TRIES[t];
+      await patchRp({ status: `체크 시도 ${t + 1}/${RP_TRIES.length} · ${tr.label}` });
+      if (tr.dom) {
+        if (!(await clickDomCheckbox())) continue;
+      } else {
+        await clickAt(tr.x, tr.y);
+      }
+      const at = Date.now();
+      lastAlert = null;
+      lastOpen = null;
+      const printBtn = findAll(TEXT.print).find((el) => el.closest('button, a, [role="button"], span')) || find(TEXT.print);
+      if (!printBtn) {
+        await patchRp({ step: 'error', status: '"출력" 버튼을 못 찾았어요.' });
+        return;
+      }
+      // 미리보기 창이 이 흐름 것임을 알 수 있게 먼저 적어 둔다.
+      await patchRp({ step: 'preview', printedAt: Date.now(), status: '출력 누름. 미리보기 창 기다리는 중…' });
+      realClick(printBtn);
+      await sleep(3000);
+      if (await handleSuspect()) await patchRp({ status: '출력의심목록 창이 떠서 "출력 안 됨(다시 출력)"으로 적용했어요…' });
+      if (lastOpen && lastOpen.blocked) {
+        await patchRp({ step: 'manual', status: '크롬이 미리보기 창(팝업)을 막았어요. 주소창 오른쪽 팝업 차단 아이콘에서 "항상 허용"으로 바꾼 뒤 다시 해주세요.' });
+        return;
+      }
+      const notice = closeNotice(EMPTY_MSG);
+      const failed = notice || (lastAlert && lastAlert.at >= at && /없|선택/.test(lastAlert.text));
+      if (!failed) return;
+      await patchRp({ step: 'search' });
+    }
+    await patchRp({ step: 'manual', status: '체크가 안 돼요. 직접 체크하고 출력해 주세요.' });
+  };
+
+  let rpBusy = false;
+  let rpMenuClick = 0;
+  const tickReprint = async () => {
+    if (rpBusy) return;
+    const rp = await getRp();
+    if (!windowInfoReady || !rpMine(rp)) {
+      if (IS_TOP && rpPanel) renderRp(null);
+      return;
+    }
+    if (IS_TOP) renderRp(rp);
+    if (RP_DONE.includes(rp.step)) return;
+    if (Date.now() - (rp.savedAt || 0) > MAX_AGE_MS) {
+      if (IS_TOP) await patchRp({ step: 'error', status: '시간이 너무 오래 걸려 멈췄어요. 앱에서 다시 눌러주세요.' });
+      return;
+    }
+    document.documentElement.setAttribute('data-rocket-auto-confirm', '1');
+    rpBusy = true;
+    try {
+      const onLoginPage = /\/sec\/|login|auth/i.test(location.pathname) && !find(TEXT.menu);
+      const pw = onLoginPage ? Array.from(document.querySelectorAll('input[type="password"]')).find(visible) : null;
+      if (pw) {
+        await tryLogin(rp, pw, patchRp);
+        return;
+      }
+      // 미리보기 창: 앞으로 띄우고 운송장종류를 표준라벨E로 고른 뒤 멈춘다.
+      if (IS_PREVIEW) {
+        if (rp.step !== 'preview' || !document.querySelector('canvas')) return;
+        await sleep(1500);
+        try {
+          chrome.runtime.sendMessage({ type: 'FOCUS_MY_WINDOW' });
+        } catch (err) {}
+        const how = await pickLabelE();
+        await patchRp({ step: 'done', status: `✅ 송장 출력 창을 열고 운송장종류를 표준라벨E로 골라 뒀어요(${how}). 확인하고 출력을 눌러 주세요.` });
+        return;
+      }
+      if (rp.step === 'preview') {
+        if (Date.now() - (rp.printedAt || 0) > 40000) {
+          await patchRp({ step: 'manual', status: '미리보기 창을 잡지 못했어요. 떠 있는 창에서 운송장종류를 표준라벨E로 고르고 출력해 주세요.' });
+        }
+        return;
+      }
+      if (rp.step === 'search') {
+        // 조회하던 화면이 새로 떠서 끊겼으면 사람에게 넘긴다.
+        if (!canvasBusy && Date.now() - (rp.searchStartedAt || 0) > 120000) {
+          await patchRp({ step: 'manual', status: `조회가 멈췄어요. 직접 ${rp.waybill}로 조회·출력해 주세요.` });
+        }
+        return;
+      }
+      // 운송장출력 화면(검색조건이 보이는 프레임)에서 조회·출력.
+      if (find(TEXT.condLabel) && isWaybillScreen()) {
+        if (canvasBusy) return;
+        canvasBusy = true;
+        try {
+          await runReprintSearch(rp);
+        } finally {
+          canvasBusy = false;
+        }
+        return;
+      }
+      // 메뉴는 맨 위 화면에서만: 집배달 › 통합관리 운송장출력.
+      if (!IS_TOP || Date.now() - rpMenuClick < 3000) return;
+      const wbLink = findAll(TEXT.waybillPage).find((el) => el.closest('a.menuLeaf, li'));
+      if (wbLink) {
+        rpMenuClick = Date.now();
+        realClick(wbLink);
+        await patchRp({ step: 'page', status: '통합관리 운송장출력 여는 중…' });
+        return;
+      }
+      const dMenu = find(TEXT.deliveryMenu);
+      if (dMenu) {
+        rpMenuClick = Date.now();
+        realClick(dMenu);
+        await patchRp({ step: 'menu', status: '집배달 메뉴 여는 중…' });
+      }
+    } catch (err) {
+      await patchRp({ step: 'error', status: `진행 중 오류: ${String((err && err.message) || err)}` });
+    } finally {
+      rpBusy = false;
+    }
+  };
+  setInterval(tickReprint, 1000);
+  try {
+    chrome.storage.onChanged.addListener((changes, area) => {
+      if (area === 'local' && changes[RP_KEY] && IS_TOP && rpMine(changes[RP_KEY].newValue)) renderRp(changes[RP_KEY].newValue);
+    });
+  } catch (err) {}
+
   setInterval(tick, 1000);
   try {
     chrome.storage.onChanged.addListener((changes, area) => {
-      if (area === 'local' && changes[KEY] && IS_TOP) render(changes[KEY].newValue || null);
+      if (area === 'local' && changes[KEY] && IS_TOP && !rpOwnsCache) render(changes[KEY].newValue || null);
     });
   } catch (err) {}
   tick();

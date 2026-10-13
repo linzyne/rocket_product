@@ -507,6 +507,12 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
                 {i > 0 && ', '}
                 <span title="눌러서 송장번호 복사" style={{ cursor: 'copy', textDecoration: 'underline dotted', textUnderlineOffset: 2 }}
                   onClick={() => navigator.clipboard.writeText(w).then(() => setDateNote({ tone: 'ok', text: `송장번호 ${w} 복사했어요` })).catch(() => {})}>{w}</span>
+                {/* 롯데 ALPS에서 이 송장을 다시 출력(미리보기 창까지 열고 표준라벨E로 골라 둔다). */}
+                <span title="롯데택배에서 이 송장 출력 창 열기" style={{ cursor: 'pointer', marginLeft: 3 }}
+                  onClick={() => {
+                    window.postMessage({ source: 'rocket-app-hub', type: 'LOTTE_REPRINT', waybill: w, edd: o.date }, window.location.origin);
+                    setDateNote({ tone: 'ok', text: `롯데택배 창을 열어 송장 ${w}를 찾는 중이에요` });
+                  }}>🖨</span>
               </span>
             ))}
           </div>

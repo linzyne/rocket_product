@@ -67,6 +67,18 @@
       }
       return;
     }
+    // 송장 다시 출력: ALPS 통합관리 운송장출력에서 이 운송장번호를 찾아 미리보기 창까지 연다(lotte.js).
+    if (d.type === 'LOTTE_REPRINT') {
+      try {
+        chrome.runtime.sendMessage({ type: 'LOTTE_REPRINT', waybill: d.waybill, edd: d.edd }, (res) => {
+          const lastError = chrome.runtime.lastError;
+          reply({ type: 'LOTTE_REPRINT_ACK', ok: !lastError && !!(res && res.ok), error: (lastError && lastError.message) || (res && res.error) });
+        });
+      } catch (err) {
+        reply({ type: 'LOTTE_REPRINT_ACK', ok: false, error: '확장을 새로고침한 뒤 앱도 새로고침해 주세요.' });
+      }
+      return;
+    }
     // B단계: 서허에서 쉽먼트 일괄등록 양식 받아오기.
     if (d.type === 'SHUB_FORM') {
       try {

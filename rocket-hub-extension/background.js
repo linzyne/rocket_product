@@ -337,6 +337,38 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true;
   }
 
+  // 송장 다시 출력. 예약 올리기(lottePending)와 섞이지 않게 따로 적어 둔다(lotte.js가 이어받음).
+  if (message.type === 'LOTTE_REPRINT') {
+    (async () => {
+      try {
+        if (!message.waybill) throw new Error('운송장번호가 없습니다.');
+        await allowLottePopups();
+        const win = await chrome.windows.create({ url: LOTTE_START_URL, type: 'popup', width: 1200, height: 800, focused: true });
+        await chrome.storage.local.set({
+          lotteReprint: {
+            waybill: String(message.waybill),
+            edd: String(message.edd || ''),
+            savedAt: Date.now(),
+            step: 'start',
+            status: 'ALPS 여는 중…',
+            windowId: win.id,
+          },
+        });
+        sendResponse({ ok: true });
+      } catch (err) {
+        sendResponse({ ok: false, error: String((err && err.message) || err) });
+      }
+    })();
+    return true;
+  }
+
+  // 미리보기 창을 앞으로 띄운다.
+  if (message.type === 'FOCUS_MY_WINDOW') {
+    const id = sender && sender.tab && sender.tab.windowId;
+    if (id) chrome.windows.update(id, { focused: true }).catch(() => {});
+    return false;
+  }
+
   // 앱에서 "서허 양식 받기"를 누르면 서허 창을 열고, shub.js가 메뉴를 눌러 양식을 받는다.
   if (message.type === 'SHUB_FORM') {
     (async () => {
@@ -584,10 +616,15 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
   // 내가 지금 어느 창·탭에 있는지 알려준다. 확장이 연 창에서만 자동 진행하려고 쓴다.
   if (message.type === 'MY_WINDOW') {
-    sendResponse({
-      windowId: (sender && sender.tab && sender.tab.windowId) || null,
-      tabId: (sender && sender.tab && sender.tab.id) || null,
-    });
+    // 미리보기 창이면 어느 창이 열었는지(openerWindowId)도 알려준다. 예약 올리기 창과 송장 다시 출력 창을 가리는 데 쓴다.
+    (async () => {
+      const tab = sender && sender.tab;
+      let openerWindowId = null;
+      try {
+        if (tab && tab.openerTabId) openerWindowId = (await chrome.tabs.get(tab.openerTabId)).windowId || null;
+      } catch (err) {}
+      sendResponse({ windowId: (tab && tab.windowId) || null, tabId: (tab && tab.id) || null, openerWindowId });
+    })();
     return true;
   }
 

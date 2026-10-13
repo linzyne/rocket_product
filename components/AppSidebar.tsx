@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useIsMobile } from '../utils/useIsMobile';
+import { requestCollect } from '../data/collectRequest';
 
 // 앱의 큰 메뉴. 주소창 해시(#/detail 등)에 그대로 쓰여서 새로고침해도 같은 메뉴가 열린다.
 export type AppMenuId =
@@ -93,9 +94,9 @@ export const MENU_GROUPS: { title: string; items: MenuItem[] }[] = [
 
 const ALL_ITEMS = MENU_GROUPS.flatMap(g => g.items);
 
-// 발주 메뉴 중 자주 쓰는 것(발주 진행·발송완료·한중발주)만 발주 칸에 두고, 나머지 발주 메뉴는 맨 아래
+// 발주 메뉴 중 자주 쓰는 것(발주서 검색·발주 진행·발송완료·한중발주)만 발주 칸에 두고, 나머지 발주 메뉴는 맨 아래
 // "예전 발주 메뉴"에 접어 둔다(혹시 몰라 남겨 둔 것). 다른 칸(수집·상품·로켓…)은 그대로.
-const ORDER_MAIN: AppMenuId[] = ['coupang-flow', 'coupang-sent', 'cn-order'];
+const ORDER_MAIN: AppMenuId[] = ['order-search', 'coupang-flow', 'coupang-sent', 'cn-order'];
 const OLD_ORDER_ITEMS = (MENU_GROUPS.find(g => g.title === '발주')?.items || []).filter(i => !ORDER_MAIN.includes(i.id));
 const OLD_IDS = new Set(OLD_ORDER_ITEMS.map(i => i.id));
 const VISIBLE_GROUPS = MENU_GROUPS.map(g => ({ ...g, items: g.items.filter(i => !OLD_IDS.has(i.id)) })).filter(g => g.items.length);
@@ -197,7 +198,24 @@ const SidebarNav: React.FC<AppSidebarProps> = ({ active, onSelect, collapsed, on
           <div key={group.title} className="mb-2">
             {collapsed
               ? <div className="mx-3 my-2 border-t border-gray-100" />
-              : <div className="px-4 pt-2 pb-1 text-[11px] font-semibold text-gray-400">{group.title}</div>}
+              : (
+                <div className="px-4 pt-2 pb-1 flex items-center gap-1 text-[11px] font-semibold text-gray-400">
+                  {group.title}
+                  {/* 로켓 옆 수집: 수집 화면으로 가서 입고·재고만 차례로 받는다(발주는 빼고). */}
+                  {group.title === '로켓' && (
+                    <button
+                      onClick={() => { requestCollect(['receive', 'stock']); onSelect('collect'); }}
+                      title="입고·재고 수집(발주는 빼고)"
+                      aria-label="입고·재고 수집"
+                      className="p-0.5 rounded text-gray-400 hover:bg-gray-100 hover:text-blue-600"
+                    >
+                      <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M7 10l5 5 5-5M12 15V3" />
+                      </svg>
+                    </button>
+                  )}
+                </div>
+              )}
             {group.items.map(menuButton)}
           </div>
         ))}

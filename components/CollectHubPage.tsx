@@ -8,6 +8,7 @@ import { appendOrderFile, subscribeWork } from './coupangOrder/data/orderWorkSto
 import { subscribeReservations } from './coupangOrder/data/reservationStore';
 import type { OrderRow } from './coupangOrder/types';
 import { CollectStatus, subscribeCollectStatus } from '../data/collectStatusStore';
+import { onCollectRequest, takeCollectRequest } from '../data/collectRequest';
 
 // 매일 > 수집. 날마다 하는 세 가지 수집(발주·입고·재고)을 한 화면에서 한다.
 // "오늘 수집 다 하기"를 누르면 발주 → 입고 → 재고 차례로 돈다. 한꺼번에 돌리지 않는 까닭은
@@ -107,8 +108,7 @@ const CollectHubPage: React.FC = () => {
     });
   };
 
-  const runAll = (auto = false) => {
-    const order: StepId[] = ['po', 'receive', 'stock'];
+  const runAll = (auto = false, order: StepId[] = ['po', 'receive', 'stock']) => {
     setStatus({ po: IDLE, receive: IDLE, stock: IDLE });
     setChain(order);
     if (auto) {
@@ -129,7 +129,21 @@ const CollectHubPage: React.FC = () => {
   const runAllRef = React.useRef(runAll);
   runAllRef.current = runAll;
 
+  // 왼쪽 메뉴 "로켓" 옆 수집 아이콘: 부탁받은 단계만 차례로 돌린다(이미 도는 중이면 무시).
+  const runningRef = React.useRef(false);
+  useEffect(() => {
+    const take = () => {
+      const steps = takeCollectRequest();
+      if (steps && steps.length && !runningRef.current) runAllRef.current(false, steps);
+    };
+    // 화면이 막 열린 때는 수집 칸들이 먼저 자리 잡게 조금 기다린다.
+    const t = setTimeout(take, 300);
+    const off = onCollectRequest(take);
+    return () => { clearTimeout(t); off(); };
+  }, []);
+
   const running = (Object.values(status) as StepState[]).some(s => s.state === 'running');
+  runningRef.current = running;
 
   const handleOrderFile = async (file: File) => {
     try {

@@ -14,6 +14,7 @@ import { dateKeyYMD, ymdSortKey } from '../coupangOrder/utils/dateUtils';
 import type { AppMenuId } from '../AppSidebar';
 import CollectPurchaseOrders from '../coupangOrder/CollectPurchaseOrders';
 import { appendOrderFile } from '../coupangOrder/data/orderWorkStore';
+import { changeLineQty } from '../coupangOrder/data/changeLineQty';
 import { printShipment, setPrinted } from '../coupangSend/printShipment';
 import ProductQtySummary from '../coupangOrder/components/ProductQtySummary';
 import { useReady } from '../coupangOrder/data/readyStore';
@@ -516,6 +517,26 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
       })()}
     </>
   );
+  // 발주확정·쉽먼트 줄의 확정수량 고치기. 준비됨 ✓·한중발주 배정·장바구니도 새 수량으로 같이 옮긴다.
+  const editQty = async (o: FlowOrder, l: FlowLine) => {
+    const cur = Number(l.확정수량) || 0;
+    const input = prompt(`${l.상품이름}\n확정수량을 몇 개로 바꿀까요? (지금 ${cur}개)`, String(cur));
+    if (input == null) return;
+    const n = Math.floor(Number(input.trim()));
+    if (!Number.isFinite(n) || n < 1 || String(n) !== input.trim()) { alert('1 이상의 숫자로 적어 주세요.'); return; }
+    if (n === cur) return;
+    const key = { 발주번호: o.no, 상품이름: l.상품이름, 확정수량: l.확정수량 };
+    try {
+      await changeLineQty(key, n, {
+        shipOutId: o.stage === 2 ? o.item?.id : undefined,
+        wasReady: ready.isReady(key, o.item?.readyKeys),
+        hjOrders, hjQueue,
+      });
+      setDateNote({ tone: 'ok', text: `${o.no} · ${l.상품이름} 확정수량 ${cur}개 → ${n}개로 바꿨어요` });
+    } catch (err) {
+      alert(`수량을 바꾸지 못했어요: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  };
   // 롯데 ALPS에서 이 송장을 다시 출력(미리보기 창까지 열고 표준라벨E로 골라 둔다).
   const reprintIcon = (w: string, edd: string) => (
     <span title="롯데택배에서 이 송장 출력 창 열기" style={{ cursor: 'pointer', marginLeft: 3 }}
@@ -725,7 +746,10 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
                     const hasParen = assigned > 0 || queued > 0 || hasOffice;
                     return (
                       <span style={{ flexShrink: 0, display: 'inline-flex', alignItems: 'baseline', gap: 3, whiteSpace: 'nowrap', letterSpacing: '-0.3px' }}>
-                        <b>{l.확정수량}개</b>
+                        {(o.stage === 1 || o.stage === 2) && l.stage === o.stage
+                          ? <b onClick={() => editQty(o, l)} title="눌러서 확정수량 고치기(서허 요청등록에서 수량을 바꿨을 때)"
+                              style={{ cursor: 'pointer', textDecoration: 'underline dotted', textUnderlineOffset: 2 }}>{l.확정수량}개</b>
+                          : <b>{l.확정수량}개</b>}
                         {hasParen && (
                           <span
                             title={[

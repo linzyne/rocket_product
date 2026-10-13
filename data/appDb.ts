@@ -28,7 +28,12 @@ export const openAppDb = (): Promise<IDBDatabase> => {
         db.createObjectStore(name, keyPath ? { keyPath } : undefined);
       }
     };
-    request.onsuccess = () => resolve(request.result);
+    request.onsuccess = () => {
+      // 상페 저장본은 사진이 들어가 수십 MB라, 디스크가 모자라면 브라우저가 말없이 지울 수 있다.
+      // '영구 저장'을 요청해 두면 사용자가 직접 지우기 전엔 남는다(허락 여부는 브라우저가 정한다).
+      void navigator.storage?.persist?.().catch(() => false);
+      resolve(request.result);
+    };
     request.onerror = () => {
       dbPromise = null;
       reject(request.error);

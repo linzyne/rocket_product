@@ -208,7 +208,8 @@ export const GreenPreview: React.FC<GreenPreviewProps> = ({
           </div>
         );
 
-      // 비교: 머리글 두 개 → 동그란 사진 두 장 → [회색 칸 | 가운데 흰 원 라벨 | 강조색 칸] 줄들.
+      // 비교: 네모 사진 두 장(가운데 VS 배지, 우리 제품 쪽만 강조색 테두리) → 머리글 →
+      // 줄마다 [항목 칩] 아래 [✕ 회색 카드 | ✓ 강조색 연한 카드]. 줄 사이를 띄워 카드처럼 떨어지게.
       case 'gCompare': {
         const rows = section.rows || [];
         const updateRow = (idx: number, patch: Partial<{ label: string; value: string; other: string }>) => {
@@ -216,46 +217,73 @@ export const GreenPreview: React.FC<GreenPreviewProps> = ({
           next[idx] = { ...next[idx], ...patch };
           updateSection(section.id, { rows: next });
         };
-        const PILL = 130;
+        const COL_GAP = 28;
+        const mark = (ok: boolean) => (
+          <div
+            style={{
+              width: 34, height: 34, borderRadius: '50%', flexShrink: 0,
+              background: ok ? accent : '#c4c4c4', color: '#ffffff',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              fontFamily, fontSize: 18, fontWeight: 800, lineHeight: 1,
+            }}
+          >
+            {ok ? '✓' : '✕'}
+          </div>
+        );
         return (
-          <div style={{ padding: `90px 50px 90px` }}>
-            <div style={{ display: 'flex' }}>
+          <div style={{ padding: `90px ${SIDE - 10}px 90px` }}>
+            {(photos.length > 0 || blank) && (
+              <div style={{ display: 'flex', gap: COL_GAP, position: 'relative', marginBottom: 22 }}>
+                {[0, 1].map(i => (
+                  <div key={i} style={{ flex: 1, display: 'flex', justifyContent: 'center' }}>
+                    <PhotoBox
+                      photo={photos[i]}
+                      size={250}
+                      radius={20}
+                      style={i === 1 ? { border: `6px solid ${accent}` } : { border: `6px solid ${TABLE_LINE}` }}
+                    />
+                  </div>
+                ))}
+                <div
+                  style={{
+                    position: 'absolute', left: '50%', top: '50%', transform: 'translate(-50%, -50%)',
+                    width: 76, height: 76, borderRadius: '50%', background: textColor, color: '#ffffff',
+                    border: '5px solid #ffffff', boxSizing: 'border-box',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    fontFamily, fontSize: 24, fontWeight: 900, fontStyle: 'italic', lineHeight: 1,
+                  }}
+                >
+                  VS
+                </div>
+              </div>
+            )}
+            <div style={{ display: 'flex', gap: COL_GAP }}>
               <div style={{ flex: 1 }}>{show(section.compareLeft) && edit('compareLeft', '비교 대상', { ...S.compareHead, color: GRAY_TEXT })}</div>
               <div style={{ flex: 1 }}>{show(section.compareRight) && edit('compareRight', '우리 제품', { ...S.compareHead, color: accent })}</div>
             </div>
-            {gap(26)}
-            {(photos.length > 0 || blank) && (
-              <div style={{ display: 'flex', marginBottom: -60, position: 'relative', zIndex: 1 }}>
-                {[0, 1].map(i => (
-                  <div key={i} style={{ flex: 1, display: 'flex', justifyContent: 'center' }}>
-                    <PhotoBox photo={photos[i]} size={260} round style={{ border: '8px solid #ffffff', boxShadow: '0 6px 18px rgba(0,0,0,0.12)' }} />
-                  </div>
-                ))}
-              </div>
-            )}
-            <div style={{ display: 'flex', position: 'relative' }}>
-              <div style={{ flex: 1, background: COMPARE_GRAY, borderRadius: '24px 0 0 0', paddingTop: photos.length > 0 || blank ? 70 : 10 }} />
-              <div style={{ flex: 1, background: accent, borderRadius: '0 24px 0 0', paddingTop: photos.length > 0 || blank ? 70 : 10 }} />
-            </div>
+            {gap(34)}
             {rows.map((row, idx) => {
               if (!blank && !row.label.trim() && !row.value.trim() && !(row.other || '').trim()) return null;
-              const last = idx === rows.length - 1;
               return (
-                <div key={idx} style={{ display: 'flex', position: 'relative', alignItems: 'stretch' }}>
-                  <div style={{ flex: 1, background: COMPARE_GRAY, padding: `30px ${PILL / 2 + 24}px 30px 24px`, display: 'flex', alignItems: 'center', justifyContent: 'center', borderTop: '2px solid rgba(255,255,255,0.25)', borderRadius: last ? '0 0 0 24px' : 0 }}>
-                    <EditableText value={row.other || ''} onChange={v => updateRow(idx, { other: v })} placeholder="아쉬운 점" style={S.compareCell} />
+                <div key={idx} style={{ marginTop: idx === 0 ? 0 : 30 }}>
+                  <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 12 }}>
+                    <div style={{ background: kimchiTint(accent, 0.12), borderRadius: 999, padding: '8px 26px' }}>
+                      <EditableText value={row.label} onChange={v => updateRow(idx, { label: v })} placeholder="항목" style={{ ...S.comparePill, color: accent }} />
+                    </div>
                   </div>
-                  <div style={{ flex: 1, background: accent, padding: `30px 24px 30px ${PILL / 2 + 24}px`, display: 'flex', alignItems: 'center', justifyContent: 'center', borderTop: '2px solid rgba(255,255,255,0.25)', borderRadius: last ? '0 0 24px 0' : 0 }}>
-                    <EditableText value={row.value} onChange={v => updateRow(idx, { value: v })} placeholder="좋은 점" style={S.compareCell} />
-                  </div>
-                  <div
-                    style={{
-                      position: 'absolute', left: '50%', top: '50%', transform: 'translate(-50%, -50%)',
-                      width: PILL, height: PILL, borderRadius: '50%', background: '#ffffff',
-                      display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 12, boxSizing: 'border-box',
-                    }}
-                  >
-                    <EditableText value={row.label} onChange={v => updateRow(idx, { label: v })} placeholder="항목" style={S.comparePill} />
+                  <div style={{ display: 'flex', gap: COL_GAP, alignItems: 'stretch' }}>
+                    <div style={{ flex: 1, minWidth: 0, background: '#f2f2f2', borderRadius: 16, padding: '24px 22px', display: 'flex', alignItems: 'center', gap: 14 }}>
+                      {mark(false)}
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <EditableText value={row.other || ''} onChange={v => updateRow(idx, { other: v })} placeholder="아쉬운 점" style={{ ...S.compareCell, color: COMPARE_GRAY, textAlign: 'left' }} />
+                      </div>
+                    </div>
+                    <div style={{ flex: 1, minWidth: 0, background: kimchiTint(accent, 0.08), border: `2px solid ${accent}`, borderRadius: 16, padding: '22px 20px', display: 'flex', alignItems: 'center', gap: 14 }}>
+                      {mark(true)}
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <EditableText value={row.value} onChange={v => updateRow(idx, { value: v })} placeholder="좋은 점" style={{ ...S.compareCell, color: textColor, fontWeight: 800, textAlign: 'left' }} />
+                      </div>
+                    </div>
                   </div>
                 </div>
               );

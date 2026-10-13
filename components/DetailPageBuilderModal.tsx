@@ -23,6 +23,7 @@ import {
 import { detailSliceFileNames, downloadBlob } from '../utils/fileSave';
 import { generateId } from '../utils/id';
 import { saveDetailPageDraft, loadDetailPageDraft, deleteDetailPageDraft, listDetailPageDrafts } from '../data/detailPageDrafts';
+import { KIMCHI_CATEGORY_ID, loadDetailCategories } from './DetailCategoryTabs';
 import { loadDetailText, saveDetailText } from '../data/detailTextCloud';
 import { withTimeout, stripClonedScripts, stripEmptySections, withInlineImageMetrics } from '../utils/html2canvasHelpers';
 import ImageCropModal from './ImageCropModal';
@@ -601,21 +602,31 @@ const DetailPageBuilderModal: React.FC<DetailPageBuilderModalProps> = ({ isOpen,
   };
 
   // ── 중간저장 ── 자동 저장은 탭(·틀)마다 하나뿐이라, 하던 걸 이름 붙여 따로 떼어 두고 나중에
-  // 골라서 불러올 수 있게 한다. 같은 탭·같은 틀의 중간저장만 목록에 뜬다.
+  // 골라서 불러올 수 있게 한다. 저장·덮어쓰기는 같은 탭·같은 틀 것만, 불러오기는 모든 탭 것을 보여준다
+  // (다른 탭에서 저장한 걸 못 찾아 "없어졌다"고 느끼지 않게). 틀이 다르면 열지는 못하고 어디 있는지만 알려준다.
   const snapshotPrefix = `snapshot:${draftId}:`;
-  const [snapshots, setSnapshots] = useState<{ id: string; savedAt: number; name: string }[] | null>(null);
+  const [snapshots, setSnapshots] = useState<{ id: string; savedAt: number; name: string; where?: string; otherTemplate?: boolean }[] | null>(null);
+  const describeSnapshotOwner = (id: string) => {
+    const owner = id.slice('snapshot:'.length, id.lastIndexOf(':'));
+    if (owner === draftId) return {};
+    const green = owner.endsWith('-green');
+    const base = green ? owner.slice(0, -'-green'.length) : owner;
+    const tabId = base === STANDALONE_DRAFT_ID ? KIMCHI_CATEGORY_ID : base.replace(/^standalone-/, '');
+    const tabName = loadDetailCategories().find(c => c.id === tabId)?.name ?? '지운 탭';
+    return { where: `${tabName} 탭 · ${green ? '2번' : '1번'} 틀`, otherTemplate: green !== isGreen };
+  };
   // 목록 창을 저장하려고 열었는지(새로 저장 / 골라서 덮어쓰기), 불러오려고 열었는지.
   const [snapshotMode, setSnapshotMode] = useState<'save' | 'load'>('load');
   const [snapshotName, setSnapshotName] = useState('');
   const openSnapshotList = async (mode: 'save' | 'load' = 'load') => {
-    const list = await listDetailPageDrafts<{ name: string }>(snapshotPrefix);
+    const list = await listDetailPageDrafts<{ name: string }>(mode === 'save' ? snapshotPrefix : 'snapshot:');
     setSnapshotMode(mode);
     if (mode === 'save') {
       const hero = kimchiSections.find(s => s.headlineAccent?.trim() || s.headline?.trim());
       const suggested = (hero?.headlineAccent || hero?.headline || '').replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim();
       setSnapshotName(suggested || new Date().toLocaleString('ko-KR'));
     }
-    setSnapshots(list.map(r => ({ id: r.id, savedAt: r.savedAt, name: r.data.name })));
+    setSnapshots(list.map(r => ({ id: r.id, savedAt: r.savedAt, name: r.data.name, ...describeSnapshotOwner(r.id) })));
   };
   const handleSaveSnapshot = () => void openSnapshotList('save');
   const saveSnapshotAs = async (id: string, name: string) => {
@@ -3875,12 +3886,22 @@ const DetailPageBuilderModal: React.FC<DetailPageBuilderModalProps> = ({ isOpen,
                   <div key={snap.id} className="flex items-center gap-2 rounded-lg bg-slate-800 px-3 py-2">
                     <div className="flex-1 min-w-0">
                       <p className="text-sm text-slate-100 truncate">{snap.name}</p>
-                      <p className="text-[11px] text-slate-500">{new Date(snap.savedAt).toLocaleString('ko-KR', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</p>
+                      <p className="text-[11px] text-slate-500">
+                        {new Date(snap.savedAt).toLocaleString('ko-KR', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                        {snap.where && <span className="text-amber-400"> · {snap.where}</span>}
+                      </p>
                     </div>
                     {snapshotMode === 'save' ? (
                       <button onClick={() => overwriteSnapshot(snap.id, snap.name)} className="px-2.5 py-1 text-xs font-semibold bg-amber-600 text-white rounded-md hover:bg-amber-500">덮어쓰기</button>
                     ) : (
-                      <button onClick={() => void loadSnapshot(snap.id, snap.name)} className="px-2.5 py-1 text-xs font-semibold bg-blue-600 text-white rounded-md hover:bg-blue-500">열기</button>
+                      <button
+                        onClick={() => void loadSnapshot(snap.id, snap.name)}
+                        disabled={snap.otherTemplate}
+                        title={snap.otherTemplate ? `틀이 달라요. ${snap.where}으로 가서 여세요` : undefined}
+                        className="px-2.5 py-1 text-xs font-semibold bg-blue-600 text-white rounded-md hover:bg-blue-500 disabled:opacity-40 disabled:cursor-not-allowed"
+                      >
+                        열기
+                      </button>
                     )}
                     <button onClick={() => void removeSnapshot(snap.id, snap.name)} title="삭제" className="px-2 py-1 text-xs text-slate-400 rounded-md hover:bg-red-600 hover:text-white">✕</button>
                   </div>

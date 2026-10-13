@@ -41,7 +41,7 @@ function tint(hex: string, alpha: number): string {
 // 컴포넌트로 보고 하위를 통째로 다시 마운트하는데, 그러면 판 안에서 글자를 한 자 칠 때마다
 // 편집 중이던 칸이 새로 그려지고 커서가 날아간다. 필요한 스타일은 인자로 받는다.
 
-// "Check Point. 1" 처럼 섹션을 여는 작은 알약 배지 — 이 스킨의 표식이다.
+// "Point. 1" 처럼 섹션을 여는 작은 알약 배지 — 이 스킨의 표식이다.
 // prefix는 고정 문구라 그대로 두고, 값만 미리보기에서 고친다.
 const CheckBadge: React.FC<{
   prefix?: string; value: string; accent: string; placeholder: string;
@@ -164,7 +164,7 @@ export const KimchiPreviewSales: React.FC<SalesPreviewProps> = ({
           <Panel background={CREAM}>
             {section.number?.trim() && (
               <CheckBadge
-                prefix="Check Point."
+                prefix="Point."
                 value={section.number}
                 accent={accent}
                 placeholder="번호"

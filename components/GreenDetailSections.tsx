@@ -6,7 +6,7 @@ import { KimchiPhoto, KimchiTypeScale, kimchiTint, makePhotoRun } from './Kimchi
 // 초록(체크포인트형) 틀. 섹션 배열·사진 칸·붙여넣기 라벨은 김치 틀과 같은 엔진이고
 // (utils/kimchiDetailTemplate.ts의 g* 종류), 여기서는 그리는 방식만 맡는다.
 //
-// 흐름: 인트로(제품 + 장점 띠) → 공감(말풍선) → 소개 → 비교표 → Check Point ×N → 인증(강조색 바탕)
+// 흐름: 인트로(제품 + 장점 띠) → 공감(말풍선) → 소개 → 비교표 → Point ×N → 인증(강조색 바탕)
 // → 활용법(단계) → 구성 → 제품 상세 정보. 섹션마다 바탕색을 칠하고 섹션 사이를 띄우지 않아,
 // 색 구간이 맞붙어 이어지는 모양이다.
 
@@ -298,7 +298,7 @@ export const GreenPreview: React.FC<GreenPreviewProps> = ({
           <div style={{ paddingTop: 100 }}>
             <div style={{ display: 'flex', justifyContent: 'center' }}>
               <div style={{ ...S.checkLabel, color: accent, borderBottom: `3px solid ${accent}`, paddingBottom: 6 }}>
-                Check Point. {checkNumber}
+                Point. {checkNumber}
               </div>
             </div>
             {gap(30)}

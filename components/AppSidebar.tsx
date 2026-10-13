@@ -95,9 +95,13 @@ export const MENU_GROUPS: { title: string; items: MenuItem[] }[] = [
 const ALL_ITEMS = MENU_GROUPS.flatMap(g => g.items);
 
 // 발주 메뉴 중 자주 쓰는 것(발주서 검색·발주 진행·발송완료·한중발주)만 발주 칸에 두고, 나머지 발주 메뉴는 맨 아래
-// "예전 발주 메뉴"에 접어 둔다(혹시 몰라 남겨 둔 것). 다른 칸(수집·상품·로켓…)은 그대로.
+// "예전 작업"에 접어 둔다(혹시 몰라 남겨 둔 것).
 const ORDER_MAIN: AppMenuId[] = ['order-search', 'coupang-flow', 'coupang-sent', 'cn-order'];
-const OLD_ORDER_ITEMS = (MENU_GROUPS.find(g => g.title === '발주')?.items || []).filter(i => !ORDER_MAIN.includes(i.id));
+// 수집 메뉴도 여기 둔다(로켓 옆 수집 아이콘으로 대신하므로).
+const OLD_ORDER_ITEMS = [
+  ...(MENU_GROUPS.find(g => g.title === '매일')?.items || []),
+  ...(MENU_GROUPS.find(g => g.title === '발주')?.items || []).filter(i => !ORDER_MAIN.includes(i.id)),
+];
 const OLD_IDS = new Set(OLD_ORDER_ITEMS.map(i => i.id));
 const VISIBLE_GROUPS = MENU_GROUPS.map(g => ({ ...g, items: g.items.filter(i => !OLD_IDS.has(i.id)) })).filter(g => g.items.length);
 const OTHERS_OPEN_KEY = 'sidebar.oldOrderOpen';
@@ -151,7 +155,7 @@ const AppSidebar: React.FC<AppSidebarProps> = (props) => {
 };
 
 const SidebarNav: React.FC<AppSidebarProps> = ({ active, onSelect, collapsed, onToggleCollapsed }) => {
-  // "예전 발주 메뉴"는 접어 둔다. 지금 보고 있는 메뉴가 그 안에 있으면 펼쳐서 보여준다. 펼침 여부는 이 기기에 기억한다.
+  // "예전 작업"은 접어 둔다. 지금 보고 있는 메뉴가 그 안에 있으면 펼쳐서 보여준다. 펼침 여부는 이 기기에 기억한다.
   const [othersOpen, setOthersOpen] = useState(() => { try { return localStorage.getItem(OTHERS_OPEN_KEY) === '1'; } catch { return false; } });
   const activeInOthers = OLD_IDS.has(active);
   const showOthers = othersOpen || activeInOthers;
@@ -219,15 +223,15 @@ const SidebarNav: React.FC<AppSidebarProps> = ({ active, onSelect, collapsed, on
             {group.items.map(menuButton)}
           </div>
         ))}
-        {/* 예전 발주 메뉴: 맨 아래에 접어 둔다 */}
+        {/* 예전 작업: 맨 아래에 접어 둔다 */}
         <div className="mt-auto border-t border-gray-100 pt-1">
           <button
             onClick={toggleOthers}
-            title={collapsed ? '예전 발주 메뉴' : undefined}
+            title={collapsed ? '예전 작업' : undefined}
             className={`w-full flex items-center gap-2 text-xs font-semibold text-gray-400 hover:text-gray-600 ${collapsed ? 'justify-center py-2' : 'px-4 py-1.5'}`}
           >
             {icon(showOthers ? 'M19 9l-7 7-7-7' : 'M9 5l7 7-7 7')}
-            {!collapsed && <span>예전 발주 메뉴</span>}
+            {!collapsed && <span>예전 작업</span>}
           </button>
           {showOthers && OLD_ORDER_ITEMS.map(menuButton)}
         </div>

@@ -15,7 +15,7 @@ import type { AppMenuId } from '../AppSidebar';
 import CollectPurchaseOrders from '../coupangOrder/CollectPurchaseOrders';
 import { appendOrderFile } from '../coupangOrder/data/orderWorkStore';
 import { changeLineQty } from '../coupangOrder/data/changeLineQty';
-import { printShipment, setPrinted } from '../coupangSend/printShipment';
+import { printShipment, setPrinted, openBarcodes } from '../coupangSend/printShipment';
 import ProductQtySummary from '../coupangOrder/components/ProductQtySummary';
 import { useReady } from '../coupangOrder/data/readyStore';
 import { subscribeMarks, setMark } from '../coupangOrder/data/poMarkStore';
@@ -941,6 +941,14 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
     });
   };
 
+  // 상자째 바코드 라벨만(문서 없이): 이 상자 발주서 상품을 한 장에.
+  const labelBox = (list: FlowOrder[]) => {
+    const withItem = list.filter(o => o.item);
+    if (!withItem.length) return;
+    const items = Array.from(new Map(withItem.map(o => [o.item!.id, o.item!])).values());
+    openBarcodes({ ...items[0], lines: items.flatMap(it => it.lines) }, withItem.map(o => o.no));
+  };
+
   // 카드 아래 단추 줄(할 일이 없으면 줄을 안 그린다).
   const actionRow = (o: FlowOrder) => {
     const act = action(o);
@@ -1794,6 +1802,8 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
                           {n > 0 && <span style={st}>📦 {n}</span>}
                           {ships > 0 && <span style={{ ...st, cursor: 'pointer' }} onClick={() => printBox(g.key, g.list)}
                             title="눌러서 이 상자 쉽먼트 출력(Label·내역서·바코드). 쉽먼트가 여럿이면 쉽먼트마다 열려요">📄 {ships}</span>}
+                          {g.list.some(o => o.item) && <span style={{ ...st, cursor: 'pointer' }} onClick={() => labelBox(g.list)}
+                            title="눌러서 이 상자 상품 바코드 라벨(폼텍 40칸)만 새 탭에 열기">🏷</span>}
                           {(i === 2 || i === 4) && g.list.some(o => o.item) && (() => {
                             const all = g.list.every(o => marks.has(o.no));
                             return <input type="checkbox" checked={all} onChange={e => g.list.forEach(o => setMark(o.no, e.target.checked))}

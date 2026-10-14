@@ -45,6 +45,35 @@ import { useIsMobile } from '../../utils/useIsMobile';
 const STAGES = ['새발주서', '발주확정', '쉽먼트', '출력', '발송대기', '발송완료'] as const;
 // 화면에 칸·탭으로 보여주는 단계. 새발주서는 "새 발주서" 창에서, 발송완료는 '발송완료' 메뉴에서 따로 본다.
 const BOARD_STAGES: Stage[] = [1, 2, 4];
+// 칸 제목에 마우스를 올리면 풍선으로 보여 주는 할 일 안내.
+const STAGE_HINT: Partial<Record<Stage, string>> = {
+  1: '수량 및 날짜변경 정리',
+  2: '택배예약 및 쉽먼트생성',
+  4: '출력하기',
+};
+
+// 마우스를 올리면 아래로 몽글몽글 뜨는 풍선글.
+const HintBubble: React.FC<{ text: string; children: React.ReactNode }> = ({ text, children }) => {
+  const [on, setOn] = useState(false);
+  return (
+    <span style={{ position: 'relative', display: 'inline-flex' }} onMouseEnter={() => setOn(true)} onMouseLeave={() => setOn(false)}>
+      {children}
+      <span style={{
+        position: 'absolute', top: 'calc(100% + 10px)', left: '50%', zIndex: 20, pointerEvents: 'none', whiteSpace: 'nowrap',
+        transform: `translateX(-50%) translateY(${on ? 0 : -4}px) scale(${on ? 1 : 0.85})`, opacity: on ? 1 : 0,
+        transition: 'opacity .18s ease, transform .22s cubic-bezier(.34,1.56,.64,1)',
+        background: '#fff7ed', color: '#9a3412', border: '2px solid #fdba74', borderRadius: 16, padding: '6px 12px',
+        fontSize: 12.5, fontWeight: 800, boxShadow: '0 4px 12px rgba(249,115,22,0.22)',
+      }}>
+        <span style={{
+          position: 'absolute', top: -7, left: '50%', width: 10, height: 10, background: '#fff7ed',
+          borderLeft: '2px solid #fdba74', borderTop: '2px solid #fdba74', borderTopLeftRadius: 3, transform: 'translateX(-50%) rotate(45deg)',
+        }} />
+        ✨ {text} 🐣
+      </span>
+    </span>
+  );
+};
 // 출력은 따로 칸을 두지 않는다(쉽먼트 칸 카드의 🖨 로 출력). 쉽먼트 끝났어도 출력 전이면 쉽먼트 칸에 둔다.
 const SHOWN_STEPS: Stage[] = [0, 1, 2, 4, 5];
 type Stage = 0 | 1 | 2 | 3 | 4 | 5;
@@ -1637,7 +1666,8 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
                 background: '#efedeb', borderBottom: '2px solid #d6d3d1', borderRight: col < shownStages.length - 1 ? '1px solid #d6d3d1' : 'none',
               }}>
                 <span style={{ fontSize: 11, color: '#a8a29e', fontWeight: 800 }}>{BOARD_STAGES.indexOf(i) + 1}</span>
-                <b style={{ fontSize: 14, color: '#292524' }}>{label}</b>
+                {STAGE_HINT[i] ? <HintBubble text={STAGE_HINT[i]!}><b style={{ fontSize: 14, color: '#292524', cursor: 'help' }}>{label}</b></HintBubble>
+                  : <b style={{ fontSize: 14, color: '#292524' }}>{label}</b>}
                 <span style={{ fontSize: 12, fontWeight: 800, color: '#fff', background: ORANGE, opacity: list.length ? 1 : 0.45, borderRadius: 999, padding: '0 7px' }}>{list.length}</span>
                 {stuck > 0 && <span style={{ fontSize: 11.5, fontWeight: 800, color: RED }}>⛔ {stuck}</span>}
                 {i === 5 && <span style={{ fontSize: 10.5, color: '#a8a29e', marginLeft: 'auto' }}>최근 {SENT_DAYS}일</span>}

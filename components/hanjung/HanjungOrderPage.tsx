@@ -25,7 +25,8 @@ import {
 import { dateKeyYMD, formatDateDisplay, normalizeDateValue } from '../coupangOrder/utils/dateUtils';
 import OrderItemsEditor, { OrderItem, useProductNames, itemsToOrderQty, itemQty, itemsToUnitCost, FeeInputs, FeeDraft, feesToNumbers } from './OrderItemsEditor';
 import ProductThumb, { useProductImage } from './ProductThumb';
-import { PriceBook, loadPriceBook, priceOf } from '../../data/coupangPriceStore';
+import { PriceBook, loadPriceBook, priceOf, withPrices } from '../../data/coupangPriceStore';
+import { poFormPrices, subscribePoForms } from '../coupangOrder/data/poFormStore';
 import { ReceiptForm, ReceiptHistory, markArrivedLinesReady } from './ReceiptForm';
 
 // 발주 > 한중발주. 위쪽 "발주 대기"는 쿠팡발주확인 발송 목록에서 "한중"을 누른 줄(예약과 따로 저장해서, 그 줄이
@@ -590,7 +591,14 @@ const HanjungOrderPage: React.FC = () => {
   useEffect(() => { startLines(); }, []);
   // 쿠팡 발주 매입가(발주서 파일을 올릴 때 기억해 둔 것). 발주금액 = 매입가 × 확정수량.
   const [prices, setPrices] = useState<PriceBook>({ byPo: {}, byName: {} });
-  useEffect(() => { loadPriceBook().then(setPrices); }, []);
+  // 장부 + 남겨 둔 발주확정 양식(PO_FOR_CONFIRM)의 매입가. 양식이 새로 들어오면 다시 읽는다.
+  useEffect(() => {
+    let book: PriceBook = { byPo: {}, byName: {} };
+    const apply = () => setPrices(withPrices(book, poFormPrices()));
+    loadPriceBook().then(b => { book = b; apply(); });
+    apply();
+    return subscribePoForms(apply);
+  }, []);
   const lineAmount = (l: { 발주번호: string; 상품이름: string; 확정수량: number }) => {
     const p = priceOf(prices, l.발주번호, l.상품이름);
     return p ? p * l.확정수량 : undefined;
@@ -994,6 +1002,7 @@ const HanjungOrderPage: React.FC = () => {
                         <th className="w-28 text-left font-medium pl-3" title="1688에 주문한 수량. 배정 = 쿠팡 발주에 연결한 수량, 여유 = 남는 것(다음 발주에 씀)">주문</th>
                         <th className="w-28 text-left font-medium pl-3" title="사무실에 도착한 수량 / 주문 수량">사무실 도착</th>
                         <th className="w-28 text-left font-medium pl-3" title="쿠팡 물류센터에 입고(정산)된 수량 / 배정 수량">쿠팡 입고</th>
+                        <th className="w-28 text-right font-medium pl-3" title="연결된 쿠팡 발주금액(매입가 × 확정수량) 합">쿠팡 발주금액</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -1018,6 +1027,7 @@ const HanjungOrderPage: React.FC = () => {
                             </td>
                             <td>{bar(p.received, p.ordered)}</td>
                             <td>{p.allocated > 0 ? bar(coupangIn, p.allocated) : <span className="pl-3 text-xs text-gray-300">배정 없음</span>}</td>
+                            <td className="pl-3 text-right font-mono text-sm text-gray-700 whitespace-nowrap">{(() => { const n = linesTotal(o.lines.filter(l => sameName(l.상품이름, p.상품이름))); return n ? won(n) : <span className="text-gray-300">-</span>; })()}</td>
                           </tr>
                         );
                       })}

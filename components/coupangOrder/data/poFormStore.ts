@@ -106,6 +106,33 @@ const isPoForm = (rows: unknown[][]) => {
   return head[COL.no] === '발주번호' && head[COL.confirmed] === '확정수량' && head[COL.reason] === '납품부족사유';
 };
 
+// 남겨 둔 양식들의 매입가(1개). 한중발주에서 연결된 쿠팡 발주의 발주금액을 볼 때 쓴다.
+const priceCache = new Map<string, { po: string; name: string; price: number }[]>();
+export function poFormPrices(): { po: string; name: string; price: number }[] {
+  const out: { po: string; name: string; price: number }[] = [];
+  for (const f of Object.values(forms)) {
+    let list = priceCache.get(f.id);
+    if (!list) {
+      list = [];
+      try {
+        const rows = rowsOf(XLSX.read(fromDataUrl(f.dataUrl), { type: 'array' }));
+        const col = (rows[0] || []).map(v => String(v).trim()).indexOf('매입가');
+        if (col >= 0) {
+          for (const r of rows.slice(1)) {
+            const price = Number(String(r[col] ?? '').replace(/[^\d.-]/g, ''));
+            const po = String(r[COL.no] ?? '').trim();
+            const name = String(r[COL.name] ?? '').trim();
+            if (po && name && price > 0) list.push({ po, name, price });
+          }
+        }
+      } catch {}
+      priceCache.set(f.id, list);
+    }
+    out.push(...list);
+  }
+  return out;
+}
+
 // 받은 발주서 파일이 발주확정 양식이면 그대로 남겨 둔다. 양식이 아니면 아무것도 안 한다.
 export async function savePoForm(file: File): Promise<boolean> {
   const buf = await file.arrayBuffer();

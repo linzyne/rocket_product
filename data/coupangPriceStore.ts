@@ -46,6 +46,18 @@ export const loadPriceBook = async (): Promise<PriceBook> => {
 export const priceOf = (book: PriceBook, po: string, name: string): number | undefined =>
   book.byPo[poKey(po, name)] ?? book.byName[String(name).trim()];
 
+// 장부에 매입가를 더한 새 장부(저장하지 않고 화면에서만 쓴다).
+export const withPrices = (book: PriceBook, items: { po: string; name: string; price: number }[]): PriceBook => {
+  const next = { byPo: { ...book.byPo }, byName: { ...book.byName } };
+  for (const it of items) {
+    const name = String(it.name || '').trim();
+    if (!(it.price > 0) || !name) continue;
+    if (String(it.po || '').trim()) next.byPo[poKey(it.po, name)] = it.price;
+    next.byName[name] = it.price;
+  }
+  return next;
+};
+
 // 매입가를 기억한다. 이미 같은 값이면 저장하지 않는다.
 export const rememberPrices = async (items: { po: string; name: string; price: number }[]) => {
   const book = loadLocal();

@@ -2,7 +2,7 @@
 // 새 탭에 연다. 발송대기 화면과 발주 진행(쉽먼트 칸)이 같이 쓴다.
 import { ShipOut, markShipOuts } from '../coupangOrder/data/shipOutStore';
 import { parseFile } from '../coupangOrder/utils/dataProcessor';
-import { loadBarcodeBook, loadArchiveBarcodes, rememberBarcodes, nameKey } from '../../data/coupangBarcodeStore';
+import { loadBarcodeBook, rememberBarcodes } from '../../data/coupangBarcodeStore';
 import { writeBarcodeSheet, SheetItem } from '../../utils/barcodeSheet';
 
 // 발주서를 출력완료로 표시하거나 푼다.
@@ -35,19 +35,13 @@ export const openBarcodes = async (item: ShipOut, orderNo: string | string[], op
       errorPage(`바코드를 그리지 못했어요: ${err?.message || err}`);
     }
   };
-  // 장부(발주서에서 기억) → 상품목록(이름이 같은 것 하나) 순서로 찾는다.
-  let archive: { name: string; barcode: string }[] | null = null;
+  // 바코드 장부(쿠팡 발주서에서 기억한 것)에서만 찾는다.
   const resolve = async () => {
     const book = await loadBarcodeBook();
     const found: SheetItem[] = [];
     const missing: { sku: string; name: string; qty: number }[] = [];
     for (const g of groups.values()) {
-      let bc = (g.sku && book.bySku[g.sku]) || book.byName[g.name] || '';
-      if (!bc) {
-        archive = archive || await loadArchiveBarcodes();
-        const hits = Array.from(new Set(archive.filter(a => nameKey(a.name) === nameKey(g.name)).map(a => a.barcode)));
-        if (hits.length === 1) bc = hits[0];
-      }
+      const bc = (g.sku && book.bySku[g.sku]) || book.byName[g.name] || '';
       if (bc) found.push({ name: g.name, barcode: bc, qty: g.qty });
       else missing.push(g);
     }

@@ -9,6 +9,7 @@ import * as XLSX from 'xlsx';
 import { collection, doc, onSnapshot, setDoc } from 'firebase/firestore';
 import { db, ensureSignedIn } from '../../../utils/firebase';
 import { rememberPrices } from '../../../data/coupangPriceStore';
+import { rememberBarcodes } from '../../../data/coupangBarcodeStore';
 
 const FORMS = 'coupangPoForms';
 const DRAFTS = 'coupangPoConfirmDraft';
@@ -68,8 +69,10 @@ const start = () => {
       forms = Object.fromEntries(snap.docs.map(d => [d.id, { ...(d.data() as PoForm), id: d.id }]));
       writeLocal(FORMS_LOCAL, forms);
       notify();
-      // 양식의 매입가를 작은 매입가 장부로 옮겨 둔다(한중발주는 장부만 읽는다). 바뀐 것만 저장된다.
-      rememberPrices(poFormPrices()).catch(err => console.error('매입가 기억 실패:', err));
+      // 양식의 매입가·상품바코드를 작은 장부로 옮겨 둔다(한중발주·바코드 라벨은 장부만 읽는다). 바뀐 것만 저장된다.
+      const facts = poFormFacts();
+      rememberPrices(facts).catch(err => console.error('매입가 기억 실패:', err));
+      rememberBarcodes(facts).catch(err => console.error('바코드 기억 실패:', err));
     }, err => console.error('발주확정 양식 동기화 실패:', err));
     onSnapshot(collection(firestore, DRAFTS), snap => {
       drafts = Object.fromEntries(snap.docs.map(d => [String(d.data().no || d.id), { qty: {}, reason: {}, ...(d.data() as PoDraft) }]));
@@ -109,27 +112,30 @@ const isPoForm = (rows: unknown[][]) => {
   return head[COL.no] === '발주번호' && head[COL.confirmed] === '확정수량' && head[COL.reason] === '납품부족사유';
 };
 
-// 남겨 둔 양식들의 매입가(1개). 매입가 장부로 옮길 때 쓴다.
-const priceCache = new Map<string, { po: string; name: string; price: number }[]>();
-export function poFormPrices(): { po: string; name: string; price: number }[] {
-  const out: { po: string; name: string; price: number }[] = [];
+// 남겨 둔 양식들의 줄마다 매입가(1개)·상품바코드. 매입가 장부·바코드 장부로 옮길 때 쓴다.
+type FormFact = { po: string; sku: string; name: string; price: number; barcode: string };
+const factCache = new Map<string, FormFact[]>();
+export function poFormFacts(): FormFact[] {
+  const out: FormFact[] = [];
   for (const f of Object.values(forms)) {
-    let list = priceCache.get(f.id);
+    let list = factCache.get(f.id);
     if (!list) {
       list = [];
       try {
         const rows = rowsOf(XLSX.read(fromDataUrl(f.dataUrl), { type: 'array' }));
-        const col = (rows[0] || []).map(v => String(v).trim()).indexOf('매입가');
-        if (col >= 0) {
-          for (const r of rows.slice(1)) {
-            const price = Number(String(r[col] ?? '').replace(/[^\d.-]/g, ''));
-            const po = String(r[COL.no] ?? '').trim();
-            const name = String(r[COL.name] ?? '').trim();
-            if (po && name && price > 0) list.push({ po, name, price });
-          }
+        const head = (rows[0] || []).map(v => String(v).trim());
+        const priceCol = head.indexOf('매입가');
+        const barcodeCol = head.indexOf('상품바코드');
+        for (const r of rows.slice(1)) {
+          const po = String(r[COL.no] ?? '').trim();
+          const name = String(r[COL.name] ?? '').trim();
+          if (!po || !name) continue;
+          const price = priceCol >= 0 ? Number(String(r[priceCol] ?? '').replace(/[^\d.-]/g, '')) || 0 : 0;
+          const barcode = barcodeCol >= 0 ? String(r[barcodeCol] ?? '').trim() : '';
+          list.push({ po, sku: String(r[COL.sku] ?? '').trim(), name, price, barcode });
         }
       } catch {}
-      priceCache.set(f.id, list);
+      factCache.set(f.id, list);
     }
     out.push(...list);
   }

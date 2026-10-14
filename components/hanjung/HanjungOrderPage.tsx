@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
-  HanjungOrder, HanjungLine, subscribeHanjung, deleteHanjungOrder, saveHanjungOrder, productSummary, orderTotals, productOrderQty, productUnitCost, lineAlloc, sameName, nameKey, ordersNeedingAliasRename,
+  HanjungOrder, HanjungLine, subscribeHanjung, deleteHanjungOrder, saveHanjungOrder, productSummary, orderTotals, productOrderQty, productUnitCost, lineAlloc, sameName, nameKey, ordersNeedingAliasRename, FEE_KEYS, remainingFee,
 } from '../../data/hanjungStore';
 import { ReceiveRow, subscribeReceives, settlementOf, sign } from '../../data/receiveStore';
 import { nextHanjungCode, closeShortOrder, planShortFill, planFill, FillPlan, FillLine } from '../../data/hanjungStore';
@@ -954,11 +954,21 @@ const HanjungOrderPage: React.FC = () => {
                     남은 것 정리
                   </button>
                 )}
-                <span className="ml-auto text-sm text-right whitespace-nowrap">
-                  {settle.qty > 0 && t.totalCost > 0
-                    ? <>차익 <b className={profit >= 0 ? 'text-emerald-600' : 'text-red-500'} title="정산 공급가(부가세 제외) − 총원가">{won(profit)}</b></>
-                    : t.totalCost > 0 ? <span className="text-gray-500">원가 <b>{won(t.totalCost)}</b></span> : null}
-                </span>
+                {/* 순이익 = 정산가(연결된 쿠팡 발주금액 합) − 매입가(상품 + 관세사비·통관비·배송비·작업비).
+                    매입가는 도착한 만큼은 도착 기록 값, 아직 안 온 만큼은 주문 때 적은 단가·부대비용으로. */}
+                {(() => {
+                  const sale = linesTotal(o.lines);
+                  const buy = t.totalCost
+                    + products.reduce((n, p) => n + Math.max(0, p.ordered - p.received) * productUnitCost(o, p.상품이름), 0)
+                    + FEE_KEYS.reduce((n, k) => n + remainingFee(o, k), 0);
+                  const net = sale - buy;
+                  return (
+                    <span className="ml-auto text-right whitespace-nowrap leading-tight" title="순이익 = 정산가(쿠팡 발주금액 합) − 매입가(상품 + 관세사비·통관비·배송비·작업비)">
+                      <span className="block text-sm">순이익 <b className={!sale || !buy ? 'text-gray-400' : net >= 0 ? 'text-emerald-600' : 'text-red-500'}>{sale && buy ? won(net) : '-'}</b></span>
+                      <span className="block text-[11px] text-gray-400">정산 {sale ? won(sale) : '-'} − 매입 {buy ? won(buy) : '-'}</span>
+                    </span>
+                  );
+                })()}
                 <span className="text-gray-300">{isOpen ? '▲' : '▼'}</span>
               </div>
 

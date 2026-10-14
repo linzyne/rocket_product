@@ -3,6 +3,7 @@ import Papa from 'papaparse';
 import type { OrderRow } from '../types';
 import { normalizeDateValue, dateKeyYMD, ymdSortKey } from './dateUtils';
 import { rememberBarcodes } from '../../../data/coupangBarcodeStore';
+import { rememberPrices } from '../../../data/coupangPriceStore';
 
 function parseNumber(v: unknown): number {
   if (v === null || v === '') return NaN;
@@ -85,6 +86,13 @@ function mapRawToOrderRows(rawData: unknown[][]): OrderRow[] {
     name: String(r['상품이름'] ?? r['Product Name'] ?? ''),
     barcode: String(r['상품바코드'] ?? r['Barcode'] ?? r['SKU Barcode'] ?? ''),
   }))).catch(err => console.error('바코드 기억 실패:', err));
+
+  // 매입가(1개)도 기억해 둔다(한중발주에서 연결된 쿠팡 발주의 발주금액을 보여줄 때 쓴다).
+  rememberPrices(data.map(r => ({
+    po: String(r['Order number'] ?? r['발주번호'] ?? ''),
+    name: String(r['Product Name'] ?? r['상품이름'] ?? ''),
+    price: parseNumber(r['Purchase Price'] ?? r['매입가'] ?? ''),
+  }))).catch(err => console.error('매입가 기억 실패:', err));
 
   rows = rows.filter(x => Number(x.확정수량) > 0);
 

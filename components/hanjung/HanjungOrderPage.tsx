@@ -25,6 +25,7 @@ import {
 import { dateKeyYMD, formatDateDisplay, normalizeDateValue } from '../coupangOrder/utils/dateUtils';
 import OrderItemsEditor, { OrderItem, useProductNames, itemsToOrderQty, itemQty, itemsToUnitCost, FeeInputs, FeeDraft, feesToNumbers } from './OrderItemsEditor';
 import ProductThumb, { useProductImage } from './ProductThumb';
+import { PriceBook, loadPriceBook, priceOf } from '../../data/coupangPriceStore';
 import { ReceiptForm, ReceiptHistory, markArrivedLinesReady } from './ReceiptForm';
 
 // 발주 > 한중발주. 위쪽 "발주 대기"는 쿠팡발주확인 발송 목록에서 "한중"을 누른 줄(예약과 따로 저장해서, 그 줄이
@@ -587,6 +588,18 @@ const HanjungOrderPage: React.FC = () => {
   const ready = useReady();
   const shipBatches = useShipLock();
   useEffect(() => { startLines(); }, []);
+  // 쿠팡 발주 매입가(발주서 파일을 올릴 때 기억해 둔 것). 발주금액 = 매입가 × 확정수량.
+  const [prices, setPrices] = useState<PriceBook>({ byPo: {}, byName: {} });
+  useEffect(() => { loadPriceBook().then(setPrices); }, []);
+  const lineAmount = (l: { 발주번호: string; 상품이름: string; 확정수량: number }) => {
+    const p = priceOf(prices, l.발주번호, l.상품이름);
+    return p ? p * l.확정수량 : undefined;
+  };
+  const amountText = (l: { 발주번호: string; 상품이름: string; 확정수량: number }) => {
+    const a = lineAmount(l);
+    return a === undefined ? '-' : won(a);
+  };
+  const linesTotal = (ls: { 발주번호: string; 상품이름: string; 확정수량: number }[]) => ls.reduce((n, l) => n + (lineAmount(l) || 0), 0);
   const handleCloseShort = async (o: HanjungOrder) => {
     const { order: closed, releases } = closeShortOrder(o);
     if (!releases.length) return;
@@ -1017,13 +1030,14 @@ const HanjungOrderPage: React.FC = () => {
                         />
                         <div className="text-xs font-semibold text-gray-500 pt-2">부대비용(예상)</div>
                         <FeeInputs value={edit.fees} onChange={f => setEdit(cur => cur && { ...cur, fees: f })} />
-                        <div className="text-xs font-semibold text-gray-500 pt-2">연결된 쿠팡 발주</div>
+                        <div className="text-xs font-semibold text-gray-500 pt-2">연결된 쿠팡 발주 <span className="font-normal text-gray-400">· 발주금액 {won(linesTotal(edit.lines))}</span></div>
                         {edit.lines.map((l, i) => (
                           <div key={l.key} className="flex items-center gap-2 text-xs text-gray-600">
                             <span className="truncate flex-1">
                               <span className="font-mono text-gray-400">{l.발주번호}</span> · {l.물류센터} · {ymdText(l.입고예정일)} · {l.상품이름}
                             </span>
                             <span className="font-mono">{lineAlloc(l)}개{lineAlloc(l) !== l.확정수량 && <span className="text-gray-400"> /{l.확정수량}</span>}</span>
+                            <span className="font-mono w-24 text-right text-gray-500" title="발주금액 = 매입가 × 확정수량">{amountText(l)}</span>
                             <button
                               onClick={() => setEdit(cur => cur && { ...cur, lines: cur.lines.filter((_, j) => j !== i) })}
                               title="이 줄을 빼요(저장하면 1688 주문하기로 돌아가요)"
@@ -1046,7 +1060,7 @@ const HanjungOrderPage: React.FC = () => {
                         {/* 쿠팡 발주 줄: 발주번호 · 센터 · 입고예정일 · 상품 · 배정 수량을 칸 맞춰서. 같은 발주번호끼리 붙여 둔다. */}
                         <table className="w-full text-xs">
                           <thead className="text-gray-400">
-                            <tr><th className="text-left font-medium py-1 w-24">발주번호</th><th className="text-left font-medium w-24">센터</th><th className="text-left font-medium w-20">입고예정</th><th className="text-left font-medium">상품</th><th className="text-right font-medium w-20">배정</th></tr>
+                            <tr><th className="text-left font-medium py-1 w-24">발주번호</th><th className="text-left font-medium w-24">센터</th><th className="text-left font-medium w-20">입고예정</th><th className="text-left font-medium">상품</th><th className="text-right font-medium w-20">배정</th><th className="text-right font-medium w-24" title="매입가 × 확정수량">발주금액</th></tr>
                           </thead>
                           <tbody>
                             {[...o.lines].sort((a, b) => a.발주번호.localeCompare(b.발주번호)).map(l => (
@@ -1056,9 +1070,13 @@ const HanjungOrderPage: React.FC = () => {
                                 <td className="text-gray-500">{ymdText(l.입고예정일)}</td>
                                 <td className="text-gray-700 truncate max-w-[22rem]" title={l.상품이름}>{l.상품이름}</td>
                                 <td className="text-right font-mono"><b>{lineAlloc(l)}</b>{lineAlloc(l) !== l.확정수량 && <span className="text-gray-400">/{l.확정수량}</span>}</td>
+                                <td className="text-right font-mono text-gray-500">{amountText(l)}</td>
                               </tr>
                             ))}
                           </tbody>
+                          <tfoot>
+                            <tr className="border-t border-gray-100"><td colSpan={5} className="py-1 text-right text-gray-400">합계</td><td className="text-right font-mono font-semibold">{won(linesTotal(o.lines))}</td></tr>
+                          </tfoot>
                         </table>
                       </div>
                     )}

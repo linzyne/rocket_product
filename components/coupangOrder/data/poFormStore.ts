@@ -8,6 +8,7 @@
 import * as XLSX from 'xlsx';
 import { collection, doc, onSnapshot, setDoc } from 'firebase/firestore';
 import { db, ensureSignedIn } from '../../../utils/firebase';
+import { rememberPrices } from '../../../data/coupangPriceStore';
 
 const FORMS = 'coupangPoForms';
 const DRAFTS = 'coupangPoConfirmDraft';
@@ -67,6 +68,8 @@ const start = () => {
       forms = Object.fromEntries(snap.docs.map(d => [d.id, { ...(d.data() as PoForm), id: d.id }]));
       writeLocal(FORMS_LOCAL, forms);
       notify();
+      // 양식의 매입가를 작은 매입가 장부로 옮겨 둔다(한중발주는 장부만 읽는다). 바뀐 것만 저장된다.
+      rememberPrices(poFormPrices()).catch(err => console.error('매입가 기억 실패:', err));
     }, err => console.error('발주확정 양식 동기화 실패:', err));
     onSnapshot(collection(firestore, DRAFTS), snap => {
       drafts = Object.fromEntries(snap.docs.map(d => [String(d.data().no || d.id), { qty: {}, reason: {}, ...(d.data() as PoDraft) }]));
@@ -106,7 +109,7 @@ const isPoForm = (rows: unknown[][]) => {
   return head[COL.no] === '발주번호' && head[COL.confirmed] === '확정수량' && head[COL.reason] === '납품부족사유';
 };
 
-// 남겨 둔 양식들의 매입가(1개). 한중발주에서 연결된 쿠팡 발주의 발주금액을 볼 때 쓴다.
+// 남겨 둔 양식들의 매입가(1개). 매입가 장부로 옮길 때 쓴다.
 const priceCache = new Map<string, { po: string; name: string; price: number }[]>();
 export function poFormPrices(): { po: string; name: string; price: number }[] {
   const out: { po: string; name: string; price: number }[] = [];

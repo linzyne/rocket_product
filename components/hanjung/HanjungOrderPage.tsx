@@ -39,7 +39,7 @@ type Stage = 'ordered' | 'partial' | 'arrived' | 'settled';
 const STAGE_LABEL: Record<Stage, { text: string; cls: string }> = {
   ordered: { text: '✈️ 오는 중', cls: 'bg-amber-50 text-amber-700 border-amber-200' },
   partial: { text: '📦 일부 도착', cls: 'bg-sky-50 text-sky-700 border-sky-200' },
-  arrived: { text: '🏠 쿠팡입고 대기', cls: 'bg-violet-50 text-violet-700 border-violet-200' },
+  arrived: { text: '🏠 도착완료', cls: 'bg-violet-50 text-violet-700 border-violet-200' },
   settled: { text: '🎉 완료', cls: 'bg-emerald-50 text-emerald-700 border-emerald-200' },
 };
 // 다 도착했고 배정(쿠팡 몫)만큼 쿠팡에 입고됐으면 완료. 배정 없는 건(여유만 산 건)은 도착하면 완료.
@@ -51,7 +51,7 @@ const stageOf = (o: HanjungOrder, settleQty: number): Stage => {
 };
 const TABS: { id: 'arriving' | 'arrived' | 'settled' | 'all'; text: string; has: (st: Stage) => boolean }[] = [
   { id: 'arriving', text: '⏳ 도착 전', has: st => st === 'ordered' || st === 'partial' },
-  { id: 'arrived', text: '🏠 쿠팡입고 대기', has: st => st === 'arrived' },
+  { id: 'arrived', text: '🏠 도착완료', has: st => st === 'arrived' },
   { id: 'settled', text: '🎉 완료', has: st => st === 'settled' },
   { id: 'all', text: '📋 전체', has: () => true },
 ];

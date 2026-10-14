@@ -801,34 +801,39 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
                           ? <b onClick={() => editQty(o, l)} title="눌러서 확정수량 고치기(서허 요청등록에서 수량을 바꿨을 때)"
                               style={{ cursor: 'pointer', textDecoration: 'underline dotted', textUnderlineOffset: 2 }}>{l.확정수량}개</b>
                           : <b>{l.확정수량}개</b>}
-                        {/* 배정 수량을 한중발주마다 나눠: 아직 오는 중 = ✈(먼저), 사무실에 다 들어옴 = 🏢 사무실 입고완료. 두 자리는 늘 있고 숫자(번호 동그라미 + 수량)만 옮겨 간다. */}
+                        {/* 배정 수량을 한중발주마다 나눠: 아직 오는 중 = ✈(먼저), 사무실에 다 들어옴 = 🏢 사무실 입고완료. 두 자리는 늘 있고 숫자만 옮겨 간다.
+                            입고중은 몇 번 한중발주인지 비행기 몸통에 번호를 넣고, 사무실에 오면 번호 없이 합계만. */}
                         {(() => {
                           const hjPlaces = places.filter(p => p.code);
                           const done = (p: typeof hjPlaces[number]) => {
                             const a = hjArrived.get(`${p.code}│${nameKey(l.상품이름)}`);
                             return !!a && a.received >= a.ordered;
                           };
-                          const badge = (p: typeof hjPlaces[number], idx: number) => (
-                            <span key={`${p.code}-${idx}`} style={{ marginLeft: idx ? 4 : 0 }}>
-                              <span style={{
-                                display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 14, height: 14, marginRight: 2,
-                                borderRadius: '50%', background: hjColor.get(p.code!) || '#2563eb', color: '#fff', fontSize: 9, fontWeight: 800, verticalAlign: '-2px',
-                              }}>{hjNo.get(p.code!) ?? '?'}</span>
-                              <b>{p.qty}</b>
-                            </span>
+                          const numPlane = (color: string, no: React.ReactNode) => (
+                            <svg width="24" height="14" viewBox="0 0 28 16" style={{ display: 'inline-block', verticalAlign: '-2px', marginRight: 1 }}>
+                              <path fill={color} d="M8 0h2l7 4h-6zM8 16h2l7-4h-6zM1 1h2l3 3H2zM2 4h20c3 0 6 2 6 4s-3 4-6 4H2a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1z" />
+                              <text x="14" y="8.5" textAnchor="middle" dominantBaseline="middle" fill="#fff" fontSize="9.5" fontWeight="800">{no}</text>
+                            </svg>
                           );
                           const going = hjPlaces.filter(p => !done(p));
                           const inOffice = hjPlaces.filter(done);
+                          const inOfficeQty = inOffice.reduce((s, p) => s + p.qty, 0);
                           return (
                             <>
                               <span title={going.length ? `한중발주로 입고중: ${going.map(p => `${p.code} ${p.qty}개`).join(', ')}` : '한중발주로 입고중인 수량 없음'}
                                 style={{ fontSize: 11, color: going.length ? '#2563eb' : '#a8a29e', whiteSpace: 'nowrap' }}>
-                                {plane(going.length ? '#2563eb' : '#a8a29e')}{going.length ? going.map(badge) : <b>0</b>}
+                                {going.length
+                                  ? going.map((p, idx) => (
+                                    <span key={`${p.code}-${idx}`} style={{ marginLeft: idx ? 4 : 0 }}>
+                                      {numPlane(hjColor.get(p.code!) || '#2563eb', hjNo.get(p.code!) ?? '?')}<b>{p.qty}</b>
+                                    </span>
+                                  ))
+                                  : <>{plane('#a8a29e')}<b>0</b></>}
                               </span>
                               <span title={inOffice.length ? `사무실 입고완료: ${inOffice.map(p => `${p.code} ${p.qty}개`).join(', ')}` : '사무실 입고완료 수량 없음'}
                                 style={{ fontSize: 11, color: inOffice.length ? GREEN : '#a8a29e', whiteSpace: 'nowrap' }}>
                                 <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke={inOffice.length ? GREEN : '#a8a29e'} strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" style={{ display: 'inline-block', verticalAlign: '-1px', marginRight: 1 }}><path d="M4 21V5a1 1 0 0 1 1-1h9a1 1 0 0 1 1 1v16" /><path d="M15 10h4a1 1 0 0 1 1 1v10" /><path d="M2 21h20M8 8h3M8 12h3M8 16h3" /></svg>
-                                {inOffice.length ? inOffice.map(badge) : <b>0</b>}
+                                <b>{inOfficeQty}</b>
                               </span>
                             </>
                           );

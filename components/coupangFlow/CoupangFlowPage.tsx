@@ -656,6 +656,12 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
             <div key={i} style={{ padding: '2px 0', borderTop: i ? '1px dashed #f0f0f0' : 'none' }}>
               {/* 한 줄 표: [체크] [상품 이름(넘치면 …)] [사무실] [수량]. 줄바꿈하지 않고 칸 너비를 맞춘다. */}
               <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
+                {/* 발송대기: 쉽먼트 때 담은 박스 번호를 보기만(고치지 않음) */}
+                {o.stage === 4 && l.ship && (() => {
+                  const v = l.ship.쉼먼트 || '';
+                  const text = isBoxSplit(v) ? parseBoxSplit(v).map(p => `${p.no}번×${p.qty}`).join(' ') : parseBoxNo(v) ? `박스 ${parseBoxNo(v)}` : '';
+                  return text ? <span style={{ flexShrink: 0, fontSize: 11, color: '#6b7280', whiteSpace: 'nowrap' }}>{text}</span> : null;
+                })()}
                 {o.stage === 2 && l.stage === 2 && l.ship && o.item && (() => {
                   // 박스: 택배예약 전에는 고를 수 있고, 예약한 뒤에는 보기만.
                   const item = o.item!;

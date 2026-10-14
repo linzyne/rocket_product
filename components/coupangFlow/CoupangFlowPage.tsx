@@ -199,6 +199,14 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
   const [waybillBatch, setWaybillBatch] = useState<ShipmentBatch | null>(null);
   // 상자 머리의 번호 모음을 펼친 상자들.
   const [openSum, setOpenSum] = useState<Set<string>>(new Set());
+  // 쉽먼트 이후 상자 안 보기: 발주서별(발주번호 → 상품) / 박스별(박스1 → 상품). 고른 것을 기억해 둔다.
+  const [lineView, setLineViewState] = useState<'order' | 'box'>(() => {
+    try { return localStorage.getItem('flowLineView') === 'box' ? 'box' : 'order'; } catch { return 'order'; }
+  });
+  const setLineView = (v: 'order' | 'box') => {
+    setLineViewState(v);
+    try { localStorage.setItem('flowLineView', v); } catch { /* 기억 못 해도 보기는 바뀐다 */ }
+  };
   const copyNo = (label: string, v: string) => navigator.clipboard.writeText(v).then(() => setDateNote({ tone: 'ok', text: `${label} ${v} 복사했어요` })).catch(() => {});
   // 상자에 든 발주번호·송장번호·쉽먼트번호(겹치지 않게).
   const summaryOf = (list: FlowOrder[]) => ({
@@ -650,11 +658,12 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
     );
   };
   // 상품. 새발주서 단계에서는 확정수량을 바로 고친다(줄이면 사유, 기본 시장 단종). 다른 단계에 가 있는 줄은 어디 있는지 빨갛게.
-  const products = (o: FlowOrder) => {
+  // only: 이 줄들만 그린다(박스별 보기에서 한 박스에 든 줄만).
+  const products = (o: FlowOrder, only?: FlowLine[]) => {
     const qty = o.lines.reduce((sum, l) => sum + (Number(l.확정수량) || 0), 0);
     return (
       <>
-        {[...o.lines].sort((a, b) => boxOrder(a) - boxOrder(b)).map((l, i) => {
+        {(only || [...o.lines].sort((a, b) => boxOrder(a) - boxOrder(b))).map((l, i) => {
           const editable = o.stage === 0 && l.stage === 0;
           const draft = readDraft(o.no);
           const full = Number(l.확정수량) || 0;
@@ -1857,7 +1866,47 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
                       // 상자 안은 발주번호 순(발주서 사이 빈 줄 간격은 그대로).
                       const sorted = [...g.list].sort((a, b) => a.no.localeCompare(b.no, 'ko', { numeric: true }));
                       const first = Math.max(0, sorted.findIndex(o => !!action(o) || !!runNote(o)));
-                      return sorted.map((o, idx) => slim(o, idx === first));
+                      const toggle = i >= 2 && (
+                        <div style={{ display: 'flex', gap: 4, marginTop: 6 }}>
+                          {(['order', 'box'] as const).map(v => (
+                            <button key={v} onClick={() => setLineView(v)} style={{
+                              fontSize: 11, padding: '2px 9px', borderRadius: 999, cursor: 'pointer', fontWeight: 700,
+                              border: `1px solid ${lineView === v ? ORANGE : '#e5e7eb'}`, background: lineView === v ? ORANGE : '#fff', color: lineView === v ? '#fff' : '#6b7280',
+                            }}>{v === 'order' ? '발주서별' : '박스별'}</button>
+                          ))}
+                        </div>
+                      );
+                      if (!(i >= 2 && lineView === 'box')) return <>{toggle}{sorted.map((o, idx) => slim(o, idx === first))}</>;
+                      // 박스별: 박스1 → 그 박스에 든 상품들, 박스2 → …(박스 사이 빈 줄 간격). 나눠 담은 상품은 든 박스마다 나온다.
+                      const byBox = new Map<number, { o: FlowOrder; lines: FlowLine[] }[]>();
+                      for (const o of sorted) {
+                        for (const l of [...o.lines].sort((a, b) => boxOrder(a) - boxOrder(b))) {
+                          const v = l.ship?.쉼먼트 || '';
+                          const nos = isBoxSplit(v) ? Array.from(new Set(parseBoxSplit(v).map(p => p.no))) : [parseBoxNo(v) || 0];
+                          for (const n of nos) {
+                            const list = byBox.get(n) || [];
+                            const last = list[list.length - 1];
+                            if (last && last.o === o) last.lines.push(l);
+                            else list.push({ o, lines: [l] });
+                            byBox.set(n, list);
+                          }
+                        }
+                      }
+                      const boxNos = Array.from(byBox.keys()).sort((a, b) => (a || 999) - (b || 999));
+                      const lead = sorted[first];
+                      return (
+                        <>
+                          {toggle}
+                          {lead && runNote(lead)}
+                          {lead && actionRow(lead)}
+                          {boxNos.map(n => (
+                            <div key={n} style={{ borderTop: '1px solid #f3f3f3', paddingTop: 6, marginTop: 14, display: 'flex', flexDirection: 'column', gap: 4 }}>
+                              <div style={{ fontSize: 12, fontWeight: 800, color: '#e67e22' }}>{n ? `박스${n}` : '박스 없음'}</div>
+                              <div style={{ fontSize: 13.5 }}>{byBox.get(n)!.map(({ o, lines }) => <React.Fragment key={o.no}>{products(o, lines)}</React.Fragment>)}</div>
+                            </div>
+                          ))}
+                        </>
+                      );
                     })()}
                   </div>
                     );

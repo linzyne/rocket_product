@@ -1,6 +1,8 @@
 import JsBarcode from 'jsbarcode';
 
 // 상품 바코드 라벨을 폼텍 40칸(A4, 4열×10줄) 용지에 맞춰 새 탭에 그린다. 상품마다 수량만큼 칸을 채운다.
+// 칸 모양: 위에 상품이름(쿠팡 발주서 그대로, 굵게) → 표시 문구 첫 줄(칸 너비) → 나머지 문구는 왼쪽, 바코드는 오른쪽.
+// 표시 문구(수입자·제조국·사용연령·주의사항)는 도구줄에서 고칠 수 있고 이 컴퓨터에 기억한다.
 // 새 탭 위쪽 도구줄에서 용지 크기(여백 있는 48.5×25.4 / 꽉 찬 52.5×29.7)·시작 칸·위치 미세조정을 바꿀 수 있고,
 // 바꾼 값은 이 컴퓨터에 기억한다. 도구줄은 인쇄되지 않는다.
 
@@ -19,21 +21,22 @@ const barcodeSvg = (value: string) => {
   const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
   JsBarcode(svg, value, {
     format: validEan13(value) ? 'EAN13' : 'CODE128',
-    height: 60, width: 2, fontSize: 18, margin: 0, marginLeft: 14, marginRight: 14, textMargin: 1, displayValue: true,
+    height: 60, width: 2, margin: 0, marginLeft: 14, marginRight: 14, displayValue: false,
   });
   const w = svg.getAttribute('width')?.replace('px', '') || '200';
   const h = svg.getAttribute('height')?.replace('px', '') || '80';
   svg.setAttribute('viewBox', `0 0 ${w} ${h}`);
   svg.removeAttribute('width');
   svg.removeAttribute('height');
-  svg.setAttribute('preserveAspectRatio', 'xMidYMid meet');
+  // 칸 높이를 꽉 채우게 막대를 늘린다(숫자는 아래에 글자로 따로 쓴다).
+  svg.setAttribute('preserveAspectRatio', 'none');
   return svg.outerHTML;
 };
 
 export const writeBarcodeSheet = (win: Window, title: string, items: SheetItem[]) => {
   const labels = items.flatMap(it => {
     const svg = barcodeSvg(it.barcode);
-    return Array.from({ length: Math.max(0, it.qty) }, () => ({ name: it.name, svg }));
+    return Array.from({ length: Math.max(0, it.qty) }, () => ({ name: it.name, svg, code: it.barcode }));
   });
   const html = `<!doctype html><html lang="ko"><head><meta charset="utf-8"><title>${esc(title)}</title>
 <style>
@@ -47,11 +50,17 @@ export const writeBarcodeSheet = (win: Window, title: string, items: SheetItem[]
   .bar small { color: #6b7280; }
   .page { position: relative; width: 210mm; height: 297mm; margin: 12px auto; background: #fff; overflow: hidden; break-after: page; }
   .page:last-child { break-after: auto; }
-  .cell { position: absolute; padding: 1.2mm 1.6mm; display: flex; flex-direction: column; align-items: center; overflow: hidden; }
+  .cell { position: absolute; padding: 1.3mm 1.6mm; display: flex; flex-direction: column; overflow: hidden; color: #000; }
   .cell.used { outline: 1px dashed #e5e7eb; }
-  .name { width: 100%; font-size: 6.5pt; line-height: 1.15; font-weight: 700; text-align: center; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; word-break: keep-all; flex-shrink: 0; }
-  .code { flex: 1; width: 100%; min-height: 0; margin-top: 0.6mm; }
-  .code svg { width: 100%; height: 100%; display: block; }
+  .name { width: 100%; font-size: 8pt; line-height: 1.15; font-weight: 800; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; word-break: keep-all; flex-shrink: 0; }
+  .info1, .info div { font-size: 5.6pt; line-height: 1.3; white-space: nowrap; overflow: hidden; }
+  .info1 { margin-top: 0.7mm; flex-shrink: 0; }
+  .row { flex: 1; min-height: 0; display: flex; align-items: stretch; gap: 0.8mm; }
+  .info { flex-shrink: 0; display: flex; flex-direction: column; justify-content: space-evenly; }
+  .code { flex: 1; min-width: 0; padding-top: 0.4mm; display: flex; flex-direction: column; }
+  .code svg { flex: 1; min-height: 0; width: 100%; display: block; }
+  .num { font-size: 7.5pt; line-height: 1; text-align: center; letter-spacing: 0.3pt; margin-top: 0.3mm; }
+  .bar textarea { font-size: 12px; width: 300px; height: 64px; vertical-align: middle; }
   @media print {
     body { background: #fff; }
     .bar { display: none; }
@@ -69,6 +78,7 @@ export const writeBarcodeSheet = (win: Window, title: string, items: SheetItem[]
   <label>시작 칸 <input id="start" type="number" min="1" max="40" value="1"></label>
   <label>위↓ <input id="dy" type="number" step="0.5" value="0"> mm</label>
   <label>오른쪽→ <input id="dx" type="number" step="0.5" value="0"> mm</label>
+  <label>표시 문구 <textarea id="info"></textarea></label>
   <button onclick="window.print()">🖨 인쇄</button>
   <small>인쇄 창에서 배율 "실제 크기(100%)", 여백 "없음"으로 찍어 주세요.</small>
 </div>
@@ -80,12 +90,17 @@ export const writeBarcodeSheet = (win: Window, title: string, items: SheetItem[]
     f: { w: 52.5, h: 29.7, cols: 4, rows: 10, left: 0, top: 0, gx: 0, gy: 0 }
   };
   var KEY = 'barcodeSheetLayout';
+  var INFO_KEY = 'barcodeSheetInfo';
+  var DEFAULT_INFO = '수입자 / 제조사 : 주노엘 / 주노엘 협력사\\n제조국 : 중국\\n사용연령 : 만14세이상\\n주의사항 : 용도외 사용금지';
   var saved = {};
   try { saved = JSON.parse(localStorage.getItem(KEY) || '{}') || {}; } catch (e) {}
   var $ = function (id) { return document.getElementById(id); };
   $('preset').value = saved.preset || 'm';
   $('dy').value = saved.dy || 0;
   $('dx').value = saved.dx || 0;
+  var savedInfo = null;
+  try { savedInfo = localStorage.getItem(INFO_KEY); } catch (e) {}
+  $('info').value = savedInfo == null ? DEFAULT_INFO : savedInfo;
   function draw() {
     var p = PRESETS[$('preset').value] || PRESETS.m;
     var per = p.cols * p.rows;
@@ -104,16 +119,24 @@ export const writeBarcodeSheet = (win: Window, title: string, items: SheetItem[]
         var x = p.left + dx + col * (p.w + p.gx), y = p.top + dy + row * (p.h + p.gy);
         var l = LABELS[i];
         out += '<div class="cell used" style="left:' + x + 'mm;top:' + y + 'mm;width:' + p.w + 'mm;height:' + p.h + 'mm">'
-          + '<div class="name"></div><div class="code">' + l.svg + '</div></div>';
+          + '<div class="name"></div><div class="info1"></div><div class="row"><div class="info"></div><div class="code">' + l.svg + '<div class="num"></div></div></div></div>';
       }
       out += '</div>';
     }
     $('pages').innerHTML = out;
     // 상품이름은 글자로 넣는다(HTML로 섞지 않게). 칸은 LABELS 차례대로 그렸다.
     var names = document.querySelectorAll('.cell .name');
-    for (var j = 0; j < names.length; j++) names[j].textContent = LABELS[j].name;
+    var nums = document.querySelectorAll('.cell .num');
+    for (var j = 0; j < names.length; j++) { names[j].textContent = LABELS[j].name; nums[j].textContent = LABELS[j].code; }
+    // 표시 문구: 첫 줄은 칸 너비로, 나머지는 바코드 왼쪽에 한 줄씩.
+    var lines = $('info').value.split('\\n').map(function (t) { return t.trim(); }).filter(Boolean);
+    try { localStorage.setItem(INFO_KEY, $('info').value); } catch (e) {}
+    document.querySelectorAll('.cell .info1').forEach(function (el) { el.textContent = lines[0] || ''; });
+    document.querySelectorAll('.cell .info').forEach(function (el) {
+      lines.slice(1).forEach(function (t) { var d = document.createElement('div'); d.textContent = t; el.appendChild(d); });
+    });
   }
-  ['preset', 'start', 'dx', 'dy'].forEach(function (id) { $(id).addEventListener('input', draw); });
+  ['preset', 'start', 'dx', 'dy', 'info'].forEach(function (id) { $(id).addEventListener('input', draw); });
   draw();
 </script></body></html>`;
   win.document.open();

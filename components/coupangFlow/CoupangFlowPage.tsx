@@ -1723,7 +1723,8 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
                 padding: '18px 14px 32px', minHeight: '78vh', display: 'flex', flexDirection: 'column', gap: 20, boxSizing: 'border-box',
                 borderRight: col < shownStages.length - 1 ? '1px solid #e7e5e4' : 'none',
               }}>
-                {i <= 4 ? groupByCenterDate(list, i >= 2 ? (o => (i === 4 ? o.item?.batchId : '') || o.item?.id || o.no) : undefined).map(g => (
+                {/* 쉽먼트 이후는 출고 건(쉽먼트의 박스) 그대로 한 상자. 발송대기도 같다(같은 택배예약이라도 센터·날짜가 다르면 절대 합치지 않는다). */}
+                {i <= 4 ? groupByCenterDate(list, i >= 2 ? (o => `${o.item?.id || o.no}|${o.date}|${o.center.trim()}`) : undefined).map(g => (
                   // 새발주서·발주확정: 예전 쿠팡발주확인처럼 같은 입고예정일·센터끼리 한 덩어리로 모아 보여준다(묶음은 아니다).
                   // 겉모양은 쉽먼트·발송대기 카드와 같게(흰 바탕·테두리·그림자·왼쪽 띠). 고른 발주서가 있으면 주황.
                   (() => {

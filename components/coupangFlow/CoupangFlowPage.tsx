@@ -52,22 +52,22 @@ const STAGE_HINT: Partial<Record<Stage, string>> = {
   4: '출력하기',
 };
 
-// 마우스를 올리면 아래로 몽글몽글 뜨는 풍선글.
+// 마우스를 올리면 아래로 몽글몽글 뜨는 풍선글. 판 왼쪽 끝에서 잘리지 않게 제목 왼쪽에 맞춰 연다.
 const HintBubble: React.FC<{ text: string; children: React.ReactNode }> = ({ text, children }) => {
   const [on, setOn] = useState(false);
   return (
     <span style={{ position: 'relative', display: 'inline-flex' }} onMouseEnter={() => setOn(true)} onMouseLeave={() => setOn(false)}>
       {children}
       <span style={{
-        position: 'absolute', top: 'calc(100% + 10px)', left: '50%', zIndex: 20, pointerEvents: 'none', whiteSpace: 'nowrap',
-        transform: `translateX(-50%) translateY(${on ? 0 : -4}px) scale(${on ? 1 : 0.85})`, opacity: on ? 1 : 0,
+        position: 'absolute', top: 'calc(100% + 10px)', left: -8, zIndex: 20, pointerEvents: 'none', whiteSpace: 'nowrap',
+        transformOrigin: '22px 0', transform: `translateY(${on ? 0 : -4}px) scale(${on ? 1 : 0.85})`, opacity: on ? 1 : 0,
         transition: 'opacity .18s ease, transform .22s cubic-bezier(.34,1.56,.64,1)',
         background: '#fff7ed', color: '#9a3412', border: '2px solid #fdba74', borderRadius: 16, padding: '6px 12px',
         fontSize: 12.5, fontWeight: 800, boxShadow: '0 4px 12px rgba(249,115,22,0.22)',
       }}>
         <span style={{
-          position: 'absolute', top: -7, left: '50%', width: 10, height: 10, background: '#fff7ed',
-          borderLeft: '2px solid #fdba74', borderTop: '2px solid #fdba74', borderTopLeftRadius: 3, transform: 'translateX(-50%) rotate(45deg)',
+          position: 'absolute', top: -7, left: 22, width: 10, height: 10, background: '#fff7ed',
+          borderLeft: '2px solid #fdba74', borderTop: '2px solid #fdba74', borderTopLeftRadius: 3, transform: 'rotate(45deg)',
         }} />
         ✨ {text} 🐣
       </span>

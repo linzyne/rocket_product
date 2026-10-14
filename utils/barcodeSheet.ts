@@ -3,7 +3,7 @@ import JsBarcode from 'jsbarcode';
 // 상품 바코드 라벨을 폼텍 40칸(A4, 4열×10줄) 용지에 맞춰 새 탭에 그린다. 상품마다 수량만큼 칸을 채운다.
 // 칸 모양: 위에 상품이름(쿠팡 발주서 그대로, 굵게) → 표시 문구 첫 줄(칸 너비) → 나머지 문구는 왼쪽, 바코드는 오른쪽.
 // 표시 문구(수입자·제조국·사용연령·주의사항)는 도구줄에서 고칠 수 있고 이 컴퓨터에 기억한다.
-// 새 탭 위쪽 도구줄에서 용지 크기(여백 있는 48.5×25.4 / 꽉 찬 52.5×29.7)·시작 칸·위치 미세조정을 바꿀 수 있고,
+// 새 탭 위쪽 도구줄에서 용지 크기(기본 폼텍 LS-3102 47×26.9 / 48.5×25.4 / 꽉 찬 52.5×29.7)·시작 칸·위치 미세조정을 바꿀 수 있고,
 // 바꾼 값은 이 컴퓨터에 기억한다. 도구줄은 인쇄되지 않는다.
 
 export type SheetItem = { name: string; barcode: string; qty: number };
@@ -72,6 +72,7 @@ export const writeBarcodeSheet = (win: Window, title: string, items: SheetItem[]
   <b>${esc(title)}</b>
   <span>라벨 ${labels.length}장</span>
   <label>용지 <select id="preset">
+    <option value="ls3102">폼텍 LS-3102 47×26.9mm</option>
     <option value="m">폼텍 40칸 48.5×25.4mm (여백 있음)</option>
     <option value="f">40칸 52.5×29.7mm (꽉 참)</option>
   </select></label>
@@ -86,6 +87,8 @@ export const writeBarcodeSheet = (win: Window, title: string, items: SheetItem[]
 <script>
   var LABELS = ${JSON.stringify(labels).replace(/</g, '\\u003c')};
   var PRESETS = {
+    // LS-3102: 라벨 47×26.9mm(판매 정보). 여백·간격은 추정값이라 시험 인쇄 뒤 위↓·오른쪽→으로 맞춘다.
+    ls3102: { w: 47, h: 26.9, cols: 4, rows: 10, left: 6.5, top: 14, gx: 3, gy: 0 },
     m: { w: 48.5, h: 25.4, cols: 4, rows: 10, left: 8, top: 21.5, gx: 0, gy: 0 },
     f: { w: 52.5, h: 29.7, cols: 4, rows: 10, left: 0, top: 0, gx: 0, gy: 0 }
   };
@@ -95,14 +98,15 @@ export const writeBarcodeSheet = (win: Window, title: string, items: SheetItem[]
   var saved = {};
   try { saved = JSON.parse(localStorage.getItem(KEY) || '{}') || {}; } catch (e) {}
   var $ = function (id) { return document.getElementById(id); };
-  $('preset').value = saved.preset || 'm';
+  // 예전에 기본(m)으로 저장된 것은 지금 쓰는 LS-3102로 바꿔 연다.
+  $('preset').value = saved.preset && saved.preset !== 'm' && PRESETS[saved.preset] ? saved.preset : 'ls3102';
   $('dy').value = saved.dy || 0;
   $('dx').value = saved.dx || 0;
   var savedInfo = null;
   try { savedInfo = localStorage.getItem(INFO_KEY); } catch (e) {}
   $('info').value = savedInfo == null ? DEFAULT_INFO : savedInfo;
   function draw() {
-    var p = PRESETS[$('preset').value] || PRESETS.m;
+    var p = PRESETS[$('preset').value] || PRESETS.ls3102;
     var per = p.cols * p.rows;
     var start = Math.min(per, Math.max(1, parseInt($('start').value, 10) || 1)) - 1;
     var dx = parseFloat($('dx').value) || 0, dy = parseFloat($('dy').value) || 0;

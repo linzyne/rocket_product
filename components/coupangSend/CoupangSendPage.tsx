@@ -334,23 +334,28 @@ export default function CoupangSendPage({ onGoShip, view = 'waiting' }: { onGoSh
                 {sentShown.map(item => {
                   const nos = boxesOf(item).map(([no]) => no).filter(Boolean);
                   return (
-                    // 칸 너비를 고정해서 줄마다 세로로 맞춘다: 보낸 날 · 센터 · 입고일 · 발주번호 · 박스 수 · 운송장 · 단추.
+                    // 칸 너비를 고정해서 줄마다 세로로 맞춘다: 보낸 날 · 센터 · 입고일 · 발주번호·쉽먼트 번호 · 박스 수 · 운송장 · 단추.
                     <div key={item.id} style={{
-                      display: 'grid', gridTemplateColumns: '84px 70px 96px 120px 64px 1fr auto auto', alignItems: 'center',
+                      display: 'grid', gridTemplateColumns: '84px 70px 96px 230px 64px 1fr auto auto', alignItems: 'center',
                       columnGap: 12, padding: '8px 12px', borderTop: '1px solid #f4f4f4', fontSize: 12,
                     }}>
                       <b style={{ color: GREEN, whiteSpace: 'nowrap' }}>{dayText(item.sentDate || '')}</b>
                       <span style={{ fontWeight: 700, color: '#333', whiteSpace: 'nowrap' }}>{item.center}</span>
                       <span style={{ color: '#888', whiteSpace: 'nowrap' }}>입고 {dayText(item.date)}</span>
-                      {/* 예전 "묶음1" 같은 묶음 이름 대신 실제 발주번호를 보여준다(여러 개면 첫 번호 외 N). */}
-                      {(() => {
-                        const orderNos = Array.from(new Set(item.lines.map(l => String(l.발주번호))));
-                        return (
-                          <span style={{ color: '#888', whiteSpace: 'nowrap' }} title={orderNos.join(', ')}>
-                            {orderNos[0] || '-'}{orderNos.length > 1 ? ` 외 ${orderNos.length - 1}` : ''}
-                          </span>
-                        );
-                      })()}
+                      {/* 발주번호마다 한 줄씩 쌓고, 옆에 그 발주서의 쉽먼트 번호. */}
+                      <span style={{ display: 'flex', flexDirection: 'column', gap: 1, fontSize: 11.5, fontFamily: 'monospace' }}>
+                        {Array.from(new Set(item.lines.map(l => String(l.발주번호 || '')))).filter(Boolean).map(no => {
+                          const ship = item.shipmentNos?.[no];
+                          return (
+                            <span key={no} style={{ whiteSpace: 'nowrap' }}>
+                              <span style={{ color: '#333', fontWeight: 700 }}>{no}</span>
+                              {ship
+                                ? <span style={{ color: '#0369a1', fontWeight: 700 }}> · 쉽먼트 {ship}</span>
+                                : <span style={{ color: '#ccc' }}> · 쉽먼트 없음</span>}
+                            </span>
+                          );
+                        })}
+                      </span>
                       <span style={{ fontWeight: 700, whiteSpace: 'nowrap' }}>📦 {nos.length}박스</span>
                       {/* 운송장번호는 옆으로 늘어나지 않게 박스마다 한 줄씩 쌓는다. */}
                       <span style={{ display: 'flex', flexDirection: 'column', gap: 1, fontSize: 11.5, color: '#555', fontFamily: 'monospace' }}>

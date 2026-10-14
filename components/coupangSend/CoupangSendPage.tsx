@@ -344,7 +344,7 @@ export default function CoupangSendPage({ onGoShip, view = 'waiting' }: { onGoSh
                       <span style={{ color: '#888', whiteSpace: 'nowrap' }}>입고 {dayText(item.date)}</span>
                       {/* 발주번호마다 한 줄씩 쌓고, 옆에 그 발주서의 쉽먼트 번호. */}
                       <span style={{ display: 'flex', flexDirection: 'column', gap: 1, fontSize: 11.5, fontFamily: 'monospace' }}>
-                        {Array.from(new Set(item.lines.map(l => String(l.발주번호 || '')))).filter(Boolean).map(no => {
+                        {Array.from(new Set<string>(item.lines.map(l => String(l.발주번호 || '')))).filter(Boolean).map(no => {
                           const ship = item.shipmentNos?.[no];
                           return (
                             <span key={no} style={{ whiteSpace: 'nowrap' }}>

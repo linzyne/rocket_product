@@ -774,23 +774,40 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
                           ? <b onClick={() => editQty(o, l)} title="눌러서 확정수량 고치기(서허 요청등록에서 수량을 바꿨을 때)"
                               style={{ cursor: 'pointer', textDecoration: 'underline dotted', textUnderlineOffset: 2 }}>{l.확정수량}개</b>
                           : <b>{l.확정수량}개</b>}
-                        {/* 한중발주로 오는 중(배정 수량) = 비행기. 장바구니·미배정은 그 옆. */}
-                        {assigned > 0 && (
-                          <span title={`한중발주로 입고중: ${places.filter(p => p.code).map(p => `${p.code} ${p.qty}개`).join(', ')}`}
-                            style={{ fontSize: 11, color: '#2563eb', whiteSpace: 'nowrap' }}>
-                            {plane('#2563eb')}
-                            {/* 몇 번 한중발주에 몇 개인지: 번호 동그라미 + 수량(여러 건이면 이어서) */}
-                            {places.filter(p => p.code).map((p, idx) => (
-                              <span key={`${p.code}-${idx}`} style={{ marginLeft: idx ? 4 : 0 }}>
-                                <span style={{
-                                  display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 14, height: 14, marginRight: 2,
-                                  borderRadius: '50%', background: hjColor.get(p.code!) || '#2563eb', color: '#fff', fontSize: 9, fontWeight: 800, verticalAlign: '-2px',
-                                }}>{hjNo.get(p.code!) ?? '?'}</span>
-                                <b>{p.qty}</b>
-                              </span>
-                            ))}
-                          </span>
-                        )}
+                        {/* 배정 수량을 한중발주마다 나눠: 아직 오는 중 = ✈(먼저), 사무실에 다 들어옴 = 🏢 사무실 입고완료. 번호 동그라미 + 수량. */}
+                        {(() => {
+                          const hjPlaces = places.filter(p => p.code);
+                          const done = (p: typeof hjPlaces[number]) => {
+                            const a = hjArrived.get(`${p.code}│${nameKey(l.상품이름)}`);
+                            return !!a && a.received >= a.ordered;
+                          };
+                          const badge = (p: typeof hjPlaces[number], idx: number) => (
+                            <span key={`${p.code}-${idx}`} style={{ marginLeft: idx ? 4 : 0 }}>
+                              <span style={{
+                                display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 14, height: 14, marginRight: 2,
+                                borderRadius: '50%', background: hjColor.get(p.code!) || '#2563eb', color: '#fff', fontSize: 9, fontWeight: 800, verticalAlign: '-2px',
+                              }}>{hjNo.get(p.code!) ?? '?'}</span>
+                              <b>{p.qty}</b>
+                            </span>
+                          );
+                          const going = hjPlaces.filter(p => !done(p));
+                          const inOffice = hjPlaces.filter(done);
+                          return (
+                            <>
+                              {going.length > 0 && (
+                                <span title={`한중발주로 입고중: ${going.map(p => `${p.code} ${p.qty}개`).join(', ')}`} style={{ fontSize: 11, color: '#2563eb', whiteSpace: 'nowrap' }}>
+                                  {plane('#2563eb')}{going.map(badge)}
+                                </span>
+                              )}
+                              {inOffice.length > 0 && (
+                                <span title={`사무실 입고완료: ${inOffice.map(p => `${p.code} ${p.qty}개`).join(', ')}`} style={{ fontSize: 11, color: GREEN, whiteSpace: 'nowrap' }}>
+                                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke={GREEN} strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" style={{ display: 'inline-block', verticalAlign: '-1px', marginRight: 1 }}><path d="M4 21V5a1 1 0 0 1 1-1h9a1 1 0 0 1 1 1v16" /><path d="M15 10h4a1 1 0 0 1 1 1v10" /><path d="M2 21h20M8 8h3M8 12h3M8 16h3" /></svg>
+                                  {inOffice.map(badge)}
+                                </span>
+                              )}
+                            </>
+                          );
+                        })()}
                         {queued > 0 && (
                           <span title={`1688 주문하기 ${queued}개`} style={{ fontSize: 11, color: ORANGE, whiteSpace: 'nowrap' }}>
                             <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke={ORANGE} strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" style={{ display: 'inline-block', verticalAlign: '-1px', marginRight: 1 }}><circle cx="9" cy="20" r="1.6" /><circle cx="18" cy="20" r="1.6" /><path d="M2 3h3l2.6 12.4a1 1 0 0 0 1 .8h9.7a1 1 0 0 0 1-.8L21 7H6" /></svg><b>{queued}</b>

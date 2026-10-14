@@ -199,14 +199,8 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
   const [waybillBatch, setWaybillBatch] = useState<ShipmentBatch | null>(null);
   // 상자 머리의 번호 모음을 펼친 상자들.
   const [openSum, setOpenSum] = useState<Set<string>>(new Set());
-  // 쉽먼트 이후 상자 안 보기: 발주서별(발주번호 → 상품) / 박스별(박스1 → 상품). 고른 것을 기억해 둔다.
-  const [lineView, setLineViewState] = useState<'order' | 'box'>(() => {
-    try { return localStorage.getItem('flowLineView') === 'box' ? 'box' : 'order'; } catch { return 'order'; }
-  });
-  const setLineView = (v: 'order' | 'box') => {
-    setLineViewState(v);
-    try { localStorage.setItem('flowLineView', v); } catch { /* 기억 못 해도 보기는 바뀐다 */ }
-  };
+  // 쉽먼트·발송대기 상자 안 보기: 박스별(박스1 → 상품)이 기본, 발주서별(발주번호 → 상품)은 눌렀을 때만. 열 때마다 박스별로 시작한다.
+  const [lineView, setLineView] = useState<'order' | 'box'>('box');
   const copyNo = (label: string, v: string) => navigator.clipboard.writeText(v).then(() => setDateNote({ tone: 'ok', text: `${label} ${v} 복사했어요` })).catch(() => {});
   // 상자에 든 발주번호·송장번호·쉽먼트번호(겹치지 않게).
   const summaryOf = (list: FlowOrder[]) => ({
@@ -1868,7 +1862,7 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
                       const first = Math.max(0, sorted.findIndex(o => !!action(o) || !!runNote(o)));
                       const toggle = i >= 2 && (
                         <div style={{ display: 'flex', gap: 4, marginTop: 6 }}>
-                          {(['order', 'box'] as const).map(v => (
+                          {(['box', 'order'] as const).map(v => (
                             <button key={v} onClick={() => setLineView(v)} style={{
                               fontSize: 11, padding: '2px 9px', borderRadius: 999, cursor: 'pointer', fontWeight: 700,
                               border: `1px solid ${lineView === v ? ORANGE : '#e5e7eb'}`, background: lineView === v ? ORANGE : '#fff', color: lineView === v ? '#fff' : '#6b7280',

@@ -67,6 +67,18 @@
       }
       return;
     }
+    // 롯데 이어서 하기: 예약은 다시 올리지 않고 운송장출력 화면부터, 이 주문번호들의 송장번호를 받아 온다(lotte.js).
+    if (d.type === 'LOTTE_RESUME') {
+      try {
+        chrome.runtime.sendMessage({ type: 'LOTTE_RESUME', batchId: d.batchId, ordNos: d.ordNos }, (res) => {
+          const lastError = chrome.runtime.lastError;
+          reply({ type: 'LOTTE_RESUME_ACK', ok: !lastError && !!(res && res.ok), error: (lastError && lastError.message) || (res && res.error) });
+        });
+      } catch (err) {
+        reply({ type: 'LOTTE_RESUME_ACK', ok: false, error: '확장을 새로고침한 뒤 앱도 새로고침해 주세요.' });
+      }
+      return;
+    }
     // 송장 다시 출력: ALPS 통합관리 운송장출력에서 이 운송장번호를 찾아 미리보기 창까지 연다(lotte.js).
     if (d.type === 'LOTTE_REPRINT') {
       try {

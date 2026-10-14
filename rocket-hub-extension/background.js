@@ -337,6 +337,36 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true;
   }
 
+  // 롯데 이어서 하기: 예약은 이미 올라가 있으니 파일 없이 '올린 뒤' 단계(uploaded)로 시작한다.
+  // lotte.js가 집배달 › 통합관리 운송장출력으로 가서 이 주문번호들만 하나씩 출력·조회·대조한다.
+  if (message.type === 'LOTTE_RESUME') {
+    (async () => {
+      try {
+        const ordNos = (Array.isArray(message.ordNos) ? message.ordNos : []).map(String).filter(Boolean);
+        if (!ordNos.length || !message.batchId) throw new Error('이어서 할 박스 정보가 없습니다.');
+        await allowLottePopups();
+        const win = await chrome.windows.create({ url: LOTTE_START_URL, type: 'popup', width: 1000, height: 680, focused: true });
+        await chrome.storage.local.set({
+          [LOTTE_KEY]: {
+            batchId: String(message.batchId),
+            ordNos,
+            boxCount: ordNos.length,
+            resumed: true,
+            savedAt: Date.now(),
+            uploadedAt: Date.now(),
+            step: 'uploaded',
+            status: '롯데 여는 중…',
+            windowId: win.id,
+          },
+        });
+        sendResponse({ ok: true });
+      } catch (err) {
+        sendResponse({ ok: false, error: String((err && err.message) || err) });
+      }
+    })();
+    return true;
+  }
+
   // 송장 다시 출력. 예약 올리기(lottePending)와 섞이지 않게 따로 적어 둔다(lotte.js가 이어받음).
   if (message.type === 'LOTTE_REPRINT') {
     (async () => {

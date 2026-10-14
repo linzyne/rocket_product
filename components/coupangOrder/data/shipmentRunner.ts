@@ -13,7 +13,7 @@ import { fillShubForm, dataUrlToBuffer } from '../utils/shubForm';
 import { dateKeyYMD } from '../utils/dateUtils';
 import type { AddressEntry, SenderInfo } from '../types';
 import {
-  ShipmentBatch, ShipmentRun, ShipmentRunStep, allBoxes, batchId as makeBatchId, fillWaybills,
+  ShipmentBatch, ShipmentRun, ShipmentRunStep, allBoxes, batchId as makeBatchId, waybillConfirmed, withOrdNos,
   saveShipmentBatch, patchShipmentBatch,
 } from '../../../data/shipmentStore';
 import { ShipOut, markShipOuts, readShipOuts, applyShipmentNos, shipOutUploaded } from './shipOutStore';
@@ -30,8 +30,31 @@ export const STEP_LABEL: Record<ShipmentRunStep, string> = {
 };
 
 // ── 이 탭이 몰고 있는 쉽먼트 ──
-interface Owned { batch: ShipmentBatch; itemIds: string[]; lotteSavedAt?: number }
+// batch: 이번에 진행할 박스만 남긴 기록 / full: 저장된 기록 전체(송장번호를 적을 때는 이걸 고쳐 저장한다.
+// 남긴 박스만 저장하면 이미 끝난 센터의 박스가 기록에서 지워진다).
+interface Owned { batch: ShipmentBatch; full: ShipmentBatch; itemIds: string[]; lotteSavedAt?: number }
 const owned = new Map<string, Owned>();
+
+const digits = (w: string) => String(w || '').replace(/\D/g, '');
+
+// ── 서허 양식 보관 ──
+// 한 번 받은 양식은 쉽먼트마다 보관해 두고, 이어서 하기에서 다시 받지 않는다(다운로드가 계속 쌓이던 일).
+const FORM_KEY = (id: string) => `shubFormCache:${id}`;
+const saveForm = (id: string, buf: ArrayBuffer) => {
+  try {
+    const bytes = new Uint8Array(buf);
+    let bin = '';
+    for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode.apply(null, Array.from(bytes.subarray(i, i + 0x8000)));
+    localStorage.setItem(FORM_KEY(id), btoa(bin));
+  } catch (err) { /* 보관 못 해도 진행은 된다(다음에 다시 받을 뿐) */ }
+};
+const loadForm = (id: string): ArrayBuffer | null => {
+  try {
+    const b64 = localStorage.getItem(FORM_KEY(id));
+    return b64 ? dataUrlToBuffer(`data:;base64,${b64}`) : null;
+  } catch (err) { return null; }
+};
+const dropForm = (id: string) => { try { localStorage.removeItem(FORM_KEY(id)); } catch (err) { /* 없음 */ } };
 
 // ── 지금 진행 문구(화면 아래 파란 줄) ──
 export interface LiveStatus { batchId: string; text: string; tone: 'info' | 'ok' | 'error'; canPickForm?: boolean }
@@ -66,9 +89,14 @@ const orderNosOf = (batch: ShipmentBatch) =>
   Array.from(new Set(allBoxes(batch).flatMap(b => b.lines.map(l => String(l.발주번호 || '').trim())).filter(Boolean)));
 
 // 이 쉽먼트에 든 출고 건들(시작할 때 받은 것 + 쉽먼트 번호로 이어진 것).
+// 이어서 하기로 일부 센터만 남겼으면 그 센터의 출고 건만이다(남긴 것만 등록했는데 다른 건까지 끝난 것으로 표시하면 안 된다).
 const itemsOf = (id: string): ShipOut[] => {
-  const ids = new Set(owned.get(id)?.itemIds || []);
-  return readShipOuts().filter(i => ids.has(i.id) || i.batchId === id);
+  const o = owned.get(id);
+  if (o) {
+    const ids = new Set(o.itemIds);
+    return readShipOuts().filter(i => ids.has(i.id));
+  }
+  return readShipOuts().filter(i => i.batchId === id);
 };
 
 // ── 1. 택배예약 ──
@@ -93,7 +121,7 @@ export function startShipment(
   const orderCount = new Set(rows.filter(r => !r.isBlank).map(r => r._발주번호)).size;
   if (!confirm(`${file.name}을 내려받았어요.\n\n발주서 ${orderCount}건 · 택배 ${plan.length}박스\n${plan.join('\n')}\n\n택배 예약 → 운송장 → 서허 양식 → 서허 일괄등록까지 이어서 할까요?`)) return null;
 
-  const batch: ShipmentBatch = {
+  const batch: ShipmentBatch = withOrdNos({
     id,
     createdAt: Date.now(),
     status: 'reserved',
@@ -111,47 +139,102 @@ export function startShipment(
       })),
     })),
     run: { step: 'lotte', state: 'running', message: '택배사 창 여는 중…', at: Date.now() },
-  };
+  });
   saveShipmentBatch(batch).catch(err => alert(`쉽먼트 기록 저장 실패: ${err instanceof Error ? err.message : String(err)}`));
   markShipOuts(itemIds, { batchId: id });
-  owned.set(id, { batch, itemIds });
+  owned.set(id, { batch, full: batch, itemIds });
   setLive({ batchId: id, text: `${id} · 택배예약 · 택배사 창 여는 중…`, tone: 'info' });
   window.postMessage({ source: APP, type: 'LOTTE_UPLOAD', file, boxCount: totalBoxCount(rows), batchId: id }, window.location.origin);
   return batch;
 }
 
-// 롯데에서 운송장이 왔을 때. 주문번호(쉽먼트번호-n)와 확실히 짝지어진 번호만 넣는다(틀리면 안 되므로 추측하지 않는다).
+// 송장번호를 박스에 적는다. 주문번호(ordNo)로 짝을 찾고, 기록 전체(full)를 고쳐 저장한다.
+const saveWaybills = (o: Owned, byOrd: Map<string, string>) => {
+  const fix = (b: ShipmentBatch): ShipmentBatch => ({
+    ...b,
+    centers: b.centers.map(c => ({
+      ...c,
+      boxes: c.boxes.map(x => {
+        const w = x.ordNo ? byOrd.get(x.ordNo) : undefined;
+        return w ? { ...x, waybill: w, waybillOk: w } : x;
+      }),
+    })),
+  });
+  o.batch = fix(o.batch);
+  o.full = { ...fix(o.full), status: 'waybilled' };
+  saveShipmentBatch(o.full).catch(err => console.error('송장번호 저장 실패:', err));
+};
+
+// 롯데에서 송장번호가 왔을 때. 확장은 롯데 목록의 우리 주문번호 줄을 두 번 조회해 같았던 번호만 보낸다.
+// 그 번호가 그 박스의 진짜 송장번호다. 박스에 다른 번호가 적혀 있었으면 롯데 번호로 바꾸고 바꿨다고 알린다.
+// 박스 하나라도 짝이 안 맞으면 아무것도 넣지 않는다(틀린 번호가 서허에 올라가면 안 된다).
 const onWaybills = (o: Owned, list: { waybill: string; receiver: string; ordNo?: string }[]) => {
   const batch = o.batch;
-  const digits = (w: string) => String(w || '').replace(/\D/g, '');
-  const want = new Set(Array.from({ length: allBoxes(batch).length }, (_, i) => `${batch.id}-${i + 1}`));
-  const paired = list.filter(w => w.ordNo && want.has(w.ordNo) && digits(w.waybill).length === 12);
-  const clean = paired.length === list.length
-    && new Set(paired.map(w => w.ordNo)).size === paired.length
-    && new Set(paired.map(w => digits(w.waybill))).size === paired.length;
-  if (!clean) {
-    fail(batch.id, 'waybill', `운송장번호를 주문번호와 확실히 짝짓지 못해 넣지 않았어요. 롯데 화면에서 확인해 운송장 창에 넣은 뒤 "이어서 하기"를 눌러 주세요. (가져온 값: ${list.map(w => `${w.ordNo || '주문번호 없음'}=${w.waybill}`).join(', ')})`);
-    waybillListeners.forEach(l => l(batch));
+  const boxes = allBoxes(batch);
+  const byOrd = new Map<string, string>();
+  const recvOf = new Map<string, string>();
+  const twice = new Set<string>();
+  for (const w of list) {
+    const n = digits(w.waybill);
+    if (!w.ordNo || n.length !== 12) continue;
+    if (byOrd.has(w.ordNo) && byOrd.get(w.ordNo) !== n) twice.add(w.ordNo);
+    byOrd.set(w.ordNo, n);
+    if (w.receiver) recvOf.set(w.ordNo, String(w.receiver).replace(/\s+/g, ''));
+  }
+  // 롯데 줄의 받는사람(예약 엑셀에 센터 이름을 넣는다)이 박스 센터와 다르면 남의 박스 번호다(박스 순서가 어긋난 예전 기록 등).
+  const centerOk = (b: { center: string; ordNo?: string }) => {
+    const r = recvOf.get(b.ordNo || '');
+    const c = b.center.replace(/\s+/g, '');
+    return !r || !c || r === c || r.includes(c) || c.includes(r);
+  };
+  const wrongCenter = boxes.filter(b => b.ordNo && byOrd.has(b.ordNo) && !centerOk(b));
+  if (wrongCenter.length) {
+    fail(batch.id, 'waybill', `롯데 예약의 받는 곳이 박스 센터와 달라서 송장번호를 넣지 않았어요: ${wrongCenter.map(b => `${b.center} 박스 ↔ 롯데 ${b.ordNo}(${recvOf.get(b.ordNo!)})`).join(', ')}. 이 쉽먼트는 롯데에서 직접 확인해 주세요.`);
     return;
   }
-  const filled: ShipmentBatch = { ...fillWaybills(batch, paired), status: 'waybilled' };
-  o.batch = filled;
-  saveShipmentBatch(filled).catch(() => {});
-  const boxes = allBoxes(filled);
-  if (!(boxes.length && boxes.every(b => b.waybill.trim()))) {
-    fail(filled.id, 'waybill', '운송장번호가 다 채워지지 않았어요. 운송장 창에 넣은 뒤 "이어서 하기"를 눌러 주세요.');
-    waybillListeners.forEach(l => l(filled));
+  const missing = boxes.filter(b => !b.ordNo || !byOrd.has(b.ordNo) || twice.has(b.ordNo));
+  const mineNums = boxes.map(b => byOrd.get(b.ordNo || '') || '');
+  if (missing.length || new Set(mineNums).size !== mineNums.length) {
+    fail(batch.id, 'waybill', `롯데에서 ${missing.length ? missing.map(b => `${b.center} 박스(${b.ordNo || '주문번호 없음'})`).join(', ') : '박스들'}의 송장번호를 확실히 확인하지 못해서 서허에 올리지 않았어요. "이어서 하기"를 누르면 롯데에서 다시 확인해요.`);
     return;
   }
-  mark(filled.id, 'form', 'running', `운송장 ${boxes.length}건 받음(롯데 목록과 대조 완료) → 서허 양식 받는 중…`);
-  setTimeout(() => requestForm(filled.id), 800);
+  const changed = boxes.filter(b => digits(b.waybill) && digits(b.waybill) !== byOrd.get(b.ordNo!));
+  saveWaybills(o, byOrd);
+  const note = changed.length
+    ? ` · 적혀 있던 번호가 롯데와 달라서 바꿨어요: ${changed.map(b => `${b.center} ${digits(b.waybill)} → ${byOrd.get(b.ordNo!)}`).join(', ')}`
+    : '';
+  mark(batch.id, 'form', 'running', `송장번호 ${boxes.length}건 롯데에서 확인함${note} → 서허 양식 준비 중…`);
+  setTimeout(() => requestForm(batch.id), 800);
+};
+
+// ── 1-2. 롯데 이어서 하기 ──
+// 송장번호가 비었거나 롯데 확인이 안 된 박스가 있으면, 그 박스들의 주문번호만 넘겨 롯데 운송장출력 화면부터 다시 한다
+// (예약은 다시 올리지 않는다). 출력해서 번호를 받고, 목록을 두 번 조회해 같은 번호만 돌려받는다.
+const requestLotte = (id: string) => {
+  const o = owned.get(id);
+  if (!o) return;
+  const boxes = allBoxes(o.batch);
+  const ordNos = boxes.map(b => b.ordNo || '');
+  if (ordNos.some(n => !n)) {
+    fail(id, 'waybill', '박스의 롯데 주문번호를 몰라서 롯데에서 확인할 수 없어요.');
+    return;
+  }
+  o.lotteSavedAt = undefined;
+  mark(id, 'waybill', 'running', `롯데에서 송장번호 받는 중… (${boxes.map(b => b.center).join(', ')})`);
+  window.postMessage({ source: APP, type: 'LOTTE_RESUME', batchId: id, ordNos }, window.location.origin);
 };
 
 // ── 2. 서허 양식 받기 ──
-const requestForm = (id: string) => {
+const requestForm = (id: string, fresh = false) => {
   const o = owned.get(id);
   if (!o) return;
   const batch = o.batch;
+  const kept = fresh ? null : loadForm(id);
+  if (kept) {
+    mark(id, 'form', 'running', '받아 둔 서허 양식으로 채우는 중…');
+    fillAndUpload(kept, id, undefined, true);
+    return;
+  }
   mark(id, 'form', 'running', '서허 여는 중…');
   const centers = batch.centers.map(c => c.center.trim()).filter(Boolean);
   const edds = Array.from(new Set(allBoxes(batch).flatMap(b => b.lines.map(l => String(l.입고예정일 || '').trim())).filter(Boolean)))
@@ -166,28 +249,45 @@ const requestForm = (id: string) => {
 
 // ── 3. 양식 채우기 → 4. 서허 일괄등록 ──
 // 자동으로 받아온 양식이든, 사람이 고른 파일이든 같은 길.
-export function fillAndUpload(buf: ArrayBuffer, id: string, known?: ShipmentBatch) {
+export function fillAndUpload(buf: ArrayBuffer, id: string, known?: ShipmentBatch, kept = false) {
   // 새로고침 뒤에는 이 탭이 몰던 기록이 없다. 넘겨받은 쉽먼트 기록으로 이어서 할 수 있게 한다.
-  if (!owned.get(id) && known) owned.set(id, { batch: known, itemIds: readShipOuts().filter(i => i.batchId === id).map(i => i.id) });
+  if (!owned.get(id) && known) {
+    const full = withOrdNos(known);
+    owned.set(id, { batch: full, full, itemIds: readShipOuts().filter(i => i.batchId === id && !shipOutUploaded(i)).map(i => i.id) });
+  }
   const o = owned.get(id);
   if (!o) { alert('이 쉽먼트 기록을 찾지 못했어요. 카드의 "이어서 하기"를 먼저 눌러 주세요.'); return; }
   const batch = o.batch;
+  if (!kept) saveForm(id, buf);
+  // 롯데에서 확인한 송장번호가 아니면 절대 양식에 넣지 않는다. 롯데에서 먼저 받아 온 뒤 이 양식으로 이어서 한다.
+  if (!allBoxes(batch).every(waybillConfirmed)) {
+    requestLotte(id);
+    return;
+  }
   try {
     const res = fillShubForm(buf, batch);
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(res.blob);
-    a.download = res.fileName;
-    a.click();
-    setTimeout(() => URL.revokeObjectURL(a.href), 5000);
-    markShipOuts(itemsOf(id).map(i => i.id), { formSavedAt: Date.now() });
     // 짝 못 찾은 줄이 있으면 올리지 않는다(빠진 채로 등록되면 안 된다).
     if (res.missed.length) {
-      fail(id, 'form', `양식에 짝 못 찾은 줄이 ${res.missed.length}개 있어서 서허에 올리지 않았어요: ${res.missed.slice(0, 3).join(' / ')}. 저장된 파일(${res.fileName})을 확인해 주세요.`);
+      // 받아 둔 양식에 이번 발주서가 없으면(양식을 받은 뒤 발주서가 바뀜) 버리고 새로 받는다.
+      if (kept && res.missed.some(m => m.includes('서허 양식에 이 발주서가 없음'))) {
+        dropForm(id);
+        requestForm(id, true);
+        return;
+      }
+      // 사람이 확인할 수 있게 이때만 채운 양식을 다운로드 폴더에 남긴다.
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(res.blob);
+      a.download = res.fileName;
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+      fail(id, 'form', `서허 양식에서 이 발주서 ${res.missed.length}줄의 짝을 못 찾아서 올리지 않았어요: ${res.missed.slice(0, 3).join(' / ')}. 채운 양식(${res.fileName})을 다운로드 폴더에 남겼어요.`);
       return;
     }
+    markShipOuts(itemsOf(id).map(i => i.id), { formSavedAt: Date.now() });
     upload(res.blob, res.fileName, id);
   } catch (err) {
-    fail(id, 'form', `양식을 채우지 못했어요: ${err instanceof Error ? err.message : String(err)}`);
+    dropForm(id);
+    fail(id, 'form', `서허 양식을 채우지 못했어요(${err instanceof Error ? err.message : String(err)}). "이어서 하기"를 누르면 양식을 새로 받아요.`);
   }
 }
 
@@ -230,29 +330,33 @@ const upload = (blob: Blob, fileName: string, id: string) => {
 // 멈춘 쉽먼트를 다음 단계부터 다시 한다. 이미 된 단계(특히 택배예약·서허 등록)는 두 번 하지 않는다.
 // items: 이 쉽먼트로 이어서 할 출고 건(예전 기록은 다른 건 발주가 섞여 있어서, 그 건 발주만 남겨 쓴다).
 export function resumeShipment(batch: ShipmentBatch, items: ShipOut[]): 'done' | 'need-waybill' | 'started' {
-  const mine = new Set(items.flatMap(i => i.lines.map(l => String(l.발주번호 || '').trim())));
-  const trimmed: ShipmentBatch = !items.length ? batch : {
-    ...batch,
-    centers: batch.centers
-      .map(c => ({ ...c, boxes: c.boxes.map(b => ({ ...b, lines: b.lines.filter(l => mine.has(String(l.발주번호 || '').trim())) })).filter(b => b.lines.length) }))
-      .filter(c => c.boxes.length),
-  };
-  owned.set(batch.id, { batch: trimmed, itemIds: items.map(i => i.id) });
-  if (items.length && items.every(shipOutUploaded)) {
+  const full = withOrdNos(batch);
+  // 누른 카드 하나가 아니라 이 쉽먼트에 든 출고 건 중 아직 서허에 안 올린 것을 모두 이어서 한다
+  // (센터 두 곳을 같이 예약했는데 카드 하나만 이어서 해서 한 센터가 빠진 일).
+  const byId = new Map<string, ShipOut>();
+  [...items, ...readShipOuts().filter(i => i.batchId === batch.id)].forEach(i => byId.set(i.id, i));
+  const all = Array.from(byId.values());
+  const left = all.filter(i => !shipOutUploaded(i));
+  if (all.length && !left.length) {
+    owned.set(batch.id, { batch: full, full, itemIds: [] });
     mark(batch.id, 'done', 'done', '서허 일괄등록까지 이미 끝난 건이에요.');
     return 'done';
   }
-  const boxes = allBoxes(trimmed);
-  if (!boxes.length) {
+  const mine = new Set(left.flatMap(i => i.lines.map(l => String(l.발주번호 || '').trim())));
+  const trimmed: ShipmentBatch = !left.length ? full : {
+    ...full,
+    centers: full.centers
+      .map(c => ({ ...c, boxes: c.boxes.map(b => ({ ...b, lines: b.lines.filter(l => mine.has(String(l.발주번호 || '').trim())) })).filter(b => b.lines.length) }))
+      .filter(c => c.boxes.length),
+  };
+  owned.set(batch.id, { batch: trimmed, full, itemIds: left.map(i => i.id) });
+  if (!allBoxes(trimmed).length) {
     fail(batch.id, 'waybill', '이 건의 박스를 쉽먼트 기록에서 찾지 못했어요.');
     return 'need-waybill';
   }
-  if (!boxes.every(b => (b.waybill || '').trim())) {
-    fail(batch.id, 'waybill', '운송장번호가 비어 있어요. 운송장 창에 넣은 뒤 "이어서 하기"를 눌러 주세요.');
-    waybillListeners.forEach(l => l(batch));
-    return 'need-waybill';
-  }
-  requestForm(batch.id);
+  // 송장번호가 비었거나 롯데에서 확인한 번호가 아니면 롯데에서 받아 온다(사람이 번호를 넣지 않아도 된다).
+  if (!allBoxes(trimmed).every(waybillConfirmed)) requestLotte(batch.id);
+  else requestForm(batch.id);
   return 'started';
 }
 
@@ -270,6 +374,10 @@ export function startShipmentRunner() {
     if (d.type === 'LOTTE_UPLOAD_ACK' && !d.ok) {
       const o = Array.from(owned.values()).find(x => x.batch.run?.step === 'lotte' && x.batch.run.state === 'running');
       if (o) fail(o.batch.id, 'lotte', `택배사 창을 열지 못했어요: ${d.error || ''} ("로켓 서허 연동" 확장이 켜져 있는지 확인해 주세요)`);
+    }
+    if (d.type === 'LOTTE_RESUME_ACK' && !d.ok) {
+      const o = Array.from(owned.values()).find(x => x.batch.run?.step === 'waybill' && x.batch.run.state === 'running');
+      if (o) fail(o.batch.id, 'waybill', `롯데 창을 열지 못했어요. chrome://extensions 에서 "로켓 서허 연동"을 새로고침(↻)한 뒤 "이어서 하기"를 눌러 주세요. (${d.error || ''})`);
     }
     if (d.type === 'SHUB_FORM_ACK' && !d.ok) {
       const o = Array.from(owned.values()).find(x => x.batch.run?.step === 'form' && x.batch.run.state === 'running');
@@ -290,10 +398,12 @@ export function startShipmentRunner() {
       if (!o.lotteSavedAt) o.lotteSavedAt = d.savedAt;
       if (d.savedAt !== o.lotteSavedAt) return;
       if (d.waybills && d.waybills.length) onWaybills(o, d.waybills);
-      else if (d.step === 'error') {
-        fail(o.batch.id, 'lotte', `택배사 자동 진행이 멈췄어요: ${d.status || ''}`);
-        waybillListeners.forEach(l => l(o.batch));
-      } else if (d.status) setLive({ batchId: o.batch.id, text: `${o.batch.id} · 택배예약 · ${d.status}`, tone: 'info' });
+      else if (d.step === 'error' || d.step === 'manual') {
+        // manual이어도 확장은 롯데 화면을 계속 지켜보다가 번호가 나오면 보내 준다. 여기서는 멈춘 까닭만 카드에 남긴다.
+        const step: ShipmentRunStep = o.batch.run?.step === 'waybill' ? 'waybill' : 'lotte';
+        const msg = `롯데: ${d.status || '진행이 멈췄어요.'}`;
+        if (o.batch.run?.message !== msg) fail(o.batch.id, step, msg);
+      } else if (d.status) setLive({ batchId: o.batch.id, text: `${o.batch.id} · 롯데 · ${d.status}`, tone: 'info' });
     }
 
     // 서허 양식: 파일이 오면 채워서 올린다.
@@ -311,10 +421,12 @@ export function startShipmentRunner() {
       const o = owned.get(d.batchId);
       const msgs = (d.messages || []).length ? ` · 서허: ${(d.messages as string[]).join(' / ')}` : '';
       if (d.step === 'done') {
-        const ids = o ? itemsOf(d.batchId).map(i => i.id) : readShipOuts().filter(i => i.batchId === d.batchId).map(i => i.id);
+        // 등록한 출고 건만 끝으로 표시한다. 이 탭이 몬 건이 아니면 무엇을 올렸는지 모르니, 발주서별 쉽먼트 번호(위)로만 남긴다.
+        const ids = o ? itemsOf(d.batchId).map(i => i.id) : [];
         const fresh = readShipOuts().filter(i => ids.includes(i.id) && !i.uploadedAt).map(i => i.id);
         if (fresh.length) markShipOuts(fresh, { uploadedAt: Date.now() });
         if (o) {
+          dropForm(d.batchId);
           mark(d.batchId, 'done', 'done', `✅ 서허 일괄등록 끝 — 발송대기로 넘어가요. ${d.status || ''}`);
           owned.delete(d.batchId);
         }

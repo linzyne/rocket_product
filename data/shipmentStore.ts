@@ -18,6 +18,11 @@ export interface ShipmentBox {
   // 롯데에서 받은 운송장번호. 처음에는 비어 있고 A단계(운송장출력)에서 채운다.
   waybill: string;
   lines: ShipmentLine[];
+  // 롯데 예약 엑셀에 적은 이 박스의 주문번호(S261014-01-2). 이어서 하기에서 박스를 일부만 남겨도 짝이 밀리지 않게 박아 둔다.
+  ordNo?: string;
+  // 롯데 목록의 이 주문번호 줄에서 두 번 읽어 같았던 송장번호(숫자만). waybill과 같을 때만 서허에 올린다.
+  // 사람이 송장번호를 고치면 값이 달라져서 저절로 "확인 안 됨"이 된다.
+  waybillOk?: string;
 }
 
 export interface ShipmentCenter {
@@ -63,6 +68,26 @@ export const batchId = (orders: ShipmentBatch[], now = new Date()) => {
 
 export const allBoxes = (batch: ShipmentBatch) =>
   batch.centers.flatMap(c => c.boxes.map(b => ({ center: c.center, ...b })));
+
+const digitsOnly = (w: string) => String(w || '').replace(/\D/g, '');
+// 이 박스의 송장번호가 롯데 목록에서 우리 주문번호 줄의 번호로 확인된 것인지.
+export const waybillConfirmed = (b: ShipmentBox) => !!digitsOnly(b.waybill) && digitsOnly(b.waybill) === b.waybillOk;
+
+// 박스마다 롯데 주문번호를 붙인다. 예약 엑셀은 센터 순서대로 박스에 1, 2, 3…을 매기므로 같은 순서로 센다.
+// 이미 붙어 있으면 그대로 둔다(이어서 하기에서 박스를 일부만 남긴 뒤에는 다시 세면 안 된다).
+export const withOrdNos = (batch: ShipmentBatch): ShipmentBatch => {
+  let no = 0;
+  return {
+    ...batch,
+    centers: batch.centers.map(c => ({
+      ...c,
+      boxes: c.boxes.map(b => {
+        no += 1;
+        return b.ordNo ? b : { ...b, ordNo: `${batch.id}-${no}` };
+      }),
+    })),
+  };
+};
 
 // 이 출고 건의 쉽먼트 기록들. 출고 건에 붙은 쉽먼트 번호는 믿지 않고(예전 택배예약이 안 끝난 건 전부에 같은 번호를
 // 붙였다) 내용으로 확인한다: 센터가 같고, 박스에 든 발주가 모두 이 건의 발주인 박스가 하나라도 있는 기록.
@@ -218,53 +243,4 @@ export const deleteShipmentBatch = async (id: string) => {
   }
   await ensureSignedIn();
   await deleteDoc(doc(db, COLLECTION, id));
-};
-
-// 롯데에서 모아온 운송장번호를 박스에 채운다.
-// 예약 엑셀의 주문번호를 "S260923-01-3"처럼 붙여 두었으므로, 끝 숫자가 곧 박스 순서(1번째, 2번째…)다.
-// 그 번호가 없을 때만 예전 방식(수하인명으로 센터 맞추기)을 쓴다.
-export const fillWaybills = (
-  batch: ShipmentBatch,
-  collected: { waybill: string; receiver: string; ordNo?: string }[]
-): ShipmentBatch => {
-  const byOrder = new Map<number, string>();
-  for (const w of collected) {
-    const m = /-(\d+)\s*$/.exec(String(w.ordNo || ''));
-    if (m && w.waybill) byOrder.set(Number(m[1]), w.waybill);
-  }
-  if (byOrder.size) {
-    let no = 0;
-    return {
-      ...batch,
-      centers: batch.centers.map(c => ({
-        ...c,
-        boxes: c.boxes.map(b => {
-          no += 1;
-          return { ...b, waybill: b.waybill || byOrder.get(no) || '' };
-        }),
-      })),
-    };
-  }
-  return fillWaybillsByReceiver(batch, collected);
-};
-
-const fillWaybillsByReceiver = (batch: ShipmentBatch, collected: { waybill: string; receiver: string }[]): ShipmentBatch => {
-  const byCenter = new Map<string, string[]>();
-  for (const w of collected) {
-    if (!w.waybill) continue;
-    const key = w.receiver.trim();
-    byCenter.set(key, [...(byCenter.get(key) || []), w.waybill]);
-  }
-  return {
-    ...batch,
-    centers: batch.centers.map(c => {
-      // 센터 이름이 조금 달라도(앞뒤 글자) 맞춰 본다.
-      const key = Array.from(byCenter.keys()).find(k => k === c.center || k.includes(c.center) || c.center.includes(k));
-      const list = key ? byCenter.get(key) || [] : [];
-      return {
-        ...c,
-        boxes: c.boxes.map((b, i) => ({ ...b, waybill: b.waybill || list[i] || '' })),
-      };
-    }),
-  };
 };

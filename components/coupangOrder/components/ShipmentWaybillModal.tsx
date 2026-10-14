@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { ShipmentBatch, saveShipmentBatch } from '../../../data/shipmentStore';
+import { ShipmentBatch, saveShipmentBatch, waybillConfirmed } from '../../../data/shipmentStore';
 
 // 쉽먼트 한 묶음의 박스별 운송장번호 확인 창.
 // 확장이 롯데에서 모아온 번호가 미리 채워져 있고, 틀리면 여기서 고친다.
@@ -52,7 +52,8 @@ const ShipmentWaybillModal: React.FC<Props> = ({ batch, onClose }) => {
           <span style={{ fontSize: 12, color: '#999' }}>{draft.id} · 박스 {boxes.length}개 중 {filled}개 입력</span>
         </div>
         <p style={{ fontSize: 12, color: '#888', margin: '0 0 14px' }}>
-          박스마다 롯데 운송장번호를 확인해 주세요. 비어 있으면 롯데 통합관리 운송장출력 목록에서 보고 직접 넣으면 돼요.
+          비어 있어도 괜찮아요. "이어서 하기"를 누르면 롯데에서 우리 예약 번호를 받아 와요. 여기 적은 번호는 서허에 올리기 전에
+          롯데에서 다시 확인하고, 롯데와 다르면 롯데 번호로 바꿔요(✓ 표시 = 롯데에서 확인한 번호).
         </p>
 
         {draft.centers.map((c, ci) => (
@@ -65,8 +66,12 @@ const ShipmentWaybillModal: React.FC<Props> = ({ batch, onClose }) => {
                   value={b.waybill}
                   onChange={e => setWaybill(ci, bi, e.target.value)}
                   placeholder="운송장번호"
+                  autoComplete="off"
+                  name={`waybill-${draft.id}-${ci}-${bi}`}
                   style={{ width: 190, padding: '6px 8px', border: '1px solid #e0e0e0', borderRadius: 6, fontFamily: 'monospace', fontSize: 13 }}
                 />
+                <span title={waybillConfirmed(b) ? '롯데에서 확인한 번호' : '롯데 확인 전 — 서허에 올리기 전에 롯데에서 확인해요'}
+                  style={{ width: 16, paddingTop: 6, fontSize: 13, color: waybillConfirmed(b) ? '#059669' : '#d1d5db' }}>{waybillConfirmed(b) ? '✓' : '?'}</span>
                 {/* 박스에 든 상품을 한 줄에 하나씩: 상품이름 · 수량 · 발주번호 */}
                 <div style={{ flex: 1, minWidth: 0, fontSize: 12, lineHeight: 1.45 }}>
                   <div style={{ fontSize: 11, color: '#aaa', marginBottom: 2 }}>

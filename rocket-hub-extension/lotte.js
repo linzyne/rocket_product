@@ -64,6 +64,8 @@
   const patch = async (updates) => {
     const cur = await get();
     if (!cur) return;
+    // 멈춘 시각. 멈춘 뒤 새로 조회된 목록만 믿으려고 남긴다.
+    if (updates.step === 'manual' && cur.step !== 'manual' && !updates.manualAt) updates = { ...updates, manualAt: Date.now() };
     await new Promise((resolve) => {
       try {
         chrome.storage.local.set({ [KEY]: { ...cur, ...updates } }, () => resolve());
@@ -267,7 +269,15 @@
           } catch (err) {}
         } else if (act === 'dump') dumpStructure();
         // 운송장 조회가 멈췄을 때: 예약은 다시 올리지 않고 운송장출력 화면의 조회부터 다시 한다.
-        else if (act === 'retry') patch({ step: 'waybillPage', status: '운송장 다시 조회하는 중…' });
+        // 박스 번호를 다 받아 둔 상태면 출력은 다시 하지 않고 대조만 다시 한다.
+        else if (act === 'retry') {
+          get().then((cur) => {
+            if (!cur) return;
+            const all = needOf(cur) && ordList(cur).every((no) => (cur.collected || []).some((c) => c.ordNo === no));
+            if (all) patch({ step: 'verify', verifyIdx: 1, verifySearchedAt: 0, verifyStartedAt: Date.now(), status: '롯데 목록과 다시 대조하는 중…' });
+            else patch({ step: 'waybillPage', status: '롯데 다시 조회하는 중…', searchedAt2: 0, verifySearchedAt: 0, printedAt: null, previewPrintedAt: null });
+          });
+        }
         // 끝난 건: 기록은 남겨 두고 상자만 닫는다.
         else if (act === 'hide') patch({ hidden: true });
       });
@@ -276,8 +286,8 @@
     const color = p.step === 'error' ? '#dc2626' : p.step === 'manual' ? '#b45309' : p.step === 'waybills' || p.step === 'uploading' ? '#059669' : '#1d4ed8';
     const btn = 'border:1px solid #d0d7e2;background:#f8fafc;border-radius:6px;padding:4px 8px;cursor:pointer;font-size:12px;';
     panel.innerHTML = `
-      <div style="font-weight:700;margin-bottom:4px">🚚 롯데택배 예약 올리기</div>
-      <div style="color:#64748b;font-size:12px;margin-bottom:6px">${p.file ? p.file.name : ''}</div>
+      <div style="font-weight:700;margin-bottom:4px">${p.resumed ? '🚚 롯데 송장번호 받기' : '🚚 롯데택배 예약 올리기'}</div>
+      <div style="color:#64748b;font-size:12px;margin-bottom:6px">${p.file ? p.file.name : (p.ordNos || []).join(', ')}</div>
       <div style="color:${color};font-size:13px;margin-bottom:8px">${p.status || '진행 중…'}</div>
       <div style="display:flex;gap:6px">
         ${(p.step === 'manual' || (p.step === 'error' && p.uploadedAt)) && p.batchId && p.boxCount ? `<button data-act="retry" style="${btn};border-color:#bfdbfe;background:#eff6ff;color:#1d4ed8" title="예약은 다시 올리지 않고 운송장 조회부터 다시 해요">다시 조회</button>` : ''}
@@ -601,9 +611,24 @@
   // 왜 실패했는지 화면에 남기려고 후보를 짧게 적어 둔다.
   let condWhy = '';
 
-  const pickCombo = async (labelRe, optRe, preferBelow = false) => {
+  // 드롭다운을 눌러 펼친 목록에서 고를 글자를 찾는다. 화면 다른 곳에도 같은 글자("주문번호", "운송장번호")가 있어서
+  // (10/14: 화면 왼쪽의 "주문번호" 글자를 눌러 검색조건이 안 바뀌고 멈춘 일) 드롭다운 바로 위아래에 펼쳐진 것만 본다.
+  const optionsNear = (el, optRe) => {
+    const er = el.getBoundingClientRect();
+    return findAll(optRe)
+      .filter((x) => x !== el && visible(x) && x.children.length === 0 && !/^(LABEL|TH)$/.test(x.tagName))
+      .filter((x) => {
+        const r = x.getBoundingClientRect();
+        const below = r.top >= er.bottom - 4 && r.top <= er.bottom + 320;
+        const above = r.bottom <= er.top + 4 && r.bottom >= er.top - 320;
+        return (below || above) && r.left < er.right + 30 && r.right > er.left - 30;
+      })
+      .sort((x, y) => Math.abs(x.getBoundingClientRect().top - er.bottom) - Math.abs(y.getBoundingClientRect().top - er.bottom));
+  };
+
+  const pickCombo = async (labelRe, optRe) => {
     let el = comboNear(labelRe, optRe);
-    condWhy = el ? `${el.tagName}${el.name ? `[${el.name}]` : ''}="${comboShown(el)}"` : '칸을 못 찾음';
+    condWhy = el ? `지금 값 "${comboShown(el)}"` : '칸을 못 찾음';
     if (!el) return false;
     if (optRe.test(comboShown(el))) return true; // 이미 골라져 있음
 
@@ -617,28 +642,30 @@
       return optRe.test(comboShown(comboNear(labelRe, optRe)));
     }
 
-    realClick(el);
-    await sleep(600);
-    let item = findAll(optRe).find((x) => x !== el && visible(x) && x.children.length === 0);
-    if (preferBelow) {
-      // 같은 글자("운송장번호")가 화면 다른 곳에도 있어서, 열린 목록(드롭다운 바로 아래)의 것을 고른다.
-      const er = el.getBoundingClientRect();
-      const below = findAll(optRe)
-        .filter((x) => x !== el && visible(x) && x.children.length === 0)
-        .filter((x) => {
-          const r = x.getBoundingClientRect();
-          return r.top >= er.bottom - 4 && Math.abs(r.left - er.left) < 60;
-        })
-        .sort((a, b) => a.getBoundingClientRect().top - b.getBoundingClientRect().top);
-      item = below[0] || null;
+    // 목록이 늦게 펼쳐질 수 있어 기다리는 시간을 늘려 가며 세 번까지 해 본다.
+    for (let attempt = 0; attempt < 3; attempt++) {
+      el = comboNear(labelRe, optRe) || el;
+      // 입력칸 → (안 펼쳐지면) 옆의 화살표 단추 순서로 눌러 본다.
+      const openers = [el, el.parentElement && el.parentElement.querySelector('button, .btn, [class*="arrow"], [class*="trigger"]')].filter(Boolean);
+      let item = null;
+      for (const op of openers) {
+        realClick(op);
+        for (let t = 0; t < 4 + attempt * 2 && !item; t++) {
+          await sleep(250);
+          item = optionsNear(el, optRe)[0] || null;
+        }
+        if (item) break;
+      }
+      if (item) {
+        realClick(item);
+        await sleep(500);
+      }
+      const now = comboNear(labelRe, optRe);
+      if (now && optRe.test(comboShown(now))) return true;
+      condWhy = now ? `지금 값 "${comboShown(now)}"${item ? '' : ', 목록이 안 펼쳐짐'}` : '칸이 사라짐';
+      await sleep(300 + attempt * 300);
     }
-    if (item) {
-      realClick(item);
-      await sleep(500);
-    }
-    el = comboNear(labelRe, optRe);
-    condWhy = el ? `${el.tagName}="${comboShown(el)}"` : '칸이 사라짐';
-    return !!(el && optRe.test(comboShown(el)));
+    return false;
   };
 
   const pickOrderNoCond = () => pickCombo(TEXT.condLabel, TEXT.ordNoOption);
@@ -683,6 +710,10 @@
   // 주문번호(S260930-02-1) → 목록에서 마지막으로 본 그 줄의 운송장번호. 앱이 올린 주문번호 모양만 모은다.
   const ORD_RE = /^S\d{6}-\d{2}-\d+$/;
   const byOrder = new Map();
+  // 몇 번째 박스의 주문번호·박스 수. 앱의 "이어서 하기"는 남은 박스의 주문번호(ordNos)만 넘긴다(S…-2만 남을 수도 있다).
+  const ordAt = (p, i) => (Array.isArray(p.ordNos) && p.ordNos.length ? String(p.ordNos[i - 1] || '') : `${p.batchId || ''}-${i}`);
+  const ordList = (p) => Array.from({ length: needOf(p) }, (_, i) => ordAt(p, i + 1));
+  const needOf = (p) => (Array.isArray(p.ordNos) && p.ordNos.length ? p.ordNos.length : Number(p.boxCount) || 0);
   // 운송장번호는 12자리(2617-2863-6993). 관리번호(8083607009, 10자리)와 헷갈리지 않게 12자리만 인정한다.
   const WAYBILL_RE = /^\d{4}-?\d{4}-?\d{4}$/;
   const asWaybill = (v) => {
@@ -761,10 +792,26 @@
         // 목록 줄(주문번호 S260930-02-1 이 적힌 줄)은 따로 모아 둔다. 화면에는 "다음에 발급할 운송장번호"
         // 칸 같은 다른 데이터도 오는데, 그게 gridRows를 덮어써도 주문번호별 번호는 여기서 정확히 읽는다.
         const at = Date.now();
+        // 같은 데이터에 같은 줄이 두 번 오기도 해서 주문번호마다 번호를 모아 본다. 서로 다른 번호가 둘 이상이면
+        // (같은 주문번호로 예약이 두 번 들어감) 어느 것도 믿지 않는다.
+        const inThis = new Map();
         for (const r of rows) {
           const ord = Object.values(r.raw || {}).map((v) => String(v == null ? '' : v).trim()).find((v) => ORD_RE.test(v));
-          if (ord) byOrder.set(ord, { waybill: pickOwnWaybill(r.raw), receiver: r.receiver, at });
+          if (!ord) continue;
+          const own = pickOwnWaybill(r.raw);
+          const e = inThis.get(ord) || { nums: new Set(), own: null, why: '', receiver: r.receiver };
+          if (own.w) {
+            e.nums.add(own.w.replace(/-/g, ''));
+            if (!e.own) e.own = own;
+          } else if (!e.why) e.why = own.why;
+          inThis.set(ord, e);
         }
+        inThis.forEach((e, ord) => {
+          const waybill = e.nums.size > 1
+            ? { w: '', why: `번호가 여러 개라 못 고름 (같은 주문번호 줄이 ${e.nums.size}개: ${Array.from(e.nums).join(', ')})` }
+            : e.own || { w: '', why: e.why };
+          byOrder.set(ord, { waybill, receiver: e.receiver, at });
+        });
       } catch (err) {}
     }
     if (d.type === 'CHECK_LAST_RESULT') {
@@ -1047,8 +1094,8 @@
       if (isWaybillList && ['waybillPage', 'preview', 'waybillDone', 'verify'].includes(p.step)) {
         if (p.step === 'waybillDone') {
           const idx = Number(p.boxIdx) || 1;
-          const need = Number(p.boxCount) || 1;
-          const ordNo = `${p.batchId || ''}-${idx}`;
+          const need = needOf(p) || 1;
+          const ordNo = ordAt(p, idx);
           // 이 박스의 주문번호로 다시 조회해서 발급된 운송장번호를 읽는다.
           if (Date.now() - (p.searchedAt2 || 0) > 5000) {
             const search2 = find(TEXT.search);
@@ -1061,15 +1108,15 @@
           // 번호가 들어갔다) 절대 쓰지 않는다. 다시 조회한 뒤에 들어온 목록만 믿는다.
           const seen = byOrder.get(ordNo);
           if (seen && seen.at >= (p.searchedAt2 || 0) && !seen.waybill.w && /여러 개/.test(seen.waybill.why)) {
-            await patch({ step: 'manual', status: `${ordNo} 줄에 ${seen.waybill.why}. 롯데 화면의 운송장번호를 확인해 운송장 확인 창에 직접 넣어 주세요.` });
+            await patch({ step: 'manual', status: `롯데에 ${ordNo} 줄이 여러 개라 어느 송장번호가 맞는지 알 수 없어요. 넣지 않았어요. 롯데에서 겹친 예약을 지운 뒤 앱에서 "이어서 하기"를 눌러 주세요.`, diag: seen.waybill.why });
             return;
           }
           const fresh = seen && seen.at >= (p.searchedAt2 || 0) && seen.waybill.w;
-          const usedByOthers = new Set((p.collected || []).map((c) => String(c.waybill).replace(/-/g, '')));
+          const usedByOthers = new Set((p.collected || []).filter((c) => c.ordNo !== ordNo).map((c) => String(c.waybill).replace(/-/g, '')));
           if (!fresh || usedByOthers.has(seen.waybill.w.replace(/-/g, ''))) {
             // 오래 기다려도 이 주문번호 줄의 번호가 안 보이면 추측해서 넣지 않고 사람에게 넘긴다.
             if (Date.now() - (p.printedAt || 0) > 60000) {
-              await patch({ step: 'manual', status: `${ordNo} 줄의 운송장번호를 목록에서 찾지 못했어요. 롯데 화면에서 확인해 운송장 확인 창에 직접 넣어 주세요.` });
+              await patch({ step: 'manual', status: `${ordNo}의 송장번호가 롯데 목록에 아직 안 보여요. 이 창 아래 [다시 조회]를 눌러 주세요.` });
               return;
             }
             // 조회 결과가 아직 안 왔다. 조금 뒤 다시 조회한다.
@@ -1078,7 +1125,7 @@
           }
           const own = seen.waybill;
           const row = { waybill: own.w, receiver: seen.receiver };
-          const collected = [...(p.collected || []), { ordNo, waybill: row.waybill, receiver: row.receiver || '', from: own.why }];
+          const collected = [...(p.collected || []).filter((c) => c.ordNo !== ordNo), { ordNo, waybill: row.waybill, receiver: row.receiver || '', from: own.why }];
 
           // 아직 남은 박스가 있으면 다음 박스로. 없으면 끝.
           if (idx < need) {
@@ -1103,24 +1150,29 @@
 
         // 대조: 주문번호로 다시 조회 → 그 줄의 운송장번호가 모아 둔 번호와 같은지 본다. 모두 같아야만 앱으로 넘긴다.
         if (p.step === 'verify') {
-          const need = Number(p.boxCount) || 1;
+          const need = needOf(p) || 1;
           const vIdx = Number(p.verifyIdx) || 1;
           const collected = p.collected || [];
-          const ordNo = `${p.batchId || ''}-${vIdx}`;
+          const ordNo = ordAt(p, vIdx);
           const mine = collected.find((c) => c.ordNo === ordNo);
           const digitsOf = (w) => String(w || '').replace(/\D/g, '');
           if (!mine) {
-            await patch({ step: 'manual', status: `대조 실패: ${ordNo}의 운송장번호를 모으지 못했어요. 롯데 화면에서 확인해 직접 넣어 주세요.` });
+            await patch({ step: 'manual', status: `${ordNo}의 송장번호를 아직 못 받았어요. 이 창 아래 [다시 조회]를 눌러 주세요.` });
             return;
           }
           if (Date.now() - (p.verifyStartedAt || 0) > 90000) {
-            await patch({ step: 'manual', status: `대조 실패: ${ordNo}를 다시 조회했는데 목록을 읽지 못했어요. 롯데 화면에서 확인해 직접 넣어 주세요.` });
+            await patch({ step: 'manual', status: `${ordNo}를 다시 조회했는데 롯데 목록이 안 떠요. 이 창 아래 [다시 조회]를 눌러 주세요.` });
             return;
           }
           if (!p.verifySearchedAt) {
             const box = document.querySelector('input[name="edtSrchCondVal"]');
             const search = find(TEXT.search);
             if (!box || !search) return;
+            // 사람이 직접 하다 넘어온 경우 검색조건이 "운송장번호"일 수 있다. 주문번호로 맞춘 뒤 조회한다.
+            if (!(await pickOrderNoCond())) {
+              await patch({ step: 'manual', status: '롯데 화면의 검색조건을 "주문번호"로 바꾸지 못했어요. 이 창 아래 [다시 조회]를 눌러 주세요.', diag: condWhy });
+              return;
+            }
             setVal(box, ordNo);
             await sleep(300);
             realClick(search);
@@ -1128,6 +1180,10 @@
             return;
           }
           const seen = byOrder.get(ordNo);
+          if (seen && seen.at >= p.verifySearchedAt && !seen.waybill.w && /여러 개/.test(seen.waybill.why)) {
+            await patch({ step: 'manual', status: `롯데에 ${ordNo} 줄이 여러 개라 어느 송장번호가 맞는지 알 수 없어요. 넣지 않았어요. 롯데에서 겹친 예약을 지운 뒤 앱에서 "이어서 하기"를 눌러 주세요.`, diag: seen.waybill.why });
+            return;
+          }
           if (!seen || seen.at < p.verifySearchedAt || !seen.waybill.w) {
             // 조회 결과가 아직 안 왔다. 조금 뒤 한 번 더 누른다.
             if (Date.now() - p.verifySearchedAt > 5000) await patch({ verifySearchedAt: 0 });
@@ -1136,7 +1192,7 @@
           if (digitsOf(seen.waybill.w) !== digitsOf(mine.waybill)) {
             await patch({
               step: 'manual',
-              status: `대조 실패: ${ordNo}가 처음엔 ${mine.waybill}, 다시 조회하니 ${seen.waybill.w}예요. 넣지 않았어요. 롯데 화면에서 확인해 직접 넣어 주세요.`,
+              status: `${ordNo}의 송장번호가 조회할 때마다 달라서(${mine.waybill} / ${seen.waybill.w}) 넣지 않았어요. 이 창 아래 [다시 조회]를 눌러 주세요.`,
             });
             return;
           }
@@ -1157,14 +1213,14 @@
           if (!find(TEXT.condLabel)) {
             if (!wbWaitSince) wbWaitSince = Date.now();
             if (Date.now() - wbWaitSince > 45000) {
-              await patch({ step: 'manual', status: '운송장출력 화면의 검색조건을 못 찾았어요. 직접 체크하고 출력해 주세요.' });
+              await patch({ step: 'manual', status: '롯데 운송장출력 화면이 안 열렸어요. 이 창을 닫고 앱에서 "이어서 하기"를 눌러 주세요.' });
             }
             return;
           }
           if (canvasBusy) return;
           canvasBusy = true;
           try {
-            const need = Number(p.boxCount) || 0;
+            const need = needOf(p);
             const batch = String(p.batchId || '');
             if (!need || !batch) {
               await patch({ step: 'error', status: '예약 정보(박스 수·쉽먼트 번호)가 없어 자동 출력을 못 해요.' });
@@ -1174,16 +1230,16 @@
             // 1) 검색조건을 "주문번호"로 맞춘다.
             await patch({ status: '검색조건을 주문번호로 바꾸는 중…' });
             if (!(await pickOrderNoCond())) {
-              await patch({ step: 'manual', status: `검색조건을 "주문번호"로 바꾸지 못했어요(${condWhy}). 직접 체크하고 출력해 주세요.` });
+              await patch({ step: 'manual', status: '롯데 화면의 검색조건을 "주문번호"로 바꾸지 못했어요. 이 창 아래 [다시 조회]를 눌러 주세요.', diag: condWhy });
               return;
             }
 
             // 2) 지금 차례인 박스의 주문번호로 조회 → 목록에 우리 1건만 남는다.
             const boxIdx = Number(p.boxIdx) || 1;
-            const ordNo = `${batch}-${boxIdx}`;
+            const ordNo = ordAt(p, boxIdx);
             const box = document.querySelector('input[name="edtSrchCondVal"]');
             if (!box) {
-              await patch({ step: 'manual', status: '검색값 칸을 못 찾았어요. 직접 체크하고 출력해 주세요.' });
+              await patch({ step: 'manual', status: '롯데 화면의 검색칸을 못 찾았어요. 이 창 아래 [다시 조회]를 눌러 주세요.' });
               return;
             }
             setVal(box, ordNo);
@@ -1203,7 +1259,7 @@
               }
             }
             if (!gridRows.length) {
-              await patch({ step: 'manual', status: `${ordNo}로 조회했는데 목록을 읽지 못했어요. 직접 체크하고 출력해 주세요.` });
+              await patch({ step: 'manual', status: `${ordNo}로 조회했는데 롯데 목록이 안 떠요. 이 창 아래 [다시 조회]를 눌러 주세요.` });
               return;
             }
             // 아래에서 "첫 줄"을 눌러 체크하므로, 목록에 우리 주문번호 1줄만 남아 있어야 한다.
@@ -1234,7 +1290,7 @@
             if (!onlyOurs()) {
               await patch({
                 step: 'manual',
-                status: `${ordNo}로 조회했는데 목록에 ${shownCount() >= 0 ? shownCount() : gridRows.length}건이 보여서(우리 건만 남지 않음) 체크·출력하지 않았어요. 검색조건이 "주문번호"인지 확인하고 "다시 조회"를 눌러 주세요.`,
+                status: `${ordNo}로 조회했더니 ${shownCount() >= 0 ? shownCount() : gridRows.length}줄이 나와서 출력하지 않았어요(다른 송장을 출력하지 않으려고). 이 창 아래 [다시 조회]를 눌러 주세요. 계속 이러면 롯데에 같은 주문번호 예약이 두 번 들어간 거라, 겹친 예약을 지워 주세요.`,
               });
               return;
             }
@@ -1280,7 +1336,7 @@
               if (lastOpen && lastOpen.blocked) {
                 await patch({
                   step: 'manual',
-                  status: '체크·출력은 됐는데 크롬이 미리보기 창(팝업)을 막았어요. 주소창 오른쪽 팝업 차단 아이콘을 눌러 "항상 허용"으로 바꾼 뒤 다시 해주세요.',
+                  status: '크롬이 롯데 미리보기 창을 막았어요. 주소창 오른쪽 팝업 차단 아이콘에서 "항상 허용"을 고른 뒤 이 창 아래 [다시 조회]를 눌러 주세요',
                 });
                 return;
               }
@@ -1294,14 +1350,15 @@
                   printedAt: Date.now(),
                   preWaybills: before,
                   openInfo: diag,
-                  status: `${ordNo} 체크 성공(${tr.label}) · 출력 후: ${diag}`,
+                  status: `${ordNo} 송장 출력 중…`,
+                  diag: `${tr.label} · ${diag}`,
                 });
                 return;
               }
             }
             await patch({
               step: 'manual',
-              status: `${ordNo} 한 줄만 남겼는데도 체크가 안 돼요. 표가 프로그램 클릭을 받지 않습니다. 직접 체크하고 출력해 주세요.`,
+              status: `${ordNo} 줄을 체크하지 못했어요. 이 창 아래 [다시 조회]를 눌러 주세요.`,
             });
           } finally {
             canvasBusy = false;
@@ -1313,19 +1370,22 @@
         // 사람이 직접 체크·출력하는 동안 기다렸다가, 운송장번호가 채워지면 가져간다.
         // 이때도 목록에서 이 쉽먼트의 주문번호(S…-1, -2 …) 줄마다 적힌 번호만, 박스가 다 모였을 때 가져간다.
         if (p.step === 'manual') {
-          const need = Number(p.boxCount) || 0;
+          const need = needOf(p);
           const batch = String(p.batchId || '');
           if (!need || !batch) return;
+          const since = p.manualAt || 0;
           const done = [];
           for (let i = 1; i <= need; i++) {
-            const ordNo = `${batch}-${i}`;
+            const ordNo = ordAt(p, i);
             const seen = byOrder.get(ordNo);
-            if (!seen || !seen.waybill.w) return;
+            // 멈춘 뒤에 새로 조회된 줄만 본다(예전에 본 줄로 넘기지 않게).
+            if (!seen || seen.at < since || !seen.waybill.w) return;
             done.push({ ordNo, waybill: seen.waybill.w, receiver: seen.receiver || '', from: seen.waybill.why });
           }
+          // 바로 넘기지 않고 주문번호마다 한 번 더 조회해 같은 번호인지 대조한 뒤에만 앱으로 보낸다.
           await patch({
-            step: 'waybills', waybills: done,
-            status: `✅ 운송장번호 ${done.length}건을 가져왔어요. ${done.map((c) => `${c.ordNo}=${c.waybill}`).join(' / ')}`,
+            step: 'verify', verifyIdx: 1, verifySearchedAt: 0, verifyStartedAt: Date.now(), collected: done,
+            status: `송장번호 ${done.length}건을 찾았어요. 롯데 목록과 한 번 더 대조하는 중…`,
           });
           return;
         }
@@ -1334,7 +1394,8 @@
         if (p.step === 'preview' && p.printedAt && Date.now() - p.printedAt > 40000 && !p.previewPrintedAt) {
           await patch({
             step: 'manual',
-            status: `미리보기 창을 잡지 못했어요(${p.openInfo || '창 열림 기록 없음'}). 그 창에서 운송장종류를 표준라벨E로 고르고 출력해 주세요.`,
+            status: '송장 미리보기 창이 안 떴어요. 이 창 아래 [다시 조회]를 눌러 주세요.',
+            diag: p.openInfo || '창 열림 기록 없음',
           });
           return;
         }
@@ -1567,7 +1628,7 @@
       return;
     }
     await patchRp({ status: '검색조건을 운송장번호로 바꾸는 중…' });
-    if (!(await pickCombo(TEXT.condLabel, /^운송장\s*번호$/, true))) {
+    if (!(await pickCombo(TEXT.condLabel, /^운송장\s*번호$/))) {
       await patchRp({ step: 'manual', status: `검색조건을 "운송장번호"로 바꾸지 못했어요(${condWhy}). 직접 바꿔 ${rp.waybill}로 조회·출력해 주세요.` });
       return;
     }

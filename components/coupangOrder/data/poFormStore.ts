@@ -6,7 +6,7 @@
 // 새 주문을 받아 올 때 그 파일을 그대로 남겨 두었다가, "발주확정 올리기"를 누르면 그 발주서들의 줄만 모아
 // I열(확정수량)과 M열(납품부족사유)을 채운 파일을 만든다. 나머지 칸은 받은 그대로 둔다.
 import * as XLSX from 'xlsx';
-import { collection, doc, onSnapshot, setDoc } from 'firebase/firestore';
+import { collection, deleteDoc, doc, onSnapshot, setDoc } from 'firebase/firestore';
 import { db, ensureSignedIn } from '../../../utils/firebase';
 import { rememberPrices } from '../../../data/coupangPriceStore';
 import { rememberBarcodes } from '../../../data/coupangBarcodeStore';
@@ -59,6 +59,17 @@ let drafts: Record<string, PoDraft> = readLocal<PoDraft>(DRAFTS_LOCAL);
 const CHANGED = 'coupang-po-forms-changed';
 const notify = () => window.dispatchEvent(new CustomEvent(CHANGED));
 
+// 받은 지 3일 지난 양식은 지운다(발주확정은 그 안에 끝나고, 매입가·바코드는 장부로 옮겨 두었다).
+// 양식이 쌓이면 앱을 열 때마다 읽는 양이 늘어서. 장부로 옮기기가 끝난 뒤에만, 한 번 연 동안 한 번만.
+const KEEP_MS = 3 * 24 * 60 * 60 * 1000;
+let cleaned = false;
+const cleanOld = (firestore: NonNullable<typeof db>) => {
+  if (cleaned) return;
+  cleaned = true;
+  const old = Object.values(forms).filter(f => f.at && Date.now() - f.at > KEEP_MS);
+  old.forEach(f => deleteDoc(doc(firestore, FORMS, f.id)).catch(err => console.error('오래된 발주확정 양식 지우기 실패:', err)));
+};
+
 let started = false;
 const start = () => {
   if (started || !db) return;
@@ -71,8 +82,9 @@ const start = () => {
       notify();
       // 양식의 매입가·상품바코드를 작은 장부로 옮겨 둔다(한중발주·바코드 라벨은 장부만 읽는다). 바뀐 것만 저장된다.
       const facts = poFormFacts();
-      rememberPrices(facts).catch(err => console.error('매입가 기억 실패:', err));
-      rememberBarcodes(facts).catch(err => console.error('바코드 기억 실패:', err));
+      Promise.all([rememberPrices(facts), rememberBarcodes(facts)])
+        .then(() => { if (!snap.metadata.fromCache) cleanOld(firestore); })
+        .catch(err => console.error('매입가·바코드 기억 실패:', err));
     }, err => console.error('발주확정 양식 동기화 실패:', err));
     onSnapshot(collection(firestore, DRAFTS), snap => {
       drafts = Object.fromEntries(snap.docs.map(d => [String(d.data().no || d.id), { qty: {}, reason: {}, ...(d.data() as PoDraft) }]));

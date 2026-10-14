@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { readWork, subscribeWork } from '../coupangOrder/data/orderWorkCloud';
 import { subscribeReservations } from '../coupangOrder/data/reservationStore';
 import { ShipOut, subscribeShipOuts, shipOutStage, shipOutBatch } from '../coupangOrder/data/shipOutStore';
@@ -358,6 +358,17 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
   const [live, setLive] = useState<LiveStatus | null>(null);
   useEffect(() => subscribeLive(setLive), []);
 
+  // 칸 안 자리(정렬)는 날짜변경을 적용해도 바꾸기 전 날짜·센터로 둔다(적용하자마자 박스가 다른 데로 가면 헷갈려서).
+  // 날짜변경 기록의 from = "입고예정일 센터".
+  const seatOf = useCallback((o: { no: string; date: string; center: string; item?: { date?: string; center?: string } }) => {
+    const r = dateReqs[o.no];
+    const from = r?.doneAt ? (r.from || '').trim() : '';
+    if (from) {
+      const sp = from.indexOf(' ');
+      return { date: dateKeyYMD(sp < 0 ? from : from.slice(0, sp)), center: sp < 0 ? '' : from.slice(sp + 1).trim() };
+    }
+    return { date: o.item?.date || o.date, center: o.item?.center || o.center };
+  }, [dateReqs]);
   const orders = useMemo(() => {
     const map = new Map<string, FlowOrder>();
     const add = (no: string, center: string, date: string, line: FlowLine, extra: Partial<FlowOrder>) => {
@@ -403,10 +414,10 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
       }
     }
     return Array.from(map.values()).sort((a, b) =>
-      ymdSortKey(a.date) - ymdSortKey(b.date)
-      || a.center.localeCompare(b.center, 'ko', { numeric: true })
+      ymdSortKey(seatOf(a).date) - ymdSortKey(seatOf(b).date)
+      || seatOf(a).center.localeCompare(seatOf(b).center, 'ko', { numeric: true })
       || a.no.localeCompare(b.no, 'ko', { numeric: true }));
-  }, [work, reservations, shipOuts, batches, confirmed]);
+  }, [work, reservations, shipOuts, batches, confirmed, seatOf]);
 
   // 고른 발주서가 다른 칸으로 가면 고른 데서 뺀다.
   useEffect(() => {
@@ -442,8 +453,8 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
     // 상태가 바뀌어도 자리는 움직이지 않는다(그 안에서는 원래 순서).
     // 쉽먼트: 입고예정일이 빠른(급한) 것이 위로. 같은 날이면 센터 → 출고 건 순으로 붙여서 덩어리가 흩어지지 않게.
     if (i === 2) list.sort((a, b) =>
-      ymdSortKey(a.item?.date || a.date) - ymdSortKey(b.item?.date || b.date)
-      || (a.item?.center || a.center).localeCompare(b.item?.center || b.center, 'ko', { numeric: true })
+      ymdSortKey(seatOf(a).date) - ymdSortKey(seatOf(b).date)
+      || seatOf(a).center.localeCompare(seatOf(b).center, 'ko', { numeric: true })
       || (a.item?.createdAt || 0) - (b.item?.createdAt || 0)
       || (a.item?.id || a.no).localeCompare(b.item?.id || b.no));
     // 발송대기: 늦게 넘어온 것이 위, 먼저 넘어온 것은 아래로 쌓인다(넘어온 때 = 발송대기로 누른 때, 없으면 서허 등록 때).
@@ -774,7 +785,7 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
                           ? <b onClick={() => editQty(o, l)} title="눌러서 확정수량 고치기(서허 요청등록에서 수량을 바꿨을 때)"
                               style={{ cursor: 'pointer', textDecoration: 'underline dotted', textUnderlineOffset: 2 }}>{l.확정수량}개</b>
                           : <b>{l.확정수량}개</b>}
-                        {/* 배정 수량을 한중발주마다 나눠: 아직 오는 중 = ✈(먼저), 사무실에 다 들어옴 = 🏢 사무실 입고완료. 번호 동그라미 + 수량. */}
+                        {/* 배정 수량을 한중발주마다 나눠: 아직 오는 중 = ✈(먼저), 사무실에 다 들어옴 = 🏢 사무실 입고완료. 두 자리는 늘 있고 숫자(번호 동그라미 + 수량)만 옮겨 간다. */}
                         {(() => {
                           const hjPlaces = places.filter(p => p.code);
                           const done = (p: typeof hjPlaces[number]) => {
@@ -794,17 +805,15 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
                           const inOffice = hjPlaces.filter(done);
                           return (
                             <>
-                              {going.length > 0 && (
-                                <span title={`한중발주로 입고중: ${going.map(p => `${p.code} ${p.qty}개`).join(', ')}`} style={{ fontSize: 11, color: '#2563eb', whiteSpace: 'nowrap' }}>
-                                  {plane('#2563eb')}{going.map(badge)}
-                                </span>
-                              )}
-                              {inOffice.length > 0 && (
-                                <span title={`사무실 입고완료: ${inOffice.map(p => `${p.code} ${p.qty}개`).join(', ')}`} style={{ fontSize: 11, color: GREEN, whiteSpace: 'nowrap' }}>
-                                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke={GREEN} strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" style={{ display: 'inline-block', verticalAlign: '-1px', marginRight: 1 }}><path d="M4 21V5a1 1 0 0 1 1-1h9a1 1 0 0 1 1 1v16" /><path d="M15 10h4a1 1 0 0 1 1 1v10" /><path d="M2 21h20M8 8h3M8 12h3M8 16h3" /></svg>
-                                  {inOffice.map(badge)}
-                                </span>
-                              )}
+                              <span title={going.length ? `한중발주로 입고중: ${going.map(p => `${p.code} ${p.qty}개`).join(', ')}` : '한중발주로 입고중인 수량 없음'}
+                                style={{ fontSize: 11, color: going.length ? '#2563eb' : '#a8a29e', whiteSpace: 'nowrap' }}>
+                                {plane(going.length ? '#2563eb' : '#a8a29e')}{going.length ? going.map(badge) : <b>0</b>}
+                              </span>
+                              <span title={inOffice.length ? `사무실 입고완료: ${inOffice.map(p => `${p.code} ${p.qty}개`).join(', ')}` : '사무실 입고완료 수량 없음'}
+                                style={{ fontSize: 11, color: inOffice.length ? GREEN : '#a8a29e', whiteSpace: 'nowrap' }}>
+                                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke={inOffice.length ? GREEN : '#a8a29e'} strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" style={{ display: 'inline-block', verticalAlign: '-1px', marginRight: 1 }}><path d="M4 21V5a1 1 0 0 1 1-1h9a1 1 0 0 1 1 1v16" /><path d="M15 10h4a1 1 0 0 1 1 1v10" /><path d="M2 21h20M8 8h3M8 12h3M8 16h3" /></svg>
+                                {inOffice.length ? inOffice.map(badge) : <b>0</b>}
+                              </span>
                             </>
                           );
                         })()}

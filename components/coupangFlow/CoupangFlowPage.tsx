@@ -784,7 +784,17 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
                         {assigned > 0 && (
                           <span title={`한중발주로 입고중: ${places.filter(p => p.code).map(p => `${p.code} ${p.qty}개`).join(', ')}`}
                             style={{ fontSize: 11, color: '#2563eb', whiteSpace: 'nowrap' }}>
-                            {plane('#2563eb')}<b>{assigned}</b>
+                            {plane('#2563eb')}
+                            {/* 몇 번 한중발주에 몇 개인지: 번호 동그라미 + 수량(여러 건이면 이어서) */}
+                            {places.filter(p => p.code).map((p, idx) => (
+                              <span key={`${p.code}-${idx}`} style={{ marginLeft: idx ? 4 : 0 }}>
+                                <span style={{
+                                  display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 14, height: 14, marginRight: 2,
+                                  borderRadius: '50%', background: hjColor.get(p.code!) || '#2563eb', color: '#fff', fontSize: 9, fontWeight: 800, verticalAlign: '-2px',
+                                }}>{hjNo.get(p.code!) ?? '?'}</span>
+                                <b>{p.qty}</b>
+                              </span>
+                            ))}
                           </span>
                         )}
                         {queued > 0 && (

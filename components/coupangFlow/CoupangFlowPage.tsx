@@ -120,6 +120,13 @@ const daysAgo = (ymd: string) => {
   return Number.isFinite(t) ? (Date.now() - t) / 86400000 : 999;
 };
 
+// 발주서 안 상품 줄을 박스 번호 순으로 세우는 값(나눠 담은 줄은 첫 박스, 박스가 없으면 맨 뒤). 같으면 원래 순서.
+const boxOrder = (l: FlowLine) => {
+  const v = l.ship?.쉼먼트 || '';
+  if (isBoxSplit(v)) return Math.min(...parseBoxSplit(v).map(p => p.no));
+  return parseBoxNo(v) || 999;
+};
+
 // 같은 입고예정일·센터끼리 이어진 발주서를 한 덩어리로(목록은 이미 날짜 → 센터 순으로 정렬돼 있다).
 const groupByCenterDate = (list: FlowOrder[], keyOf: (o: FlowOrder) => string = o => `${o.date}|${o.center.trim()}`) => {
   const groups: { key: string; date: string; center: string; list: FlowOrder[] }[] = [];
@@ -647,7 +654,7 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
     const qty = o.lines.reduce((sum, l) => sum + (Number(l.확정수량) || 0), 0);
     return (
       <>
-        {o.lines.map((l, i) => {
+        {[...o.lines].sort((a, b) => boxOrder(a) - boxOrder(b)).map((l, i) => {
           const editable = o.stage === 0 && l.stage === 0;
           const draft = readDraft(o.no);
           const full = Number(l.확정수량) || 0;
@@ -1847,8 +1854,10 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
                     })()}
                     {(() => {
                       // 안내문·이어서 하기를 보일 발주서: 덩어리에서 처음으로 할 일이 있는 발주서 하나.
-                      const first = Math.max(0, g.list.findIndex(o => !!action(o) || !!runNote(o)));
-                      return g.list.map((o, idx) => slim(o, idx === first));
+                      // 상자 안은 발주번호 순(발주서 사이 빈 줄 간격은 그대로).
+                      const sorted = [...g.list].sort((a, b) => a.no.localeCompare(b.no, 'ko', { numeric: true }));
+                      const first = Math.max(0, sorted.findIndex(o => !!action(o) || !!runNote(o)));
+                      return sorted.map((o, idx) => slim(o, idx === first));
                     })()}
                   </div>
                     );

@@ -14,7 +14,7 @@ import { dateKeyYMD } from '../utils/dateUtils';
 import type { AddressEntry, SenderInfo } from '../types';
 import {
   ShipmentBatch, ShipmentRun, ShipmentRunStep, allBoxes, batchId as makeBatchId, waybillConfirmed, withOrdNos,
-  saveShipmentBatch, patchShipmentBatch,
+  saveShipmentBatch, patchShipmentBatch, addRegisteredOrders,
 } from '../../../data/shipmentStore';
 import { ShipOut, markShipOuts, readShipOuts, applyShipmentNos, shipOutUploaded } from './shipOutStore';
 
@@ -182,20 +182,23 @@ const onWaybills = (o: Owned, list: { waybill: string; receiver: string; ordNo?:
     if (w.receiver) recvOf.set(w.ordNo, String(w.receiver).replace(/\s+/g, ''));
   }
   // 롯데 줄의 받는사람(예약 엑셀에 센터 이름을 넣는다)이 박스 센터와 다르면 남의 박스 번호다(박스 순서가 어긋난 예전 기록 등).
+  // 정확히 같아야 한다("인천3"과 "인천30"은 다른 센터).
   const centerOk = (b: { center: string; ordNo?: string }) => {
     const r = recvOf.get(b.ordNo || '');
     const c = b.center.replace(/\s+/g, '');
-    return !r || !c || r === c || r.includes(c) || c.includes(r);
+    return !r || r === c;
   };
   const wrongCenter = boxes.filter(b => b.ordNo && byOrd.has(b.ordNo) && !centerOk(b));
   if (wrongCenter.length) {
-    fail(batch.id, 'waybill', `롯데 예약의 받는 곳이 박스 센터와 달라서 송장번호를 넣지 않았어요: ${wrongCenter.map(b => `${b.center} 박스 ↔ 롯데 ${b.ordNo}(${recvOf.get(b.ordNo!)})`).join(', ')}. 이 쉽먼트는 롯데에서 직접 확인해 주세요.`);
+    fail(batch.id, 'waybill', `⛔ 롯데 예약의 받는 곳과 박스 센터가 달라 송장번호를 넣지 않았어요: ${wrongCenter.map(b => `롯데 ${b.ordNo} 받는 곳 ${recvOf.get(b.ordNo!)} ↔ 박스 ${b.center}`).join(', ')}. 롯데 예약을 확인해 주세요.`);
     return;
   }
   const missing = boxes.filter(b => !b.ordNo || !byOrd.has(b.ordNo) || twice.has(b.ordNo));
   const mineNums = boxes.map(b => byOrd.get(b.ordNo || '') || '');
   if (missing.length || new Set(mineNums).size !== mineNums.length) {
-    fail(batch.id, 'waybill', `롯데에서 ${missing.length ? missing.map(b => `${b.center} 박스(${b.ordNo || '주문번호 없음'})`).join(', ') : '박스들'}의 송장번호를 확실히 확인하지 못해서 서허에 올리지 않았어요. "이어서 하기"를 누르면 롯데에서 다시 확인해요.`);
+    fail(batch.id, 'waybill', missing.length
+      ? `⛔ 롯데에서 ${missing.map(b => `${b.center} 박스(${b.ordNo || '주문번호 없음'})`).join(', ')}의 송장번호를 확인하지 못해 서허에 올리지 않았어요. "이어서 하기"를 누르면 롯데에서 다시 확인해요.`
+      : `⛔ 롯데에서 받은 송장번호가 박스끼리 겹쳐서 서허에 올리지 않았어요. 롯데 예약을 확인해 주세요.`);
     return;
   }
   const changed = boxes.filter(b => digits(b.waybill) && digits(b.waybill) !== byOrd.get(b.ordNo!));
@@ -258,6 +261,13 @@ export function fillAndUpload(buf: ArrayBuffer, id: string, known?: ShipmentBatc
   const o = owned.get(id);
   if (!o) { alert('이 쉽먼트 기록을 찾지 못했어요. 카드의 "이어서 하기"를 먼저 눌러 주세요.'); return; }
   const batch = o.batch;
+  // 서허에 이미 등록된 발주서가 들어 있으면 올리지 않는다(쉽먼트가 두 번 생긴다).
+  const reg = new Set([...(o.full.registeredOrders || []), ...(known?.registeredOrders || [])].map(String));
+  const again = orderNosOf(batch).filter(no => reg.has(no));
+  if (again.length) {
+    fail(id, 'upload', `⛔ 발주서 ${again.join(', ')}는 서허에 이미 등록됐어요. 두 번 올리지 않게 멈췄어요. 서허 › 택배 쉽먼트에서 확인해 주세요.`);
+    return;
+  }
   if (!kept) saveForm(id, buf);
   // 롯데에서 확인한 송장번호가 아니면 절대 양식에 넣지 않는다. 롯데에서 먼저 받아 온 뒤 이 양식으로 이어서 한다.
   if (!allBoxes(batch).every(waybillConfirmed)) {
@@ -280,7 +290,7 @@ export function fillAndUpload(buf: ArrayBuffer, id: string, known?: ShipmentBatc
       a.download = res.fileName;
       a.click();
       setTimeout(() => URL.revokeObjectURL(a.href), 5000);
-      fail(id, 'form', `서허 양식에서 이 발주서 ${res.missed.length}줄의 짝을 못 찾아서 올리지 않았어요: ${res.missed.slice(0, 3).join(' / ')}. 채운 양식(${res.fileName})을 다운로드 폴더에 남겼어요.`);
+      fail(id, 'form', `⛔ 서허에 올리지 않았어요. ${res.missed.slice(0, 3).join(' / ')}${res.missed.length > 3 ? ` 외 ${res.missed.length - 3}건` : ''}. (채운 양식은 다운로드 폴더의 ${res.fileName})`);
       return;
     }
     markShipOuts(itemsOf(id).map(i => i.id), { formSavedAt: Date.now() });
@@ -336,7 +346,22 @@ export function resumeShipment(batch: ShipmentBatch, items: ShipOut[]): 'done' |
   const byId = new Map<string, ShipOut>();
   [...items, ...readShipOuts().filter(i => i.batchId === batch.id)].forEach(i => byId.set(i.id, i));
   const all = Array.from(byId.values());
-  const left = all.filter(i => !shipOutUploaded(i));
+  // 서허에 이미 등록된 발주서는 다시 올리지 않는다(등록 뒤 단계에서 멈췄던 건).
+  const reg = new Set((batch.registeredOrders || []).map(String));
+  const ordersOf = (i: ShipOut) => i.lines.map(l => String(l.발주번호 || '').trim()).filter(Boolean);
+  const half = all.filter(i => !shipOutUploaded(i) && ordersOf(i).some(no => reg.has(no)) && !ordersOf(i).every(no => reg.has(no)));
+  if (half.length) {
+    owned.set(batch.id, { batch: full, full, itemIds: [] });
+    fail(batch.id, 'upload', `⛔ 발주서 ${half.flatMap(ordersOf).filter(no => reg.has(no)).join(', ')}는 서허에 이미 등록됐고 같은 출고 건의 나머지는 아직이에요. 두 번 올리지 않게 멈췄어요. 서허 › 택배 쉽먼트에서 확인해 주세요.`);
+    return 'need-waybill';
+  }
+  const doneReg = all.filter(i => !shipOutUploaded(i) && ordersOf(i).length && ordersOf(i).every(no => reg.has(no)));
+  const left = all.filter(i => !shipOutUploaded(i) && !doneReg.includes(i));
+  if (doneReg.length && !left.length) {
+    owned.set(batch.id, { batch: full, full, itemIds: [] });
+    fail(batch.id, 'upload', `⛔ 발주서 ${doneReg.flatMap(ordersOf).join(', ')}는 서허에 이미 등록됐어요. 두 번 올리지 않아요. 쉽먼트 번호를 못 찾았던 건이라 서허 › 택배 쉽먼트에서 확인해 주세요.`);
+    return 'need-waybill';
+  }
   if (all.length && !left.length) {
     owned.set(batch.id, { batch: full, full, itemIds: [] });
     mark(batch.id, 'done', 'done', '서허 일괄등록까지 이미 끝난 건이에요.');
@@ -419,6 +444,16 @@ export function startShipmentRunner() {
     if (d.type === 'SHUB_UPLOAD_STATUS' && d.batchId) {
       if (d.byOrder && typeof d.byOrder === 'object') applyShipmentNos(d.byOrder as Record<string, string>);
       const o = owned.get(d.batchId);
+      // 서허가 완료라고 한 발주서는 기록에 남긴다(어느 탭이 받아도 같은 값).
+      if (d.registeredAt && Array.isArray(d.orderNos) && d.orderNos.length) {
+        const nos = (d.orderNos as string[]).map(String);
+        if (o) {
+          const reg = Array.from(new Set([...(o.full.registeredOrders || []), ...nos]));
+          o.full = { ...o.full, registeredOrders: reg };
+          o.batch = { ...o.batch, registeredOrders: reg };
+        }
+        addRegisteredOrders(d.batchId, nos).catch(err => console.error('등록 기록 실패:', err));
+      }
       const msgs = (d.messages || []).length ? ` · 서허: ${(d.messages as string[]).join(' / ')}` : '';
       if (d.step === 'done') {
         // 등록한 출고 건만 끝으로 표시한다. 이 탭이 몬 건이 아니면 무엇을 올렸는지 모르니, 발주서별 쉽먼트 번호(위)로만 남긴다.

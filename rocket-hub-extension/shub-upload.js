@@ -259,7 +259,7 @@
         clickSearch();
       }
       if (Date.now() - (p.submittedAt || 0) > 120000) {
-        await patch({ step: 'error', status: `내역 조회 맨 윗줄이 방금 올린 파일이 아니에요(맨 윗줄: ${fileName}). 이 창에서 확인해 주세요.` });
+        await patch({ step: 'error', status: `⛔ 서허 일괄등록 내역에서 방금 올린 파일(${p.file.name})을 못 찾았어요. 등록됐는지 알 수 없어서 멈췄어요. 서허 › 쉽먼트 일괄등록 내역을 확인해 주세요.` });
       }
       return true;
     }
@@ -281,6 +281,8 @@
       }
       return true;
     }
+    // 서허가 "완료"라고 했다 = 이 발주서들은 등록됐다. 뒤 단계에서 멈춰도 다시 올리지 않게 앱에 알린다.
+    if (!p.registeredAt) await patch({ registeredAt: Date.now() });
     const btn = Array.from(top.tr.querySelectorAll('button, a')).find((el) => /생성된\s*쉽먼트/.test(clean(el.textContent)));
     if (!btn) {
       await patch({ step: 'error', status: '"생성된 쉽먼트 조회" 버튼을 못 찾았어요. 이 창에서 확인해 주세요.' });
@@ -314,8 +316,16 @@
     const orderNos = p.orderNos || [];
     const i = p.linkIdx || 0;
     if (i >= orderNos.length) {
-      const found = Object.values(p.byOrder || {}).filter(Boolean).length;
-      await patch({ step: 'done', status: `✅ 등록 완료 · 발주서 ${found}/${orderNos.length}건에 쉽먼트 번호를 적었어요.` });
+      // 못 찾은 발주서가 하나라도 있으면 끝으로 치지 않고 멈춰서 알린다(찾은 것만 적어 둔다).
+      const missing = orderNos.filter((no) => !(p.byOrder || {})[no]);
+      if (missing.length) {
+        await patch({
+          step: 'error',
+          status: `⛔ 서허에서 발주서 ${missing.join(', ')}의 쉽먼트 번호를 못 찾았어요. 서허 › 택배 쉽먼트에서 그 발주서를 확인해 주세요.`,
+        });
+        return;
+      }
+      await patch({ step: 'done', status: `✅ 등록 완료 · 발주서 ${orderNos.length}건 모두 쉽먼트 번호를 찾았어요.` });
       return;
     }
     const no = orderNos[i];
@@ -337,11 +347,20 @@
     // 찾기만 하는 경우(앱의 "쉽먼트 번호 찾기", 일괄등록을 서허에서 직접 한 건): 만든 쉽먼트 목록이 없으니
     // 발주서 칸에 이 번호가 든 줄의 쉽먼트 번호를 쓴다.
     const lookup = !ships.size;
-    const hit = t && t.rows.find((r) => (lookup || ships.has(r.cells[t.idx.ship])) && r.cells[t.idx.po].includes(no));
-    const any = !lookup && t && t.rows.find((r) => ships.has(r.cells[t.idx.ship]));
-    const ship = (hit || any) ? (hit || any).cells[t.idx.ship] : '';
-    debug('link', { no, ship, rows: t ? t.rows.slice(0, 5).map((r) => r.cells) : null });
-    await patch({ byOrder: { ...(p.byOrder || {}), [no]: ship }, linkIdx: i + 1, searching: '' });
+    // 발주서 칸에 이 발주번호가 "정확히" 든 줄만 본다(다른 번호의 일부로 들어 있는 것은 아니다).
+    // 예전에는 못 찾으면 방금 만든 쉽먼트 아무거나 적었다 — 짐작이라 뺐다.
+    const hasPo = (cell) => String(cell || '').split(/\D+/).includes(String(no));
+    const hits = t ? t.rows.filter((r) => (lookup || ships.has(r.cells[t.idx.ship])) && hasPo(r.cells[t.idx.po])) : [];
+    const shipsFound = Array.from(new Set(hits.map((r) => r.cells[t.idx.ship]).filter(Boolean)));
+    debug('link', { no, shipsFound, rows: t ? t.rows.slice(0, 5).map((r) => r.cells) : null });
+    // 한 발주서가 쉽먼트 두 개에 나뉘어 있으면 어느 하나로 정하지 않고 멈춘다.
+    if (shipsFound.length > 1) {
+      await patch({ step: 'error', status: `⛔ 발주서 ${no}가 쉽먼트 ${shipsFound.join(', ')} 여러 개에 들어 있어요. 어느 것인지 정하지 않았어요. 서허 › 택배 쉽먼트에서 확인해 주세요.` });
+      return;
+    }
+    const byOrder = { ...(p.byOrder || {}) };
+    if (shipsFound[0]) byOrder[no] = shipsFound[0];
+    await patch({ byOrder, linkIdx: i + 1, searching: '' });
   };
 
   let busy = false;

@@ -120,7 +120,8 @@
       try {
         chrome.storage.local.get('shubUpload', (r) => {
           const v = r && r.shubUpload;
-          if (v) reply({ type: 'SHUB_UPLOAD_STATUS', step: v.step, status: v.status, batchId: v.batchId, messages: v.messages || [], byOrder: v.byOrder || {} });
+          if (v) reply({ type: 'SHUB_UPLOAD_STATUS', step: v.step, status: v.status, batchId: v.batchId, messages: v.messages || [], byOrder: v.byOrder || {},
+            registeredAt: v.registeredAt || 0, orderNos: v.orderNos || [], shipments: v.shipments || [] });
         });
       } catch (err) {}
       return;
@@ -284,7 +285,8 @@
       // 쉽먼트 일괄등록 업로드 진행 상황(서허 알림 문구 포함).
       if (changes.shubUpload && changes.shubUpload.newValue) {
         const v = changes.shubUpload.newValue;
-        reply({ type: 'SHUB_UPLOAD_STATUS', step: v.step, status: v.status, batchId: v.batchId, messages: v.messages || [], byOrder: v.byOrder || {} });
+        reply({ type: 'SHUB_UPLOAD_STATUS', step: v.step, status: v.status, batchId: v.batchId, messages: v.messages || [], byOrder: v.byOrder || {},
+          registeredAt: v.registeredAt || 0, orderNos: v.orderNos || [], shipments: v.shipments || [] });
       }
       // 입고일 변경 요청을 등록하면 기억한 변경 센터·날짜를 앱에 바로 넘긴다.
       if (changes.poDateRequested && changes.poDateRequested.newValue) {

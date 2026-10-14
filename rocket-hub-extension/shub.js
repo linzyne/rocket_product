@@ -230,7 +230,11 @@
     if (center) {
       for (const sel of document.querySelectorAll('select')) {
         if (!visible(sel)) continue;
-        const opt = Array.from(sel.options).find((o) => clean(o.textContent).includes(center));
+        // 센터 이름이 정확히 같은 것만("인천3"을 찾는데 "인천30"을 고르지 않게). 앞뒤에 다른 글자가 붙은 경우는
+        // 이름 앞뒤가 글자·숫자가 아닐 때만 같은 센터로 본다.
+        const esc = center.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        const same = new RegExp(`(^|[^0-9A-Za-z가-힣])${esc}($|[^0-9A-Za-z가-힣])`);
+        const opt = Array.from(sel.options).find((o) => clean(o.textContent) === center || same.test(clean(o.textContent)));
         if (!opt) continue;
         sel.value = opt.value;
         sel.dispatchEvent(new Event('input', { bubbles: true }));

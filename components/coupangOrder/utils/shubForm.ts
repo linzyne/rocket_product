@@ -52,23 +52,24 @@ export const fillShubForm = (arrayBuffer: ArrayBuffer, batch: ShipmentBatch): Fi
     if (!po) continue;
 
     const sameOrder = entries.filter(e => digits(e.line.발주번호) === po);
-    const hit =
-      sameOrder.find(e => norm(e.line.상품이름) === name) ||
-      sameOrder.find(e => name.includes(norm(e.line.상품이름)) || norm(e.line.상품이름).includes(name)) ||
-      sameOrder.find(e => e.line.확정수량 === qty) ||
-      (sameOrder.length === 1 ? sameOrder[0] : undefined);
-
-    if (!hit || !hit.waybill) {
-      missed.push(`${po} · ${name.slice(0, 20)}`);
+    if (!sameOrder.length) {
+      missed.push(`발주서 ${po} '${name.slice(0, 20)}'은 이번 박스에 없는 발주서예요`);
       continue;
     }
-    // 한 상품을 박스 여러 개에 나눠 담았으면 같은 줄이 박스마다 하나씩 있다.
-    // 첫 박스는 이 줄에 쓰고, 나머지는 이 줄을 복사해 맨 아래에 붙여 송장번호·납품수량을 따로 쓴다.
-    const pieces = sameOrder.filter(e => norm(e.line.상품이름) === norm(hit.line.상품이름));
-    const parts = pieces.length > 1 ? pieces : [hit];
+    // 짐작하지 않는다: 상품 이름이 정확히 같은 박스 줄만 쓴다. 단, 이 발주서가 박스 하나(송장 하나)에만 들어 있으면
+    // 어느 송장인지 분명하므로 그 송장을 쓴다(수량은 양식의 확정수량 그대로).
+    const exact = sameOrder.filter(e => norm(e.line.상품이름) === name);
+    const waybillsOfPo = new Set(sameOrder.map(e => invNo(e.waybill)));
+    let parts: typeof sameOrder;
+    if (exact.length) parts = exact;
+    else if (waybillsOfPo.size === 1) parts = [{ waybill: sameOrder[0].waybill, line: { ...sameOrder[0].line, 상품이름: name, 확정수량: qty } }];
+    else {
+      missed.push(`발주서 ${po} '${name.slice(0, 20)}'이 박스 여러 개에 나뉘어 있는데 상품 이름이 정확히 안 맞아 어느 송장인지 몰라요`);
+      continue;
+    }
     parts.forEach((part, i) => {
       if (!part.waybill) {
-        missed.push(`${po} · ${name.slice(0, 20)} (박스 ${i + 1}번째 조각)`);
+        missed.push(`발주서 ${po} '${name.slice(0, 20)}'의 박스에 송장번호가 없어요`);
         return;
       }
       const at = i === 0 ? r : extraRow++;
@@ -89,7 +90,7 @@ export const fillShubForm = (arrayBuffer: ArrayBuffer, batch: ShipmentBatch): Fi
   const formPos = new Set(rows.slice(1).map(r => digits(r[COL_PO])).filter(Boolean));
   for (const e of entries) {
     const po = digits(e.line.발주번호);
-    if (po && !formPos.has(po)) missed.push(`${po} · ${norm(e.line.상품이름).slice(0, 20)} (서허 양식에 이 발주서가 없음)`);
+    if (po && !formPos.has(po)) missed.push(`발주서 ${po}가 서허 양식에 없어요(서허 양식에 이 발주서가 없음)`);
   }
   // 복사해 붙인 줄까지 시트 범위를 늘린다.
   if (extraRow > rows.length) {
@@ -112,7 +113,8 @@ export const fillShubForm = (arrayBuffer: ArrayBuffer, batch: ShipmentBatch): Fi
   const out = XLSX.write(wb, { bookType: 'xlsx', type: 'array', cellStyles: true });
   return {
     blob: new Blob([out], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }),
-    fileName: `쉽먼트양식_${batch.id}.xlsx`,
+    // 올릴 때마다 이름이 달라야 서허 일괄등록 내역에서 "방금 올린 파일"을 예전 것과 헷갈리지 않는다.
+    fileName: `쉽먼트양식_${batch.id}_${new Date().toTimeString().slice(0, 8).replace(/:/g, '')}.xlsx`,
     filled,
     missed,
     waybills: uniq,

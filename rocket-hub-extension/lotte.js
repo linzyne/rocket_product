@@ -735,8 +735,7 @@
   };
   // 한 줄 안의 운송장 모양 번호를 칸 이름과 함께 모두 꺼낸다. 롯데 데이터에는 이 건의 번호 말고
   // "다음에 발급할 번호" 같은 칸도 같이 오는 것으로 보여서(앱에 늘 한 칸 뒤 번호가 들어왔다),
-  // 이 건의 번호를 고를 때는 정확한 칸 이름(invNo 등)을 먼저 믿고, 없으면 가장 작은 번호를 쓴다
-  // (다음 발급 번호는 늘 이미 발급된 번호보다 크다).
+  // 이 건의 번호는 칸 이름이 정확히 운송장번호(invNo 등)인 것만 쓴다.
   const waybillCandidates = (raw) => {
     const out = [];
     for (const [k, v] of Object.entries(raw || {})) {
@@ -745,15 +744,19 @@
     }
     return out;
   };
+  // 칸 이름이 정확히 "운송장번호"(invNo·INV_NO 등)인 칸의 번호만 쓴다. 번호 모양 칸이 하나뿐이어도 이름이 다르면 쓰지 않는다.
+  const EXACT_KEY = /^(inv|invc|invoice)_?no$/i;
   const pickOwnWaybill = (raw) => {
     const cands = waybillCandidates(raw);
-    if (cands.length <= 1) return { w: cands[0] ? cands[0].w : '', why: cands[0] ? cands[0].k : '' };
-    // 여러 개면 칸 이름이 정확히 "운송장번호"(invNo·INV_NO 등)인 것만 믿는다. 그런 칸이 없으면
-    // 이전운송장번호 같은 칸과 헷갈릴 수 있으니 추측하지 않고 비워 둔다(사람이 확인하게).
-    const exact = cands.filter((c) => /^(inv|invc|invoice)_?no$/i.test(c.k));
+    if (!cands.length) return { w: '', why: '' };
+    if (cands.length === 1) {
+      return EXACT_KEY.test(cands[0].k) ? { w: cands[0].w, why: cands[0].k } : { w: '', why: `칸 이름 불확실(${cands[0].k}=${cands[0].w})` };
+    }
+    // 여러 개면 칸 이름이 정확히 "운송장번호"(invNo·INV_NO 등)인 것이 딱 하나일 때만 쓴다. 아니면 멈추고 알린다.
+    const exact = cands.filter((c) => EXACT_KEY.test(c.k));
     const list = cands.map((c) => `${c.k}=${c.w}`).join(', ');
     if (exact.length === 1) return { w: exact[0].w, why: `${exact[0].k} (후보 ${list})` };
-    return { w: '', why: `번호가 여러 개라 못 고름 (${list})` };
+    return { w: '', why: `칸 이름 불확실(후보 ${list})` };
   };
   const pickRows = (json) => {
     const found = [];
@@ -808,7 +811,7 @@
         }
         inThis.forEach((e, ord) => {
           const waybill = e.nums.size > 1
-            ? { w: '', why: `번호가 여러 개라 못 고름 (같은 주문번호 줄이 ${e.nums.size}개: ${Array.from(e.nums).join(', ')})` }
+            ? { w: '', why: `같은 주문번호 줄이 ${e.nums.size}개(${Array.from(e.nums).join(', ')})` }
             : e.own || { w: '', why: e.why };
           byOrder.set(ord, { waybill, receiver: e.receiver, at });
         });
@@ -1107,8 +1110,12 @@
           // 화면 가운데 "운송장번호" 칸은 롯데가 다음에 발급할 번호라서(예전에 앱이 이걸 읽어 늘 한 칸 뒤
           // 번호가 들어갔다) 절대 쓰지 않는다. 다시 조회한 뒤에 들어온 목록만 믿는다.
           const seen = byOrder.get(ordNo);
-          if (seen && seen.at >= (p.searchedAt2 || 0) && !seen.waybill.w && /여러 개/.test(seen.waybill.why)) {
-            await patch({ step: 'manual', status: `롯데에 ${ordNo} 줄이 여러 개라 어느 송장번호가 맞는지 알 수 없어요. 넣지 않았어요. 롯데에서 겹친 예약을 지운 뒤 앱에서 "이어서 하기"를 눌러 주세요.`, diag: seen.waybill.why });
+          if (seen && seen.at >= (p.searchedAt2 || 0) && !seen.waybill.w && /칸 이름 불확실/.test(seen.waybill.why)) {
+            await patch({ step: 'manual', status: `⛔ 롯데 ${ordNo} 줄에서 송장번호 칸을 정확히 못 찾아 넣지 않았어요. 롯데 화면 구조가 바뀐 것 같아요. [화면 구조 저장]을 눌러 파일을 보내 주세요.`, diag: seen.waybill.why });
+            return;
+          }
+          if (seen && seen.at >= (p.searchedAt2 || 0) && !seen.waybill.w && /같은 주문번호 줄/.test(seen.waybill.why)) {
+            await patch({ step: 'manual', status: `⛔ 롯데에 ${ordNo} 줄이 여러 개(같은 주문번호로 예약이 두 번)라 어느 송장번호인지 몰라서 넣지 않았어요. 롯데에서 겹친 예약을 지운 뒤 앱에서 "이어서 하기"를 눌러 주세요.`, diag: seen.waybill.why });
             return;
           }
           const fresh = seen && seen.at >= (p.searchedAt2 || 0) && seen.waybill.w;
@@ -1180,8 +1187,12 @@
             return;
           }
           const seen = byOrder.get(ordNo);
-          if (seen && seen.at >= p.verifySearchedAt && !seen.waybill.w && /여러 개/.test(seen.waybill.why)) {
-            await patch({ step: 'manual', status: `롯데에 ${ordNo} 줄이 여러 개라 어느 송장번호가 맞는지 알 수 없어요. 넣지 않았어요. 롯데에서 겹친 예약을 지운 뒤 앱에서 "이어서 하기"를 눌러 주세요.`, diag: seen.waybill.why });
+          if (seen && seen.at >= p.verifySearchedAt && !seen.waybill.w && /칸 이름 불확실/.test(seen.waybill.why)) {
+            await patch({ step: 'manual', status: `⛔ 롯데 ${ordNo} 줄에서 송장번호 칸을 정확히 못 찾아 넣지 않았어요. 롯데 화면 구조가 바뀐 것 같아요. [화면 구조 저장]을 눌러 파일을 보내 주세요.`, diag: seen.waybill.why });
+            return;
+          }
+          if (seen && seen.at >= p.verifySearchedAt && !seen.waybill.w && /같은 주문번호 줄/.test(seen.waybill.why)) {
+            await patch({ step: 'manual', status: `⛔ 롯데에 ${ordNo} 줄이 여러 개(같은 주문번호로 예약이 두 번)라 어느 송장번호인지 몰라서 넣지 않았어요. 롯데에서 겹친 예약을 지운 뒤 앱에서 "이어서 하기"를 눌러 주세요.`, diag: seen.waybill.why });
             return;
           }
           if (!seen || seen.at < p.verifySearchedAt || !seen.waybill.w) {

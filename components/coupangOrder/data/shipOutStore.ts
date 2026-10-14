@@ -333,10 +333,12 @@ export function updateShipOutLine(
 // 쉽먼트 완료는 사람이 켠 표시가 우선이고, 없으면 예약·운송장·서허 양식이 다 끝났는지로 본다(쉽먼트생성과 같은 기준).
 export function shipOutBatch(item: ShipOut, batches: ShipmentBatch[]): ShipmentBatch | undefined {
   const mine = new Set(item.lines.map(l => String(l.발주번호 || '').trim()).filter(Boolean));
-  return batches.find(b => b.id === item.batchId)
-    || batches
-      .filter(b => allBoxes(b).some(box => box.lines.some(l => mine.has(String(l.발주번호 || '').trim()))))
-      .sort((a, b) => b.createdAt - a.createdAt)[0];
+  const own = batches.find(b => b.id === item.batchId);
+  if (own) return own;
+  // 쉽먼트 번호가 안 붙은 건: 이 건의 발주서가 든 기록이 딱 하나일 때만 그 기록으로 본다.
+  // 여럿이면 고르지 않는다(예전엔 가장 최근 것을 골랐다 — 짐작이라 그 기록에 센터·날짜를 옮겨 적거나 이어서 하기를 할 수 있었다).
+  const cands = batches.filter(b => allBoxes(b).some(box => box.lines.some(l => mine.has(String(l.발주번호 || '').trim()))));
+  return cands.length === 1 ? cands[0] : undefined;
 }
 // 이 날 전에 양식을 저장한 건은 예전 기준(양식 저장 = 끝)대로 둔다. 기준을 바꾸면서 이미 발송대기에 있던 건이
 // 쉽먼트생성으로 되돌아가지 않게 하려고.

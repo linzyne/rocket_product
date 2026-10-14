@@ -3,7 +3,7 @@
 //
 //  shipmentBatches : 문서 id = 만든 시각으로 만든 번호(S260923-01 …)
 //    센터 → 박스 → 그 박스에 담은 상품들(발주번호·상품명·확정수량). 박스 하나 = 택배 한 건 = 운송장 하나.
-import { collection, doc, onSnapshot, setDoc, deleteDoc } from 'firebase/firestore';
+import { collection, doc, onSnapshot, setDoc, deleteDoc, arrayUnion } from 'firebase/firestore';
 import { db, ensureSignedIn } from '../utils/firebase';
 
 export interface ShipmentLine {
@@ -42,6 +42,8 @@ export interface ShipmentBatch {
   // 사람이 카드에서 닫은 안내문·이어서 하기. "단계|상태"를 적어 두고 진행 기록이 그 단계·상태인 동안 숨긴다.
   noteHiddenFor?: string;
   resumeHiddenFor?: string;
+  // 서허 일괄등록이 "완료"된 발주번호들. 뒤 단계에서 멈춰도 이 발주서들은 다시 올리지 않는다(쉽먼트가 두 번 생기지 않게).
+  registeredOrders?: string[];
 }
 
 export type ShipmentRunStep = 'lotte' | 'waybill' | 'form' | 'upload' | 'done';
@@ -232,6 +234,21 @@ export const patchShipmentBatch = async (id: string, patch: Partial<ShipmentBatc
   }
   await ensureSignedIn();
   await setDoc(doc(db, COLLECTION, id), patch, { merge: true });
+};
+
+// 서허에 등록된 발주번호를 기록에 더한다(여러 탭·여러 번 와도 겹치지 않게 합친다).
+export const addRegisteredOrders = async (id: string, orderNos: string[]) => {
+  const nos = orderNos.map(n => String(n).trim()).filter(Boolean);
+  if (!nos.length) return;
+  if (!db) {
+    const s = readLocal();
+    if (!s[id]) return;
+    s[id] = { ...s[id], registeredOrders: Array.from(new Set([...(s[id].registeredOrders || []), ...nos])) };
+    writeLocal(s);
+    return;
+  }
+  await ensureSignedIn();
+  await setDoc(doc(db, COLLECTION, id), { registeredOrders: arrayUnion(...nos) }, { merge: true });
 };
 
 export const deleteShipmentBatch = async (id: string) => {

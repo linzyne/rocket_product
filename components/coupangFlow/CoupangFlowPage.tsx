@@ -754,7 +754,7 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
                   </span>
                 ) : (
                   (() => {
-                    // 오른쪽: 주문수량 (배정 N · 사무실+오는 중). 배정·대기·미배정과 사무실 재고를 괄호 안에 같이 보여준다.
+                    // 오른쪽: 주문수량 · ✈한중발주로 오는 중 · 장바구니 · 미배정 · [사무실 도착 ✈오는 중] 버튼 모양.
                     const key = { 발주번호: o.no, 상품이름: l.상품이름, 확정수량: l.확정수량 };
                     const places = placesOf(key);
                     const assigned = places.filter(p => p.code).reduce((n, p) => n + p.qty, 0);
@@ -766,37 +766,47 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
                     const office = officeOf(l.상품이름);
                     const arrived = office.qty || 0;
                     const incoming = office.incoming || 0;
-                    // 사무실 재고는 0이어도 늘 보여준다(0+0).
-                    const hasOffice = true;
                     // 사무실 숫자 색: 이 줄에 아직 채울 게 남았을 때만(이미 다 맡겼거나 준비됨이면 회색).
                     const need = Math.max(0, (Number(l.확정수량) || 0) - assigned - queued);
                     const covered = need === 0 || isReadyLine;
                     const officeColor = covered ? '#a8a29e' : arrived >= need ? GREEN : arrived + incoming >= need ? '#d97706' : RED;
-                    const hasParen = assigned > 0 || queued > 0 || hasOffice;
+                    const plane = (color: string) => (
+                      <svg width="11" height="11" viewBox="0 0 24 24" fill={color} style={{ display: 'inline-block', verticalAlign: '-1px', marginRight: 1 }}><path d="M21 16v-2l-8-5V3.5a1.5 1.5 0 0 0-3 0V9l-8 5v2l8-2.5V19l-2 1.5V22l3.5-1 3.5 1v-1.5L13 19v-5.5z" /></svg>
+                    );
+                    const incomingColor = covered || !incoming ? '#a8a29e' : '#d97706';
                     return (
                       <span style={{ flexShrink: 0, display: 'inline-flex', alignItems: 'baseline', gap: 3, whiteSpace: 'nowrap', letterSpacing: '-0.3px' }}>
                         {(o.stage === 1 || o.stage === 2) && l.stage === o.stage
                           ? <b onClick={() => editQty(o, l)} title="눌러서 확정수량 고치기(서허 요청등록에서 수량을 바꿨을 때)"
                               style={{ cursor: 'pointer', textDecoration: 'underline dotted', textUnderlineOffset: 2 }}>{l.확정수량}개</b>
                           : <b>{l.확정수량}개</b>}
-                        {hasParen && (
-                          <span
-                            title={[
-                              assigned ? `배정: ${places.filter(p => p.code).map(p => `${p.code} ${p.qty}개`).join(', ')}` : '',
-                              queued ? `1688 주문하기 ${queued}개` : '',
-                              showLeft ? `남은 ${left}개를 배정해 주세요 — "미배정"을 누르면 남은 수량만 배정해요` : '',
-                              hasOffice ? `사무실 재고(한중 여유) · 도착 ${arrived}개 · 오는 중 ${incoming}개\n${office.names.join('\n')}` : '',
-                            ].filter(Boolean).join('\n')}
-                            style={{ fontSize: 11, color: '#8a857f', whiteSpace: 'nowrap', flexShrink: 0 }}
-                          >
-                            (
-                            {assigned ? <><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#8a857f" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" style={{ display: 'inline-block', verticalAlign: '-1px', marginRight: 1 }}><path d="M20 6 9 17l-5-5" /></svg><b>{assigned}</b></> : null}
-                            {queued ? <>{assigned ? ' · ' : ''}<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke={ORANGE} strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" style={{ display: 'inline-block', verticalAlign: '-1px', marginRight: 1 }}><circle cx="9" cy="20" r="1.6" /><circle cx="18" cy="20" r="1.6" /><path d="M2 3h3l2.6 12.4a1 1 0 0 0 1 .8h9.7a1 1 0 0 0 1-.8L21 7H6" /></svg><b>{queued}</b></> : null}
-                            {showLeft && <> · <b onClick={() => setAssignFor({ o, l, left })} style={{ color: RED, cursor: 'pointer', textDecoration: 'underline dotted', textUnderlineOffset: 2 }}>미배정 {left}</b></>}
-                            {hasOffice && <>{assigned || queued ? ' · ' : ''}<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke={officeColor} strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" style={{ display: 'inline-block', verticalAlign: '-1px', marginRight: 1 }}><path d="M4 21V5a1 1 0 0 1 1-1h9a1 1 0 0 1 1 1v16" /><path d="M15 10h4a1 1 0 0 1 1 1v10" /><path d="M2 21h20M8 8h3M8 12h3M8 16h3" /></svg><b style={{ color: officeColor }}>{arrived}</b>{' · '}<svg width="11" height="11" viewBox="0 0 24 24" fill={covered || !incoming ? '#a8a29e' : '#d97706'} style={{ display: 'inline-block', verticalAlign: '-1px', marginRight: 1 }}><path d="M21 16v-2l-8-5V3.5a1.5 1.5 0 0 0-3 0V9l-8 5v2l8-2.5V19l-2 1.5V22l3.5-1 3.5 1v-1.5L13 19v-5.5z" /></svg><b style={{ color: covered || !incoming ? '#a8a29e' : '#d97706' }}>{incoming}</b></>}
-                            )
+                        {/* 한중발주로 오는 중(배정 수량) = 비행기. 장바구니·미배정은 그 옆. */}
+                        {assigned > 0 && (
+                          <span title={`한중발주로 입고중: ${places.filter(p => p.code).map(p => `${p.code} ${p.qty}개`).join(', ')}`}
+                            style={{ fontSize: 11, color: '#2563eb', whiteSpace: 'nowrap' }}>
+                            {plane('#2563eb')}<b>{assigned}</b>
                           </span>
                         )}
+                        {queued > 0 && (
+                          <span title={`1688 주문하기 ${queued}개`} style={{ fontSize: 11, color: ORANGE, whiteSpace: 'nowrap' }}>
+                            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke={ORANGE} strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" style={{ display: 'inline-block', verticalAlign: '-1px', marginRight: 1 }}><circle cx="9" cy="20" r="1.6" /><circle cx="18" cy="20" r="1.6" /><path d="M2 3h3l2.6 12.4a1 1 0 0 0 1 .8h9.7a1 1 0 0 0 1-.8L21 7H6" /></svg><b>{queued}</b>
+                          </span>
+                        )}
+                        {showLeft && (
+                          <b onClick={() => setAssignFor({ o, l, left })} title={`남은 ${left}개를 배정해 주세요 — 누르면 남은 수량만 배정해요`}
+                            style={{ fontSize: 11, color: RED, cursor: 'pointer', textDecoration: 'underline dotted', textUnderlineOffset: 2 }}>미배정 {left}</b>
+                        )}
+                        {/* 사무실 여유 재고: 도착(건물) + 오는 중(비행기)을 버튼 모양 하나로 묶는다. 0이어도 늘 보여준다. */}
+                        <span
+                          title={`사무실 재고(한중 여유) · 도착 ${arrived}개 · 오는 중 ${incoming}개\n${office.names.join('\n')}`}
+                          style={{
+                            display: 'inline-flex', alignItems: 'center', gap: 5, padding: '0 6px', fontSize: 11, lineHeight: '17px', alignSelf: 'center',
+                            borderRadius: 6, border: '1px solid #e7e5e4', background: '#f5f5f4', whiteSpace: 'nowrap',
+                          }}
+                        >
+                          <span><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke={officeColor} strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" style={{ display: 'inline-block', verticalAlign: '-1px', marginRight: 1 }}><path d="M4 21V5a1 1 0 0 1 1-1h9a1 1 0 0 1 1 1v16" /><path d="M15 10h4a1 1 0 0 1 1 1v10" /><path d="M2 21h20M8 8h3M8 12h3M8 16h3" /></svg><b style={{ color: officeColor }}>{arrived}</b></span>
+                          <span>{plane(incomingColor)}<b style={{ color: incomingColor }}>{incoming}</b></span>
+                        </span>
                       </span>
                     );
                   })()

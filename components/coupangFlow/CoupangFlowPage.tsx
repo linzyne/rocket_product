@@ -810,9 +810,9 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
                             return !!a && a.received >= a.ordered;
                           };
                           const numPlane = (color: string, no: React.ReactNode) => (
-                            <svg width="24" height="14" viewBox="0 0 28 16" style={{ display: 'inline-block', verticalAlign: '-2px', marginRight: 1 }}>
-                              <path fill={color} d="M8 0h2l7 4h-6zM8 16h2l7-4h-6zM1 1h2l3 3H2zM2 4h20c3 0 6 2 6 4s-3 4-6 4H2a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1z" />
-                              <text x="14" y="8.5" textAnchor="middle" dominantBaseline="middle" fill="#fff" fontSize="9.5" fontWeight="800">{no}</text>
+                            <svg width="15" height="15" viewBox="0 0 24 24" style={{ display: 'inline-block', verticalAlign: '-3px', marginRight: 1 }}>
+                              <path fill={color} d="M12 .5c2.5 0 4.5 2 4.5 4.5v3.6l7 4.4v2.6l-7-2V19l2 1.5v2.3l-6.5-1.6-6.5 1.6v-2.3l2-1.5v-5.4l-7 2V13l7-4.4V5c0-2.5 2-4.5 4.5-4.5z" />
+                              <text x="12" y="10.5" textAnchor="middle" dominantBaseline="middle" fill="#fff" fontSize="10" fontWeight="800">{no}</text>
                             </svg>
                           );
                           const going = hjPlaces.filter(p => !done(p));

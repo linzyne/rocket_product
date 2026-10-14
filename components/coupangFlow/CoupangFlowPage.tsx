@@ -699,19 +699,13 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
                       title={`${l.상품이름}\n${isReady ? '준비됨' : coming.length ? `입고중(한중발주 ${coming.map(p => p.code).join(', ')})` : waitingQueue ? '1688 주문하기' : '준비중'} — 눌러서 준비됨·한중발주 배정`}
                       style={{
                         flex: 1, minWidth: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
-                        // 준비중(아무 진행 없음) = 검정 굵게, 입고중 = 검정 보통 굵기 + 번호 동그라미, 준비됨 = 회색 + 줄 긋기 + 초록 ✓
+                        // 준비중(아무 진행 없음) = 검정 굵게, 입고중 = 검정 보통 굵기(번호는 오른쪽 ✈ 옆), 준비됨 = 회색 + 줄 긋기 + 초록 ✓
                         color: now < full ? RED : isReady ? '#a8a29e' : '#111',
                         fontWeight: faded ? 400 : 700,
                         textDecoration: (editable && now === 0) || isReady ? 'line-through' : 'none',
                       }}
                     >
                       {isReady && <span style={{ marginRight: 4, color: GREEN, fontWeight: 900 }}>✓</span>}
-                      {!isReady && coming.map(p => (
-                        <span key={p.code!} style={{
-                          display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 16, height: 16, marginRight: 4,
-                          borderRadius: '50%', background: hjColor.get(p.code!) || '#2563eb', color: '#fff', fontSize: 10, fontWeight: 800, verticalAlign: 'middle',
-                        }}>{hjNo.get(p.code!) ?? '?'}</span>
-                      ))}
                       {/* 장바구니(1688 주문하기)에 든 몫: 주황 동그라미 장바구니 */}
                       {waitingQueue && !isReady && (
                         <span title="1688 주문하기(장바구니)에 담겨 있어요" style={{

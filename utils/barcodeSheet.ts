@@ -34,10 +34,8 @@ const barcodeSvg = (value: string) => {
 };
 
 export const writeBarcodeSheet = (win: Window, title: string, items: SheetItem[]) => {
-  const labels = items.flatMap(it => {
-    const svg = barcodeSvg(it.barcode);
-    return Array.from({ length: Math.max(0, it.qty) }, () => ({ name: it.name, svg, code: it.barcode }));
-  });
+  // 상품마다 몇 장 뽑을지는 탭에서 고른다(기본 40장 = 한 장 가득). qty(발주 수량)는 참고로만 보여 준다.
+  const products = items.map(it => ({ name: it.name, svg: barcodeSvg(it.barcode), code: it.barcode, qty: it.qty }));
   const html = `<!doctype html><html lang="ko"><head><meta charset="utf-8"><title>${esc(title)}</title>
 <style>
   @page { size: A4; margin: 0; }
@@ -60,6 +58,9 @@ export const writeBarcodeSheet = (win: Window, title: string, items: SheetItem[]
   .code { flex: 1; min-width: 0; padding-top: 0.4mm; display: flex; flex-direction: column; }
   .code svg { flex: 1; min-height: 0; width: 100%; display: block; }
   .num { font-size: 7.5pt; line-height: 1; text-align: center; letter-spacing: 0.3pt; margin-top: 0.3mm; }
+  .counts { flex-basis: 100%; display: flex; flex-direction: column; gap: 4px; }
+  .counts label { display: flex; align-items: center; gap: 6px; }
+  .counts .pname { max-width: 420px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .bar textarea { font-size: 12px; width: 300px; height: 64px; vertical-align: middle; }
   @media print {
     body { background: #fff; }
@@ -70,7 +71,7 @@ export const writeBarcodeSheet = (win: Window, title: string, items: SheetItem[]
 </style></head><body>
 <div class="bar">
   <b>${esc(title)}</b>
-  <span>라벨 ${labels.length}장</span>
+  <span>라벨 <b id="total"></b>장</span>
   <label>용지 <select id="preset">
     <option value="ls3102">폼텍 LS-3102 47×26.9mm</option>
     <option value="m">폼텍 40칸 48.5×25.4mm (여백 있음)</option>
@@ -82,10 +83,12 @@ export const writeBarcodeSheet = (win: Window, title: string, items: SheetItem[]
   <label>표시 문구 <textarea id="info"></textarea></label>
   <button onclick="window.print()">🖨 인쇄</button>
   <small>인쇄 창에서 배율 "실제 크기(100%)", 여백 "없음"으로 찍어 주세요.</small>
+  <div class="counts" id="counts"></div>
 </div>
 <div id="pages"></div>
 <script>
-  var LABELS = ${JSON.stringify(labels).replace(/</g, '\\u003c')};
+  var PRODUCTS = ${JSON.stringify(products).replace(/</g, '\\u003c')};
+  var LABELS = [];
   var PRESETS = {
     // LS-3102: 라벨 47×26.9mm(판매 정보). 여백·간격은 추정값이라 시험 인쇄 뒤 위↓·오른쪽→으로 맞춘다.
     ls3102: { w: 47, h: 26.9, cols: 4, rows: 10, left: 6.5, top: 14, gx: 3, gy: 0 },
@@ -105,7 +108,23 @@ export const writeBarcodeSheet = (win: Window, title: string, items: SheetItem[]
   var savedInfo = null;
   try { savedInfo = localStorage.getItem(INFO_KEY); } catch (e) {}
   $('info').value = savedInfo == null ? DEFAULT_INFO : savedInfo;
+  // 상품마다 장수 칸(기본 40 = 한 장).
+  PRODUCTS.forEach(function (pr, k) {
+    var lab = document.createElement('label');
+    var nm = document.createElement('span'); nm.className = 'pname'; nm.textContent = pr.name; nm.title = pr.name;
+    var inp = document.createElement('input'); inp.type = 'number'; inp.min = '0'; inp.step = '1'; inp.value = '40'; inp.id = 'cnt' + k;
+    var hint = document.createElement('small'); hint.textContent = '장 (발주 ' + pr.qty + '개)';
+    lab.appendChild(nm); lab.appendChild(inp); lab.appendChild(hint);
+    $('counts').appendChild(lab);
+    inp.addEventListener('input', draw);
+  });
   function draw() {
+    LABELS = [];
+    PRODUCTS.forEach(function (pr, k) {
+      var n = Math.max(0, parseInt($('cnt' + k).value, 10) || 0);
+      for (var q = 0; q < n; q++) LABELS.push(pr);
+    });
+    $('total').textContent = LABELS.length;
     var p = PRESETS[$('preset').value] || PRESETS.ls3102;
     var per = p.cols * p.rows;
     var start = Math.min(per, Math.max(1, parseInt($('start').value, 10) || 1)) - 1;

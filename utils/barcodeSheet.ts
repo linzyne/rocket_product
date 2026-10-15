@@ -50,6 +50,7 @@ export const writeBarcodeSheet = (win: Window, title: string, items: SheetItem[]
   .page:last-child { break-after: auto; }
   .cell { position: absolute; padding: 1.3mm 1.6mm; display: flex; flex-direction: column; overflow: hidden; color: #000; }
   .cell.used { outline: 1px dashed #e5e7eb; }
+  body.guide .cell.used { outline: 0.2mm solid #000; }
   .name { width: 100%; font-size: 8pt; line-height: 1.15; font-weight: 800; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; word-break: keep-all; flex-shrink: 0; }
   .info1, .info div { font-size: 5.6pt; line-height: 1.3; white-space: nowrap; overflow: hidden; }
   .info1 { margin-top: 0.7mm; flex-shrink: 0; }
@@ -66,7 +67,7 @@ export const writeBarcodeSheet = (win: Window, title: string, items: SheetItem[]
     body { background: #fff; }
     .bar { display: none; }
     .page { margin: 0; }
-    .cell.used { outline: 0; }
+    body:not(.guide) .cell.used { outline: 0; }
   }
 </style></head><body>
 <div class="bar">
@@ -80,6 +81,7 @@ export const writeBarcodeSheet = (win: Window, title: string, items: SheetItem[]
   <label>시작 칸 <input id="start" type="number" min="1" max="40" value="1"></label>
   <label>위↓ <input id="dy" type="number" step="0.5" value="0"> mm</label>
   <label>오른쪽→ <input id="dx" type="number" step="0.5" value="0"> mm</label>
+  <label title="일반 A4 종이에 칸 테두리를 같이 찍어 라벨지에 겹쳐 보고 위치를 맞춰요"><input id="guide" type="checkbox"> 칸 테두리 인쇄(위치 맞추기용)</label>
   <label>표시 문구 <textarea id="info"></textarea></label>
   <button onclick="window.print()">🖨 인쇄</button>
   <small>인쇄 창에서 배율 "실제 크기(100%)", 여백 "없음"으로 찍어 주세요.</small>
@@ -90,8 +92,9 @@ export const writeBarcodeSheet = (win: Window, title: string, items: SheetItem[]
   var PRODUCTS = ${JSON.stringify(products).replace(/</g, '\\u003c')};
   var LABELS = [];
   var PRESETS = {
-    // LS-3102: 라벨 47×26.9mm(판매 정보). 여백·간격은 추정값이라 시험 인쇄 뒤 위↓·오른쪽→으로 맞춘다.
-    ls3102: { w: 47, h: 26.9, cols: 4, rows: 10, left: 6.5, top: 14, gx: 3, gy: 0 },
+    // LS-3102: 라벨 47×26.9mm(폼텍 카탈로그). 여백·간격은 카탈로그 배치 그림에서 잰 값
+    // (줄 사이 간격 없음 → 위아래 14mm, 열 사이 약 3.3mm → 좌우 약 6.1mm). 시험 인쇄 뒤 위↓·오른쪽→으로 맞춘다.
+    ls3102: { w: 47, h: 26.9, cols: 4, rows: 10, left: 6.1, top: 14, gx: 3.3, gy: 0 },
     m: { w: 48.5, h: 25.4, cols: 4, rows: 10, left: 8, top: 21.5, gx: 0, gy: 0 },
     f: { w: 52.5, h: 29.7, cols: 4, rows: 10, left: 0, top: 0, gx: 0, gy: 0 }
   };
@@ -159,6 +162,7 @@ export const writeBarcodeSheet = (win: Window, title: string, items: SheetItem[]
       lines.slice(1).forEach(function (t) { var d = document.createElement('div'); d.textContent = t; el.appendChild(d); });
     });
   }
+  $('guide').addEventListener('change', function () { document.body.classList.toggle('guide', $('guide').checked); });
   ['preset', 'start', 'dx', 'dy', 'info'].forEach(function (id) { $(id).addEventListener('input', draw); });
   draw();
 </script></body></html>`;

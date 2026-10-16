@@ -18,8 +18,19 @@ export const COMMON_DESIGNS: { id: CommonDesign; label: string; hint: string }[]
   { id: 'C', label: 'C 띠', hint: '강조색 머리띠 · CS → FAQ → 배송 → 반품' },
 ];
 
+export type DeadlineDesign = 'own' | 'A' | 'B' | 'C' | 'D';
+export const DEADLINE_DESIGNS: { id: DeadlineDesign; label: string; hint: string }[] = [
+  { id: 'own', label: '틀 기본', hint: '1번 틀 고지 섹션 그대로' },
+  { id: 'A', label: 'A 카드', hint: '테두리 카드 + ! 안내' },
+  { id: 'B', label: 'B 라인', hint: '큰 시각 | 제목, 번호 줄' },
+  { id: 'C', label: 'C 띠', hint: '강조색 상자 + 흰 시각 알약' },
+  { id: 'D', label: 'D 원형', hint: '동그라미 시계 + ✓ 목록' },
+];
+
 export interface CommonInfo {
   design?: CommonDesign;
+  // 주문 마감 블록만 따로 고른 디자인. 없으면 틀 기본(1번 틀) 또는 공통 안내 디자인을 따른다.
+  deadlineDesign?: DeadlineDesign;
   deadline: { icon: string; title: string; subtitle: string; big: string; cards: string[] };
   shipping: { caption: string; title: string; rows: { label: string; value: string }[] };
   refund: { caption: string; title: string; lead: string; items: { title: string; body: string }[] };
@@ -129,6 +140,7 @@ const mergeInfo = (base: CommonInfo, saved: Partial<CommonInfo> | null): CommonI
     if (saved[key]) merged[key] = { ...base[key], ...saved[key] };
   }
   if (saved.design) merged.design = saved.design;
+  if (saved.deadlineDesign) merged.deadlineDesign = saved.deadlineDesign;
   return merged as unknown as CommonInfo;
 };
 
@@ -168,7 +180,10 @@ export const useCommonInfo = (categoryId: string, fallbackDesign: CommonDesign) 
   const setDesign = useCallback((design: CommonDesign) => {
     save({ ...loadCommonInfo(categoryId, fallbackDesign), design });
   }, [categoryId, fallbackDesign, save]);
-  return [info, update, setDesign] as const;
+  const setDeadlineDesign = useCallback((deadlineDesign: DeadlineDesign) => {
+    save({ ...loadCommonInfo(categoryId, fallbackDesign), deadlineDesign });
+  }, [categoryId, fallbackDesign, save]);
+  return [info, update, setDesign, setDeadlineDesign] as const;
 };
 
 interface CommonBlockProps {
@@ -701,8 +716,48 @@ const GuidesC: React.FC<CommonBlockProps> = props => {
   );
 };
 
-export const CommonDeadline: React.FC<CommonBlockProps> = props =>
-  props.info.design === 'B' ? <DeadlineB {...props} /> : props.info.design === 'C' ? <DeadlineC {...props} /> : <DeadlineA {...props} />;
+// ── D 원형: 강조색 동그라미 안에 큰 시각, 아래 제목, 안내는 ✓ 목록 상자 ──
+const DeadlineD: React.FC<CommonBlockProps> = props => {
+  const { info, update, accentColor: accent } = props;
+  const S = useStyles(props);
+  const d = info.deadline;
+  const set = (patch: Partial<CommonInfo['deadline']>) => update('deadline', patch);
+  const size = S.px(330);
+  return (
+    <div style={{ padding: `90px ${SIDE}px` }}>
+      <div style={{
+        width: size, height: size, margin: '0 auto', borderRadius: '50%', border: `10px solid ${accent}`,
+        boxShadow: `0 0 0 14px ${kimchiTint(accent, 0.12)}`, background: '#ffffff',
+        display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 6,
+      }}>
+        <EditableText value={d.icon} onChange={v => set({ icon: v })} placeholder="아이콘" style={{ ...S.icon, fontSize: S.px(46) }} />
+        <EditableText value={d.big} onChange={v => set({ big: v })} placeholder="10:00" style={{ ...S.big, fontSize: S.px(92), color: accent }} />
+        <EditableText value={d.subtitle} onChange={v => set({ subtitle: v })} placeholder="부제" style={{ ...S.subtitle, fontSize: S.px(22) }} />
+      </div>
+      <div style={{ height: 50 }} />
+      <EditableText value={d.title} onChange={v => set({ title: v })} placeholder="제목" style={S.deadlineTitle} />
+      <div style={{ height: 40 }} />
+      <div style={{ background: '#f5f5f3', borderRadius: 28, padding: '20px 40px' }}>
+        {d.cards.map((card, idx) => (
+          <div key={idx} style={{ display: 'flex', gap: 22, alignItems: 'flex-start', padding: '24px 0', borderTop: idx === 0 ? 'none' : '1px solid #e0e0e0' }}>
+            <div style={{
+              width: S.px(40), height: S.px(40), flexShrink: 0, borderRadius: '50%', background: accent, color: '#ffffff',
+              fontFamily: props.fontFamily, fontWeight: 900, fontSize: S.px(22), display: 'flex', alignItems: 'center', justifyContent: 'center', marginTop: 4,
+            }}>✓</div>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <EditableText value={card} onChange={editAt(d.cards, idx, (_, v) => v, cards => set({ cards }))} placeholder="안내 문구" style={{ ...S.deadlineCard, textAlign: 'left' }} />
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+};
+
+export const CommonDeadline: React.FC<CommonBlockProps & { design?: CommonDesign | 'D' }> = ({ design, ...props }) => {
+  const which = design ?? props.info.design;
+  return which === 'B' ? <DeadlineB {...props} /> : which === 'C' ? <DeadlineC {...props} /> : which === 'D' ? <DeadlineD {...props} /> : <DeadlineA {...props} />;
+};
 
 export const CommonGuides: React.FC<CommonBlockProps> = props =>
   props.info.design === 'B' ? <GuidesB {...props} /> : props.info.design === 'C' ? <GuidesC {...props} /> : <GuidesA {...props} />;

@@ -33,7 +33,7 @@ import { KimchiPreviewModern } from './KimchiDetailSectionsModern';
 import { KimchiPreviewBold } from './KimchiDetailSectionsBold';
 import { KimchiPreviewSales } from './KimchiDetailSectionsSales';
 import { GreenPreview } from './GreenDetailSections';
-import { CommonDeadline, CommonGuides, CommonDesign, COMMON_DESIGNS, useCommonInfo } from './DetailCommonInfo';
+import { CommonDeadline, CommonGuides, CommonDesign, COMMON_DESIGNS, DEADLINE_DESIGNS, useCommonInfo } from './DetailCommonInfo';
 import {
   KimchiSection,
   createDefaultSectionsFor,
@@ -366,19 +366,35 @@ interface BasicTextDraft {
   drawObjects: DrawObject[];
 }
 
-// 공통 안내를 섹션 사이 어디에 끼울지. 주문 마감은 인트로 바로 아래(이미 그 자리에 배송 고지
-// 섹션을 둔 틀이면 그걸 그대로 쓰고 따로 넣지 않는다), 배송·반품·CS·FAQ는 제품 상세 정보
-// (표시사항 표) 바로 위 — 그 표가 없으면 맨 아래.
-const splitForCommonInfo = (sections: KimchiSection[]) => {
+// 공통 안내를 섹션 사이 어디에 끼울지. 주문 마감은 인트로 바로 아래, 배송·반품·CS·FAQ는 제품 상세
+// 정보(표시사항 표) 바로 위 — 그 표가 없으면 맨 아래.
+// 1번 틀처럼 틀에 이미 배송 고지 섹션이 있으면: 마감 디자인이 '틀 기본'이면 그 섹션을 그대로 쓰고,
+// A~D를 고르면 그 섹션은 미리보기에서 빼고 그 자리에 공통 마감 블록을 넣는다.
+const isOwnDeadlineSection = (s: KimchiSection) => s.kind === 'notice' && (s.promptLabel === '배송' || /\d{1,2}:\d{2}/.test(s.bigText || ''));
+const splitForCommonInfo = (all: KimchiSection[], useOwnDeadline: boolean) => {
+  const ownIdx = all.findIndex(isOwnDeadlineSection);
+  const sections = ownIdx !== -1 && !useOwnDeadline ? all.filter((_, i) => i !== ownIdx) : all;
   const heroIdx = sections.findIndex(s => s.kind === 'hero' || s.kind === 'gHero');
-  const deadlineAt = heroIdx === -1 ? 0 : heroIdx + 1;
-  const showDeadline = !sections.some(s => s.kind === 'notice' && (s.promptLabel === '배송' || /\d{1,2}:\d{2}/.test(s.bigText || '')));
+  const deadlineAt = ownIdx !== -1 && !useOwnDeadline ? ownIdx : heroIdx === -1 ? 0 : heroIdx + 1;
+  const showDeadline = ownIdx === -1 || !useOwnDeadline;
   let infoIdx = -1;
   sections.forEach((s, idx) => {
     if (s.kind === 'pairs' && (['표시사항', '상세정보'].includes(s.promptLabel || '') || /상세\s*정보|표시사항/.test(s.title))) infoIdx = idx;
   });
   const guidesAt = infoIdx < deadlineAt ? sections.length : infoIdx;
-  return { deadlineAt, showDeadline, guidesAt };
+  return { sections, deadlineAt, showDeadline, guidesAt };
+};
+
+// 1번 틀 소구점 배지('POINT 01')의 숫자를 페이지 안 순서대로 다시 매긴다. 섹션을 ↑↓로 옮기면
+// 번호가 따라온다. 저장된 문구는 그대로 두고 보여줄 때만 바꾼다.
+const renumberPointBadges = (sections: KimchiSection[]) => {
+  let n = 0;
+  return sections.map(s => {
+    if (s.kind !== 'point') return s;
+    n += 1;
+    const num = n;
+    return s.badge && /\d+/.test(s.badge) ? { ...s, badge: s.badge.replace(/\d+/, m => String(num).padStart(m.length, '0')) } : s;
+  });
 };
 
 const DetailPageBuilderModal: React.FC<DetailPageBuilderModalProps> = ({ isOpen, onClose, product, groupProducts, onSave, onSaveThumbnail, templateId = 'basic', importedPhotos, onImportedPhotosUsed, embedded = false, draftId = STANDALONE_DRAFT_ID, sectionTemplate = 'kimchi' as SectionTemplateId, onChangeSectionTemplate, commonCategoryId = 'kimchi', commonDefaultDesign = 'A' as CommonDesign }) => {
@@ -406,7 +422,12 @@ const DetailPageBuilderModal: React.FC<DetailPageBuilderModalProps> = ({ isOpen,
   });
   const kimchiAccent = kimchiAccents[kimchiSkin];
   // 모든 틀에 공통으로 끼워 넣는 안내(주문 마감 / 배송·반품·CS·FAQ). 문구·디자인은 카테고리마다 따로.
-  const [commonInfo, updateCommonInfo, setCommonDesign] = useCommonInfo(commonCategoryId, commonDefaultDesign);
+  const [commonInfo, updateCommonInfo, setCommonDesign, setDeadlineDesign] = useCommonInfo(commonCategoryId, commonDefaultDesign);
+  // 주문 마감 디자인은 공통 안내와 따로 고른다. 틀에 배송 고지 섹션이 있으면(1번 틀) 처음엔 그걸 쓴다.
+  const hasOwnDeadline = kimchiSections.some(isOwnDeadlineSection);
+  const commonDeadlineDesign = commonInfo.deadlineDesign === 'own' && !hasOwnDeadline
+    ? commonInfo.design ?? 'A'
+    : commonInfo.deadlineDesign ?? (hasOwnDeadline ? 'own' : commonInfo.design ?? 'A');
   // 김치 템플릿의 글자 크기는 다섯 단계뿐이고(KIMCHI_TYPE_SCALE), 그 다섯 개의 실제 px을 여기서
   // 정한다. 역할별로 따로 만지는 게 아니라 단계를 만지는 것이라, 한 번 조절하면 그 단계를 쓰는
   // 모든 문구가 같이 움직인다 — 페이지 안에서 크기 위계가 어긋나지 않는다.
@@ -3084,14 +3105,14 @@ const DetailPageBuilderModal: React.FC<DetailPageBuilderModalProps> = ({ isOpen,
                     renderPhoto,
                     ...look,
                   });
-                  const { deadlineAt, showDeadline, guidesAt } = splitForCommonInfo(kimchiSections);
+                  const { sections: shown, deadlineAt, showDeadline, guidesAt } = splitForCommonInfo(renumberPointBadges(kimchiSections), commonDeadlineDesign === 'own');
                   return (
                     <>
-                      {part(kimchiSections.slice(0, deadlineAt))}
-                      {showDeadline && <CommonDeadline info={commonInfo} update={updateCommonInfo} {...look} />}
-                      {part(kimchiSections.slice(deadlineAt, guidesAt))}
+                      {part(shown.slice(0, deadlineAt))}
+                      {showDeadline && <CommonDeadline info={commonInfo} update={updateCommonInfo} design={commonDeadlineDesign === 'own' ? commonInfo.design : commonDeadlineDesign} {...look} />}
+                      {part(shown.slice(deadlineAt, guidesAt))}
                       <CommonGuides info={commonInfo} update={updateCommonInfo} {...look} />
-                      {part(kimchiSections.slice(guidesAt))}
+                      {part(shown.slice(guidesAt))}
                     </>
                   );
                 })() : (
@@ -3378,7 +3399,23 @@ const DetailPageBuilderModal: React.FC<DetailPageBuilderModalProps> = ({ isOpen,
             )}
             {isKimchi && (
               <div className="space-y-2 pt-2 border-t border-slate-700">
-                <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">공통 안내 디자인</p>
+                <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">주문 마감 디자인</p>
+                <div className="flex flex-col gap-1">
+                  {DEADLINE_DESIGNS.filter(d => d.id !== 'own' || hasOwnDeadline).map(d => (
+                    <button
+                      key={d.id}
+                      onClick={() => setDeadlineDesign(d.id)}
+                      className={`px-2 py-1.5 text-xs font-semibold rounded-md border text-left transition-colors ${
+                        commonDeadlineDesign === d.id
+                          ? 'bg-blue-600 border-blue-500 text-white'
+                          : 'bg-slate-800 border-slate-600 text-slate-300 hover:bg-slate-700'
+                      }`}
+                    >
+                      {d.label} <span className="font-normal opacity-70">· {d.hint}</span>
+                    </button>
+                  ))}
+                </div>
+                <p className="text-xs font-bold text-slate-400 uppercase tracking-wider pt-1">공통 안내 디자인</p>
                 <div className="flex flex-col gap-1">
                   {COMMON_DESIGNS.map(d => (
                     <button

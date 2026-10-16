@@ -30,7 +30,19 @@ export type KimchiSectionKind =
   | 'gCheck'   // Point. N + 제목 두 줄 + 설명 + 사진
   | 'gCert'    // 강조색 바탕 + 동그란 인증 로고 + 제목 + 설명 + 인증서 사진
   | 'gSteps'   // 제목 두 줄 + 단계별 [왼쪽 사진 | 번호·제목·설명]
-  | 'gPackage'; // 흰 상자 안 제품 사진 + 강조색 알약(구성) + 작은 안내
+  | 'gPackage' // 흰 상자 안 제품 사진 + 강조색 알약(구성) + 작은 안내
+  // ── 모든 틀 공통 ── 배송·FAQ·반품·CS 안내 한 블록. 문구는 카테고리 공통(DetailCommonInfo)이고
+  // 섹션은 어느 안내를 어디에 어떤 디자인으로 둘지만 갖는다. 그리는 건 틀이 아니라 에디터가 한다.
+  | 'guide';
+
+export type GuideType = 'shipping' | 'faq' | 'refund' | 'cs';
+export type GuideDesign = 'A' | 'B' | 'C';
+export const GUIDE_TYPES: { id: GuideType; label: string }[] = [
+  { id: 'shipping', label: '배송 안내' },
+  { id: 'faq', label: '자주 묻는 질문' },
+  { id: 'refund', label: '교환·반품 안내' },
+  { id: 'cs', label: 'CS 접수 안내' },
+];
 
 export type KimchiListStyle = 'card' | 'check' | 'number' | 'dot';
 // 'qna'는 라벨을 질문(Q), 값을 답변(A)으로 그린다 — 자주 묻는 질문 섹션용.
@@ -146,6 +158,10 @@ export interface KimchiSection {
   // ── gCompare(비교) ── 두 열 머리글. 왼쪽이 비교 대상, 오른쪽이 우리 제품.
   compareLeft?: string;
   compareRight?: string;
+
+  // ── guide(공통 안내) ── 어느 안내인지와 디자인. 디자인을 비우면 카테고리의 공통 안내 디자인을 따른다.
+  guideType?: GuideType;
+  guideDesign?: GuideDesign;
 }
 
 // 상페작업 카테고리가 어느 틀로 시작하는지. 김치 틀과 초록 틀은 섹션 종류가 달라서 섹션 추가
@@ -153,8 +169,8 @@ export interface KimchiSection {
 export type SectionTemplateId = 'kimchi' | 'green';
 
 export const TEMPLATE_KINDS: Record<SectionTemplateId, KimchiSectionKind[]> = {
-  kimchi: ['hero', 'text', 'list', 'pairs', 'notice', 'review', 'feature', 'cert', 'point', 'summary'],
-  green: ['gHero', 'gChat', 'gTitle', 'gCompare', 'gCheck', 'gCert', 'gSteps', 'gPackage', 'pairs'],
+  kimchi: ['hero', 'text', 'list', 'pairs', 'notice', 'review', 'feature', 'cert', 'point', 'summary', 'guide'],
+  green: ['gHero', 'gChat', 'gTitle', 'gCompare', 'gCheck', 'gCert', 'gSteps', 'gPackage', 'pairs', 'guide'],
 };
 
 // 섹션 추가 메뉴에 뜨는 종류들.
@@ -234,6 +250,10 @@ export function createKimchiSection(kind: KimchiSectionKind, overrides: Partial<
         headline: '', headlineAccent: '',
         highlights: [0, 1, 2, 3].map(() => ({ icon: '', title: '', desc: '' })),
         backgroundColor: '#f6efdf', hint: '단계마다 한 장씩, 위에서부터 차례로 왼쪽에 들어갑니다',
+      }
+    : kind === 'guide' ? {
+        guideType: 'shipping', promptLabel: '배송 안내', multiplePhotos: false, excludeFromPrompt: true,
+        hint: '사진은 안 들어가요. 문구는 미리보기에서 고치면 이 카테고리 상페 전부에 바뀌어요.',
       }
     : kind === 'gPackage' ? {
         bigText: '', body: '', backgroundColor: '#e9f3ea', hint: '구성 사진 (흰 상자 안)',
@@ -396,7 +416,7 @@ function bumpTrailingNumber(label: string): string {
 // 오는 첫 섹션" 앞에 넣는다.
 const KIND_FLOW: KimchiSectionKind[] = [
   'hero', 'gHero', 'notice', 'gChat', 'gTitle', 'gCompare', 'review', 'summary', 'feature', 'gCheck',
-  'cert', 'gCert', 'point', 'gSteps', 'gPackage', 'text', 'list', 'pairs',
+  'cert', 'gCert', 'point', 'gSteps', 'gPackage', 'text', 'list', 'guide', 'pairs',
 ];
 
 function kindFlowInsertIndex(sections: KimchiSection[], kind: KimchiSectionKind): number {
@@ -411,6 +431,14 @@ function kindFlowInsertIndex(sections: KimchiSection[], kind: KimchiSectionKind)
 // (sectionBaseLabel) 둘 다 '소구점'이면 어느 쪽에 넣을지 알 수 없고, '소구점 02 제목' 같은
 // 라벨은 아예 갈 곳이 없어진다.
 export function appendKimchiSection(sections: KimchiSection[], kind: KimchiSectionKind): KimchiSection[] {
+  if (kind === 'guide') {
+    // 아직 없는 안내부터 채운다(배송 → FAQ → 반품 → CS). 넷 다 있으면 배송을 하나 더.
+    const have = new Set(sections.filter(s => s.kind === 'guide').map(s => s.guideType));
+    const type = GUIDE_TYPES.find(t => !have.has(t.id)) ?? GUIDE_TYPES[0];
+    const section = createKimchiSection('guide', { guideType: type.id, promptLabel: type.label });
+    const at = guideInsertIndex(sections);
+    return [...sections.slice(0, at), section, ...sections.slice(at)];
+  }
   const section = createKimchiSection(kind);
   const fallback = KIND_FALLBACK_LABEL[kind];
   const escaped = fallback.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -435,6 +463,28 @@ export function appendKimchiSection(sections: KimchiSection[], kind: KimchiSecti
   // 특별한점을 더했는데 반품 안내 밑에 붙는 식이 된다(기본 구성에서 빠진 종류일수록 그렇다).
   const at = kindFlowInsertIndex(sections, kind);
   return [...sections.slice(0, at), section, ...sections.slice(at)];
+}
+
+// 공통 안내 섹션이 들어갈 자리: 마지막 안내 섹션 뒤, 없으면 제품 상세 정보(표시사항 표) 바로 위,
+// 그것도 없으면 맨 뒤.
+export const isProductInfoSection = (s: KimchiSection) =>
+  s.kind === 'pairs' && (['표시사항', '상세정보'].includes(s.promptLabel || '') || /상세\s*정보|표시사항/.test(s.title));
+function guideInsertIndex(sections: KimchiSection[]): number {
+  let last = -1;
+  sections.forEach((s, i) => { if (s.kind === 'guide') last = i; });
+  if (last !== -1) return last + 1;
+  let info = -1;
+  sections.forEach((s, i) => { if (isProductInfoSection(s)) info = i; });
+  return info === -1 ? sections.length : info;
+}
+
+// 공통 안내 섹션이 하나도 없는 상페(이 기능 전에 만든 것·새로 연 것)에 네 개를 깔아 준다.
+// 순서는 카테고리 공통 안내 디자인의 순서를 따른다. 일부만 지운 상페는 건드리지 않는다.
+export function ensureGuideSections(sections: KimchiSection[], order: GuideType[]): KimchiSection[] {
+  if (sections.some(s => s.kind === 'guide')) return sections;
+  const at = guideInsertIndex(sections);
+  const guides = order.map(type => createKimchiSection('guide', { guideType: type, promptLabel: GUIDE_TYPES.find(t => t.id === type)!.label }));
+  return [...sections.slice(0, at), ...guides, ...sections.slice(at)];
 }
 
 // 섹션을 통째로 복제해서 바로 아래에 끼워 넣는다. 사진은 따라오지 않는다 — 복사는 보통 "같은
@@ -510,6 +560,9 @@ export function kimchiSectionHasText(section: KimchiSection): boolean {
         || (section.highlights || []).some(h => filled(h.title) || filled(h.desc));
     case 'gPackage':
       return [section.bigText, section.body].some(filled);
+    // 문구가 카테고리 공통이라 섹션 자체엔 문구가 없다 — 늘 채워진 것으로 본다(빈 섹션으로 걷히지 않게).
+    case 'guide':
+      return true;
   }
 }
 
@@ -544,7 +597,7 @@ const KIND_FALLBACK_LABEL: Record<KimchiSectionKind, string> = {
   hero: '인트로', text: '본문', list: '목록', pairs: '항목', notice: '고지', review: '리뷰',
   feature: '특별한점', cert: '인증', point: '소구점', summary: '예고',
   gHero: '인트로', gChat: '공감', gTitle: '소개', gCompare: '비교', gCheck: '체크포인트',
-  gCert: '인증', gSteps: '활용법', gPackage: '구성',
+  gCert: '인증', gSteps: '활용법', gPackage: '구성', guide: '안내',
 };
 
 // 섹션 하나가 문구를 받는 자리들. field는 파싱 결과를 어디에 꽂을지 가리킨다.

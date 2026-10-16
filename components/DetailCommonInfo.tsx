@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import EditableText from './EditableText';
 import { KimchiTypeScale, kimchiTint } from './KimchiDetailSections';
+import type { GuideType } from '../utils/kimchiDetailTemplate';
 
 // 모든 틀(김치·초록·앞으로 생길 틀)에 똑같이 들어가는 공통 안내.
 //  - 주문 마감(오늘 출발 10:00 + 안내 두 줄): 인트로 바로 아래
@@ -291,7 +292,8 @@ const BlockHead: React.FC<{ S: ReturnType<typeof useStyles>; accent: string; cap
 );
 
 // 배송 / FAQ / 교환반품 / CS 접수 블록. 제품 상세 정보 바로 위에 들어간다.
-const GuidesA: React.FC<CommonBlockProps> = props => {
+const GuidesA: React.FC<CommonBlockProps & { only?: GuideType }> = props => {
+  const show = (k: GuideType) => !props.only || props.only === k;
   const { info, update, accentColor: accent } = props;
   const S = useStyles(props);
   const { shipping, refund, cs, faq } = info;
@@ -299,7 +301,8 @@ const GuidesA: React.FC<CommonBlockProps> = props => {
 
   return (
     <div>
-      {/* 배송 안내: 왼쪽 강조색 라벨 칩 | 오른쪽 내용, 줄마다 옅은 선 */}
+            {show('shipping') && (<>
+{/* 배송 안내: 왼쪽 강조색 라벨 칩 | 오른쪽 내용, 줄마다 옅은 선 */}
       <div style={{ padding: `100px ${SIDE}px 70px` }}>
         <BlockHead
           S={S} accent={accent}
@@ -328,7 +331,10 @@ const GuidesA: React.FC<CommonBlockProps> = props => {
         ))}
       </div>
 
-      {/* FAQ: Q는 강조색 글자 + 굵은 질문, A는 왼쪽 강조색 세로줄 옆 회색 답 */}
+      
+      </>)}
+      {show('faq') && (<>
+{/* FAQ: Q는 강조색 글자 + 굵은 질문, A는 왼쪽 강조색 세로줄 옆 회색 답 */}
       <div style={{ padding: `90px ${SIDE}px 100px`, background: tint(0.06) }}>
         <BlockHead
           S={S} accent={accent}
@@ -360,7 +366,10 @@ const GuidesA: React.FC<CommonBlockProps> = props => {
           </div>
         ))}
       </div>
-      {/* 교환·반품: 옅은 바탕 위 흰 카드들, 카드 왼쪽에 큰 강조색 번호 */}
+      
+      </>)}
+      {show('refund') && (<>
+{/* 교환·반품: 옅은 바탕 위 흰 카드들, 카드 왼쪽에 큰 강조색 번호 */}
       <div style={{ padding: `90px ${SIDE}px`, background: '#f6f6f4' }}>
         <BlockHead
           S={S} accent={accent}
@@ -393,7 +402,10 @@ const GuidesA: React.FC<CommonBlockProps> = props => {
         ))}
       </div>
 
-      {/* CS 접수: 사진 3장을 동그란 번호 칸으로 나란히, 아래 경고 띠, 연락처는 강조색 카드 */}
+      
+      </>)}
+      {show('cs') && (<>
+{/* CS 접수: 사진 3장을 동그란 번호 칸으로 나란히, 아래 경고 띠, 연락처는 강조색 카드 */}
       <div style={{ padding: `100px ${SIDE}px 90px` }}>
         <BlockHead
           S={S} accent={accent}
@@ -432,7 +444,7 @@ const GuidesA: React.FC<CommonBlockProps> = props => {
           <EditableText value={cs.contactNote} onChange={v => update('cs', { contactNote: v })} placeholder="안내" style={{ ...S.bodyCenter, color: '#ffffff', opacity: 0.9 }} />
         </div>
       </div>
-
+      </>)}
     </div>
   );
 };
@@ -485,14 +497,16 @@ const DeadlineB: React.FC<CommonBlockProps> = props => {
   );
 };
 
-const GuidesB: React.FC<CommonBlockProps> = props => {
+const GuidesB: React.FC<CommonBlockProps & { only?: GuideType }> = props => {
+  const show = (k: GuideType) => !props.only || props.only === k;
   const { info, update, accentColor: accent, textColor } = props;
   const S = useStyles(props);
   const { shipping, refund, cs, faq } = info;
   const line = '1px solid #dedede';
   return (
     <div>
-      {/* FAQ: Q. 굵은 질문 / 들여 쓴 답, 사이마다 가는 선 */}
+            {show('faq') && (<>
+{/* FAQ: Q. 굵은 질문 / 들여 쓴 답, 사이마다 가는 선 */}
       <div style={{ padding: `100px ${SIDE}px 70px` }}>
         <HeadB S={S} accent={accent} caption={faq.caption} onCaption={v => update('faq', { caption: v })} title={faq.title} onTitle={v => update('faq', { title: v })} />
         <div style={{ borderTop: `3px solid ${textColor}` }}>
@@ -515,7 +529,10 @@ const GuidesB: React.FC<CommonBlockProps> = props => {
         </div>
       </div>
 
-      {/* 배송: 항목 이름(굵게) | 내용, 점선 */}
+      
+      </>)}
+      {show('shipping') && (<>
+{/* 배송: 항목 이름(굵게) | 내용, 점선 */}
       <div style={{ padding: `70px ${SIDE}px` }}>
         <HeadB S={S} accent={accent} caption={shipping.caption} onCaption={v => update('shipping', { caption: v })} title={shipping.title} onTitle={v => update('shipping', { title: v })} />
         <div style={{ borderTop: `3px solid ${textColor}` }}>
@@ -532,7 +549,10 @@ const GuidesB: React.FC<CommonBlockProps> = props => {
         </div>
       </div>
 
-      {/* 반품: 안내 문단 + 번호. 제목 / 내용 */}
+      
+      </>)}
+      {show('refund') && (<>
+{/* 반품: 안내 문단 + 번호. 제목 / 내용 */}
       <div style={{ padding: `70px ${SIDE}px` }}>
         <HeadB S={S} accent={accent} caption={refund.caption} onCaption={v => update('refund', { caption: v })} title={refund.title} onTitle={v => update('refund', { title: v })} />
         <EditableText value={refund.lead} onChange={v => update('refund', { lead: v })} placeholder="안내" style={{ ...S.body, color: textColor }} />
@@ -551,7 +571,10 @@ const GuidesB: React.FC<CommonBlockProps> = props => {
         ))}
       </div>
 
-      {/* CS: 사진 목록은 번호 네모 줄, 연락처는 굵은 선 위 큰 번호 */}
+      
+      </>)}
+      {show('cs') && (<>
+{/* CS: 사진 목록은 번호 네모 줄, 연락처는 굵은 선 위 큰 번호 */}
       <div style={{ padding: `70px ${SIDE}px 100px` }}>
         <HeadB S={S} accent={accent} caption={cs.caption} onCaption={v => update('cs', { caption: v })} title={cs.title} onTitle={v => update('cs', { title: v })} />
         <EditableText value={cs.lead} onChange={v => update('cs', { lead: v })} placeholder="안내" style={{ ...S.body, color: textColor }} />
@@ -578,6 +601,7 @@ const GuidesB: React.FC<CommonBlockProps> = props => {
         <div style={{ height: 12 }} />
         <EditableText value={cs.contactNote} onChange={v => update('cs', { contactNote: v })} placeholder="안내" style={S.body} />
       </div>
+      </>)}
     </div>
   );
 };
@@ -625,14 +649,16 @@ const DeadlineC: React.FC<CommonBlockProps> = props => {
   );
 };
 
-const GuidesC: React.FC<CommonBlockProps> = props => {
+const GuidesC: React.FC<CommonBlockProps & { only?: GuideType }> = props => {
+  const show = (k: GuideType) => !props.only || props.only === k;
   const { info, update, accentColor: accent, textColor } = props;
   const S = useStyles(props);
   const { shipping, refund, cs, faq } = info;
   const tint = (a: number) => kimchiTint(accent, a);
   return (
     <div>
-      {/* CS: 사진 3장을 점선으로 이은 동그라미 단계, 연락처는 강조색 테두리 상자 */}
+            {show('cs') && (<>
+{/* CS: 사진 3장을 점선으로 이은 동그라미 단계, 연락처는 강조색 테두리 상자 */}
       <HeadC S={S} accent={accent} caption={cs.caption} onCaption={v => update('cs', { caption: v })} title={cs.title} onTitle={v => update('cs', { title: v })} />
       <div style={{ padding: `60px ${SIDE}px 80px` }}>
         <EditableText value={cs.lead} onChange={v => update('cs', { lead: v })} placeholder="안내" style={{ ...S.bodyCenter, color: textColor }} />
@@ -663,7 +689,10 @@ const GuidesC: React.FC<CommonBlockProps> = props => {
         </div>
       </div>
 
-      {/* FAQ: 질문은 강조색 말풍선(왼쪽), 답은 회색 말풍선(오른쪽으로 들여) */}
+      
+      </>)}
+      {show('faq') && (<>
+{/* FAQ: 질문은 강조색 말풍선(왼쪽), 답은 회색 말풍선(오른쪽으로 들여) */}
       <HeadC S={S} accent={accent} caption={faq.caption} onCaption={v => update('faq', { caption: v })} title={faq.title} onTitle={v => update('faq', { title: v })} />
       <div style={{ padding: `60px ${SIDE}px 80px` }}>
         {faq.items.map((item, idx) => (
@@ -682,7 +711,10 @@ const GuidesC: React.FC<CommonBlockProps> = props => {
         ))}
       </div>
 
-      {/* 배송: 두 칸씩 놓인 타일 */}
+      
+      </>)}
+      {show('shipping') && (<>
+{/* 배송: 두 칸씩 놓인 타일 */}
       <HeadC S={S} accent={accent} caption={shipping.caption} onCaption={v => update('shipping', { caption: v })} title={shipping.title} onTitle={v => update('shipping', { title: v })} />
       <div style={{ padding: `60px ${SIDE}px 80px`, display: 'flex', flexWrap: 'wrap', gap: 18 }}>
         {shipping.rows.map((row, idx) => (
@@ -694,7 +726,10 @@ const GuidesC: React.FC<CommonBlockProps> = props => {
         ))}
       </div>
 
-      {/* 반품: 옅은 상자 안내 + 강조색 네모 표시 목록 */}
+      
+      </>)}
+      {show('refund') && (<>
+{/* 반품: 옅은 상자 안내 + 강조색 네모 표시 목록 */}
       <HeadC S={S} accent={accent} caption={refund.caption} onCaption={v => update('refund', { caption: v })} title={refund.title} onTitle={v => update('refund', { title: v })} />
       <div style={{ padding: `60px ${SIDE}px 90px` }}>
         <div style={{ background: '#f4f4f4', borderRadius: 18, padding: '28px 32px' }}>
@@ -712,6 +747,7 @@ const GuidesC: React.FC<CommonBlockProps> = props => {
           </div>
         ))}
       </div>
+      </>)}
     </div>
   );
 };
@@ -759,5 +795,15 @@ export const CommonDeadline: React.FC<CommonBlockProps & { design?: CommonDesign
   return which === 'B' ? <DeadlineB {...props} /> : which === 'C' ? <DeadlineC {...props} /> : which === 'D' ? <DeadlineD {...props} /> : <DeadlineA {...props} />;
 };
 
-export const CommonGuides: React.FC<CommonBlockProps> = props =>
-  props.info.design === 'B' ? <GuidesB {...props} /> : props.info.design === 'C' ? <GuidesC {...props} /> : <GuidesA {...props} />;
+// 디자인마다 안내 네 개가 놓이는 처음 순서. 새로 깔아 줄 때(ensureGuideSections) 쓴다.
+export const COMMON_ORDER: Record<CommonDesign, GuideType[]> = {
+  A: ['shipping', 'faq', 'refund', 'cs'],
+  B: ['faq', 'shipping', 'refund', 'cs'],
+  C: ['cs', 'faq', 'shipping', 'refund'],
+};
+
+// 안내 섹션 하나. 디자인은 섹션에서 고른 것, 없으면 카테고리의 공통 안내 디자인.
+export const CommonGuide: React.FC<CommonBlockProps & { type: GuideType; design?: CommonDesign }> = ({ type, design, ...props }) => {
+  const which = design ?? props.info.design;
+  return which === 'B' ? <GuidesB {...props} only={type} /> : which === 'C' ? <GuidesC {...props} only={type} /> : <GuidesA {...props} only={type} />;
+};

@@ -1,7 +1,7 @@
 import React, { useMemo } from 'react';
 import EditableText from './EditableText';
 import { PADDING_X, RULE_COLOR, CARD_COLOR, SPACE, SECTION_GAP, DEFAULT_PHOTO_GAP, PHOTO_GAP_MAX, KIMCHI_SKIN_SECTION_GAP, SECTION_GAP_MAX } from '../utils/detailPageLayout';
-import { KimchiHighlight, KimchiSection, kimchiSectionHasText, sectionBaseLabel } from '../utils/kimchiDetailTemplate';
+import { GUIDE_TYPES, KimchiHighlight, KimchiSection, kimchiSectionHasText, sectionBaseLabel } from '../utils/kimchiDetailTemplate';
 
 // 김치 상세페이지 미리보기. 페이지는 "섹션 배열"이고, 섹션 하나가 [문구 + 자기 사진] 한 세트다.
 // 사진은 섹션 id로 묶여 있어서(photosBySection) 업로드 순서가 배치에 영향을 주지 않는다.
@@ -1094,7 +1094,7 @@ const KIND_BADGE: Record<KimchiSection['kind'], string> = {
   hero: '인트로', text: '글', list: '목록', pairs: '두 열', notice: '고지', review: '리뷰',
   feature: '특별한점', cert: '인증', point: '소구점', summary: '예고',
   gHero: '인트로', gChat: '공감', gTitle: '소개', gCompare: '비교', gCheck: '체크포인트',
-  gCert: '인증', gSteps: '활용법', gPackage: '구성',
+  gCert: '인증', gSteps: '활용법', gPackage: '구성', guide: '안내',
 };
 
 // 칸 수를 늘리고 줄일 수 있는 섹션들. 줄일 때는 뒤에서부터 뺀다.
@@ -1237,6 +1237,39 @@ export const KimchiSectionPanel: React.FC<KimchiSectionPanelProps> = ({
                 ×
               </button>
             </div>
+
+            {/* 공통 안내 섹션: 어느 안내인지와 디자인만 고른다(문구는 미리보기에서 — 카테고리 공통). */}
+            {section.kind === 'guide' && (
+              <div className="space-y-1.5">
+                <div className="flex flex-wrap gap-1">
+                  {GUIDE_TYPES.map(t => (
+                    <button
+                      key={t.id}
+                      onClick={() => updateSection(section.id, { guideType: t.id, promptLabel: t.label })}
+                      className={`px-2 h-6 rounded text-[11px] transition-colors ${
+                        (section.guideType ?? 'shipping') === t.id ? 'bg-blue-600 text-white' : 'bg-slate-700 text-slate-300 hover:bg-slate-600'
+                      }`}
+                    >
+                      {t.label}
+                    </button>
+                  ))}
+                </div>
+                <div className="flex flex-wrap items-center gap-1">
+                  <span className="text-[11px] text-slate-400 mr-1">디자인</span>
+                  {([[undefined, '카테고리 기본'], ['A', 'A 카드'], ['B', 'B 라인'], ['C', 'C 띠']] as const).map(([id, label]) => (
+                    <button
+                      key={label}
+                      onClick={() => updateSection(section.id, { guideDesign: id })}
+                      className={`px-2 h-6 rounded text-[11px] transition-colors ${
+                        section.guideDesign === id ? 'bg-blue-600 text-white' : 'bg-slate-700 text-slate-300 hover:bg-slate-600'
+                      }`}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
 
             <div className="flex items-center gap-3">
               <label className="flex items-center gap-1.5 text-[11px] text-slate-400">

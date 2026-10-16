@@ -33,13 +33,14 @@ import { KimchiPreviewModern } from './KimchiDetailSectionsModern';
 import { KimchiPreviewBold } from './KimchiDetailSectionsBold';
 import { KimchiPreviewSales } from './KimchiDetailSectionsSales';
 import { GreenPreview } from './GreenDetailSections';
-import { CommonDeadline, CommonGuides, CommonDesign, COMMON_DESIGNS, DEADLINE_DESIGNS, useCommonInfo } from './DetailCommonInfo';
+import { CommonDeadline, CommonGuide, COMMON_ORDER, CommonDesign, COMMON_DESIGNS, DEADLINE_DESIGNS, useCommonInfo } from './DetailCommonInfo';
 import {
   KimchiSection,
   createDefaultSectionsFor,
   TEMPLATE_KINDS,
   SectionTemplateId,
   ensureKimchiSummarySection,
+  ensureGuideSections,
   moveKimchiSection,
   removeKimchiSection,
   duplicateKimchiSection,
@@ -366,8 +367,8 @@ interface BasicTextDraft {
   drawObjects: DrawObject[];
 }
 
-// 공통 안내를 섹션 사이 어디에 끼울지. 주문 마감은 인트로 바로 아래, 배송·반품·CS·FAQ는 제품 상세
-// 정보(표시사항 표) 바로 위 — 그 표가 없으면 맨 아래.
+// 주문 마감 블록을 섹션 사이 어디에 끼울지 — 인트로 바로 아래. (배송·FAQ·반품·CS는 'guide'
+// 섹션이라 다른 섹션처럼 목록에서 자리를 옮긴다.)
 // 1번 틀처럼 틀에 이미 배송 고지 섹션이 있으면: 마감 디자인이 '틀 기본'이면 그 섹션을 그대로 쓰고,
 // A~D를 고르면 그 섹션은 미리보기에서 빼고 그 자리에 공통 마감 블록을 넣는다.
 const isOwnDeadlineSection = (s: KimchiSection) => s.kind === 'notice' && (s.promptLabel === '배송' || /\d{1,2}:\d{2}/.test(s.bigText || ''));
@@ -377,12 +378,7 @@ const splitForCommonInfo = (all: KimchiSection[], useOwnDeadline: boolean) => {
   const heroIdx = sections.findIndex(s => s.kind === 'hero' || s.kind === 'gHero');
   const deadlineAt = ownIdx !== -1 && !useOwnDeadline ? ownIdx : heroIdx === -1 ? 0 : heroIdx + 1;
   const showDeadline = ownIdx === -1 || !useOwnDeadline;
-  let infoIdx = -1;
-  sections.forEach((s, idx) => {
-    if (s.kind === 'pairs' && (['표시사항', '상세정보'].includes(s.promptLabel || '') || /상세\s*정보|표시사항/.test(s.title))) infoIdx = idx;
-  });
-  const guidesAt = infoIdx < deadlineAt ? sections.length : infoIdx;
-  return { sections, deadlineAt, showDeadline, guidesAt };
+  return { sections, deadlineAt, showDeadline };
 };
 
 // 1번 틀 소구점 배지('POINT 01')의 숫자를 페이지 안 순서대로 다시 매긴다. 섹션을 ↑↓로 옮기면
@@ -404,10 +400,12 @@ const DetailPageBuilderModal: React.FC<DetailPageBuilderModalProps> = ({ isOpen,
   // 스포이드 등 기존 기능이 전부 살아 있고, 여기에 "이 사진이 어느 섹션 것인지"만 따로 기억한다
   // (photoSectionMap: photoId → 섹션 id). 그래서 업로드 순서가 자리에 영향을 주지 않는다.
   const isGreen = sectionTemplate === 'green';
-  const createDefaultSections = () => createDefaultSectionsFor(sectionTemplate);
+  // 공통 안내(배송·FAQ·반품·CS) 섹션은 어느 틀이든 깔아 준다.
+  const withGuides = (sections: KimchiSection[]) => ensureGuideSections(sections, COMMON_ORDER[commonDefaultDesign]);
+  const createDefaultSections = () => withGuides(createDefaultSectionsFor(sectionTemplate));
   // 저장본을 되살릴 때 김치 틀만 예고 섹션 자리를 채워 넣는다(초록 틀엔 예고가 없다).
   const restoreSections = (saved?: KimchiSection[]) =>
-    !saved ? createDefaultSections() : isGreen ? saved : ensureKimchiSummarySection(saved);
+    !saved ? createDefaultSections() : withGuides(isGreen ? saved : ensureKimchiSummarySection(saved));
   const [kimchiSections, setKimchiSections] = useState<KimchiSection[]>(createDefaultSections);
   // 어떤 스킨으로 그릴지. 섹션 구조와 문구는 그대로 두고 그리는 방식만 바뀌므로, 같은 문구를
   // 붙여넣은 채로 왔다 갔다 하며 두 디자인을 비교할 수 있다.
@@ -3156,16 +3154,34 @@ const DetailPageBuilderModal: React.FC<DetailPageBuilderModalProps> = ({ isOpen,
                     renderPhoto,
                     ...look,
                   });
-                  const { sections: shown, deadlineAt, showDeadline, guidesAt } = splitForCommonInfo(renumberPointBadges(kimchiSections), commonDeadlineDesign === 'own');
-                  return (
-                    <>
-                      {part(shown.slice(0, deadlineAt))}
-                      {showDeadline && <CommonDeadline info={commonInfo} update={updateCommonInfo} design={commonDeadlineDesign === 'own' ? commonInfo.design : commonDeadlineDesign} {...look} />}
-                      {part(shown.slice(deadlineAt, guidesAt))}
-                      <CommonGuides info={commonInfo} update={updateCommonInfo} {...look} />
-                      {part(shown.slice(guidesAt))}
-                    </>
-                  );
+                  const { sections: shown, deadlineAt, showDeadline } = splitForCommonInfo(renumberPointBadges(kimchiSections), commonDeadlineDesign === 'own');
+                  // 틀이 그리는 섹션은 이어진 것끼리 묶어 틀에 넘기고, 주문 마감·공통 안내 섹션은 여기서 그린다.
+                  const items: (KimchiSection | 'deadline')[] = [
+                    ...shown.slice(0, deadlineAt), ...(showDeadline ? ['deadline' as const] : []), ...shown.slice(deadlineAt),
+                  ];
+                  const out: React.ReactNode[] = [];
+                  let run: KimchiSection[] = [];
+                  const flush = () => {
+                    if (run.length > 0) out.push(<React.Fragment key={`run-${run[0].id}`}>{part(run)}</React.Fragment>);
+                    run = [];
+                  };
+                  for (const item of items) {
+                    if (item === 'deadline') {
+                      flush();
+                      out.push(<CommonDeadline key="deadline" info={commonInfo} update={updateCommonInfo} design={commonDeadlineDesign === 'own' ? commonInfo.design : commonDeadlineDesign} {...look} />);
+                    } else if (item.kind === 'guide') {
+                      flush();
+                      out.push(
+                        <div key={item.id} data-section-id={item.id} style={{ marginBottom: item.sectionGap ?? 0, background: item.backgroundColor || undefined }}>
+                          <CommonGuide info={commonInfo} update={updateCommonInfo} type={item.guideType ?? 'shipping'} design={item.guideDesign} {...look} />
+                        </div>
+                      );
+                    } else {
+                      run.push(item);
+                    }
+                  }
+                  flush();
+                  return <>{out}</>;
                 })() : (
                   <>
                 {/* Hero */}

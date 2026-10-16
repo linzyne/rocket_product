@@ -103,6 +103,7 @@ interface DetailCategoryTabsProps {
   onAddPage: () => void;
   onRenamePage: (id: string) => void;
   onRemovePage: (id: string) => void;
+  onMovePage: (id: string) => void;
 }
 
 const tabClass = (active: boolean) =>
@@ -115,7 +116,7 @@ const pageClass = (active: boolean) =>
     active ? 'bg-slate-700 text-slate-100 font-semibold' : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800'
   }`;
 
-const DetailCategoryTabs: React.FC<DetailCategoryTabsProps> = ({ categories, productTabLabel, activeCategoryId, onSelect, onAdd, onRemove, onRename, pages, activePageId, onSelectPage, onAddPage, onRenamePage, onRemovePage }) => (
+const DetailCategoryTabs: React.FC<DetailCategoryTabsProps> = ({ categories, productTabLabel, activeCategoryId, onSelect, onAdd, onRemove, onRename, pages, activePageId, onSelectPage, onAddPage, onRenamePage, onRemovePage, onMovePage }) => (
   <div className="flex flex-col flex-shrink-0">
   <div className="flex items-end gap-1 px-4 pt-2 bg-slate-950 overflow-x-auto">
     {productTabLabel !== null && (
@@ -159,6 +160,16 @@ const DetailCategoryTabs: React.FC<DetailCategoryTabsProps> = ({ categories, pro
           title="두 번 누르면 이름 바꾸기"
         >
           <span>{page.name}</span>
+          {categories.length > 1 && (
+            <button
+              onClick={e => { e.stopPropagation(); onMovePage(page.id); }}
+              className="text-slate-500 hover:text-sky-400 opacity-0 group-hover:opacity-100 transition-opacity"
+              title={`${page.name}을(를) 다른 카테고리로 옮기기`}
+              aria-label={`${page.name} 다른 카테고리로 옮기기`}
+            >
+              ⇄
+            </button>
+          )}
           {pages.length > 1 && (
             <button
               onClick={e => { e.stopPropagation(); onRemovePage(page.id); }}

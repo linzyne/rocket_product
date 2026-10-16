@@ -30,7 +30,7 @@ import ImageRenamer from './components/ImageRenamer';
 import ImageEditorModal from './components/ImageEditorModal';
 import DetailPageBuilderModal from './components/DetailPageBuilderModal';
 import DetailCategoryTabs, { DetailCategory, DetailPage, KIMCHI_CATEGORY_ID, draftIdForCategory, draftIdForPage, getCategoryPages, getActivePage, loadDetailCategories, saveDetailCategories, loadActiveCategoryId, saveActiveCategoryId } from './components/DetailCategoryTabs';
-import { deleteDetailPageDraft } from './data/detailPageDrafts';
+import { deleteDetailPageDraft, loadDetailPageDraft, saveDetailPageDraft, listDetailPageDrafts } from './data/detailPageDrafts';
 import AppSidebar, { AppMenuId, isAppMenuId, MenuPlaceholder } from './components/AppSidebar';
 import MissingFieldsModal from './components/MissingFieldsModal';
 import { saveDataUrlInProductFolder, productFolderName, productNameFolderName, buildZipBlob, saveFilesInProductFolder, getRootDirectory, isDirectoryPickerSupported, detailSliceFileNames } from './utils/fileSave';
@@ -2861,6 +2861,69 @@ const App: React.FC = () => {
     updateActiveCategoryPages(activeDetailPages.map(p => (p.id === pageId ? { ...p, name } : p)), activeDetailPage.id);
   }, [updateActiveCategoryPages, activeDetailPages, activeDetailPage.id]);
 
+  // 상페를 다른 카테고리로 옮긴다. 저장 이름이 카테고리에 묶여 있어서(draftIdForPage) 저장본을
+  // 새 이름으로 복사하고 옛 것을 지운다. 열린 에디터가 닫히면서 옛 이름에 다시 저장하지 않도록,
+  // 먼저 에디터를 내려(마지막 저장까지 끝나길 잠깐 기다린 뒤) 옮기고 다시 띄운다.
+  const [movingDetailPage, setMovingDetailPage] = useState(false);
+  const moveDetailPage = useCallback(async (pageId: string) => {
+    const page = activeDetailPages.find(p => p.id === pageId);
+    const targets = detailCategories.filter(c => c.id !== activeDetailCategoryId);
+    if (!page) return;
+    if (targets.length === 0) {
+      alert('옮길 다른 카테고리가 없습니다. 카테고리를 먼저 추가하세요.');
+      return;
+    }
+    const pick = window.prompt(
+      `"${page.name}"을(를) 어느 카테고리로 옮길까요? 번호를 입력하세요.\n\n${targets.map((c, i) => `${i + 1}. ${c.name}`).join('\n')}`,
+      '1',
+    )?.trim();
+    if (!pick) return;
+    const target = targets[Number(pick) - 1];
+    if (!target) {
+      alert('번호를 다시 확인해 주세요.');
+      return;
+    }
+    const fromCategoryId = activeDetailCategoryId;
+    const newPage: DetailPage = { ...page, id: generateId() };
+    setMovingDetailPage(true);
+    try {
+      await new Promise(resolve => window.setTimeout(resolve, 600));
+      for (const template of ['kimchi', 'green'] as const) {
+        const oldId = draftIdForPage(fromCategoryId, pageId, template);
+        const newId = draftIdForPage(target.id, newPage.id, template);
+        const saved = await loadDetailPageDraft<unknown>(oldId);
+        if (saved && !(await saveDetailPageDraft(newId, saved.data))) {
+          alert('옮기다가 저장에 실패했어요. 원래 자리에 그대로 두었습니다.');
+          await deleteDetailPageDraft(newId);
+          return;
+        }
+        // 중간저장도 함께 옮긴다.
+        for (const snap of await listDetailPageDrafts<unknown>(`snapshot:${oldId}:`)) {
+          const stamp = snap.id.slice(snap.id.lastIndexOf(':') + 1);
+          if (await saveDetailPageDraft(`snapshot:${newId}:${stamp}`, snap.data)) await deleteDetailPageDraft(snap.id);
+        }
+        if (saved) await deleteDetailPageDraft(oldId);
+      }
+      const latest = loadDetailCategories();
+      const next = latest.map(c => {
+        if (c.id === fromCategoryId) {
+          const pages = getCategoryPages(c).filter(p => p.id !== pageId);
+          // 마지막 상페를 옮겼으면 빈 '상페 1'로 돌아간다.
+          return pages.length > 0
+            ? { ...c, pages, activePageId: c.activePageId === pageId ? pages[0].id : c.activePageId }
+            : { ...c, pages: undefined, activePageId: undefined };
+        }
+        if (c.id === target.id) return { ...c, pages: [...getCategoryPages(c), newPage], activePageId: newPage.id };
+        return c;
+      });
+      setDetailCategories(next);
+      saveDetailCategories(next);
+      selectDetailCategory(target.id);
+    } finally {
+      setMovingDetailPage(false);
+    }
+  }, [activeDetailPages, detailCategories, activeDetailCategoryId, selectDetailCategory]);
+
   const removeDetailPage = useCallback((pageId: string) => {
     const page = activeDetailPages.find(p => p.id === pageId);
     if (!page || activeDetailPages.length <= 1) return;
@@ -3355,6 +3418,7 @@ const App: React.FC = () => {
           onAddPage={addDetailPage}
           onRenamePage={renameDetailPage}
           onRemovePage={removeDetailPage}
+          onMovePage={moveDetailPage}
         />
         <div className="flex-1 min-h-0">
           <DetailPageBuilderModal
@@ -3372,6 +3436,9 @@ const App: React.FC = () => {
             onImportedPhotosUsed={() => setImportedDetailPhotos(null)}
             embedded
           />
+          {movingDetailPage ? (
+            <div className="h-full flex items-center justify-center text-slate-400 text-sm">상페를 옮기는 중…</div>
+          ) : (
           <DetailPageBuilderModal
             key={`category-${activeDetailCategoryId}-${activeDetailPage.id}-${activeDetailTemplate}`}
             isOpen={detailPageBuilderState.isOpen && detailPageBuilderState.standalone}
@@ -3386,6 +3453,7 @@ const App: React.FC = () => {
             onChangeSectionTemplate={changeDetailCategoryTemplate}
             embedded
           />
+          )}
         </div>
       </div>
       </div>

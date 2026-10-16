@@ -382,6 +382,13 @@ const readMenuFromHash = (): AppMenuId => {
   return isAppMenuId(id) ? id : 'proposal';
 };
 
+
+// 상페·카테고리 삭제는 되돌릴 수 없어서, 잘못 누른 ×로 지워지지 않게 세 번 묻는다.
+const confirmThreeTimes = (message: string) =>
+  window.confirm(message) &&
+  window.confirm('정말 지울까요? (2/3)\n지우면 되돌릴 수 없어요.') &&
+  window.confirm('마지막으로 확인합니다. 정말 지울까요? (3/3)');
+
 const App: React.FC = () => {
   const [products, setProducts] = useState<Product[]>(getInitialProducts());
   // 게시판 형태의 상품 그룹 중 펼쳐진(옵션까지 보이는) 그룹을 상품 id로 추적한다. 그룹을 구분하는
@@ -2857,7 +2864,7 @@ const App: React.FC = () => {
   const removeDetailPage = useCallback((pageId: string) => {
     const page = activeDetailPages.find(p => p.id === pageId);
     if (!page || activeDetailPages.length <= 1) return;
-    if (!window.confirm(`"${page.name}" 상페를 삭제할까요?\n작업하던 내용도 함께 지워집니다.`)) return;
+    if (!confirmThreeTimes(`"${page.name}" 상페를 삭제할까요?\n작업하던 내용도 함께 지워집니다.`)) return;
     const pages = activeDetailPages.filter(p => p.id !== pageId);
     updateActiveCategoryPages(pages, pageId === activeDetailPage.id ? pages[0].id : activeDetailPage.id);
     // 열린 채 지우면 닫히면서 다시 저장되므로 화면이 바뀐 뒤에 지운다.
@@ -2884,7 +2891,7 @@ const App: React.FC = () => {
   const removeDetailCategory = useCallback((id: string) => {
     const category = detailCategories.find(c => c.id === id);
     if (!category || id === KIMCHI_CATEGORY_ID) return;
-    if (!window.confirm(`"${category.name}" 카테고리를 삭제할까요?\n이 카테고리에서 작업하던 상세페이지도 함께 지워집니다.`)) return;
+    if (!confirmThreeTimes(`"${category.name}" 카테고리를 삭제할까요?\n이 카테고리에서 작업하던 상세페이지도 함께 지워집니다.`)) return;
     const next = detailCategories.filter(c => c.id !== id);
     setDetailCategories(next);
     saveDetailCategories(next);

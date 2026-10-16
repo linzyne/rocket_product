@@ -13,7 +13,7 @@ import { KimchiTypeScale, kimchiTint } from './KimchiDetailSections';
 
 export type CommonDesign = 'A' | 'B' | 'C';
 export const COMMON_DESIGNS: { id: CommonDesign; label: string; hint: string }[] = [
-  { id: 'A', label: 'A 카드', hint: '둥근 카드 · 배송 → 반품 → CS → FAQ' },
+  { id: 'A', label: 'A 카드', hint: '둥근 카드 · 배송 → FAQ → 반품 → CS' },
   { id: 'B', label: 'B 라인', hint: '왼쪽 정렬 · 가는 선 · FAQ → 배송 → 반품 → CS' },
   { id: 'C', label: 'C 띠', hint: '강조색 머리띠 · CS → FAQ → 배송 → 반품' },
 ];
@@ -275,7 +275,7 @@ const BlockHead: React.FC<{ S: ReturnType<typeof useStyles>; accent: string; cap
   </div>
 );
 
-// 배송·교환반품 / CS 접수 / FAQ 세 블록. 제품 상세 정보 바로 위에 들어간다.
+// 배송 / FAQ / 교환반품 / CS 접수 블록. 제품 상세 정보 바로 위에 들어간다.
 const GuidesA: React.FC<CommonBlockProps> = props => {
   const { info, update, accentColor: accent } = props;
   const S = useStyles(props);
@@ -313,6 +313,38 @@ const GuidesA: React.FC<CommonBlockProps> = props => {
         ))}
       </div>
 
+      {/* FAQ: Q는 강조색 글자 + 굵은 질문, A는 왼쪽 강조색 세로줄 옆 회색 답 */}
+      <div style={{ padding: `90px ${SIDE}px 100px`, background: tint(0.06) }}>
+        <BlockHead
+          S={S} accent={accent}
+          caption={faq.caption} onCaption={v => update('faq', { caption: v })}
+          title={faq.title} onTitle={v => update('faq', { title: v })}
+          subtitle={faq.subtitle} onSubtitle={v => update('faq', { subtitle: v })}
+        />
+        {faq.items.map((item, idx) => (
+          <div key={idx} style={{ background: '#ffffff', borderRadius: 24, padding: '36px 40px', marginBottom: idx === faq.items.length - 1 ? 0 : 20 }}>
+            <div style={{ display: 'flex', gap: 18, alignItems: 'flex-start' }}>
+              <div style={{ fontFamily: props.fontFamily, fontWeight: 900, fontSize: S.px(34), lineHeight: 1.2, color: accent, flexShrink: 0 }}>Q</div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <EditableText
+                  value={item.q}
+                  onChange={editAt(faq.items, idx, (it, v) => ({ ...it, q: v }), items => update('faq', { items }))}
+                  placeholder="질문"
+                  style={S.strong}
+                />
+              </div>
+            </div>
+            <div style={{ margin: '20px 0 0 8px', paddingLeft: 30, borderLeft: `4px solid ${tint(0.4)}` }}>
+              <EditableText
+                value={item.a}
+                onChange={editAt(faq.items, idx, (it, v) => ({ ...it, a: v }), items => update('faq', { items }))}
+                placeholder="답변"
+                style={S.body}
+              />
+            </div>
+          </div>
+        ))}
+      </div>
       {/* 교환·반품: 옅은 바탕 위 흰 카드들, 카드 왼쪽에 큰 강조색 번호 */}
       <div style={{ padding: `90px ${SIDE}px`, background: '#f6f6f4' }}>
         <BlockHead
@@ -386,38 +418,6 @@ const GuidesA: React.FC<CommonBlockProps> = props => {
         </div>
       </div>
 
-      {/* FAQ: Q는 강조색 글자 + 굵은 질문, A는 왼쪽 강조색 세로줄 옆 회색 답 */}
-      <div style={{ padding: `90px ${SIDE}px 100px`, background: tint(0.06) }}>
-        <BlockHead
-          S={S} accent={accent}
-          caption={faq.caption} onCaption={v => update('faq', { caption: v })}
-          title={faq.title} onTitle={v => update('faq', { title: v })}
-          subtitle={faq.subtitle} onSubtitle={v => update('faq', { subtitle: v })}
-        />
-        {faq.items.map((item, idx) => (
-          <div key={idx} style={{ background: '#ffffff', borderRadius: 24, padding: '36px 40px', marginBottom: idx === faq.items.length - 1 ? 0 : 20 }}>
-            <div style={{ display: 'flex', gap: 18, alignItems: 'flex-start' }}>
-              <div style={{ fontFamily: props.fontFamily, fontWeight: 900, fontSize: S.px(34), lineHeight: 1.2, color: accent, flexShrink: 0 }}>Q</div>
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <EditableText
-                  value={item.q}
-                  onChange={editAt(faq.items, idx, (it, v) => ({ ...it, q: v }), items => update('faq', { items }))}
-                  placeholder="질문"
-                  style={S.strong}
-                />
-              </div>
-            </div>
-            <div style={{ margin: '20px 0 0 8px', paddingLeft: 30, borderLeft: `4px solid ${tint(0.4)}` }}>
-              <EditableText
-                value={item.a}
-                onChange={editAt(faq.items, idx, (it, v) => ({ ...it, a: v }), items => update('faq', { items }))}
-                placeholder="답변"
-                style={S.body}
-              />
-            </div>
-          </div>
-        ))}
-      </div>
     </div>
   );
 };

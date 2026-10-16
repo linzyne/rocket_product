@@ -33,7 +33,7 @@ import { KimchiPreviewModern } from './KimchiDetailSectionsModern';
 import { KimchiPreviewBold } from './KimchiDetailSectionsBold';
 import { KimchiPreviewSales } from './KimchiDetailSectionsSales';
 import { GreenPreview } from './GreenDetailSections';
-import { CommonDeadline, CommonGuides, useCommonInfo } from './DetailCommonInfo';
+import { CommonDeadline, CommonGuides, CommonDesign, COMMON_DESIGNS, useCommonInfo } from './DetailCommonInfo';
 import {
   KimchiSection,
   createDefaultSectionsFor,
@@ -100,6 +100,9 @@ interface DetailPageBuilderModalProps {
   draftId?: string;
   // 김치 템플릿 모드에서 어느 틀로 그릴지. 'green'은 초록 체크포인트형(섹션 종류·디자인이 다르다).
   sectionTemplate?: SectionTemplateId;
+  // 공통 안내(주문 마감·배송·반품·CS·FAQ)의 문구·디자인은 카테고리마다 따로다.
+  commonCategoryId?: string;
+  commonDefaultDesign?: CommonDesign;
   // 틀 바꾸기 버튼. 없으면 버튼을 안 보인다.
   onChangeSectionTemplate?: (template: SectionTemplateId) => void;
 }
@@ -378,7 +381,7 @@ const splitForCommonInfo = (sections: KimchiSection[]) => {
   return { deadlineAt, showDeadline, guidesAt };
 };
 
-const DetailPageBuilderModal: React.FC<DetailPageBuilderModalProps> = ({ isOpen, onClose, product, groupProducts, onSave, onSaveThumbnail, templateId = 'basic', importedPhotos, onImportedPhotosUsed, embedded = false, draftId = STANDALONE_DRAFT_ID, sectionTemplate = 'kimchi' as SectionTemplateId, onChangeSectionTemplate }) => {
+const DetailPageBuilderModal: React.FC<DetailPageBuilderModalProps> = ({ isOpen, onClose, product, groupProducts, onSave, onSaveThumbnail, templateId = 'basic', importedPhotos, onImportedPhotosUsed, embedded = false, draftId = STANDALONE_DRAFT_ID, sectionTemplate = 'kimchi' as SectionTemplateId, onChangeSectionTemplate, commonCategoryId = 'kimchi', commonDefaultDesign = 'A' as CommonDesign }) => {
   const [photos, setPhotos] = useState<PhotoItem[]>([]);
   const isKimchi = templateId === 'kimchi';
   // 김치 템플릿 전용 상태. 사진 배열(photos)은 두 템플릿이 그대로 공유해서 자르기·드래그 정렬·
@@ -402,8 +405,8 @@ const DetailPageBuilderModal: React.FC<DetailPageBuilderModalProps> = ({ isOpen,
     green: '#1f9d4c',
   });
   const kimchiAccent = kimchiAccents[kimchiSkin];
-  // 모든 틀에 공통으로 끼워 넣는 안내(주문 마감 / 배송·반품·CS·FAQ). 문구는 모든 상페가 함께 쓴다.
-  const [commonInfo, updateCommonInfo] = useCommonInfo();
+  // 모든 틀에 공통으로 끼워 넣는 안내(주문 마감 / 배송·반품·CS·FAQ). 문구·디자인은 카테고리마다 따로.
+  const [commonInfo, updateCommonInfo, setCommonDesign] = useCommonInfo(commonCategoryId, commonDefaultDesign);
   // 김치 템플릿의 글자 크기는 다섯 단계뿐이고(KIMCHI_TYPE_SCALE), 그 다섯 개의 실제 px을 여기서
   // 정한다. 역할별로 따로 만지는 게 아니라 단계를 만지는 것이라, 한 번 조절하면 그 단계를 쓰는
   // 모든 문구가 같이 움직인다 — 페이지 안에서 크기 위계가 어긋나지 않는다.
@@ -3370,6 +3373,30 @@ const DetailPageBuilderModal: React.FC<DetailPageBuilderModalProps> = ({ isOpen,
                 </div>
                 <p className="text-xs text-slate-500 leading-relaxed">
                   틀마다 작업이 따로 저장돼요. 바꿔 봐도 원래 틀의 문구·사진은 그대로 남아요.
+                </p>
+              </div>
+            )}
+            {isKimchi && (
+              <div className="space-y-2 pt-2 border-t border-slate-700">
+                <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">공통 안내 디자인</p>
+                <div className="flex flex-col gap-1">
+                  {COMMON_DESIGNS.map(d => (
+                    <button
+                      key={d.id}
+                      onClick={() => setCommonDesign(d.id)}
+                      title={d.hint}
+                      className={`px-2 py-1.5 text-xs font-semibold rounded-md border text-left transition-colors ${
+                        commonInfo.design === d.id
+                          ? 'bg-blue-600 border-blue-500 text-white'
+                          : 'bg-slate-800 border-slate-600 text-slate-300 hover:bg-slate-700'
+                      }`}
+                    >
+                      {d.label} <span className="font-normal opacity-70">· {d.hint.split(' · ').slice(-1)[0]}</span>
+                    </button>
+                  ))}
+                </div>
+                <p className="text-xs text-slate-500 leading-relaxed">
+                  주문 마감·배송·반품·CS·FAQ는 카테고리마다 문구·디자인이 따로예요. 미리보기에서 고치면 이 카테고리 상페 전부에 바뀌어요.
                 </p>
               </div>
             )}

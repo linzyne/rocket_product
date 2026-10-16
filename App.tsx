@@ -30,6 +30,7 @@ import ImageRenamer from './components/ImageRenamer';
 import ImageEditorModal from './components/ImageEditorModal';
 import DetailPageBuilderModal from './components/DetailPageBuilderModal';
 import DetailCategoryTabs, { DetailCategory, DetailPage, KIMCHI_CATEGORY_ID, draftIdForCategory, draftIdForPage, getCategoryPages, getActivePage, loadDetailCategories, saveDetailCategories, loadActiveCategoryId, saveActiveCategoryId } from './components/DetailCategoryTabs';
+import { defaultCommonDesign } from './components/DetailCommonInfo';
 import { deleteDetailPageDraft, loadDetailPageDraft, saveDetailPageDraft, listDetailPageDrafts } from './data/detailPageDrafts';
 import AppSidebar, { AppMenuId, isAppMenuId, MenuPlaceholder } from './components/AppSidebar';
 import MissingFieldsModal from './components/MissingFieldsModal';
@@ -3451,6 +3452,8 @@ const App: React.FC = () => {
             draftId={draftIdForPage(activeDetailCategoryId, activeDetailPage.id, activeDetailTemplate)}
             sectionTemplate={activeDetailTemplate}
             onChangeSectionTemplate={changeDetailCategoryTemplate}
+            commonCategoryId={activeDetailCategoryId}
+            commonDefaultDesign={defaultCommonDesign(detailCategories.findIndex(c => c.id === activeDetailCategoryId))}
             embedded
           />
           )}

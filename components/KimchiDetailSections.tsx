@@ -1464,7 +1464,7 @@ export const KimchiSectionPanel: React.FC<KimchiSectionPanelProps> = ({
 
             {/* 사진 간격 — 사진 "사이"에 생기는 여백이라 두 장 이상 올린 섹션에만 뜬다.
                 리뷰(카드 오른쪽 썸네일)와 인증(가운데 로고)은 사진을 이어 붙이지 않으므로 제외한다. */}
-            {photos.length >= 2 && !['review', 'cert', 'gCompare', 'gCert', 'gSteps'].includes(section.kind) && (
+            {photos.length >= 2 && !['review', 'cert', 'gCompare', 'gCert', 'gSteps', 'notes'].includes(section.kind) && (
               <div className="flex items-center gap-2">
                 <span className="text-[11px] text-slate-400 flex-shrink-0">사진 간격</span>
                 <input

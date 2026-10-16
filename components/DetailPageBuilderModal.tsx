@@ -42,6 +42,7 @@ import {
   SectionTemplateId,
   ensureKimchiSummarySection,
   ensureGuideSections,
+  NOTES_PHOTO_HINT,
   moveKimchiSection,
   removeKimchiSection,
   duplicateKimchiSection,
@@ -405,8 +406,11 @@ const DetailPageBuilderModal: React.FC<DetailPageBuilderModalProps> = ({ isOpen,
   const withGuides = (sections: KimchiSection[]) => ensureGuideSections(sections, COMMON_ORDER[commonDefaultDesign]);
   const createDefaultSections = () => withGuides(createDefaultSectionsFor(sectionTemplate));
   // 저장본을 되살릴 때 김치 틀만 예고 섹션 자리를 채워 넣는다(초록 틀엔 예고가 없다).
+  // 안내사항 섹션은 처음엔 사진 한 장만 받게 만들어졌다 — 줄마다 사진을 넣도록 여러 장으로 풀어 준다.
+  const notesTakePhotos = (sections: KimchiSection[]) =>
+    sections.map(s => (s.kind === 'notes' && !s.multiplePhotos ? { ...s, multiplePhotos: true, hint: NOTES_PHOTO_HINT } : s));
   const restoreSections = (saved?: KimchiSection[]) =>
-    !saved ? createDefaultSections() : withGuides(isGreen ? saved : ensureKimchiSummarySection(saved));
+    !saved ? createDefaultSections() : notesTakePhotos(withGuides(isGreen ? saved : ensureKimchiSummarySection(saved)));
   const [kimchiSections, setKimchiSections] = useState<KimchiSection[]>(createDefaultSections);
   // 어떤 스킨으로 그릴지. 섹션 구조와 문구는 그대로 두고 그리는 방식만 바뀌므로, 같은 문구를
   // 붙여넣은 채로 왔다 갔다 하며 두 디자인을 비교할 수 있다.
@@ -3179,10 +3183,10 @@ const DetailPageBuilderModal: React.FC<DetailPageBuilderModalProps> = ({ isOpen,
                       );
                     } else if (item.kind === 'notes') {
                       flush();
-                      const empty = !kimchiSectionHasText(item);
+                      const empty = !kimchiSectionHasText(item) && !(photosBySection[item.id] || []).length;
                       out.push(
                         <div key={item.id} data-section-id={item.id} data-empty-section={empty ? 'true' : undefined} style={{ marginBottom: item.sectionGap ?? 0, background: item.backgroundColor || undefined }}>
-                          <NotesSection section={item} updateSection={updateKimchiSection} {...look} />
+                          <NotesSection section={item} photos={photosBySection[item.id] || []} updateSection={updateKimchiSection} {...look} />
                         </div>
                       );
                     } else {

@@ -1,13 +1,15 @@
 import React from 'react';
 import EditableText from './EditableText';
-import { KimchiTypeScale, kimchiTint } from './KimchiDetailSections';
+import { KimchiPhoto, KimchiTypeScale, kimchiTint } from './KimchiDetailSections';
 import { KimchiSection } from '../utils/kimchiDetailTemplate';
 
 // 안내사항 섹션('notes') — 상품마다 다른 주의·안내 문구 목록. 어느 틀이든 에디터가 이걸로 그린다.
 // 디자인 A 상자 / B 번호줄 / C 띠는 섹션의 guideDesign으로 고른다. 빈 줄은 저장 이미지에서 빠진다.
+// 이 섹션에 올린 사진은 위에서부터 차례로 줄마다 오른쪽 사진이 된다(리뷰 카드와 같은 방식).
 
 interface NotesSectionProps {
   section: KimchiSection;
+  photos: KimchiPhoto[];
   updateSection: (id: string, patch: Partial<KimchiSection>) => void;
   fontFamily: string;
   textColor: string;
@@ -19,7 +21,7 @@ interface NotesSectionProps {
 const SIDE = 70;
 const GRAY = '#5f5f5f';
 
-const NotesSection: React.FC<NotesSectionProps> = ({ section, updateSection, fontFamily, textColor, fontScale, typeScale, accentColor }) => {
+const NotesSection: React.FC<NotesSectionProps> = ({ section, photos, updateSection, fontFamily, textColor, fontScale, typeScale, accentColor }) => {
   const accent = section.accentColor || accentColor;
   const px = (v: number) => Math.round(v * fontScale);
   const small = typeScale.caption * 0.8;
@@ -34,7 +36,7 @@ const NotesSection: React.FC<NotesSectionProps> = ({ section, updateSection, fon
   const visible = items.map((text, idx) => {
     const filled = !!text.trim();
     if (filled) filledCount += 1;
-    return { text, idx, num: filled ? filledCount : filledCount + 1, skip: !blank && !filled ? 'true' : undefined };
+    return { text, idx, num: filled ? filledCount : filledCount + 1, skip: !blank && !filled && !photos[idx] ? 'true' : undefined };
   });
   const editItem = (idx: number, style: React.CSSProperties) => (
     <EditableText
@@ -55,6 +57,16 @@ const NotesSection: React.FC<NotesSectionProps> = ({ section, updateSection, fon
     <EditableText value={section.caption} onChange={v => updateSection(section.id, { caption: v })} placeholder="NOTICE" style={style} />
   );
   const itemStyle = t(small * 0.85, { color: GRAY, lineHeight: 1.6 });
+  // 줄 오른쪽 사진. <img object-fit>은 저장 이미지에서 찌그러지므로 배경 이미지로 그린다.
+  const thumb = (idx: number) => photos[idx] ? (
+    <div
+      data-photo-id={photos[idx].id}
+      style={{
+        width: px(150), height: px(150), flexShrink: 0, borderRadius: 16,
+        backgroundImage: `url(${photos[idx].dataUrl})`, backgroundSize: 'cover', backgroundPosition: 'center',
+      }}
+    />
+  ) : null;
   // 줄 수 조절 버튼. 미리보기에서만 보이고 저장 이미지에는 안 찍힌다.
   const countBar = (
     <div data-html2canvas-ignore="true" style={{ display: 'flex', justifyContent: 'center', gap: 10, marginTop: 24 }}>
@@ -89,6 +101,7 @@ const NotesSection: React.FC<NotesSectionProps> = ({ section, updateSection, fon
             <div key={idx} data-html2canvas-ignore={skip} style={{ display: 'flex', gap: 16, marginTop: 14 }}>
               <div style={{ width: 8, height: 8, borderRadius: '50%', background: accent, flexShrink: 0, marginTop: px(16) }} />
               <div style={{ flex: 1, minWidth: 0 }}>{editItem(idx, itemStyle)}</div>
+              {thumb(idx)}
             </div>
           ))}
           {countBar}
@@ -113,6 +126,7 @@ const NotesSection: React.FC<NotesSectionProps> = ({ section, updateSection, fon
               {String(num).padStart(2, '0')}
             </div>
             <div style={{ flex: 1, minWidth: 0 }}>{editItem(idx, itemStyle)}</div>
+            {thumb(idx)}
           </div>
         ))}
         {countBar}
@@ -136,6 +150,7 @@ const NotesSection: React.FC<NotesSectionProps> = ({ section, updateSection, fon
               fontFamily, fontWeight: 900, fontSize: px(18), display: 'flex', alignItems: 'center', justifyContent: 'center', marginTop: 2,
             }}>✓</div>
             <div style={{ flex: 1, minWidth: 0 }}>{editItem(idx, { ...itemStyle, color: textColor })}</div>
+            {thumb(idx)}
           </div>
         ))}
         {countBar}

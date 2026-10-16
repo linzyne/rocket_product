@@ -190,6 +190,8 @@ export const KIMCHI_SECTION_KIND_OPTIONS: { kind: KimchiSectionKind; label: stri
   { kind: 'summary', label: '예고', description: '아이콘 카드 — 특별한점을 짧게 예고' },
 ];
 
+export const NOTES_PHOTO_HINT = '안내 줄마다 오른쪽에 한 장씩, 위에서부터 차례로 들어갑니다 (없어도 됨)';
+
 export function createKimchiSection(kind: KimchiSectionKind, overrides: Partial<KimchiSection> = {}): KimchiSection {
   const base: KimchiSection = {
     id: generateId(),
@@ -255,8 +257,7 @@ export function createKimchiSection(kind: KimchiSectionKind, overrides: Partial<
         backgroundColor: '#f6efdf', hint: '단계마다 한 장씩, 위에서부터 차례로 왼쪽에 들어갑니다',
       }
     : kind === 'notes' ? {
-        title: '안내사항', caption: 'NOTICE', items: ['', '', '', ''], multiplePhotos: false,
-        hint: '사진은 안 들어가요',
+        title: '안내사항', caption: 'NOTICE', items: ['', '', '', ''], hint: NOTES_PHOTO_HINT,
       }
     : kind === 'guide' ? {
         guideType: 'shipping', promptLabel: '배송 안내', multiplePhotos: false, excludeFromPrompt: true,

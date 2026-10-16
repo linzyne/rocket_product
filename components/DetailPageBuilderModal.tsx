@@ -443,6 +443,8 @@ const DetailPageBuilderModal: React.FC<DetailPageBuilderModalProps> = ({ isOpen,
   // savedRangeRef: 색상 선택기처럼 포커스를 가져가는 UI를 거치면 선택이 풀리므로, 툴바가 뜬
   // 시점의 범위를 들고 있다가 적용 직전에 되살린다.
   const [formatBar, setFormatBar] = useState<{ left: number; top: number } | null>(null);
+  // 미리보기에서 마우스를 올린 섹션(↑↓ 버튼 자리). handlePreviewHover 참고.
+  const [hoverSection, setHoverSection] = useState<{ id: string; top: number } | null>(null);
   const savedRangeRef = useRef<Range | null>(null);
   // 색 직접 고르기 창이 떠 있는 동안. 그 창이 포커스를 가져가 선택이 풀려도 툴바를 닫지 않고,
   // 창에서 색을 움직일 때마다 새 span을 겹겹이 만들지 않게 처음 만든 span의 색만 바꾼다.
@@ -2341,6 +2343,30 @@ const DetailPageBuilderModal: React.FC<DetailPageBuilderModalProps> = ({ isOpen,
     setKimchiSections(prev => moveKimchiSection(prev, id, direction));
   };
 
+  // 미리보기에서 마우스를 올린 섹션 오른쪽 위에 ↑↓를 띄운다 — 옆 패널 섹션 목록까지 내려가지
+  // 않아도 그 자리에서 순서를 바꿀 수 있게. 위치는 미리보기 캔버스(확대 전) 좌표다.
+  const locateSection = (id: string) => {
+    const preview = previewRef.current;
+    const el = preview?.querySelector<HTMLElement>(`[data-section-id="${id}"]`);
+    if (!preview || !el) return null;
+    return { id, top: (el.getBoundingClientRect().top - preview.getBoundingClientRect().top) / (zoom || 1) };
+  };
+  const handlePreviewHover = (e: React.MouseEvent) => {
+    if (!isKimchi || brushMode || drawMode || textMode) return;
+    const target = e.target as HTMLElement;
+    if (target.closest('[data-section-mover]')) return;
+    const id = target.closest<HTMLElement>('[data-section-id]')?.dataset.sectionId;
+    if (!id) { setHoverSection(null); return; }
+    if (hoverSection?.id !== id) setHoverSection(locateSection(id));
+  };
+  const moveHoveredSection = (direction: -1 | 1) => {
+    if (!hoverSection) return;
+    moveKimchiSectionBy(hoverSection.id, direction);
+    // 옮긴 뒤 그 섹션의 새 자리로 버튼도 따라간다.
+    const id = hoverSection.id;
+    requestAnimationFrame(() => setHoverSection(locateSection(id)));
+  };
+
   // 섹션을 지우면 거기 올린 사진도 같이 없앤다 — 그 사진은 다른 섹션에서 닿을 방법이 없다.
   const removeKimchiSectionById = (id: string) => {
     const orphanIds = new Set(
@@ -3079,7 +3105,32 @@ const DetailPageBuilderModal: React.FC<DetailPageBuilderModalProps> = ({ isOpen,
             <div className="flex-1 min-w-0 bg-slate-950/60 rounded-xl border border-slate-700 p-4 min-h-[320px] max-h-[70vh] overflow-auto flex justify-center items-start">
             {!hasRenderableContent ? null : (
               <div style={{ transform: `scale(${zoom})`, transformOrigin: 'top center', flexShrink: 0 }}>
-              <div style={{ position: 'relative' }}>
+              <div style={{ position: 'relative' }} onMouseMove={handlePreviewHover} onMouseLeave={() => setHoverSection(null)}>
+              {hoverSection && (() => {
+                const idx = kimchiSections.findIndex(sec => sec.id === hoverSection.id);
+                if (idx === -1) return null;
+                const btn = (dir: -1 | 1, disabled: boolean) => (
+                  <button
+                    onClick={() => moveHoveredSection(dir)}
+                    disabled={disabled}
+                    title={dir === -1 ? '이 섹션 위로' : '이 섹션 아래로'}
+                    style={{ width: 40 / (zoom || 1), height: 40 / (zoom || 1), fontSize: 20 / (zoom || 1) }}
+                    className="flex items-center justify-center rounded-md bg-slate-900/90 text-white hover:bg-blue-600 disabled:opacity-30 disabled:hover:bg-slate-900/90 shadow-lg"
+                  >
+                    {dir === -1 ? '↑' : '↓'}
+                  </button>
+                );
+                return (
+                  <div
+                    data-section-mover
+                    data-html2canvas-ignore="true"
+                    style={{ position: 'absolute', zIndex: 30, right: 12 / (zoom || 1), top: hoverSection.top + 12 / (zoom || 1), display: 'flex', gap: 6 / (zoom || 1) }}
+                  >
+                    {btn(-1, idx === 0)}
+                    {btn(1, idx === kimchiSections.length - 1)}
+                  </div>
+                );
+              })()}
               <div
                 ref={previewRef}
                 onContextMenu={handlePreviewContextMenu}

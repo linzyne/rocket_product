@@ -28,8 +28,14 @@ const NotesSection: React.FC<NotesSectionProps> = ({ section, updateSection, fon
   });
   const items = section.items || [];
   const blank = !items.some(i => i.trim());
-  // 미리보기에선 빈 줄도 보여줘야 눌러서 채울 수 있다. 하나라도 채웠으면 빈 줄은 감춘다.
-  const visible = items.map((text, idx) => ({ text, idx })).filter(({ text }) => blank || text.trim());
+  // 미리보기에선 빈 줄도 보여줘야 눌러서 채울 수 있다. 하나라도 채웠으면 빈 줄은 저장 이미지에서만 뺀다
+  // (skip). 번호(B)는 채운 줄끼리만 센다.
+  let filledCount = 0;
+  const visible = items.map((text, idx) => {
+    const filled = !!text.trim();
+    if (filled) filledCount += 1;
+    return { text, idx, num: filled ? filledCount : filledCount + 1, skip: !blank && !filled ? 'true' : undefined };
+  });
   const editItem = (idx: number, style: React.CSSProperties) => (
     <EditableText
       value={items[idx] || ''}
@@ -49,6 +55,22 @@ const NotesSection: React.FC<NotesSectionProps> = ({ section, updateSection, fon
     <EditableText value={section.caption} onChange={v => updateSection(section.id, { caption: v })} placeholder="NOTICE" style={style} />
   );
   const itemStyle = t(small * 0.85, { color: GRAY, lineHeight: 1.6 });
+  // 줄 수 조절 버튼. 미리보기에서만 보이고 저장 이미지에는 안 찍힌다.
+  const countBar = (
+    <div data-html2canvas-ignore="true" style={{ display: 'flex', justifyContent: 'center', gap: 10, marginTop: 24 }}>
+      {([['−', '맨 아래 줄 빼기', -1], ['+', '줄 하나 더', 1]] as const).map(([mark, label, dir]) => (
+        <button
+          key={mark}
+          onClick={() => updateSection(section.id, { items: dir === 1 ? [...items, ''] : items.slice(0, -1) })}
+          disabled={dir === -1 && items.length <= 1}
+          style={{ fontFamily, fontSize: 18, padding: '6px 16px', borderRadius: 999, border: '1px solid #c8c8c8', background: '#ffffff', color: '#555', cursor: 'pointer', opacity: dir === -1 && items.length <= 1 ? 0.4 : 1 }}
+        >
+          {mark} {label}
+        </button>
+      ))}
+      <span style={{ fontFamily, fontSize: 18, color: '#888', alignSelf: 'center' }}>{items.length}줄</span>
+    </div>
+  );
   const design = section.guideDesign ?? 'A';
 
   // A 상자: 옅은 강조색 상자 안에 느낌표 동그라미 + 제목, 점 목록.
@@ -63,12 +85,13 @@ const NotesSection: React.FC<NotesSectionProps> = ({ section, updateSection, fon
             }}>!</div>
             {title(t(typeScale.heading * 0.7, { fontWeight: 800 }))}
           </div>
-          {visible.map(({ idx }) => (
-            <div key={idx} style={{ display: 'flex', gap: 16, marginTop: 14 }}>
+          {visible.map(({ idx, skip }) => (
+            <div key={idx} data-html2canvas-ignore={skip} style={{ display: 'flex', gap: 16, marginTop: 14 }}>
               <div style={{ width: 8, height: 8, borderRadius: '50%', background: accent, flexShrink: 0, marginTop: px(16) }} />
               <div style={{ flex: 1, minWidth: 0 }}>{editItem(idx, itemStyle)}</div>
             </div>
           ))}
+          {countBar}
         </div>
       </div>
     );
@@ -84,14 +107,15 @@ const NotesSection: React.FC<NotesSectionProps> = ({ section, updateSection, fon
         </div>
         {title(t(typeScale.heading * 0.8, { fontWeight: 800 }))}
         <div style={{ height: 30, borderBottom: `3px solid ${textColor}` }} />
-        {visible.map(({ idx }, i) => (
-          <div key={idx} style={{ display: 'flex', gap: 24, padding: '24px 0', borderBottom: '1px solid #dedede' }}>
+        {visible.map(({ idx, num, skip }) => (
+          <div key={idx} data-html2canvas-ignore={skip} style={{ display: 'flex', gap: 24, padding: '24px 0', borderBottom: '1px solid #dedede' }}>
             <div style={{ fontFamily, fontWeight: 900, fontSize: px(26), color: accent, flexShrink: 0, lineHeight: 1.6 }}>
-              {String(i + 1).padStart(2, '0')}
+              {String(num).padStart(2, '0')}
             </div>
             <div style={{ flex: 1, minWidth: 0 }}>{editItem(idx, itemStyle)}</div>
           </div>
         ))}
+        {countBar}
       </div>
     );
   }
@@ -105,8 +129,8 @@ const NotesSection: React.FC<NotesSectionProps> = ({ section, updateSection, fon
         {title(t(typeScale.heading * 0.8, { fontWeight: 800, color: '#ffffff', textAlign: 'center' }))}
       </div>
       <div style={{ background: kimchiTint(accent, 0.06), padding: `44px ${SIDE}px 70px` }}>
-        {visible.map(({ idx }) => (
-          <div key={idx} style={{ display: 'flex', gap: 18, alignItems: 'flex-start', background: '#ffffff', borderRadius: 20, padding: '26px 30px', marginTop: 14 }}>
+        {visible.map(({ idx, skip }) => (
+          <div key={idx} data-html2canvas-ignore={skip} style={{ display: 'flex', gap: 18, alignItems: 'flex-start', background: '#ffffff', borderRadius: 20, padding: '26px 30px', marginTop: 14 }}>
             <div style={{
               width: px(36), height: px(36), borderRadius: '50%', border: `3px solid ${accent}`, color: accent, flexShrink: 0,
               fontFamily, fontWeight: 900, fontSize: px(18), display: 'flex', alignItems: 'center', justifyContent: 'center', marginTop: 2,
@@ -114,6 +138,7 @@ const NotesSection: React.FC<NotesSectionProps> = ({ section, updateSection, fon
             <div style={{ flex: 1, minWidth: 0 }}>{editItem(idx, { ...itemStyle, color: textColor })}</div>
           </div>
         ))}
+        {countBar}
       </div>
     </div>
   );

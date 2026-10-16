@@ -95,6 +95,7 @@ interface DetailCategoryTabsProps {
   onSelect: (id: string) => void;
   onAdd: () => void;
   onRemove: (id: string) => void;
+  onRename: (id: string) => void;
   // 지금 카테고리 안의 상페들.
   pages: DetailPage[];
   activePageId: string;
@@ -114,7 +115,7 @@ const pageClass = (active: boolean) =>
     active ? 'bg-slate-700 text-slate-100 font-semibold' : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800'
   }`;
 
-const DetailCategoryTabs: React.FC<DetailCategoryTabsProps> = ({ categories, productTabLabel, activeCategoryId, onSelect, onAdd, onRemove, pages, activePageId, onSelectPage, onAddPage, onRenamePage, onRemovePage }) => (
+const DetailCategoryTabs: React.FC<DetailCategoryTabsProps> = ({ categories, productTabLabel, activeCategoryId, onSelect, onAdd, onRemove, onRename, pages, activePageId, onSelectPage, onAddPage, onRenamePage, onRemovePage }) => (
   <div className="flex flex-col flex-shrink-0">
   <div className="flex items-end gap-1 px-4 pt-2 bg-slate-950 overflow-x-auto">
     {productTabLabel !== null && (
@@ -123,7 +124,7 @@ const DetailCategoryTabs: React.FC<DetailCategoryTabsProps> = ({ categories, pro
     {categories.map(category => {
       const active = productTabLabel === null && category.id === activeCategoryId;
       return (
-        <div key={category.id} className={`${tabClass(active)} group cursor-pointer`} onClick={() => onSelect(category.id)}>
+        <div key={category.id} className={`${tabClass(active)} group cursor-pointer`} onClick={() => onSelect(category.id)} onDoubleClick={() => onRename(category.id)} title="두 번 누르면 이름 바꾸기">
           <span>{category.name}</span>
           {category.id !== KIMCHI_CATEGORY_ID && (
             <button

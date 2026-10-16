@@ -2868,6 +2868,19 @@ const App: React.FC = () => {
     }, 300);
   }, [updateActiveCategoryPages, activeDetailPages, activeDetailPage.id, activeDetailCategoryId]);
 
+  const renameDetailCategory = useCallback((id: string) => {
+    const category = detailCategories.find(c => c.id === id);
+    const name = window.prompt('카테고리 이름', category?.name)?.trim();
+    if (!category || !name || name === category.name) return;
+    if (detailCategories.some(c => c.name === name)) {
+      alert(`"${name}" 카테고리가 이미 있습니다.`);
+      return;
+    }
+    const next = detailCategories.map(c => (c.id === id ? { ...c, name } : c));
+    setDetailCategories(next);
+    saveDetailCategories(next);
+  }, [detailCategories]);
+
   const removeDetailCategory = useCallback((id: string) => {
     const category = detailCategories.find(c => c.id === id);
     if (!category || id === KIMCHI_CATEGORY_ID) return;
@@ -3328,6 +3341,7 @@ const App: React.FC = () => {
           onSelect={selectDetailCategory}
           onAdd={addDetailCategory}
           onRemove={removeDetailCategory}
+          onRename={renameDetailCategory}
           pages={activeDetailPages}
           activePageId={activeDetailPage.id}
           onSelectPage={selectDetailPage}

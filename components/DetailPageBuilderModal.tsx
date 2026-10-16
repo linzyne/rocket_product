@@ -33,6 +33,7 @@ import { KimchiPreviewModern } from './KimchiDetailSectionsModern';
 import { KimchiPreviewBold } from './KimchiDetailSectionsBold';
 import { KimchiPreviewSales } from './KimchiDetailSectionsSales';
 import { GreenPreview } from './GreenDetailSections';
+import { CommonDeadline, CommonGuides, useCommonInfo } from './DetailCommonInfo';
 import {
   KimchiSection,
   createDefaultSectionsFor,
@@ -362,6 +363,21 @@ interface BasicTextDraft {
   drawObjects: DrawObject[];
 }
 
+// 공통 안내를 섹션 사이 어디에 끼울지. 주문 마감은 인트로 바로 아래(이미 그 자리에 배송 고지
+// 섹션을 둔 틀이면 그걸 그대로 쓰고 따로 넣지 않는다), 배송·반품·CS·FAQ는 제품 상세 정보
+// (표시사항 표) 바로 위 — 그 표가 없으면 맨 아래.
+const splitForCommonInfo = (sections: KimchiSection[]) => {
+  const heroIdx = sections.findIndex(s => s.kind === 'hero' || s.kind === 'gHero');
+  const deadlineAt = heroIdx === -1 ? 0 : heroIdx + 1;
+  const showDeadline = !sections.some(s => s.kind === 'notice' && (s.promptLabel === '배송' || /\d{1,2}:\d{2}/.test(s.bigText || '')));
+  let infoIdx = -1;
+  sections.forEach((s, idx) => {
+    if (s.kind === 'pairs' && (['표시사항', '상세정보'].includes(s.promptLabel || '') || /상세\s*정보|표시사항/.test(s.title))) infoIdx = idx;
+  });
+  const guidesAt = infoIdx < deadlineAt ? sections.length : infoIdx;
+  return { deadlineAt, showDeadline, guidesAt };
+};
+
 const DetailPageBuilderModal: React.FC<DetailPageBuilderModalProps> = ({ isOpen, onClose, product, groupProducts, onSave, onSaveThumbnail, templateId = 'basic', importedPhotos, onImportedPhotosUsed, embedded = false, draftId = STANDALONE_DRAFT_ID, sectionTemplate = 'kimchi' as SectionTemplateId, onChangeSectionTemplate }) => {
   const [photos, setPhotos] = useState<PhotoItem[]>([]);
   const isKimchi = templateId === 'kimchi';
@@ -386,6 +402,8 @@ const DetailPageBuilderModal: React.FC<DetailPageBuilderModalProps> = ({ isOpen,
     green: '#1f9d4c',
   });
   const kimchiAccent = kimchiAccents[kimchiSkin];
+  // 모든 틀에 공통으로 끼워 넣는 안내(주문 마감 / 배송·반품·CS·FAQ). 문구는 모든 상페가 함께 쓴다.
+  const [commonInfo, updateCommonInfo] = useCommonInfo();
   // 김치 템플릿의 글자 크기는 다섯 단계뿐이고(KIMCHI_TYPE_SCALE), 그 다섯 개의 실제 px을 여기서
   // 정한다. 역할별로 따로 만지는 게 아니라 단계를 만지는 것이라, 한 번 조절하면 그 단계를 쓰는
   // 모든 문구가 같이 움직인다 — 페이지 안에서 크기 위계가 어긋나지 않는다.
@@ -3022,26 +3040,37 @@ const DetailPageBuilderModal: React.FC<DetailPageBuilderModalProps> = ({ isOpen,
                 onContextMenu={handlePreviewContextMenu}
                 style={{ width: CANVAS_WIDTH, backgroundColor: '#ffffff', position: 'relative' }}
               >
-                {isKimchi ? (
-                  React.createElement(
-                    kimchiSkin === 'green' ? GreenPreview
-                      : kimchiSkin === 'modern' ? KimchiPreviewModern
-                      : kimchiSkin === 'bold' ? KimchiPreviewBold
-                      : kimchiSkin === 'sales' ? KimchiPreviewSales
-                      : KimchiPreview,
-                    {
-                    sections: kimchiSections,
-                    updateSection: updateKimchiSection,
-                    photosBySection,
-                    renderPhoto,
+                {isKimchi ? (() => {
+                  const Preview = kimchiSkin === 'green' ? GreenPreview
+                    : kimchiSkin === 'modern' ? KimchiPreviewModern
+                    : kimchiSkin === 'bold' ? KimchiPreviewBold
+                    : kimchiSkin === 'sales' ? KimchiPreviewSales
+                    : KimchiPreview;
+                  const look = {
                     fontFamily: templateStyle.fontFamily,
                     textColor: templateStyle.textColor,
                     fontScale: templateStyle.fontScale,
                     typeScale: kimchiTypeScale,
                     accentColor: kimchiAccent,
-                    }
-                  )
-                ) : (
+                  };
+                  const part = (list: typeof kimchiSections) => list.length > 0 && React.createElement(Preview, {
+                    sections: list,
+                    updateSection: updateKimchiSection,
+                    photosBySection,
+                    renderPhoto,
+                    ...look,
+                  });
+                  const { deadlineAt, showDeadline, guidesAt } = splitForCommonInfo(kimchiSections);
+                  return (
+                    <>
+                      {part(kimchiSections.slice(0, deadlineAt))}
+                      {showDeadline && <CommonDeadline info={commonInfo} update={updateCommonInfo} {...look} />}
+                      {part(kimchiSections.slice(deadlineAt, guidesAt))}
+                      <CommonGuides info={commonInfo} update={updateCommonInfo} {...look} />
+                      {part(kimchiSections.slice(guidesAt))}
+                    </>
+                  );
+                })() : (
                   <>
                 {/* Hero */}
                 {heroPhoto && renderPhoto(heroPhoto, hasCopyText ? SPACE.lg : SPACE.lg + SECTION_GAP)}

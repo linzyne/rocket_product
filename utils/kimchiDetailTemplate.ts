@@ -33,7 +33,10 @@ export type KimchiSectionKind =
   | 'gPackage' // 흰 상자 안 제품 사진 + 강조색 알약(구성) + 작은 안내
   // ── 모든 틀 공통 ── 배송·FAQ·반품·CS 안내 한 블록. 문구는 카테고리 공통(DetailCommonInfo)이고
   // 섹션은 어느 안내를 어디에 어떤 디자인으로 둘지만 갖는다. 그리는 건 틀이 아니라 에디터가 한다.
-  | 'guide';
+  | 'guide'
+  // ── 모든 틀 공통 ── 상품마다 다른 주의·안내 문구 목록(보관·섭취·개봉 후 등). AI가 채우고, 그리는 건 에디터
+  // (NotesSection.tsx)가 한다. 디자인은 guideDesign 칸을 같이 쓴다.
+  | 'notes';
 
 export type GuideType = 'shipping' | 'faq' | 'refund' | 'cs';
 export type GuideDesign = 'A' | 'B' | 'C';
@@ -169,8 +172,8 @@ export interface KimchiSection {
 export type SectionTemplateId = 'kimchi' | 'green';
 
 export const TEMPLATE_KINDS: Record<SectionTemplateId, KimchiSectionKind[]> = {
-  kimchi: ['hero', 'text', 'list', 'pairs', 'notice', 'review', 'feature', 'cert', 'point', 'summary', 'guide'],
-  green: ['gHero', 'gChat', 'gTitle', 'gCompare', 'gCheck', 'gCert', 'gSteps', 'gPackage', 'pairs', 'guide'],
+  kimchi: ['hero', 'text', 'list', 'pairs', 'notice', 'review', 'feature', 'cert', 'point', 'summary', 'notes', 'guide'],
+  green: ['gHero', 'gChat', 'gTitle', 'gCompare', 'gCheck', 'gCert', 'gSteps', 'gPackage', 'pairs', 'notes', 'guide'],
 };
 
 // 섹션 추가 메뉴에 뜨는 종류들.
@@ -251,6 +254,10 @@ export function createKimchiSection(kind: KimchiSectionKind, overrides: Partial<
         highlights: [0, 1, 2, 3].map(() => ({ icon: '', title: '', desc: '' })),
         backgroundColor: '#f6efdf', hint: '단계마다 한 장씩, 위에서부터 차례로 왼쪽에 들어갑니다',
       }
+    : kind === 'notes' ? {
+        title: '안내사항', caption: 'NOTICE', items: ['', '', '', ''], multiplePhotos: false,
+        hint: '사진은 안 들어가요',
+      }
     : kind === 'guide' ? {
         guideType: 'shipping', promptLabel: '배송 안내', multiplePhotos: false, excludeFromPrompt: true,
         hint: '사진은 안 들어가요. 문구는 미리보기에서 고치면 이 카테고리 상페 전부에 바뀌어요.',
@@ -316,6 +323,7 @@ export function createDefaultKimchiSections(): KimchiSection[] {
       rows: [{ label: '', value: '' }, { label: '', value: '' }, { label: '', value: '' }, { label: '', value: '' }],
       hint: '없어도 됩니다',
     }),
+    createKimchiSection('notes', { promptLabel: '안내사항' }),
     createKimchiSection('list', {
       title: '보관방법 및 주의사항', caption: 'STORAGE', promptLabel: '보관', listStyle: 'dot',
       items: ['', '', '', ''], hint: '없어도 됩니다',
@@ -356,6 +364,7 @@ export function createDefaultGreenSections(): KimchiSection[] {
     createKimchiSection('gCert', { promptLabel: '인증' }),
     createKimchiSection('gSteps', { promptLabel: '활용법' }),
     createKimchiSection('gPackage', { promptLabel: '구성' }),
+    createKimchiSection('notes', { promptLabel: '안내사항' }),
     createKimchiSection('pairs', {
       title: '제품 상세 정보', promptLabel: '상세정보', pairsStyle: 'table',
       rows: ['제품명', '식품의 유형', '생산자 및 소재지', '제조연월일', '소비기한', '내용량', '원재료명 및 함량', '보관방법', '포장재질', '소비자상담실']
@@ -416,7 +425,7 @@ function bumpTrailingNumber(label: string): string {
 // 오는 첫 섹션" 앞에 넣는다.
 const KIND_FLOW: KimchiSectionKind[] = [
   'hero', 'gHero', 'notice', 'gChat', 'gTitle', 'gCompare', 'review', 'summary', 'feature', 'gCheck',
-  'cert', 'gCert', 'point', 'gSteps', 'gPackage', 'text', 'list', 'guide', 'pairs',
+  'cert', 'gCert', 'point', 'gSteps', 'gPackage', 'text', 'list', 'notes', 'guide', 'pairs',
 ];
 
 function kindFlowInsertIndex(sections: KimchiSection[], kind: KimchiSectionKind): number {
@@ -563,6 +572,8 @@ export function kimchiSectionHasText(section: KimchiSection): boolean {
     // 문구가 카테고리 공통이라 섹션 자체엔 문구가 없다 — 늘 채워진 것으로 본다(빈 섹션으로 걷히지 않게).
     case 'guide':
       return true;
+    case 'notes':
+      return (section.items || []).some(filled);
   }
 }
 
@@ -597,7 +608,7 @@ const KIND_FALLBACK_LABEL: Record<KimchiSectionKind, string> = {
   hero: '인트로', text: '본문', list: '목록', pairs: '항목', notice: '고지', review: '리뷰',
   feature: '특별한점', cert: '인증', point: '소구점', summary: '예고',
   gHero: '인트로', gChat: '공감', gTitle: '소개', gCompare: '비교', gCheck: '체크포인트',
-  gCert: '인증', gSteps: '활용법', gPackage: '구성', guide: '안내',
+  gCert: '인증', gSteps: '활용법', gPackage: '구성', guide: '안내', notes: '안내사항',
 };
 
 // 섹션 하나가 문구를 받는 자리들. field는 파싱 결과를 어디에 꽂을지 가리킨다.
@@ -634,6 +645,15 @@ function buildSlots(sections: KimchiSection[]): KimchiSlot[] {
         break;
       case 'text':
         slots.push({ sectionIndex, field: 'body', label: uniqueLabel(used, base), hint: '1~3문장', twoLine: false });
+        break;
+      case 'notes':
+        (section.items || []).forEach((_, itemIndex) => {
+          slots.push({
+            sectionIndex, field: 'item', itemIndex,
+            label: uniqueLabel(used, `${base} ${String(itemIndex + 1).padStart(2, '0')}`),
+            hint: '이 상품을 사기 전·받은 뒤 알아둘 점 한두 줄. 예: 개봉 후에는 냉장 보관하고 3일 안에 드세요.', twoLine: false,
+          });
+        });
         break;
       case 'list':
         (section.items || []).forEach((_, itemIndex) => {

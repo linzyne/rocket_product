@@ -33,6 +33,7 @@ import { KimchiPreviewModern } from './KimchiDetailSectionsModern';
 import { KimchiPreviewBold } from './KimchiDetailSectionsBold';
 import { KimchiPreviewSales } from './KimchiDetailSectionsSales';
 import { GreenPreview } from './GreenDetailSections';
+import NotesSection from './NotesSection';
 import { CommonDeadline, CommonGuide, COMMON_ORDER, CommonDesign, COMMON_DESIGNS, DEADLINE_DESIGNS, useCommonInfo } from './DetailCommonInfo';
 import {
   KimchiSection,
@@ -3174,6 +3175,14 @@ const DetailPageBuilderModal: React.FC<DetailPageBuilderModalProps> = ({ isOpen,
                       out.push(
                         <div key={item.id} data-section-id={item.id} style={{ marginBottom: item.sectionGap ?? 0, background: item.backgroundColor || undefined }}>
                           <CommonGuide info={commonInfo} update={updateCommonInfo} type={item.guideType ?? 'shipping'} design={item.guideDesign} {...look} />
+                        </div>
+                      );
+                    } else if (item.kind === 'notes') {
+                      flush();
+                      const empty = !kimchiSectionHasText(item);
+                      out.push(
+                        <div key={item.id} data-section-id={item.id} data-empty-section={empty ? 'true' : undefined} style={{ marginBottom: item.sectionGap ?? 0, background: item.backgroundColor || undefined }}>
+                          <NotesSection section={item} updateSection={updateKimchiSection} {...look} />
                         </div>
                       );
                     } else {

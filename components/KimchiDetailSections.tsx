@@ -1094,7 +1094,7 @@ const KIND_BADGE: Record<KimchiSection['kind'], string> = {
   hero: '인트로', text: '글', list: '목록', pairs: '두 열', notice: '고지', review: '리뷰',
   feature: '특별한점', cert: '인증', point: '소구점', summary: '예고',
   gHero: '인트로', gChat: '공감', gTitle: '소개', gCompare: '비교', gCheck: '체크포인트',
-  gCert: '인증', gSteps: '활용법', gPackage: '구성', guide: '안내',
+  gCert: '인증', gSteps: '활용법', gPackage: '구성', guide: '안내', notes: '안내사항',
 };
 
 // 칸 수를 늘리고 줄일 수 있는 섹션들. 줄일 때는 뒤에서부터 뺀다.
@@ -1116,6 +1116,12 @@ const COUNT_CONTROLS: Partial<Record<KimchiSection['kind'], { label: string; get
     gHero: highlights('장점'),
     gSteps: highlights('단계'),
     gCompare: rows('줄'),
+    notes: {
+      label: '줄',
+      get: s => s.items || [],
+      grow: s => ({ items: [...(s.items || []), ''] }),
+      shrink: s => ({ items: (s.items || []).slice(0, -1) }),
+    },
     gChat: {
       label: '말풍선',
       get: s => s.items || [],
@@ -1239,6 +1245,22 @@ export const KimchiSectionPanel: React.FC<KimchiSectionPanelProps> = ({
             </div>
 
             {/* 공통 안내 섹션: 어느 안내인지와 디자인만 고른다(문구는 미리보기에서 — 카테고리 공통). */}
+            {section.kind === 'notes' && (
+              <div className="flex flex-wrap items-center gap-1">
+                <span className="text-[11px] text-slate-400 mr-1">디자인</span>
+                {([['A', 'A 상자'], ['B', 'B 번호줄'], ['C', 'C 띠']] as const).map(([id, label]) => (
+                  <button
+                    key={id}
+                    onClick={() => updateSection(section.id, { guideDesign: id })}
+                    className={`px-2 h-6 rounded text-[11px] transition-colors ${
+                      (section.guideDesign ?? 'A') === id ? 'bg-blue-600 text-white' : 'bg-slate-700 text-slate-300 hover:bg-slate-600'
+                    }`}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+            )}
             {section.kind === 'guide' && (
               <div className="space-y-1.5">
                 <div className="flex flex-wrap gap-1">

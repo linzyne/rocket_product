@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import EditableText from './EditableText';
 import { KimchiSection, kimchiSectionHasText } from '../utils/kimchiDetailTemplate';
 import { KimchiPhoto, KimchiTypeScale, kimchiTint, makePhotoRun } from './KimchiDetailSections';
@@ -47,6 +47,41 @@ const PhotoBox: React.FC<{ photo?: KimchiPhoto; size: number; round?: boolean; r
   />
 );
 
+// 흑백 사진. CSS filter는 저장 이미지(html2canvas)에 안 찍혀서, 캔버스로 회색 사본을 만들어 그린다.
+const grayCache = new Map<string, string>();
+const GrayPhotoBox: React.FC<{ photo?: KimchiPhoto; style?: React.CSSProperties }> = ({ photo, style }) => {
+  const src = photo?.dataUrl;
+  const [gray, setGray] = useState<string | undefined>(() => (src ? grayCache.get(src) : undefined));
+  useEffect(() => {
+    if (!src) { setGray(undefined); return; }
+    const hit = grayCache.get(src);
+    if (hit) { setGray(hit); return; }
+    let cancelled = false;
+    const img = new Image();
+    img.onload = () => {
+      const canvas = document.createElement('canvas');
+      canvas.width = img.naturalWidth;
+      canvas.height = img.naturalHeight;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) return;
+      ctx.drawImage(img, 0, 0);
+      const data = ctx.getImageData(0, 0, canvas.width, canvas.height);
+      const d = data.data;
+      for (let i = 0; i < d.length; i += 4) {
+        const y = Math.round(d[i] * 0.299 + d[i + 1] * 0.587 + d[i + 2] * 0.114);
+        d[i] = d[i + 1] = d[i + 2] = y;
+      }
+      ctx.putImageData(data, 0, 0);
+      const url = canvas.toDataURL('image/jpeg', 0.9);
+      grayCache.set(src, url);
+      if (!cancelled) setGray(url);
+    };
+    img.src = src;
+    return () => { cancelled = true; };
+  }, [src]);
+  return <PhotoBox photo={photo && { ...photo, dataUrl: gray || photo.dataUrl }} size={0} radius={0} style={style} />;
+};
+
 export const GreenPreview: React.FC<GreenPreviewProps> = ({
   sections, updateSection, photosBySection, renderPhoto, fontFamily, textColor, fontScale, typeScale, accentColor: templateAccent,
 }) => {
@@ -72,6 +107,8 @@ export const GreenPreview: React.FC<GreenPreviewProps> = ({
       compareHead: t(small * 1.1, { fontWeight: 800 }),
       compareCell: t(small * 0.9, { fontWeight: 600, color: '#ffffff', lineHeight: 1.45 }),
       comparePill: t(small * 0.85, { fontWeight: 800, lineHeight: 1.2 }),
+      compareItem: t(small * 1.0, { color: '#ffffff', textAlign: 'left', lineHeight: 1.4 }),
+      compareBullet: t(small * 0.8, { color: '#ffffff', lineHeight: 1 }),
       stepTitle: t(small * 1.1, { fontWeight: 800, textAlign: 'left' }),
       stepDesc: t(small * 0.9, { fontWeight: 400, lineHeight: 1.55, textAlign: 'left', color: GRAY_TEXT }),
       pill: t(small * 1.05, { fontWeight: 800, color: '#ffffff' }),
@@ -210,6 +247,9 @@ export const GreenPreview: React.FC<GreenPreviewProps> = ({
 
       // 비교: 네모 사진 두 장(가운데 VS 배지, 우리 제품 쪽만 강조색 테두리) → 머리글 →
       // 줄마다 [항목 칩] 아래 [✕ 회색 카드 | ✓ 강조색 연한 카드]. 줄 사이를 띄워 카드처럼 떨어지게.
+      // 비교: 강조색 큰 제목 + 굵은 설명 → 카드 두 장. 왼쪽(비교 대상)은 흑백 사진·회색 카드로 조금 낮게,
+      // 오른쪽(우리 제품)은 강조색 카드로 조금 높게 세워 눈이 오른쪽으로 가게 한다.
+      // 첫 장 사진 = 왼쪽, 둘째 장 = 오른쪽. 줄마다 왼쪽(other)·오른쪽(value)이 점 목록으로 들어간다.
       case 'gCompare': {
         const rows = section.rows || [];
         const updateRow = (idx: number, patch: Partial<{ label: string; value: string; other: string }>) => {
@@ -217,77 +257,51 @@ export const GreenPreview: React.FC<GreenPreviewProps> = ({
           next[idx] = { ...next[idx], ...patch };
           updateSection(section.id, { rows: next });
         };
-        const COL_GAP = 28;
-        const mark = (ok: boolean) => (
-          <div
-            style={{
-              width: 34, height: 34, borderRadius: '50%', flexShrink: 0,
-              background: ok ? accent : '#c4c4c4', color: '#ffffff',
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-              fontFamily, fontSize: 18, fontWeight: 800, lineHeight: 1,
-            }}
-          >
-            {ok ? '✓' : '✕'}
-          </div>
-        );
-        return (
-          <div style={{ padding: `90px ${SIDE - 10}px 90px` }}>
-            {(photos.length > 0 || blank) && (
-              <div style={{ display: 'flex', gap: COL_GAP, position: 'relative', marginBottom: 22 }}>
-                {[0, 1].map(i => (
-                  <div key={i} style={{ flex: 1, display: 'flex', justifyContent: 'center' }}>
-                    <PhotoBox
-                      photo={photos[i]}
-                      size={250}
-                      radius={20}
-                      style={i === 1 ? { border: `6px solid ${accent}` } : { border: `6px solid ${TABLE_LINE}` }}
-                    />
-                  </div>
-                ))}
-                <div
-                  style={{
-                    position: 'absolute', left: '50%', top: '50%', transform: 'translate(-50%, -50%)',
-                    width: 76, height: 76, borderRadius: '50%', background: textColor, color: '#ffffff',
-                    border: '5px solid #ffffff', boxSizing: 'border-box',
-                    display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    fontFamily, fontSize: 24, fontWeight: 900, fontStyle: 'italic', lineHeight: 1,
-                  }}
-                >
-                  VS
+        const visible = rows.map((row, idx) => ({ row, idx }))
+          .filter(({ row }) => blank || row.value.trim() || (row.other || '').trim());
+        const LIFT = 56;
+        const card = (side: 'left' | 'right') => {
+          const ours = side === 'right';
+          const bg = ours ? accent : '#a9a9a9';
+          return (
+            <div style={{ flex: 1, minWidth: 0, marginTop: ours ? 0 : LIFT, background: bg, borderRadius: 24, overflow: 'hidden', paddingBottom: ours ? 70 : 54 }}>
+              {ours
+                ? <PhotoBox photo={photos[1]} size={0} radius={0} style={{ width: '100%', height: 360 }} />
+                : <GrayPhotoBox photo={photos[0]} style={{ width: '100%', height: 320 }} />}
+              <div style={{ padding: '44px 46px 0' }}>
+                <div style={{ background: '#ffffff', borderRadius: 18, padding: '16px 20px' }}>
+                  {ours
+                    ? edit('compareRight', '우리 제품', { ...S.compareHead, color: accent })
+                    : edit('compareLeft', '비교 대상', { ...S.compareHead, color: COMPARE_GRAY })}
+                </div>
+                <div style={{ paddingTop: 30 }}>
+                  {visible.map(({ row, idx }) => (
+                    <div key={idx} style={{ display: 'flex', gap: 18, alignItems: 'baseline', marginTop: 22 }}>
+                      <div style={{ ...S.compareBullet, fontWeight: ours ? 800 : 500 }}>•</div>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <EditableText
+                          value={ours ? row.value : row.other || ''}
+                          onChange={v => updateRow(idx, ours ? { value: v } : { other: v })}
+                          placeholder={ours ? '좋은 점' : '아쉬운 점'}
+                          style={{ ...S.compareItem, fontWeight: ours ? 800 : 500 }}
+                        />
+                      </div>
+                    </div>
+                  ))}
                 </div>
               </div>
-            )}
-            <div style={{ display: 'flex', gap: COL_GAP }}>
-              <div style={{ flex: 1 }}>{show(section.compareLeft) && edit('compareLeft', '비교 대상', { ...S.compareHead, color: GRAY_TEXT })}</div>
-              <div style={{ flex: 1 }}>{show(section.compareRight) && edit('compareRight', '우리 제품', { ...S.compareHead, color: accent })}</div>
             </div>
-            {gap(34)}
-            {rows.map((row, idx) => {
-              if (!blank && !row.label.trim() && !row.value.trim() && !(row.other || '').trim()) return null;
-              return (
-                <div key={idx} style={{ marginTop: idx === 0 ? 0 : 30 }}>
-                  <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 12 }}>
-                    <div style={{ background: kimchiTint(accent, 0.12), borderRadius: 999, padding: '8px 26px' }}>
-                      <EditableText value={row.label} onChange={v => updateRow(idx, { label: v })} placeholder="항목" style={{ ...S.comparePill, color: accent }} />
-                    </div>
-                  </div>
-                  <div style={{ display: 'flex', gap: COL_GAP, alignItems: 'stretch' }}>
-                    <div style={{ flex: 1, minWidth: 0, background: '#f2f2f2', borderRadius: 16, padding: '24px 22px', display: 'flex', alignItems: 'center', gap: 14 }}>
-                      {mark(false)}
-                      <div style={{ flex: 1, minWidth: 0 }}>
-                        <EditableText value={row.other || ''} onChange={v => updateRow(idx, { other: v })} placeholder="아쉬운 점" style={{ ...S.compareCell, color: COMPARE_GRAY, textAlign: 'left' }} />
-                      </div>
-                    </div>
-                    <div style={{ flex: 1, minWidth: 0, background: kimchiTint(accent, 0.08), border: `2px solid ${accent}`, borderRadius: 16, padding: '22px 20px', display: 'flex', alignItems: 'center', gap: 14 }}>
-                      {mark(true)}
-                      <div style={{ flex: 1, minWidth: 0 }}>
-                        <EditableText value={row.value} onChange={v => updateRow(idx, { value: v })} placeholder="좋은 점" style={{ ...S.compareCell, color: textColor, fontWeight: 800, textAlign: 'left' }} />
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              );
-            })}
+          );
+        };
+        return (
+          <div style={{ padding: `90px ${SIDE - 24}px 100px` }}>
+            {show(section.headline) && edit('headline', '제목', { ...S.title, color: accent })}
+            {show(section.body) && <>{gap(26)}{edit('body', '설명', { ...S.sub, fontSize: S.compareItem.fontSize, fontWeight: 500, lineHeight: 1.5 })}</>}
+            {(show(section.headline) || show(section.body)) && gap(64)}
+            <div style={{ display: 'flex', gap: 30, alignItems: 'flex-start' }}>
+              {card('left')}
+              {card('right')}
+            </div>
           </div>
         );
       }

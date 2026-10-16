@@ -26,7 +26,7 @@ export type KimchiSectionKind =
   | 'gHero'    // 작은 문구 + 큰 제목(뒷부분 강조색) + 제품 사진 + 아래 강조색 띠에 아이콘 장점 3칸
   | 'gChat'    // 큰 질문 제목 + 말풍선 여러 개 + 마무리 두 줄 + 사진 (공감 유도)
   | 'gTitle'   // 강조색 작은 문구 + 큰 제목 + 사진 (구간 소개)
-  | 'gCompare' // 남의 제품 vs 우리 제품 두 열 비교 카드 (위에 네모 사진 두 장 + VS)
+  | 'gCompare' // 제목·설명 + 남의 제품(흑백·회색 카드) vs 우리 제품(강조색 카드) 두 열
   | 'gCheck'   // Point. N + 제목 두 줄 + 설명 + 사진
   | 'gCert'    // 강조색 바탕 + 동그란 인증 로고 + 제목 + 설명 + 인증서 사진
   | 'gSteps'   // 제목 두 줄 + 단계별 [왼쪽 사진 | 번호·제목·설명]
@@ -222,9 +222,9 @@ export function createKimchiSection(kind: KimchiSectionKind, overrides: Partial<
       }
     : kind === 'gTitle' ? { eyebrow: '', headline: '', body: '', hint: '제목 아래 사진' }
     : kind === 'gCompare' ? {
-        compareLeft: '', compareRight: '',
+        headline: '', body: '', compareLeft: '', compareRight: '',
         rows: [0, 1, 2, 3].map(() => ({ label: '', other: '', value: '' })),
-        hint: '첫 장 = 왼쪽(비교 대상) 동그라미, 둘째 장 = 오른쪽(우리 제품) 동그라미',
+        hint: '첫 장 = 왼쪽(비교 대상, 흑백으로 바뀜), 둘째 장 = 오른쪽(우리 제품)',
       }
     : kind === 'gCheck' ? { headline: '', headlineAccent: '', body: '', hint: '이 체크포인트를 보여주는 사진' }
     : kind === 'gCert' ? {
@@ -499,7 +499,7 @@ export function kimchiSectionHasText(section: KimchiSection): boolean {
     case 'gTitle':
       return [section.eyebrow, section.headline, section.body].some(filled);
     case 'gCompare':
-      return [section.compareLeft, section.compareRight].some(filled)
+      return [section.headline, section.body, section.compareLeft, section.compareRight].some(filled)
         || (section.rows || []).some(r => filled(r.label) || filled(r.value) || filled(r.other));
     case 'gCheck':
       return [section.headline, section.headlineAccent, section.body].some(filled);
@@ -727,13 +727,14 @@ function buildSlots(sections: KimchiSection[]): KimchiSlot[] {
         });
         break;
       case 'gCompare':
+        slots.push({ sectionIndex, field: 'headline', label: uniqueLabel(used, `${base} 제목`), hint: '강조색 큰 한 줄. 예: 언제나 맛있는 당도', twoLine: false });
+        slots.push({ sectionIndex, field: 'body', label: uniqueLabel(used, `${base} 설명`), hint: '1~2줄. 예: 최신 당도 선별기를 도입해 / 보장된 당도의 참외를 드실 수 있습니다.', twoLine: false });
         slots.push({ sectionIndex, field: 'compareLeft', label: uniqueLabel(used, `${base} 왼쪽 제목`), hint: '흔한 비교 대상. 예: 중국산 재첩국', twoLine: false });
         slots.push({ sectionIndex, field: 'compareRight', label: uniqueLabel(used, `${base} 오른쪽 제목`), hint: '이 상품. 예: 정형만 재첩국', twoLine: false });
         (section.rows || []).forEach((_, rowIndex) => {
           const n = String(rowIndex + 1).padStart(2, '0');
-          slots.push({ sectionIndex, field: 'rowLabel', rowIndex, label: uniqueLabel(used, `${base} ${n} 항목`), hint: '비교 기준 2~4글자. 예: 원산지', twoLine: false });
-          slots.push({ sectionIndex, field: 'rowOther', rowIndex, label: uniqueLabel(used, `${base} ${n} 왼쪽`), hint: '비교 대상의 아쉬운 점 1~2줄. 예: 대량 양식 / 중국산 재첩', twoLine: false });
-          slots.push({ sectionIndex, field: 'rowValue', rowIndex, label: uniqueLabel(used, `${base} ${n} 오른쪽`), hint: '이 상품의 좋은 점 1~2줄. 예: 청정 하동 섬진강 / 자연산 재첩', twoLine: false });
+          slots.push({ sectionIndex, field: 'rowOther', rowIndex, label: uniqueLabel(used, `${base} ${n} 왼쪽`), hint: '비교 대상의 아쉬운 점 짧게. 예: 밍밍함', twoLine: false });
+          slots.push({ sectionIndex, field: 'rowValue', rowIndex, label: uniqueLabel(used, `${base} ${n} 오른쪽`), hint: '이 상품의 좋은 점 짧게. 예: 달콤함', twoLine: false });
         });
         break;
       case 'gCheck':

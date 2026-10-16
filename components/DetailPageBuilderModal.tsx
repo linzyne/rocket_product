@@ -1969,6 +1969,27 @@ const DetailPageBuilderModal: React.FC<DetailPageBuilderModalProps> = ({ isOpen,
     applyFormatToSelection({ fontSize: `${Math.max(8, Math.round(current * factor))}px` });
   };
 
+  // 정렬은 글자 일부가 아니라 그 문구 블록 전체에 건다. 블록 내용을 <div data-align>로 한 번
+  // 감싸 값(HTML)에 함께 저장되게 한다 — 다시 누르면 그 div의 정렬만 바꾼다.
+  const alignSelectionBlock = (align: 'left' | 'center' | 'right') => {
+    const range = restoreSelection();
+    if (!range) return;
+    const editable = editableOfRange(range);
+    if (!editable) return;
+    const only = editable.children.length === 1 && editable.firstElementChild instanceof HTMLDivElement
+      && editable.firstElementChild.hasAttribute('data-align') ? editable.firstElementChild as HTMLDivElement : null;
+    if (only && editable.childNodes.length === 1) {
+      only.style.textAlign = align;
+    } else {
+      const wrap = document.createElement('div');
+      wrap.setAttribute('data-align', '');
+      wrap.style.textAlign = align;
+      while (editable.firstChild) wrap.appendChild(editable.firstChild);
+      editable.appendChild(wrap);
+    }
+    editable.dispatchEvent(new Event('input', { bubbles: true }));
+  };
+
   // 고른 범위를 순수 글자로 되돌린다(감싸고 있던 span들이 통째로 사라진다).
   const clearSelectionFormat = () => {
     const range = restoreSelection();
@@ -4066,6 +4087,19 @@ const DetailPageBuilderModal: React.FC<DetailPageBuilderModalProps> = ({ isOpen,
           >
             b
           </button>
+          <span className="w-px h-5 bg-slate-600 mx-0.5" />
+          {([['left', '왼쪽 정렬'], ['center', '가운데 정렬'], ['right', '오른쪽 정렬']] as const).map(([align, label]) => (
+            <button
+              key={align}
+              onClick={() => alignSelectionBlock(align)}
+              title={label}
+              className="w-6 h-6 rounded bg-slate-700 text-slate-200 hover:bg-slate-600 transition-colors flex flex-col justify-center gap-[2px] px-1"
+              style={{ alignItems: align === 'left' ? 'flex-start' : align === 'center' ? 'center' : 'flex-end' }}
+            >
+              {[12, 8, 12, 8].map((w, i) => <span key={i} className="block h-[1.5px] bg-current" style={{ width: w }} />)}
+            </button>
+          ))}
+          <span className="w-px h-5 bg-slate-600 mx-0.5" />
           <button
             onClick={clearSelectionFormat}
             title="서식 지우기"

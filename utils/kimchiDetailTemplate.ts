@@ -26,7 +26,7 @@ export type KimchiSectionKind =
   | 'gHero'    // 작은 문구 + 큰 제목(뒷부분 강조색) + 제품 사진 + 아래 강조색 띠에 아이콘 장점 3칸
   | 'gChat'    // 큰 질문 제목 + 말풍선 여러 개 + 마무리 두 줄 + 사진 (공감 유도)
   | 'gTitle'   // 강조색 작은 문구 + 큰 제목 + 사진 (구간 소개)
-  | 'gCompare' // 제목·설명 + 남의 제품(흑백·회색 카드) vs 우리 제품(강조색 카드) 두 열
+  | 'gCompare' // 제목·설명 + 남의 제품(흑백·회색 카드, ✕) vs 우리 제품(강조색 카드, ✓) 두 열
   | 'gCheck'   // Point. N + 제목 두 줄 + 설명 + 사진
   | 'gCert'    // 강조색 바탕 + 동그란 인증 로고 + 제목 + 설명 + 인증서 사진
   | 'gSteps'   // 제목 두 줄 + 단계별 [왼쪽 사진 | 번호·제목·설명]
@@ -733,8 +733,8 @@ function buildSlots(sections: KimchiSection[]): KimchiSlot[] {
         slots.push({ sectionIndex, field: 'compareRight', label: uniqueLabel(used, `${base} 오른쪽 제목`), hint: '이 상품. 예: 정형만 재첩국', twoLine: false });
         (section.rows || []).forEach((_, rowIndex) => {
           const n = String(rowIndex + 1).padStart(2, '0');
-          slots.push({ sectionIndex, field: 'rowOther', rowIndex, label: uniqueLabel(used, `${base} ${n} 왼쪽`), hint: '비교 대상의 아쉬운 점 짧게. 예: 밍밍함', twoLine: false });
-          slots.push({ sectionIndex, field: 'rowValue', rowIndex, label: uniqueLabel(used, `${base} ${n} 오른쪽`), hint: '이 상품의 좋은 점 짧게. 예: 달콤함', twoLine: false });
+          slots.push({ sectionIndex, field: 'rowOther', rowIndex, label: uniqueLabel(used, `${base} ${n} 왼쪽`), hint: '비교 대상의 아쉬운 점 짧게. 예: 잔가시 많음', twoLine: false });
+          slots.push({ sectionIndex, field: 'rowValue', rowIndex, label: uniqueLabel(used, `${base} ${n} 오른쪽`), hint: '이 상품의 좋은 점 짧게. 예: 잔가시 ZERO', twoLine: false });
         });
         break;
       case 'gCheck':

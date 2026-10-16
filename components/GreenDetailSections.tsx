@@ -49,7 +49,7 @@ const PhotoBox: React.FC<{ photo?: KimchiPhoto; size: number; round?: boolean; r
 
 // 흑백 사진. CSS filter는 저장 이미지(html2canvas)에 안 찍혀서, 캔버스로 회색 사본을 만들어 그린다.
 const grayCache = new Map<string, string>();
-const GrayPhotoBox: React.FC<{ photo?: KimchiPhoto; style?: React.CSSProperties }> = ({ photo, style }) => {
+const GrayPhotoBox: React.FC<{ photo?: KimchiPhoto; radius?: number; style?: React.CSSProperties }> = ({ photo, radius = 0, style }) => {
   const src = photo?.dataUrl;
   const [gray, setGray] = useState<string | undefined>(() => (src ? grayCache.get(src) : undefined));
   useEffect(() => {
@@ -79,7 +79,7 @@ const GrayPhotoBox: React.FC<{ photo?: KimchiPhoto; style?: React.CSSProperties 
     img.src = src;
     return () => { cancelled = true; };
   }, [src]);
-  return <PhotoBox photo={photo && { ...photo, dataUrl: gray || photo.dataUrl }} size={0} radius={0} style={style} />;
+  return <PhotoBox photo={photo && { ...photo, dataUrl: gray || photo.dataUrl }} size={0} radius={radius} style={style} />;
 };
 
 export const GreenPreview: React.FC<GreenPreviewProps> = ({
@@ -107,8 +107,8 @@ export const GreenPreview: React.FC<GreenPreviewProps> = ({
       compareHead: t(small * 1.1, { fontWeight: 800 }),
       compareCell: t(small * 0.9, { fontWeight: 600, color: '#ffffff', lineHeight: 1.45 }),
       comparePill: t(small * 0.85, { fontWeight: 800, lineHeight: 1.2 }),
-      compareItem: t(small * 1.0, { color: '#ffffff', textAlign: 'left', lineHeight: 1.4 }),
-      compareBullet: t(small * 0.8, { color: '#ffffff', lineHeight: 1 }),
+      compareItem: t(small * 1.05, { textAlign: 'left', lineHeight: 1.35 }),
+      compareName: t(small * 1.3, { fontWeight: 800, lineHeight: 1.3 }),
       stepTitle: t(small * 1.1, { fontWeight: 800, textAlign: 'left' }),
       stepDesc: t(small * 0.9, { fontWeight: 400, lineHeight: 1.55, textAlign: 'left', color: GRAY_TEXT }),
       pill: t(small * 1.05, { fontWeight: 800, color: '#ffffff' }),
@@ -247,9 +247,9 @@ export const GreenPreview: React.FC<GreenPreviewProps> = ({
 
       // 비교: 네모 사진 두 장(가운데 VS 배지, 우리 제품 쪽만 강조색 테두리) → 머리글 →
       // 줄마다 [항목 칩] 아래 [✕ 회색 카드 | ✓ 강조색 연한 카드]. 줄 사이를 띄워 카드처럼 떨어지게.
-      // 비교: 강조색 큰 제목 + 굵은 설명 → 카드 두 장. 왼쪽(비교 대상)은 흑백 사진·회색 카드로 조금 낮게,
-      // 오른쪽(우리 제품)은 강조색 카드로 조금 높게 세워 눈이 오른쪽으로 가게 한다.
-      // 첫 장 사진 = 왼쪽, 둘째 장 = 오른쪽. 줄마다 왼쪽(other)·오른쪽(value)이 점 목록으로 들어간다.
+      // 비교: (제목·설명) → 카드 두 장. 왼쪽(비교 대상)은 옅은 회색 카드에 흑백 사진·✕, 조금 낮고 짧게
+      // 오른쪽 카드 뒤로 살짝 깔린다. 오른쪽(우리 제품)은 강조색 카드에 컬러 사진·✓로 위아래로 더 길다.
+      // 첫 장 사진 = 왼쪽, 둘째 장 = 오른쪽. 줄마다 왼쪽(other)·오른쪽(value)이 가는 선으로 나뉘어 들어간다.
       case 'gCompare': {
         const rows = section.rows || [];
         const updateRow = (idx: number, patch: Partial<{ label: string; value: string; other: string }>) => {
@@ -259,46 +259,73 @@ export const GreenPreview: React.FC<GreenPreviewProps> = ({
         };
         const visible = rows.map((row, idx) => ({ row, idx }))
           .filter(({ row }) => blank || row.value.trim() || (row.other || '').trim());
-        const LIFT = 56;
+        const LIFT = 50;
+        const OVERLAP = 34;
+        const DARK = '#5a5a5a';
+        const mark = (ours: boolean) => (
+          <div
+            style={{
+              width: 40, height: 40, borderRadius: '50%', flexShrink: 0,
+              background: ours ? '#ffffff' : DARK, color: ours ? accent : '#ffffff',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              fontFamily, fontSize: ours ? 22 : 18, fontWeight: 900, lineHeight: 1,
+            }}
+          >
+            {ours ? '✓' : 'X'}
+          </div>
+        );
         const card = (side: 'left' | 'right') => {
           const ours = side === 'right';
-          const bg = ours ? accent : '#a9a9a9';
+          const line = ours ? '#ffffff' : DARK;
+          const thin = ours ? 'rgba(255,255,255,0.45)' : '#9a9a9a';
           return (
-            <div style={{ flex: 1, minWidth: 0, marginTop: ours ? 0 : LIFT, background: bg, borderRadius: 24, overflow: 'hidden', paddingBottom: ours ? 70 : 54 }}>
+            <div
+              style={{
+                flex: ours ? 1.08 : 1, minWidth: 0, position: 'relative', zIndex: ours ? 1 : 0,
+                margin: ours ? 0 : `${LIFT}px -${OVERLAP}px ${LIFT}px 0`,
+                background: ours ? accent : '#dcdcdc', borderRadius: 30,
+                padding: ours ? '34px 34px 44px' : `34px ${34 + OVERLAP}px 34px 34px`,
+              }}
+            >
               {ours
-                ? <PhotoBox photo={photos[1]} size={0} radius={0} style={{ width: '100%', height: 360 }} />
-                : <GrayPhotoBox photo={photos[0]} style={{ width: '100%', height: 320 }} />}
-              <div style={{ padding: '44px 46px 0' }}>
-                <div style={{ background: '#ffffff', borderRadius: 18, padding: '16px 20px' }}>
-                  {ours
-                    ? edit('compareRight', '우리 제품', { ...S.compareHead, color: accent })
-                    : edit('compareLeft', '비교 대상', { ...S.compareHead, color: COMPARE_GRAY })}
-                </div>
-                <div style={{ paddingTop: 30 }}>
-                  {visible.map(({ row, idx }) => (
-                    <div key={idx} style={{ display: 'flex', gap: 18, alignItems: 'baseline', marginTop: 22 }}>
-                      <div style={{ ...S.compareBullet, fontWeight: ours ? 800 : 500 }}>•</div>
-                      <div style={{ flex: 1, minWidth: 0 }}>
-                        <EditableText
-                          value={ours ? row.value : row.other || ''}
-                          onChange={v => updateRow(idx, ours ? { value: v } : { other: v })}
-                          placeholder={ours ? '좋은 점' : '아쉬운 점'}
-                          style={{ ...S.compareItem, fontWeight: ours ? 800 : 500 }}
-                        />
-                      </div>
-                    </div>
-                  ))}
-                </div>
+                ? <PhotoBox photo={photos[1]} size={0} radius={14} style={{ width: '100%', height: 340 }} />
+                : <GrayPhotoBox photo={photos[0]} radius={14} style={{ width: '100%', height: 300 }} />}
+              <div style={{ marginTop: 34, borderTop: `3px solid ${line}`, borderBottom: `3px solid ${line}`, padding: '16px 0' }}>
+                {ours
+                  ? edit('compareRight', '우리 제품', { ...S.compareName, color: '#ffffff' })
+                  : edit('compareLeft', '비교 대상', { ...S.compareName, fontSize: Math.round((S.compareName.fontSize as number) * 0.82), color: DARK })}
               </div>
+              {visible.map(({ row, idx }, i) => (
+                <div
+                  key={idx}
+                  style={{
+                    display: 'flex', gap: 16, alignItems: 'center',
+                    padding: ours ? '30px 0' : '24px 0',
+                    borderTop: i === 0 ? 'none' : `1px solid ${thin}`,
+                  }}
+                >
+                  {mark(ours)}
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <EditableText
+                      value={ours ? row.value : row.other || ''}
+                      onChange={v => updateRow(idx, ours ? { value: v } : { other: v })}
+                      placeholder={ours ? '좋은 점' : '아쉬운 점'}
+                      style={ours
+                        ? { ...S.compareItem, color: '#ffffff', fontWeight: 800 }
+                        : { ...S.compareItem, fontSize: Math.round((S.compareItem.fontSize as number) * 0.85), color: DARK, fontWeight: 600 }}
+                    />
+                  </div>
+                </div>
+              ))}
             </div>
           );
         };
         return (
-          <div style={{ padding: `90px ${SIDE - 24}px 100px` }}>
+          <div style={{ padding: `90px ${SIDE - 30}px 100px` }}>
             {show(section.headline) && edit('headline', '제목', { ...S.title, color: accent })}
             {show(section.body) && <>{gap(26)}{edit('body', '설명', { ...S.sub, fontSize: S.compareItem.fontSize, fontWeight: 500, lineHeight: 1.5 })}</>}
             {(show(section.headline) || show(section.body)) && gap(64)}
-            <div style={{ display: 'flex', gap: 30, alignItems: 'flex-start' }}>
+            <div style={{ display: 'flex', alignItems: 'flex-start' }}>
               {card('left')}
               {card('right')}
             </div>

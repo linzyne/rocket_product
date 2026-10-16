@@ -23,7 +23,7 @@ import {
 import { detailSliceFileNames, downloadBlob } from '../utils/fileSave';
 import { generateId } from '../utils/id';
 import { saveDetailPageDraft, loadDetailPageDraft, deleteDetailPageDraft, listDetailPageDrafts } from '../data/detailPageDrafts';
-import { KIMCHI_CATEGORY_ID, loadDetailCategories } from './DetailCategoryTabs';
+import { describeDraftOwner } from './DetailCategoryTabs';
 import { loadDetailText, saveDetailText } from '../data/detailTextCloud';
 import { withTimeout, stripClonedScripts, stripEmptySections, withInlineImageMetrics } from '../utils/html2canvasHelpers';
 import ImageCropModal from './ImageCropModal';
@@ -610,11 +610,8 @@ const DetailPageBuilderModal: React.FC<DetailPageBuilderModalProps> = ({ isOpen,
   const describeSnapshotOwner = (id: string) => {
     const owner = id.slice('snapshot:'.length, id.lastIndexOf(':'));
     if (owner === draftId) return {};
-    const green = owner.endsWith('-green');
-    const base = green ? owner.slice(0, -'-green'.length) : owner;
-    const tabId = base === STANDALONE_DRAFT_ID ? KIMCHI_CATEGORY_ID : base.replace(/^standalone-/, '');
-    const tabName = loadDetailCategories().find(c => c.id === tabId)?.name ?? '지운 탭';
-    return { where: `${tabName} 탭 · ${green ? '2번' : '1번'} 틀`, otherTemplate: green !== isGreen };
+    const { categoryName, pageName, green } = describeDraftOwner(owner);
+    return { where: `${categoryName} 탭${pageName ? ` · ${pageName}` : ''} · ${green ? '2번' : '1번'} 틀`, otherTemplate: green !== isGreen };
   };
   // 목록 창을 저장하려고 열었는지(새로 저장 / 골라서 덮어쓰기), 불러오려고 열었는지.
   const [snapshotMode, setSnapshotMode] = useState<'save' | 'load'>('load');

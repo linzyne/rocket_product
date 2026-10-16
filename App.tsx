@@ -29,7 +29,7 @@ import MemoModal from './components/MemoModal';
 import ImageRenamer from './components/ImageRenamer';
 import ImageEditorModal from './components/ImageEditorModal';
 import DetailPageBuilderModal from './components/DetailPageBuilderModal';
-import DetailCategoryTabs, { DetailCategory, KIMCHI_CATEGORY_ID, draftIdForCategory, loadDetailCategories, saveDetailCategories, loadActiveCategoryId, saveActiveCategoryId } from './components/DetailCategoryTabs';
+import DetailCategoryTabs, { DetailCategory, DetailPage, KIMCHI_CATEGORY_ID, draftIdForCategory, draftIdForPage, getCategoryPages, getActivePage, loadDetailCategories, saveDetailCategories, loadActiveCategoryId, saveActiveCategoryId } from './components/DetailCategoryTabs';
 import { deleteDetailPageDraft } from './data/detailPageDrafts';
 import AppSidebar, { AppMenuId, isAppMenuId, MenuPlaceholder } from './components/AppSidebar';
 import MissingFieldsModal from './components/MissingFieldsModal';
@@ -2816,14 +2816,57 @@ const App: React.FC = () => {
     selectDetailCategory(category.id);
   }, [detailCategories, selectDetailCategory]);
 
-  // 지금 탭의 틀을 바꾼다. 작업은 틀마다 따로 저장되므로(draftIdForCategory) 바꿔 봐도 원래 틀의
-  // 문구·사진은 그대로 남고, 다시 돌아오면 되살아난다.
-  const activeDetailTemplate = detailCategories.find(c => c.id === activeDetailCategoryId)?.template ?? 'kimchi';
-  const changeDetailCategoryTemplate = useCallback((template: 'kimchi' | 'green') => {
-    const next = detailCategories.map(c => (c.id === activeDetailCategoryId ? { ...c, template } : c));
+  // 지금 카테고리 안의 상페들. 상페마다 틀·저장본이 따로다(draftIdForPage).
+  const activeDetailCategory = detailCategories.find(c => c.id === activeDetailCategoryId);
+  const activeDetailPages = getCategoryPages(activeDetailCategory);
+  const activeDetailPage = getActivePage(activeDetailCategory);
+  const activeDetailTemplate = activeDetailPage.template ?? 'kimchi';
+
+  // 지금 카테고리의 상페 목록·선택을 바꿔 저장한다.
+  const updateActiveCategoryPages = useCallback((pages: DetailPage[], activePageId: string) => {
+    const next = detailCategories.map(c => (c.id === activeDetailCategoryId ? { ...c, pages, activePageId } : c));
     setDetailCategories(next);
     saveDetailCategories(next);
   }, [detailCategories, activeDetailCategoryId]);
+
+  // 지금 상페의 틀을 바꾼다. 작업은 틀마다 따로 저장되므로 바꿔 봐도 원래 틀의
+  // 문구·사진은 그대로 남고, 다시 돌아오면 되살아난다.
+  const changeDetailCategoryTemplate = useCallback((template: 'kimchi' | 'green') => {
+    updateActiveCategoryPages(activeDetailPages.map(p => (p.id === activeDetailPage.id ? { ...p, template } : p)), activeDetailPage.id);
+  }, [updateActiveCategoryPages, activeDetailPages, activeDetailPage.id]);
+
+  const selectDetailPage = useCallback((pageId: string) => {
+    updateActiveCategoryPages(activeDetailPages, pageId);
+  }, [updateActiveCategoryPages, activeDetailPages]);
+
+  // 새 상페는 지금 보던 상페와 같은 틀로, 빈 채로 시작한다.
+  const addDetailPage = useCallback(() => {
+    const name = window.prompt('새 상페 이름 (예: 배추김치, 깍두기)', `상페 ${activeDetailPages.length + 1}`)?.trim();
+    if (!name) return;
+    const page: DetailPage = { id: generateId(), name, template: activeDetailPage.template };
+    updateActiveCategoryPages([...activeDetailPages, page], page.id);
+  }, [updateActiveCategoryPages, activeDetailPages, activeDetailPage.template]);
+
+  const renameDetailPage = useCallback((pageId: string) => {
+    const page = activeDetailPages.find(p => p.id === pageId);
+    const name = window.prompt('상페 이름', page?.name)?.trim();
+    if (!page || !name) return;
+    updateActiveCategoryPages(activeDetailPages.map(p => (p.id === pageId ? { ...p, name } : p)), activeDetailPage.id);
+  }, [updateActiveCategoryPages, activeDetailPages, activeDetailPage.id]);
+
+  const removeDetailPage = useCallback((pageId: string) => {
+    const page = activeDetailPages.find(p => p.id === pageId);
+    if (!page || activeDetailPages.length <= 1) return;
+    if (!window.confirm(`"${page.name}" 상페를 삭제할까요?\n작업하던 내용도 함께 지워집니다.`)) return;
+    const pages = activeDetailPages.filter(p => p.id !== pageId);
+    updateActiveCategoryPages(pages, pageId === activeDetailPage.id ? pages[0].id : activeDetailPage.id);
+    // 열린 채 지우면 닫히면서 다시 저장되므로 화면이 바뀐 뒤에 지운다.
+    const categoryId = activeDetailCategoryId;
+    window.setTimeout(() => {
+      void deleteDetailPageDraft(draftIdForPage(categoryId, pageId, 'kimchi'));
+      void deleteDetailPageDraft(draftIdForPage(categoryId, pageId, 'green'));
+    }, 300);
+  }, [updateActiveCategoryPages, activeDetailPages, activeDetailPage.id, activeDetailCategoryId]);
 
   const removeDetailCategory = useCallback((id: string) => {
     const category = detailCategories.find(c => c.id === id);
@@ -2835,8 +2878,10 @@ const App: React.FC = () => {
     // 지우는 탭이 열려 있으면 김치로 옮긴 뒤에 저장본을 지운다(열린 채 지우면 닫히면서 다시 저장된다).
     if (id === activeDetailCategoryId) selectDetailCategory(KIMCHI_CATEGORY_ID);
     window.setTimeout(() => {
-      void deleteDetailPageDraft(draftIdForCategory(id, 'kimchi'));
-      void deleteDetailPageDraft(draftIdForCategory(id, 'green'));
+      for (const page of getCategoryPages(category)) {
+        void deleteDetailPageDraft(draftIdForPage(id, page.id, 'kimchi'));
+        void deleteDetailPageDraft(draftIdForPage(id, page.id, 'green'));
+      }
     }, 300);
   }, [detailCategories, activeDetailCategoryId, selectDetailCategory]);
 
@@ -3283,6 +3328,12 @@ const App: React.FC = () => {
           onSelect={selectDetailCategory}
           onAdd={addDetailCategory}
           onRemove={removeDetailCategory}
+          pages={activeDetailPages}
+          activePageId={activeDetailPage.id}
+          onSelectPage={selectDetailPage}
+          onAddPage={addDetailPage}
+          onRenamePage={renameDetailPage}
+          onRemovePage={removeDetailPage}
         />
         <div className="flex-1 min-h-0">
           <DetailPageBuilderModal
@@ -3301,7 +3352,7 @@ const App: React.FC = () => {
             embedded
           />
           <DetailPageBuilderModal
-            key={`category-${activeDetailCategoryId}-${activeDetailTemplate}`}
+            key={`category-${activeDetailCategoryId}-${activeDetailPage.id}-${activeDetailTemplate}`}
             isOpen={detailPageBuilderState.isOpen && detailPageBuilderState.standalone}
             onClose={leaveDetailPageBuilder}
             product={detailPageBuilderState.standalone ? detailPageBuilderState.product : null}
@@ -3309,7 +3360,7 @@ const App: React.FC = () => {
             onSave={handleSaveFromDetailPageBuilder}
             onSaveThumbnail={handleSaveThumbnailFromDetailPageBuilder}
             templateId="kimchi"
-            draftId={draftIdForCategory(activeDetailCategoryId, activeDetailTemplate)}
+            draftId={draftIdForPage(activeDetailCategoryId, activeDetailPage.id, activeDetailTemplate)}
             sectionTemplate={activeDetailTemplate}
             onChangeSectionTemplate={changeDetailCategoryTemplate}
             embedded

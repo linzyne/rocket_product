@@ -3,11 +3,31 @@ import { STANDALONE_DRAFT_ID } from './DetailPageBuilderModal';
 
 // 상페작업 안의 카테고리 탭(김치, ...). 새 카테고리는 김치 틀이나 초록 틀 중 하나로 시작하고,
 // 작업 내용은 카테고리마다 따로 저장된다(draftIdForCategory).
+// 한 카테고리 안에 상페를 여러 개 둘 수 있다(pages). 첫 상페는 예전 저장 이름을 그대로 쓴다.
+export interface DetailPage {
+  id: string;
+  name: string;
+  template?: 'kimchi' | 'green';
+}
+
 export interface DetailCategory {
   id: string;
   name: string;
   // 어느 틀로 시작했는지. 없으면 김치 틀(틀 고르기가 생기기 전에 만든 탭).
   template?: 'kimchi' | 'green';
+  // 없으면 상페 하나뿐(MAIN_PAGE_ID, 틀은 위 template).
+  pages?: DetailPage[];
+  activePageId?: string;
+}
+
+export const MAIN_PAGE_ID = 'main';
+
+export const getCategoryPages = (category: DetailCategory | undefined): DetailPage[] =>
+  category?.pages?.length ? category.pages : [{ id: MAIN_PAGE_ID, name: '상페 1', template: category?.template }];
+
+export const getActivePage = (category: DetailCategory | undefined): DetailPage => {
+  const pages = getCategoryPages(category);
+  return pages.find(p => p.id === category?.activePageId) ?? pages[0];
 }
 
 const CATEGORIES_KEY = 'detailPageCategories';
@@ -20,6 +40,25 @@ const DEFAULT_CATEGORIES: DetailCategory[] = [{ id: KIMCHI_CATEGORY_ID, name: '�
 export const draftIdForCategory = (id: string, template: DetailCategory['template'] = 'kimchi') => {
   const base = id === KIMCHI_CATEGORY_ID ? STANDALONE_DRAFT_ID : `standalone-${id}`;
   return template === 'green' ? `${base}-green` : base;
+};
+
+// 첫 상페(MAIN_PAGE_ID)는 카테고리 저장 이름 그대로, 추가한 상페는 '~상페id'를 붙여 따로 둔다.
+export const draftIdForPage = (categoryId: string, pageId: string, template: DetailCategory['template'] = 'kimchi') => {
+  if (pageId === MAIN_PAGE_ID) return draftIdForCategory(categoryId, template);
+  const base = `${draftIdForCategory(categoryId)}~${pageId}`;
+  return template === 'green' ? `${base}-green` : base;
+};
+
+// 저장 이름에서 카테고리·상페를 거꾸로 찾는다(중간저장 목록에 어디서 저장했는지 보여줄 때).
+export const describeDraftOwner = (draftId: string) => {
+  const green = draftId.endsWith('-green');
+  const rest = green ? draftId.slice(0, -'-green'.length) : draftId;
+  const [base, pageId = MAIN_PAGE_ID] = rest.split('~');
+  const categoryId = base === STANDALONE_DRAFT_ID ? KIMCHI_CATEGORY_ID : base.replace(/^standalone-/, '');
+  const category = loadDetailCategories().find(c => c.id === categoryId);
+  const pages = getCategoryPages(category);
+  const pageName = pages.length > 1 || pageId !== MAIN_PAGE_ID ? pages.find(p => p.id === pageId)?.name ?? '지운 상페' : null;
+  return { categoryName: category?.name ?? '지운 탭', pageName, green };
 };
 
 export const loadDetailCategories = (): DetailCategory[] => {
@@ -56,6 +95,13 @@ interface DetailCategoryTabsProps {
   onSelect: (id: string) => void;
   onAdd: () => void;
   onRemove: (id: string) => void;
+  // 지금 카테고리 안의 상페들.
+  pages: DetailPage[];
+  activePageId: string;
+  onSelectPage: (id: string) => void;
+  onAddPage: () => void;
+  onRenamePage: (id: string) => void;
+  onRemovePage: (id: string) => void;
 }
 
 const tabClass = (active: boolean) =>
@@ -63,8 +109,14 @@ const tabClass = (active: boolean) =>
     active ? 'bg-slate-900 text-slate-100 font-semibold' : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800'
   }`;
 
-const DetailCategoryTabs: React.FC<DetailCategoryTabsProps> = ({ categories, productTabLabel, activeCategoryId, onSelect, onAdd, onRemove }) => (
-  <div className="flex items-end gap-1 px-4 pt-2 bg-slate-950 overflow-x-auto flex-shrink-0">
+const pageClass = (active: boolean) =>
+  `flex items-center gap-1 px-2.5 h-7 text-xs rounded-md transition-colors whitespace-nowrap ${
+    active ? 'bg-slate-700 text-slate-100 font-semibold' : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800'
+  }`;
+
+const DetailCategoryTabs: React.FC<DetailCategoryTabsProps> = ({ categories, productTabLabel, activeCategoryId, onSelect, onAdd, onRemove, pages, activePageId, onSelectPage, onAddPage, onRenamePage, onRemovePage }) => (
+  <div className="flex flex-col flex-shrink-0">
+  <div className="flex items-end gap-1 px-4 pt-2 bg-slate-950 overflow-x-auto">
     {productTabLabel !== null && (
       <div className={tabClass(true)}>📦 {productTabLabel || '상품'}</div>
     )}
@@ -94,6 +146,39 @@ const DetailCategoryTabs: React.FC<DetailCategoryTabsProps> = ({ categories, pro
     >
       +
     </button>
+  </div>
+  {productTabLabel === null && (
+    <div className="flex items-center gap-1 px-4 py-1 bg-slate-900 border-b border-slate-800 overflow-x-auto">
+      {pages.map(page => (
+        <div
+          key={page.id}
+          className={`${pageClass(page.id === activePageId)} group cursor-pointer`}
+          onClick={() => onSelectPage(page.id)}
+          onDoubleClick={() => onRenamePage(page.id)}
+          title="두 번 누르면 이름 바꾸기"
+        >
+          <span>{page.name}</span>
+          {pages.length > 1 && (
+            <button
+              onClick={e => { e.stopPropagation(); onRemovePage(page.id); }}
+              className="text-slate-500 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-opacity"
+              title={`${page.name} 삭제`}
+              aria-label={`${page.name} 삭제`}
+            >
+              ×
+            </button>
+          )}
+        </div>
+      ))}
+      <button
+        onClick={onAddPage}
+        className="px-2 h-7 text-xs text-slate-400 hover:text-slate-100 hover:bg-slate-800 rounded-md transition-colors whitespace-nowrap"
+        title="이 카테고리에 상페 하나 더 만들기"
+      >
+        + 상페
+      </button>
+    </div>
+  )}
   </div>
 );
 

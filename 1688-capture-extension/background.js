@@ -154,6 +154,26 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true;
   }
 
+  // 1688 주문목록 -> 확장: 페이지에서 직접 못 보낸 h5api 요청(운송장 조회)을 대신 보낸다. 쿠키는 브라우저가 붙인다.
+  if (message.type === 'MTOP_1688') {
+    if (!/^https:\/\/h5api\.m\.1688\.com\//.test(String(message.url || ''))) {
+      sendResponse({ ok: false, error: '허용하지 않은 주소예요.' });
+      return;
+    }
+    fetch(message.url, {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: message.body,
+    })
+      .then((res) => res.json())
+      .then(
+        (data) => sendResponse({ ok: true, data }),
+        (err) => sendResponse({ ok: false, error: String((err && err.message) || err) }),
+      );
+    return true;
+  }
+
   // ---- 앱 -> 확장 ----
   if (message.type === 'OPEN_REGISTRATION') {
     chrome.tabs

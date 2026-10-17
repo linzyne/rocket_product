@@ -27,6 +27,8 @@ import OrderItemsEditor, { OrderItem, useProductNames, itemsToOrderQty, itemQty,
 import ProductThumb, { useProductImage } from './ProductThumb';
 import { PriceBook, loadPriceBook, priceOf } from '../../data/coupangPriceStore';
 import { ReceiptForm, ReceiptHistory, markArrivedLinesReady } from './ReceiptForm';
+import Import1688Modal, { Import1688Result } from './Import1688Modal';
+import { mark1688Used } from '../../utils/order1688';
 
 // 발주 > 한중발주. 위쪽 "발주 대기"는 쿠팡발주확인 발송 목록에서 "한중"을 누른 줄(예약과 따로 저장해서, 그 줄이
 // 예약·쉽먼트 등 다른 단계로 넘어가도 여기서는 안 사라진다) + 예전 방식으로 예약에 넘겨 둔 줄 중 아직 주문 안 한 것.
@@ -90,6 +92,11 @@ const PendingPanel: React.FC<{ orders: HanjungOrder[]; onRecord: (act: Act) => v
   const [extras, setExtras] = useState<OrderItem[]>([]);
   // 새 고유번호. 비워 두면 오늘 날짜로 다음 번호(H…)를 쓴다.
   const [codeDraft, setCodeDraft] = useState('');
+  // "1688 주문 가져오기": 가져온 상품별 수량·금액(여러 번 가져오면 더한다)과 가져온 1688 주문들.
+  const [importOpen, setImportOpen] = useState(false);
+  const [importAcc, setImportAcc] = useState<{ name: string; qty: number; cost: number }[]>([]);
+  const [imported1688, setImported1688] = useState<{ orderId: string; mailNos: string[] }[]>([]);
+  const [importNotes, setImportNotes] = useState<string[]>([]);
   const names = useProductNames(orders);
   const imageOf = useProductImage();
   // 같은 상품을 예전에 주문할 때 적은 단가(가장 최근 한중발주). 새 주문 단가 칸의 기본값.
@@ -177,6 +184,60 @@ const PendingPanel: React.FC<{ orders: HanjungOrder[]; onRecord: (act: Act) => v
     return next;
   });
 
+  // 가져온 1688 주문을 장바구니에 채운다. 장바구니 상품이면 입고예정일 빠른 발주 줄부터 산 수량 안에서 고르고
+  // (산 수량 = 주문 칸, 고른 줄 = 배정, 나머지 = 여유), 장바구니에 없는 상품은 추가 품목(전부 여유)으로 넣는다.
+  const applyImport = (r: Import1688Result) => {
+    const acc = importAcc.map(p => ({ ...p }));
+    r.products.forEach(p => {
+      const cur = acc.find(x => sameName(x.name, p.name));
+      if (cur) { cur.qty += p.qty; cur.cost += p.cost; } else acc.push({ ...p });
+    });
+    const nextChecked = new Set(checked);
+    const d = { ...qtyDraft };
+    const c = { ...costDraft };
+    // 예전에 가져와서 추가 품목으로 넣은 것은 다시 계산하므로 빼고, 손으로 더한 품목은 그대로 둔다.
+    let ex = extras.filter(e => e.name.trim() && !acc.some(p => sameName(p.name, e.name)));
+    const notes: string[] = [];
+    for (const p of acc) {
+      const g = groups.find(x => sameName(x.name, p.name));
+      if (g) {
+        const rows = [...g.rows].sort((a, b) => dateKeyYMD(a.입고예정일).localeCompare(dateKeyYMD(b.입고예정일)));
+        rows.forEach(row => nextChecked.delete(row.qkey));
+        let left = p.qty;
+        let alloc = 0;
+        for (const row of rows) {
+          if (row.need > left) continue;
+          nextChecked.add(row.qkey);
+          left -= row.need;
+          alloc += row.need;
+        }
+        if (alloc > 0) {
+          d[g.name] = String(p.qty);
+          c[g.name] = String(Math.round(p.cost));
+          notes.push(`${g.name}: 1688 ${p.qty}개 → 배정 ${alloc} · 여유 ${p.qty - alloc}${alloc < g.qty ? ` (발주 ${g.qty - alloc}개는 대기에 남겨요)` : ''}`);
+          continue;
+        }
+        notes.push(`${g.name}: 1688 ${p.qty}개가 발주 한 줄 수량보다 적어서, 발주에 배정하지 않고 여유로 넣었어요`);
+      } else {
+        notes.push(`${p.name}: 장바구니에 없는 상품이라 추가 품목(여유 ${p.qty}개)으로 넣었어요`);
+      }
+      ex = [...ex, { name: p.name, qty: String(p.qty), need: 0, added: true, cost: String(Math.round(p.cost)) }];
+    }
+    setImportAcc(acc);
+    setChecked(nextChecked);
+    setQtyDraft(d);
+    setCostDraft(c);
+    setExtras(ex);
+    setImported1688(prev => [...prev, ...r.refs.filter(x => !prev.some(y => y.orderId === x.orderId))]);
+    setImportNotes(notes);
+    setImportOpen(false);
+  };
+  const clearImport = () => {
+    setImportAcc([]);
+    setImported1688([]);
+    setImportNotes([]);
+  };
+
   const create = async () => {
     if (!selected.length && !extraCount) return;
     const short = items.filter(it => !it.added && itemQty(it) < it.need);
@@ -201,6 +262,7 @@ const PendingPanel: React.FC<{ orders: HanjungOrder[]; onRecord: (act: Act) => v
       orderQty: itemsToOrderQty(items.filter(it => it.added ? itemQty(it) > 0 : true)),
       unitCost: itemsToUnitCost(items),
       fees: feesToNumbers(feeDraft),
+      ...(imported1688.length ? { orders1688: imported1688 } : {}),
     };
     // 한중 대기에서 온 줄은 대기에서 빼고, 예전 예약 줄은 예약 메모에 고유번호를 적는다.
     const fromQueue = selected.filter(r => r.fromQueue);
@@ -217,6 +279,8 @@ const PendingPanel: React.FC<{ orders: HanjungOrder[]; onRecord: (act: Act) => v
       setFeeDraft({});
       setExtras([]);
       setCodeDraft('');
+      mark1688Used(imported1688.map(x => x.orderId), code);
+      clearImport();
       // 되돌리면 한중발주를 지우고, 대기 줄은 다시 넣고, 예약 메모는 만들기 전 값으로 돌린다.
       const before = fromRes.map(r => ({ row: r, memo: r.메모 || '예약' }));
       onRecord({
@@ -340,17 +404,37 @@ const PendingPanel: React.FC<{ orders: HanjungOrder[]; onRecord: (act: Act) => v
         <span className="text-2xl leading-none">🛒</span>
         <span className="text-base font-bold text-amber-900">장바구니 <span className="font-medium text-amber-600">· 1688에 주문할 것</span> {groups.length ? <span className="ml-1 px-2 py-0.5 rounded-full bg-white text-amber-700 text-sm">{groups.length}개 상품 · {pending.length}줄</span> : <span className="text-amber-500 font-medium">· 지금은 없어요</span>}</span>
         <span className="text-sm text-amber-700">골라서 주문완료하면 ✈️ 오는 중으로 가요</span>
-        {selected.some(r => r.fromQueue) && (
+        <div className="ml-auto flex items-center gap-2">
+          {selected.some(r => r.fromQueue) && (
+            <button
+              onClick={removeSelected}
+              disabled={saving}
+              className="px-3.5 py-1.5 rounded-full border border-gray-200 bg-white text-gray-500 text-sm hover:bg-gray-50 disabled:opacity-40"
+              title="고른 줄을 1688 주문하기에서 뺍니다(주문 안 할 때)"
+            >
+              고른 줄 대기에서 빼기
+            </button>
+          )}
           <button
-            onClick={removeSelected}
-            disabled={saving}
-            className="ml-auto px-3.5 py-1.5 rounded-full border border-gray-200 bg-white text-gray-500 text-sm hover:bg-gray-50 disabled:opacity-40"
-            title="고른 줄을 1688 주문하기에서 뺍니다(주문 안 할 때)"
+            onClick={() => setImportOpen(true)}
+            className="px-3.5 py-1.5 rounded-full border border-orange-300 bg-white text-orange-600 text-sm font-semibold hover:bg-orange-50"
+            title="1688 주문목록에서 담아 둔 주문으로 수량·금액을 채워요"
           >
-            고른 줄 대기에서 빼기
+            📥 1688 주문 가져오기
           </button>
-        )}
+        </div>
       </div>
+      {importOpen && (
+        <Import1688Modal
+          hanjungOrders={orders}
+          cart={groups.map(g => ({ name: g.name, qty: g.qty }))}
+          names={names}
+          imageOf={imageOf}
+          skipOrderIds={imported1688.map(x => x.orderId)}
+          onApply={applyImport}
+          onClose={() => setImportOpen(false)}
+        />
+      )}
       {pending.length > 0 && (
       <div className="overflow-x-auto">
       <table className="w-full text-sm">
@@ -421,6 +505,16 @@ const PendingPanel: React.FC<{ orders: HanjungOrder[]; onRecord: (act: Act) => v
           <div className="text-base font-bold text-sky-900 mb-2">
             ✍️ 이번 1688 주문 <span className="text-xs font-normal text-gray-500">· 실제로 주문한 총수량을 적어요(필요보다 많으면 남는 만큼이 여유)</span>
           </div>
+          {imported1688.length > 0 && (
+            <div className="mb-2 px-3 py-2 rounded-lg bg-orange-50 border border-orange-200 text-xs text-orange-900">
+              <div className="flex items-center gap-2 font-semibold">
+                📥 1688 주문 {imported1688.length}건 가져옴
+                <span className="font-mono font-normal text-orange-700">{imported1688.map(x => `…${x.orderId.slice(-6)}`).join(', ')}</span>
+                <button onClick={clearImport} className="ml-auto text-orange-500 hover:underline font-normal" title="가져온 주문 기록만 지워요(적힌 수량·금액은 그대로)">기록 지우기</button>
+              </div>
+              {importNotes.map(n => <div key={n} className="mt-0.5">· {n}</div>)}
+            </div>
+          )}
           <OrderItemsEditor items={items} onChange={setItems} names={names} listId="hanjung-pending-names" imageOf={imageOf} />
           <div className="mt-2 pt-2 border-t border-blue-100">
             <div className="text-xs font-semibold text-gray-600 mb-1">부대비용 <span className="font-normal text-gray-400">· 알면 적어 두세요(도착 기록 때 채워져요)</span></div>

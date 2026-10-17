@@ -16,6 +16,8 @@
   const COPY_SETTINGS_KEY = 'detailCopySettings';
   // 1688 값 확인 창의 "견적서 찾기"로 미리 받아둔 카테고리 견적서.
   const QUOTE_KEY = 'pendingCategoryQuote';
+  // 1688 주문목록 화면(order-list.js)에서 담은 주문.
+  const BASKET_KEY = 'rocket1688Basket';
 
   const reply = (payload) => {
     window.postMessage({ source: EXT_SOURCE, ...payload }, window.location.origin);
@@ -105,6 +107,28 @@
 
       if (data.type === 'CATEGORY_CANCEL') {
         await ask({ type: 'CATEGORY_CANCEL' });
+        return;
+      }
+
+      // 한중발주 장바구니 "1688 주문 가져오기": 1688 주문목록에서 담은 주문을 앱에 넘긴다.
+      if (data.type === 'GET_1688_BASKET') {
+        chrome.storage.local.get(BASKET_KEY, (result) => {
+          const basket = (!chrome.runtime.lastError && result && result[BASKET_KEY]) || {};
+          reply({ type: '1688_BASKET', orders: Object.values(basket) });
+        });
+        return;
+      }
+
+      // 주문완료로 한중발주에 넣은 주문은 "앱 넣음"으로 표시한다(1688·8282 창에서 보인다).
+      if (data.type === 'MARK_1688_USED') {
+        const ids = Array.isArray(data.orderIds) ? data.orderIds.map(String) : [];
+        chrome.storage.local.get(BASKET_KEY, (result) => {
+          const basket = (!chrome.runtime.lastError && result && result[BASKET_KEY]) || {};
+          ids.forEach((id) => {
+            if (basket[id]) basket[id] = { ...basket[id], usedAppAt: Date.now(), usedAppCode: String(data.code || '') };
+          });
+          chrome.storage.local.set({ [BASKET_KEY]: basket });
+        });
         return;
       }
     } catch (err) {

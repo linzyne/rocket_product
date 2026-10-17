@@ -2339,6 +2339,8 @@
   if (window.top !== window.self) {
     // iframe 안에서는 사진 모으기만 돕는다(버튼·창은 맨 위 창에만).
     setUpFrameCollector();
+  } else if (/trade-order-list|buyer_order_list|buyList/i.test(location.href)) {
+    // 주문목록 화면에는 캡처 버튼 대신 주문 담기 창(order-list.js)이 뜬다.
   } else if (document.readyState === 'complete' || document.readyState === 'interactive') {
     injectButton();
   } else {

@@ -28,7 +28,7 @@ import ProductThumb, { useProductImage } from './ProductThumb';
 import { PriceBook, loadPriceBook, priceOf } from '../../data/coupangPriceStore';
 import { ReceiptForm, ReceiptHistory, markArrivedLinesReady } from './ReceiptForm';
 import Import1688Modal, { Import1688Result } from './Import1688Modal';
-import { mark1688Used } from '../../utils/order1688';
+import { mark1688Used, Order1688Ref } from '../../utils/order1688';
 
 // 발주 > 한중발주. 위쪽 "발주 대기"는 쿠팡발주확인 발송 목록에서 "한중"을 누른 줄(예약과 따로 저장해서, 그 줄이
 // 예약·쉽먼트 등 다른 단계로 넘어가도 여기서는 안 사라진다) + 예전 방식으로 예약에 넘겨 둔 줄 중 아직 주문 안 한 것.
@@ -95,7 +95,7 @@ const PendingPanel: React.FC<{ orders: HanjungOrder[]; onRecord: (act: Act) => v
   // "1688 주문 가져오기": 가져온 상품별 수량·금액(여러 번 가져오면 더한다)과 가져온 1688 주문들.
   const [importOpen, setImportOpen] = useState(false);
   const [importAcc, setImportAcc] = useState<{ name: string; qty: number; cost: number }[]>([]);
-  const [imported1688, setImported1688] = useState<{ orderId: string; mailNos: string[] }[]>([]);
+  const [imported1688, setImported1688] = useState<Order1688Ref[]>([]);
   const [importNotes, setImportNotes] = useState<string[]>([]);
   const names = useProductNames(orders);
   const imageOf = useProductImage();
@@ -228,7 +228,19 @@ const PendingPanel: React.FC<{ orders: HanjungOrder[]; onRecord: (act: Act) => v
     setQtyDraft(d);
     setCostDraft(c);
     setExtras(ex);
-    setImported1688(prev => [...prev, ...r.refs.filter(x => !prev.some(y => y.orderId === x.orderId))]);
+    // 같은 1688 주문에서 상품을 나눠 가져오면 상품 번호를 합친다.
+    setImported1688(prev => {
+      const next = prev.map(x => (x.items ? { ...x, items: [...x.items] } : { ...x })); // Firestore에 undefined를 넣지 않게
+      r.refs.forEach(ref => {
+        const cur = next.find(x => x.orderId === ref.orderId);
+        if (!cur) next.push(ref);
+        else {
+          cur.items = Array.from(new Set([...(cur.items || []), ...(ref.items || [])])).sort((a, b) => a - b);
+          cur.mailNos = Array.from(new Set([...cur.mailNos, ...ref.mailNos]));
+        }
+      });
+      return next;
+    });
     setImportNotes(notes);
     setImportOpen(false);
   };
@@ -279,7 +291,7 @@ const PendingPanel: React.FC<{ orders: HanjungOrder[]; onRecord: (act: Act) => v
       setFeeDraft({});
       setExtras([]);
       setCodeDraft('');
-      mark1688Used(imported1688.map(x => x.orderId), code);
+      mark1688Used(imported1688, code);
       clearImport();
       // 되돌리면 한중발주를 지우고, 대기 줄은 다시 넣고, 예약 메모는 만들기 전 값으로 돌린다.
       const before = fromRes.map(r => ({ row: r, memo: r.메모 || '예약' }));
@@ -430,7 +442,7 @@ const PendingPanel: React.FC<{ orders: HanjungOrder[]; onRecord: (act: Act) => v
           cart={groups.map(g => ({ name: g.name, qty: g.qty }))}
           names={names}
           imageOf={imageOf}
-          skipOrderIds={imported1688.map(x => x.orderId)}
+          skipRefs={imported1688}
           onApply={applyImport}
           onClose={() => setImportOpen(false)}
         />

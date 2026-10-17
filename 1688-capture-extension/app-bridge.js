@@ -119,13 +119,19 @@
         return;
       }
 
-      // 주문완료로 한중발주에 넣은 주문은 "앱 넣음"으로 표시한다(1688·8282 창에서 보인다).
+      // 주문완료로 한중발주에 넣은 상품은 "앱 넣음"으로 표시한다(1688·8282 창에서 보인다).
       if (data.type === 'MARK_1688_USED') {
-        const ids = Array.isArray(data.orderIds) ? data.orderIds.map(String) : [];
+        const refs = Array.isArray(data.refs) ? data.refs : [];
         chrome.storage.local.get(BASKET_KEY, (result) => {
           const basket = (!chrome.runtime.lastError && result && result[BASKET_KEY]) || {};
-          ids.forEach((id) => {
-            if (basket[id]) basket[id] = { ...basket[id], usedAppAt: Date.now(), usedAppCode: String(data.code || '') };
+          refs.forEach((ref) => {
+            const o = basket[String(ref.orderId)];
+            if (!o) return;
+            const idxs = Array.isArray(ref.items) ? ref.items : null;
+            o.items = (o.items || []).map((it, i) => {
+              const idx = it.idx == null ? i : it.idx;
+              return !idxs || idxs.includes(idx) ? { ...it, usedAppAt: Date.now(), usedAppCode: String(data.code || '') } : it;
+            });
           });
           chrome.storage.local.set({ [BASKET_KEY]: basket });
         });

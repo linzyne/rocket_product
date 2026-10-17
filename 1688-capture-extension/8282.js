@@ -240,21 +240,28 @@
   let result = null; // { lines: [{label, probs}], summary }
   let pickedInit = false;
 
+  // 상품마다 8282에 넣었는지(used8282At) 따로 본다. 예전 방식(주문에 표시)도 읽는다.
+  const itemsOf = (o) => (o.items || []).map((it, i) => (it.idx == null ? { ...it, idx: i } : it));
+  const pendingItems = (o) => (o.used8282At ? [] : itemsOf(o).filter((it) => !it.used8282At));
+  const isDone = (o) => !pendingItems(o).length;
   const sortedOrders = () =>
     Object.values(basket).sort((a, b) => {
-      if (!!a.used8282At !== !!b.used8282At) return a.used8282At ? 1 : -1;
+      if (isDone(a) !== isDone(b)) return isDone(a) ? 1 : -1;
       return String(a.orderTime || '').localeCompare(String(b.orderTime || ''));
     });
 
   const fill = async () => {
     if (busy) return;
-    const list = sortedOrders().filter((o) => picked.has(o.orderId));
+    // 고른 주문에서 아직 8282에 안 넣은 상품만 넣는다(다 넣은 주문을 고르면 전부 다시 넣는다).
+    const list = sortedOrders()
+      .filter((o) => picked.has(o.orderId))
+      .map((o) => ({ ...o, fillItems: isDone(o) ? itemsOf(o) : pendingItems(o) }));
     if (!list.length) return alert('채울 주문을 골라 주세요.');
     if (!blocks().length) return alert('상품 정보(STEP 04) 칸을 못 찾았어요. 신청서 화면이 맞는지 확인해 주세요.');
-    // 이미 신청서에 있는 주문번호면 한 번 더 묻는다.
-    const existing = new Set(blocks().map((b) => ((byName(b, 'SHOP_ORD_NO') || {}).value || '').trim()).filter(Boolean));
-    const dup = list.filter((o) => existing.has(o.orderId));
-    if (dup.length && !confirm(`이미 신청서에 있는 주문이 있어요:\n${dup.map((o) => o.orderId).join('\n')}\n\n그래도 또 넣을까요? (취소하면 그 주문은 빼고 넣어요)`)) {
+    // 이미 신청서에 같은 주문번호·옵션이 있으면 한 번 더 묻는다.
+    const existing = new Set(blocks().map((b) => `${((byName(b, 'SHOP_ORD_NO') || {}).value || '').trim()}|${((byName(b, 'CLR') || {}).value || '').trim()}`));
+    const dup = list.filter((o) => o.fillItems.some((it) => existing.has(`${o.orderId}|${String(it.spec || '').trim()}`)));
+    if (dup.length && !confirm(`이미 신청서에 있는 상품이 있어요:\n${dup.map((o) => o.orderId).join('\n')}\n\n그래도 또 넣을까요? (취소하면 그 주문은 빼고 넣어요)`)) {
       dup.forEach((o) => picked.delete(o.orderId));
       return fill();
     }
@@ -262,11 +269,11 @@
     result = { lines: [], summary: '채우는 중…' };
     render();
     const used = new Set();
-    const okOrders = [];
+    const filled = []; // [orderId, idx]
     let count = 0;
     try {
       for (const order of list) {
-        for (const item of order.items || []) {
+        for (const item of order.fillItems) {
           let all = blocks();
           let block = all.find((b) => !used.has(b) && isEmptyBlock(b));
           if (!block) {
@@ -282,10 +289,10 @@
           const idx = all.indexOf(block);
           const probs = await fillBlock(block, idx, order, item);
           count++;
+          filled.push([order.orderId, item.idx]);
           result.lines.push({ label: `상품#${idx + 1} · …${order.orderId.slice(-6)} ${String(item.title || '').slice(0, 14)}`, probs });
           render();
         }
-        okOrders.push(order.orderId);
       }
       await callPage('fnTotalProPrice', []);
     } catch (err) {
@@ -293,15 +300,16 @@
     } finally {
       busy = false;
     }
-    // 상품을 다 넣은 주문은 "8282 넣음"으로 표시한다(빨간 칸은 화면에서 마저 고치면 된다).
-    if (okOrders.length) {
+    // 넣은 상품은 "8282 넣음"으로 표시한다(빨간 칸은 화면에서 마저 고치면 된다).
+    if (filled.length) {
       const fresh = (await storageGet(BASKET_KEY)) || {};
-      okOrders.forEach((id) => {
-        if (fresh[id]) fresh[id] = { ...fresh[id], used8282At: Date.now() };
+      filled.forEach(([id, idx]) => {
+        if (!fresh[id]) return;
+        fresh[id] = { ...fresh[id], items: itemsOf(fresh[id]).map((it) => (it.idx === idx ? { ...it, used8282At: Date.now() } : it)) };
       });
       basket = fresh;
       await storageSet(BASKET_KEY, fresh).catch(() => {});
-      okOrders.forEach((id) => picked.delete(id));
+      list.forEach((o) => picked.delete(o.orderId));
     }
     const bad = result.lines.filter((l) => l.probs.some((p) => !/나중에 입력|첫 번째 운송장/.test(p))).length;
     result.summary = `상품 ${count}개를 채웠어요.${bad ? ` 확인할 칸이 ${bad}곳 있어요(빨간 테두리).` : ' 신청 전에 한 번 훑어봐 주세요.'}`;
@@ -383,16 +391,16 @@
     if (!host.isConnected) document.documentElement.appendChild(host);
     const list = sortedOrders();
     if (!pickedInit && list.length) {
-      list.filter((o) => !o.used8282At).forEach((o) => picked.add(o.orderId));
+      list.filter((o) => !isDone(o)).forEach((o) => picked.add(o.orderId));
       pickedInit = true;
     }
-    const waiting = list.filter((o) => !o.used8282At).length;
+    const waiting = list.reduce((n, o) => n + pendingItems(o).length, 0);
     if (!open) {
       root.innerHTML = `<style>${css}</style><button class="pill" data-act="open">📥 1688 주문 채우기${waiting ? ` · ${waiting}` : ''}</button>`;
       return;
     }
     const sel = list.filter((o) => picked.has(o.orderId));
-    const itemCount = sel.reduce((s, o) => s + (o.items || []).length, 0);
+    const itemCount = sel.reduce((s, o) => s + (isDone(o) ? itemsOf(o) : pendingItems(o)).length, 0);
     const scroll = (root.querySelector('.list') || {}).scrollTop || 0;
     root.innerHTML = `<style>${css}</style><div class="box">
       <div class="hd"><b>📥 1688 담은 주문 → 8282</b><button class="x" data-act="close">–</button></div>
@@ -413,10 +421,10 @@
           ? list
               .map((o) => {
                 const pack = (o.packages || [])[0];
-                return `<div class="ord ${picked.has(o.orderId) ? 'on' : ''} ${o.used8282At ? 'done' : ''}" data-act="pick" data-id="${o.orderId}">
-                  <div class="oh"><input type="checkbox" ${picked.has(o.orderId) ? 'checked' : ''} tabindex="-1"><span class="oid">…${esc(o.orderId.slice(-8))}</span><span class="muted">${esc(String(o.orderTime || '').slice(5, 16))}</span>${o.used8282At ? '<span class="tag">8282 넣음</span>' : ''}</div>
+                return `<div class="ord ${picked.has(o.orderId) ? 'on' : ''} ${isDone(o) ? 'done' : ''}" data-act="pick" data-id="${o.orderId}">
+                  <div class="oh"><input type="checkbox" ${picked.has(o.orderId) ? 'checked' : ''} tabindex="-1"><span class="oid">…${esc(o.orderId.slice(-8))}</span><span class="muted">${esc(String(o.orderTime || '').slice(5, 16))}</span>${isDone(o) ? '<span class="tag">8282 넣음</span>' : ''}</div>
                   ${pack ? `<div class="trk">🚚 ${esc(pack.company)} ${esc(pack.mailNo)}</div>` : '<div class="trk no">운송장 없음 → "나중에 입력" 체크</div>'}
-                  ${(o.items || []).map((it) => `<div class="it">${it.imageUrl ? `<img src="${esc(it.imageUrl)}_80x80.jpg" alt="">` : ''}<span>${esc(it.title)}</span><b>${it.qty}개</b></div>`).join('')}
+                  ${itemsOf(o).map((it) => `<div class="it">${it.imageUrl ? `<img src="${esc(it.imageUrl)}_80x80.jpg" alt="">` : ''}<span title="${esc(it.title)}">${esc(it.spec || it.title)}</span><b>${it.qty}개</b>${it.used8282At || o.used8282At ? '<span class="muted">✓</span>' : ''}</div>`).join('')}
                 </div>`;
               })
               .join('')

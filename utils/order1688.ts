@@ -15,6 +15,12 @@ export interface Order1688Item {
   qty: number;
   imageUrl: string;
   productUrl: string;
+  idx: number; // 1688 주문 안에서 몇 번째 상품인지(0부터)
+  krw?: number; // 주문 결제금액(원화) 중 이 상품 몫. 1688 화면에 원화가 없었으면 0
+  cnyShare?: number; // 주문 결제금액(위안) 중 이 상품 몫(운임 포함)
+  used8282At?: number;
+  usedAppAt?: number;
+  usedAppCode?: string;
 }
 
 export interface Order1688 {
@@ -24,7 +30,8 @@ export interface Order1688 {
   totalCny: number; // 결제금액(운임 포함)
   shipCny: number;
   totalKrw: number; // 1688 화면에 보인 원화. 없으면 0
-  items: Order1688Item[];
+  itemCount?: number; // 1688 주문 전체 상품 수(담은 건 그중 일부일 수 있다)
+  items: Order1688Item[]; // 담은 상품만
   packages: { company: string; mailNo: string; last?: string }[];
   addedAt: number;
   used8282At?: number;
@@ -54,22 +61,23 @@ export const fetch1688Basket = (timeoutMs = 3000): Promise<Order1688[] | null> =
     window.postMessage({ source: APP_SOURCE, type: 'GET_1688_BASKET' }, window.location.origin);
   });
 
-export const mark1688Used = (orderIds: string[], code: string) => {
-  if (!orderIds.length) return;
-  window.postMessage({ source: APP_SOURCE, type: 'MARK_1688_USED', orderIds, code }, window.location.origin);
+export type Order1688Ref = { orderId: string; mailNos: string[]; items?: number[] };
+
+// 주문완료로 한중발주에 넣은 상품을 "앱 넣음"으로 표시한다.
+export const mark1688Used = (refs: Order1688Ref[], code: string) => {
+  if (!refs.length) return;
+  window.postMessage({ source: APP_SOURCE, type: 'MARK_1688_USED', refs, code }, window.location.origin);
 };
 
 // 1688 상품 하나를 가리키는 열쇠(짝 기억용). 같은 상품이라도 옵션(색상)이 다르면 앱에서는 다른 상품일 수 있어 옵션까지 넣는다.
 export const item1688Key = (it: Pick<Order1688Item, 'offerId' | 'title' | 'spec'>) =>
   `${it.offerId || it.title.replace(/\s+/g, '')}|${it.spec.replace(/\s+/g, '')}`;
 
-// 주문 결제금액을 상품별(단가×수량 비율)로 나눈 원화 금액. 1688 화면에 원화가 보였으면 그 값을, 아니면 ¥×환율.
-export const itemShareKrw = (o: Order1688, idx: number, cnyRate: number) => {
-  const weights = o.items.map(it => it.unitCny * it.qty);
-  const sum = weights.reduce((s, w) => s + w, 0);
-  const share = sum > 0 ? weights[idx] / sum : 1 / Math.max(1, o.items.length);
-  const total = o.totalKrw > 0 ? o.totalKrw : (o.totalCny || sum) * cnyRate;
-  return Math.round(total * share);
+// 상품 하나의 원화 금액: 담을 때 주문 결제금액을 단가×수량 비율로 나눠 둔 몫. 1688 화면에 원화가 보였으면 그 값, 아니면 ¥×환율.
+export const itemShareKrw = (it: Order1688Item, cnyRate: number) => {
+  if (it.krw && it.krw > 0) return it.krw;
+  if (it.cnyShare && it.cnyShare > 0) return Math.round(it.cnyShare * cnyRate);
+  return Math.round(it.unitCny * it.qty * cnyRate);
 };
 
 // 앱의 위안화 환율(수익 계산기에서 정한 값). 없으면 210.

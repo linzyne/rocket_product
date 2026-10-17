@@ -62,7 +62,8 @@ export interface HanjungOrder {
   // 도착한 만큼 배정 줄을 준비됨으로 자동 체크한 시각. 이 기능이 생기기 전에 도착한 건을 한 번만 맞추려고 둔다.
   autoReadyAt?: number;
   // "1688 주문 가져오기"로 채운 1688 주문들(주문번호·운송장). 같은 주문을 두 번 가져오지 않게 막는 데도 쓴다.
-  orders1688?: { orderId: string; mailNos: string[] }[];
+  // items: 그 주문에서 가져온 상품 번호(없으면 주문 전체를 가져온 것으로 본다).
+  orders1688?: { orderId: string; mailNos: string[]; items?: number[] }[];
 }
 
 // 한중발주 부대비용 칸들(주문할 때·도착 기록 때 같은 순서로 보여준다).

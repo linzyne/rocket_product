@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { sameName } from '../../data/hanjungStore';
 import type { HanjungOrder } from '../../data/hanjungStore';
 import { subscribe1688Links, set1688Links, Order1688Links } from '../../data/order1688LinkStore';
-import { fetch1688Basket, item1688Key, itemShareKrw, loadCnyRate, Order1688 } from '../../utils/order1688';
+import { fetch1688Basket, item1688Key, itemShareKrw, loadCnyRate, Order1688, Order1688Item, Order1688Ref } from '../../utils/order1688';
 import ProductThumb from './ProductThumb';
 
 // 한중발주 장바구니 "1688 주문 가져오기".
@@ -12,8 +12,11 @@ import ProductThumb from './ProductThumb';
 
 export interface Import1688Result {
   products: { name: string; qty: number; cost: number }[];
-  refs: { orderId: string; mailNos: string[] }[];
+  refs: Order1688Ref[];
 }
+
+// 주문 하나를 "아직 안 넣은 상품"과 "이미 넣은 상품"으로 나눈 것.
+type View = { o: Order1688; fresh: Order1688Item[]; used: Order1688Item[] };
 
 type Choice = { mode: '' | 'cart' | 'other' | 'skip'; name: string; remembered?: boolean };
 
@@ -25,10 +28,10 @@ const Import1688Modal: React.FC<{
   cart: { name: string; qty: number }[];
   names: { name: string; from: string }[];
   imageOf: (name: string) => string;
-  skipOrderIds: string[]; // 이번 장바구니에 이미 가져온 주문
+  skipRefs: Order1688Ref[]; // 이번 장바구니에 이미 가져온 상품
   onApply: (r: Import1688Result) => void;
   onClose: () => void;
-}> = ({ hanjungOrders, cart, names, imageOf, skipOrderIds, onApply, onClose }) => {
+}> = ({ hanjungOrders, cart, names, imageOf, skipRefs, onApply, onClose }) => {
   const [basket, setBasket] = useState<Order1688[] | null | 'none'>(null);
   const [links, setLinks] = useState<Order1688Links>({});
   const [picked, setPicked] = useState<Set<string>>(new Set());
@@ -44,23 +47,31 @@ const Import1688Modal: React.FC<{
   };
   useEffect(load, []);
 
-  // 이미 어느 한중발주에 들어간 1688 주문(같은 주문을 두 번 넣지 않게).
+  // 이미 어느 한중발주에 들어간 1688 상품(같은 상품을 두 번 넣지 않게). 열쇠: 주문번호#상품번호, 주문 전체면 주문번호#*.
   const usedIn = useMemo(() => {
     const m = new Map<string, string>();
-    hanjungOrders.forEach(o => (o.orders1688 || []).forEach(r => m.set(r.orderId, o.code)));
-    skipOrderIds.forEach(id => m.set(id, '이번 장바구니'));
+    const add = (r: Order1688Ref, where: string) =>
+      (r.items ? r.items.map(i => `${r.orderId}#${i}`) : [`${r.orderId}#*`]).forEach(k => m.set(k, where));
+    hanjungOrders.forEach(o => (o.orders1688 || []).forEach(r => add(r, o.code)));
+    skipRefs.forEach(r => add(r, '이번 장바구니'));
     return m;
-  }, [hanjungOrders, skipOrderIds]);
+  }, [hanjungOrders, skipRefs]);
+  const usedWhere = (orderId: string, it: Order1688Item) => usedIn.get(`${orderId}#*`) || usedIn.get(`${orderId}#${it.idx}`);
 
-  const list = Array.isArray(basket) ? [...basket].sort((a, b) => String(a.orderTime).localeCompare(String(b.orderTime))) : [];
-  const fresh = list.filter(o => !usedIn.has(o.orderId));
-  const used = list.filter(o => usedIn.has(o.orderId));
+  const list = Array.isArray(basket)
+    ? [...basket]
+        .map(o => ({ ...o, items: (o.items || []).map((it, i) => (it.idx == null ? { ...it, idx: i } : it)) }))
+        .sort((a, b) => String(a.orderTime).localeCompare(String(b.orderTime)))
+    : [];
+  const views: View[] = list.map(o => ({ o, fresh: o.items.filter(it => !usedWhere(o.orderId, it)), used: o.items.filter(it => usedWhere(o.orderId, it)) }));
+  const fresh = views.filter(v => v.fresh.length);
+  const used = views.filter(v => v.used.length);
 
   // 처음 열 때: 아직 안 넣은 주문은 모두 고르고, 기억한 짝을 미리 골라 둔다.
   const [inited, setInited] = useState(false);
   useEffect(() => {
     if (inited || !Array.isArray(basket)) return;
-    setPicked(new Set(fresh.map(o => o.orderId)));
+    setPicked(new Set(fresh.map(v => v.o.orderId)));
     setInited(true);
   }, [basket, inited]);
   useEffect(() => {
@@ -68,8 +79,8 @@ const Import1688Modal: React.FC<{
     setChoices(prev => {
       const next = { ...prev };
       basket.forEach(o =>
-        o.items.forEach((it, i) => {
-          const k = ckey(o.orderId, i);
+        (o.items || []).forEach((it, i) => {
+          const k = ckey(o.orderId, it.idx == null ? i : it.idx);
           if (next[k]) return;
           const name = links[item1688Key(it)];
           if (!name) return;
@@ -90,26 +101,26 @@ const Import1688Modal: React.FC<{
       return n;
     });
 
-  const pickedOrders = list.filter(o => picked.has(o.orderId) && !usedIn.has(o.orderId));
-  const missing = pickedOrders.flatMap(o =>
-    o.items.map((_, i) => ckey(o.orderId, i)).filter(k => {
+  const pickedOrders = fresh.filter(v => picked.has(v.o.orderId));
+  const missing = pickedOrders.flatMap(v =>
+    v.fresh.map(it => ckey(v.o.orderId, it.idx)).filter(k => {
       const c = choices[k];
       return !c || !c.mode || (c.mode !== 'skip' && !c.name.trim());
     }),
   );
-  const itemCount = pickedOrders.reduce((s, o) => s + o.items.length, 0);
+  const itemCount = pickedOrders.reduce((s, v) => s + v.fresh.length, 0);
 
   const apply = async () => {
     if (!pickedOrders.length || missing.length) return;
     const byName: { name: string; qty: number; cost: number }[] = [];
     const remember: Order1688Links = {};
-    pickedOrders.forEach(o =>
-      o.items.forEach((it, i) => {
-        const c = choices[ckey(o.orderId, i)];
+    pickedOrders.forEach(v =>
+      v.fresh.forEach(it => {
+        const c = choices[ckey(v.o.orderId, it.idx)];
         if (!c || c.mode === 'skip') return;
         const name = c.name.trim();
         remember[item1688Key(it)] = name;
-        const cost = itemShareKrw(o, i, rate);
+        const cost = itemShareKrw(it, rate);
         const cur = byName.find(p => sameName(p.name, name));
         if (cur) {
           cur.qty += it.qty;
@@ -127,12 +138,16 @@ const Import1688Modal: React.FC<{
     }
     onApply({
       products: byName,
-      refs: pickedOrders.map(o => ({ orderId: o.orderId, mailNos: (o.packages || []).map(p => p.mailNo).filter(Boolean) })),
+      // 빼기로 한 상품도 이번에 처리한 것으로 남긴다(다음에 또 안 뜨게).
+      refs: pickedOrders.map(v => ({ orderId: v.o.orderId, mailNos: (v.o.packages || []).map(p => p.mailNo).filter(Boolean), items: v.fresh.map(it => it.idx) })),
     });
   };
 
-  const renderOrder = (o: Order1688, disabled: boolean) => {
+  const renderOrder = ({ o, fresh: freshItems, used: usedItems }: View, disabled: boolean) => {
     const on = picked.has(o.orderId) && !disabled;
+    const shown = disabled ? usedItems : freshItems;
+    const shownKrw = shown.reduce((s, it) => s + itemShareKrw(it, rate), 0);
+    const shownCny = shown.reduce((s, it) => s + (it.cnyShare || it.unitCny * it.qty), 0);
     return (
       <div key={o.orderId} className={`border rounded-xl p-3 ${on ? 'border-sky-300 bg-sky-50/40' : 'border-gray-200'} ${disabled ? 'opacity-60' : ''}`}>
         <label className="flex items-center gap-2 text-sm cursor-pointer">
@@ -140,17 +155,24 @@ const Import1688Modal: React.FC<{
           <span className="font-mono font-bold">…{o.orderId.slice(-8)}</span>
           <span className="text-xs text-gray-400">{String(o.orderTime).slice(5, 16)}</span>
           <span className="ml-auto text-xs font-semibold text-gray-700">
-            ¥{o.totalCny.toFixed(2)} · {o.totalKrw > 0 ? won(o.totalKrw) : `약 ${won(o.totalCny * rate)}`}
+            ¥{shownCny.toFixed(2)} · {o.totalKrw > 0 ? won(shownKrw) : `약 ${won(shownKrw)}`}
           </span>
         </label>
         <div className="text-xs mt-1 text-gray-500">
           {o.packages?.length ? `🚚 ${o.packages.map(p => `${p.company} ${p.mailNo}`).join(' · ')}` : '🚚 운송장 없음'}
-          {disabled && <span className="ml-2 text-amber-700 font-semibold">이미 {usedIn.get(o.orderId)}에 넣었어요</span>}
+          {(o.itemCount || 0) > o.items.length && <span className="ml-2">· 이 주문 상품 {o.itemCount}개 중 {o.items.length}개 담음</span>}
         </div>
+        {disabled && (
+          <div className="mt-1 space-y-0.5 text-xs text-gray-500">
+            {usedItems.map(it => (
+              <div key={it.idx} className="truncate">· {it.spec || it.title} {it.qty}개 → <span className="text-amber-700 font-semibold">이미 {usedWhere(o.orderId, it)}에 넣었어요</span></div>
+            ))}
+          </div>
+        )}
         {!disabled && (
           <div className="mt-2 space-y-2">
-            {o.items.map((it, i) => {
-              const k = ckey(o.orderId, i);
+            {freshItems.map(it => {
+              const k = ckey(o.orderId, it.idx);
               const c = choices[k] || { mode: '', name: '' };
               const bad = on && (!c.mode || (c.mode !== 'skip' && !c.name.trim()));
               const selectValue = c.mode === 'cart' ? `cart:${c.name}` : c.mode;
@@ -164,7 +186,7 @@ const Import1688Modal: React.FC<{
                       <div className="text-gray-800 line-clamp-2">{it.title}</div>
                       {it.spec && <div className="text-gray-500 mt-0.5">{it.spec}</div>}
                       <div className="mt-0.5 font-semibold">
-                        ¥{it.unitCny.toFixed(2)} × {it.qty}개 <span className="text-gray-400 font-normal">· {won(itemShareKrw(o, i, rate))}</span>
+                        ¥{it.unitCny.toFixed(2)} × {it.qty}개 <span className="text-gray-400 font-normal">· {won(itemShareKrw(it, rate))}</span>
                       </div>
                     </div>
                   </div>
@@ -233,18 +255,18 @@ const Import1688Modal: React.FC<{
           )}
           {Array.isArray(basket) && !list.length && (
             <div className="text-sm text-gray-600 py-6 leading-relaxed">
-              담은 주문이 없어요.
-              <br />1688 주문목록(待收货) 화면 오른쪽 창에서 주문을 골라 "고른 주문 담기"를 눌러 주세요.
+              담은 상품이 없어요.
+              <br />1688 주문목록(待收货) 화면에서 상품 사진 아래 「＋ 담기」를 눌러 주세요.
             </div>
           )}
-          {Array.isArray(basket) && list.length > 0 && !fresh.length && <div className="text-sm text-gray-500">새로 넣을 주문이 없어요(모두 이미 넣었어요).</div>}
-          {fresh.map(o => renderOrder(o, false))}
+          {Array.isArray(basket) && list.length > 0 && !fresh.length && <div className="text-sm text-gray-500">새로 넣을 상품이 없어요(모두 이미 넣었어요).</div>}
+          {fresh.map(v => renderOrder(v, false))}
           {used.length > 0 && (
             <button onClick={() => setShowUsed(v => !v)} className="text-xs text-gray-500 underline">
-              이미 넣은 주문 {used.length}건 {showUsed ? '접기' : '보기'}
+              이미 넣은 상품 {used.reduce((s, v) => s + v.used.length, 0)}개 {showUsed ? '접기' : '보기'}
             </button>
           )}
-          {showUsed && used.map(o => renderOrder(o, true))}
+          {showUsed && used.map(v => renderOrder(v, true))}
         </div>
         <div className="px-5 py-3 border-t flex items-center gap-3">
           <span className="text-xs text-gray-500">

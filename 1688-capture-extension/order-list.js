@@ -55,7 +55,7 @@
       if (node.nodeType !== 1 && node.nodeType !== 11) return;
       if (node === panelHost) return;
       if (node.nodeType === 1) {
-        if (SKIP_TAGS.has(node.tagName)) return;
+        if (SKIP_TAGS.has(node.tagName) || node.hasAttribute('data-rocket-pick')) return;
         if (node.tagName === 'IMG') out.push({ kind: 'img', el: node });
         else if (node.tagName === 'A' && node.getAttribute('href')) out.push({ kind: 'a', el: node, href: node.href || node.getAttribute('href') });
         if (node.shadowRoot) node.shadowRoot.childNodes.forEach(visit);
@@ -116,128 +116,149 @@
     return m ? m[1] : '';
   };
 
-  // 주문 카드 찾기: "订单号 숫자"가 있는 머리줄에서 위로 올라가며, 주문번호가 하나만 들어 있는 가장 큰 덩어리를 카드로 본다.
-  const findOrderCards = (all) => {
+  // 주문 나누기: 화면 전체 글자를 순서대로 늘어놓고, "订单号 숫자"가 나올 때마다 새 주문이 시작된다고 본다.
+  // (화면 덩어리 모양에 기대지 않는다. 덩어리로 잡으면 여러 주문이 한 덩어리로 섞이는 일이 있었다.)
+  const PAGE_END_RE = /^(上一页|下一页|跳转|为你推荐|猜你喜欢|共\s*\d+\s*页)/;
+  const findOrders = (all) => {
     const heads = [];
-    const seen = new Set();
-    all.forEach((t) => {
-      if (t.kind !== 'text' || !t.text.includes('订单号')) return;
-      let head = t.el;
-      let id = '';
-      for (let i = 0; head && i < 6; i++) {
-        const m = deepText(head).match(ORDER_ID_RE);
-        if (m) {
-          id = m[1];
-          break;
-        }
-        head = deepParent(head);
+    for (let i = 0; i < all.length; i++) {
+      const t = all[i];
+      if (t.kind !== 'text' || !t.text.includes('订单号')) continue;
+      let id = (t.text.match(/(\d{15,22})/) || [])[1] || '';
+      for (let j = i + 1; !id && j < Math.min(all.length, i + 6); j++) {
+        if (all[j].kind === 'text') id = (all[j].text.match(/^\D{0,4}(\d{15,22})/) || [])[1] || '';
       }
-      if (!id || seen.has(id)) return;
-      seen.add(id);
-      heads.push({ id, head });
-    });
-    return heads.map(({ id, head }) => {
-      let card = head;
-      for (;;) {
-        const p = deepParent(card);
-        if (!p || p === document.documentElement) break;
-        const tokens = collect(p).filter((x) => x.kind === 'text').map((x) => x.text);
-        if ((tokens.join(' ').match(/订单号/g) || []).length > 1) break;
-        // 주문이 하나뿐인 화면에서 위쪽 탭 줄(全部·待付款…)까지 카드로 잡지 않게 멈춘다.
-        if (tokens.includes('全部') && tokens.includes('待付款')) break;
-        card = p;
-        if (p === document.body) break;
+      if (!id || heads.some((h) => h.id === id)) continue;
+      heads.push({ id, at: i, el: t.el });
+    }
+    return heads.map((h, k) => {
+      let end = k + 1 < heads.length ? heads[k + 1].at : all.length;
+      // 마지막 주문은 아래쪽 쪽번호·추천상품 앞에서 끊는다.
+      if (k + 1 === heads.length) {
+        const stop = all.findIndex((t, i) => i > h.at && t.kind === 'text' && PAGE_END_RE.test(t.text));
+        if (stop > 0) end = stop;
       }
-      return { id, head, card };
+      return { id: h.id, head: h.el, tokens: all.slice(h.at, end) };
     });
   };
 
-  // 카드 하나를 읽는다. 상품 사진이 나올 때마다 상품 하나가 시작된다고 보고, 사진 다음에 나오는
-  // 첫 ¥ 값이 단가, 그다음 숫자만 있는 조각이 수량이다.
-  const parseCard = ({ id, head, card }) => {
-    const tokens = collect(card);
-    let start = tokens.findIndex((t) => t.kind === 'text' && t.text.includes('订单号'));
-    if (start < 0) start = 0;
-    // 머리줄(주문번호 줄) 안의 사진(가게 아이콘 등)은 상품이 아니다.
-    const isHeadEl = (el) => {
-      for (let e = el; e; e = deepParent(e)) if (e === head) return true;
-      return false;
-    };
+  const priceAt = (texts, j) => {
+    const t = texts[j];
+    const m = t.text.match(PRICE_RE);
+    if (m) return { v: num(m[1]), used: [j] };
+    if (/^[¥￥]$/.test(t.text) && texts[j + 1] && NUM_RE.test(texts[j + 1].text)) return { v: num(texts[j + 1].text), used: [j, j + 1] };
+    return null;
+  };
 
+  // 주문 하나를 읽는다.
+  //  · 상품 = 상품 사진(없으면 상품 링크). 사진 뒤 첫 긴 글자가 상품명, 쌍점(颜色: …)이 든 조각들이 옵션.
+  //  · 단가·수량 = "¥ 값 바로 뒤(4조각 안)에 숫자만 있는 조각"이 나오는 짝. 줄 그은 원래 가격은 건너뛴다.
+  //    한 주문에 상품이 여럿이면 사진 순서대로 짝을 맞춘다(사진들이 먼저 다 나오고 가격이 뒤에 몰려 있는 화면도 있어서).
+  //  · 결제금액 = 짝에 안 쓴 ¥ 값 중 줄 긋지 않은 가장 큰 값.
+  const parseOrder = ({ id, head, tokens }) => {
+    const texts = [];
+    const pos = new Map(); // tokens 위치 → texts 위치
+    tokens.forEach((t, i) => {
+      if (t.kind === 'text') {
+        pos.set(i, texts.length);
+        texts.push({ ...t, i });
+      }
+    });
     let starts = [];
     tokens.forEach((t, i) => {
-      if (i > start && t.kind === 'img' && isProductImg(t.el) && !isHeadEl(t.el)) starts.push(i);
+      if (i > 0 && t.kind === 'img' && isProductImg(t.el)) starts.push(i);
     });
-    // 사진을 못 찾으면 상품 링크(offer 번호)가 처음 나오는 곳을 상품 시작으로 쓴다.
     if (!starts.length) {
       const seenOffer = new Set();
       tokens.forEach((t, i) => {
-        if (i <= start || t.kind !== 'a') return;
-        const o = offerOf(t.href);
+        const o = t.kind === 'a' ? offerOf(t.href) : '';
         if (o && !seenOffer.has(o)) {
           seenOffer.add(o);
           starts.push(i);
         }
       });
     }
-    // 사진과 링크가 붙어 있어(사진을 링크가 감싸는 등) 한 상품에서 시작점이 둘 잡히는 것을 막는다:
-    // 두 시작점 사이에 ¥ 값이 없으면 같은 상품이다.
-    starts = starts.filter((s, k) => {
-      if (k === 0) return true;
-      const prev = starts[k - 1];
-      return tokens.slice(prev, s).some((t) => t.kind === 'text' && (PRICE_RE.test(t.text) || /^[¥￥]$/.test(t.text)));
-    });
 
-    const usedPriceIdx = new Set();
-    const items = starts.map((s, k) => {
-      const end = k + 1 < starts.length ? starts[k + 1] : tokens.length;
-      const seg = tokens.slice(s, end).map((t, j) => ({ ...t, i: s + j }));
-      const texts = seg.filter((t) => t.kind === 'text');
-      // 단가: 줄 그은 원래 가격은 건너뛴다.
-      let priceAt = -1;
-      let price = 0;
-      for (let j = 0; j < texts.length; j++) {
-        const t = texts[j];
-        let v = null;
-        const m = t.text.match(PRICE_RE);
-        if (m) v = num(m[1]);
-        else if (/^[¥￥]$/.test(t.text) && texts[j + 1] && NUM_RE.test(texts[j + 1].text)) v = num(texts[j + 1].text);
-        if (v == null || isStruck(t.el)) continue;
-        priceAt = j;
-        price = v;
-        usedPriceIdx.add(t.i);
-        if (!m) usedPriceIdx.add(texts[j + 1].i);
-        break;
+    // 단가·수량 짝
+    const pairs = [];
+    const used = new Set();
+    for (let j = 0; j < texts.length; j++) {
+      if (used.has(j)) continue;
+      const p = priceAt(texts, j);
+      if (!p || isStruck(texts[j].el)) continue;
+      const from = p.used[p.used.length - 1] + 1;
+      for (let q = from; q < Math.min(texts.length, from + 4); q++) {
+        const m = texts[q].text.match(QTY_RE);
+        if (m) {
+          pairs.push({ price: p.v, qty: Number(m[1]), at: texts[j].i });
+          p.used.forEach((u) => used.add(u));
+          used.add(q);
+          break;
+        }
+        if (priceAt(texts, q)) break; // 다음 ¥ 값이 먼저 나오면 짝이 아니다
       }
-      let qty = 0;
-      if (priceAt >= 0) {
-        for (let j = priceAt + 1; j < texts.length; j++) {
-          if (j === priceAt + 1 && /^[¥￥]$/.test(texts[priceAt].text)) continue; // ¥ 뒤 숫자는 가격
-          const m = texts[j].text.match(QTY_RE);
-          if (m) {
-            qty = Number(m[1]);
-            break;
-          }
+    }
+    // 가격 칸이 모두 나온 뒤에 수량 칸이 모두 나오는 화면(열마다 묶인 표)도 있다:
+    // 짝이 사진 수보다 적으면, 사진 뒤 ¥ 값 N개와 그 뒤 숫자 N개를 순서대로 짝짓는다.
+    if (pairs.length < starts.length && starts.length > 1) {
+      const n = starts.length;
+      const firstImg = starts[0];
+      const prices = [];
+      for (let j = 0; j < texts.length && prices.length < n; j++) {
+        if (texts[j].i < firstImg) continue;
+        const p = priceAt(texts, j);
+        if (p && !isStruck(texts[j].el)) prices.push({ j, p });
+      }
+      if (prices.length === n) {
+        const after = prices[n - 1].p.used[prices[n - 1].p.used.length - 1];
+        const qtys = [];
+        for (let q = after + 1; q < texts.length && qtys.length < n; q++) {
+          const m = texts[q].text.match(QTY_RE);
+          if (m) qtys.push({ q, v: Number(m[1]) });
+        }
+        if (qtys.length === n) {
+          pairs.length = 0;
+          used.clear();
+          prices.forEach((x, k) => {
+            pairs.push({ price: x.p.v, qty: qtys[k].v, at: texts[x.j].i });
+            x.p.used.forEach((u) => used.add(u));
+            used.add(qtys[k].q);
+          });
         }
       }
-      // 상품명: 상품 링크 안 글자 → 없으면 사진 뒤 첫 긴 글자.
-      const before = priceAt >= 0 ? texts.slice(0, priceAt) : texts;
-      const inOfferLink = (el) => {
-        for (let e = el, n = 0; e && n < 6; e = deepParent(e), n++) if (e.tagName === 'A' && offerOf(e.href)) return true;
-        return false;
-      };
-      const clean = (s) => s.replace(/\[快照\]|【快照】|快照/g, '').trim();
+    }
+    // 사진마다 짝 하나: 개수가 같으면 순서대로, 다르면 사진 뒤 첫 짝.
+    const pairOf = [];
+    if (pairs.length === starts.length) starts.forEach((_, k) => (pairOf[k] = pairs[k]));
+    else {
+      const taken = new Set();
+      starts.forEach((s, k) => {
+        const p = pairs.find((x) => !taken.has(x) && x.at > s);
+        if (p) taken.add(p);
+        pairOf[k] = p;
+      });
+    }
+
+    const inOfferLink = (el) => {
+      for (let e = el, n = 0; e && n < 6; e = deepParent(e), n++) if (e.tagName === 'A' && offerOf(e.href)) return true;
+      return false;
+    };
+    const clean = (s) => s.replace(/\[快照\]|【快照】|快照/g, '').trim();
+    const items = starts.map((s, k) => {
+      const end = k + 1 < starts.length ? starts[k + 1] : tokens.length;
+      // 이 사진부터 다음 사진(또는 첫 ¥ 값)까지의 글자에서 상품명·옵션을 찾는다.
+      const seg = texts.filter((t) => t.i > s && t.i < end);
+      const stop = seg.findIndex((t) => PRICE_RE.test(t.text) || /^[¥￥]$/.test(t.text));
+      const before = stop >= 0 ? seg.slice(0, stop) : seg;
       let titleParts = before.filter((t) => inOfferLink(t.el) && !/[:：]/.test(t.text) && clean(t.text));
       let titleEnd;
-      if (titleParts.length) {
-        titleEnd = before.indexOf(titleParts[titleParts.length - 1]);
-      } else {
-        const j = before.findIndex((t) => clean(t.text).length >= 6 && !/[:：]/.test(t.text) && !PRICE_RE.test(t.text));
+      if (titleParts.length) titleEnd = before.indexOf(titleParts[titleParts.length - 1]);
+      else {
+        const j = before.findIndex((t) => clean(t.text).length >= 6 && !/[:：]/.test(t.text));
         titleParts = j >= 0 ? [before[j]] : [];
         titleEnd = j;
       }
       const title = clean(titleParts.map((t) => t.text).join(''));
-      // 옵션: 상품명 뒤 "颜色: …；高度: …"처럼 쌍점이 들어간 조각들이 이어진 부분.
       const specTokens = [];
       let on = false;
       for (let j = Math.max(0, titleEnd + 1); j < before.length; j++) {
@@ -251,40 +272,41 @@
         } else if (on) break;
       }
       const spec = specTokens.join(' ').replace(/\s*([:：])\s*/g, ': ').replace(/\s*([;；])\s*/g, '; ').replace(/[;；]\s*$/, '').trim();
-      const img = seg.find((t) => t.kind === 'img' && isProductImg(t.el));
-      const offerTok = seg.find((t) => t.kind === 'a' && offerOf(t.href));
-      let offerId = offerTok ? offerOf(offerTok.href) : '';
-      if (!offerId && img) {
-        for (let e = img.el, n = 0; e && n < 6; e = deepParent(e), n++) if (e.tagName === 'A' && offerOf(e.href)) { offerId = offerOf(e.href); break; }
+      const imgTok = tokens[s].kind === 'img' ? tokens[s] : null;
+      let offerId = tokens[s].kind === 'a' ? offerOf(tokens[s].href) : '';
+      if (!offerId) {
+        const a = tokens.slice(s, end).find((t) => t.kind === 'a' && offerOf(t.href));
+        if (a) offerId = offerOf(a.href);
       }
+      if (!offerId && imgTok) {
+        for (let e = imgTok.el, n = 0; e && n < 6; e = deepParent(e), n++) if (e.tagName === 'A' && offerOf(e.href)) { offerId = offerOf(e.href); break; }
+      }
+      const pr = pairOf[k];
       return {
         offerId,
         title,
         spec,
-        unitCny: price,
-        qty,
-        imageUrl: img ? fullImageUrl(imgSrc(img.el)) : '',
+        unitCny: pr ? pr.price : 0,
+        qty: pr ? pr.qty : 0,
+        imageUrl: imgTok ? fullImageUrl(imgSrc(imgTok.el)) : '',
         productUrl: offerId ? `https://detail.1688.com/offer/${offerId}.html` : '',
+        _img: tokens[s].el, // 1688 화면에 [＋ 담기] 버튼을 붙일 자리(저장하지 않는다)
       };
     });
 
-    // 주문 금액: 상품 단가로 쓰지 않은 ¥ 값 중 줄 긋지 않은 가장 큰 값.
     let totalCny = 0;
-    tokens.forEach((t, i) => {
-      if (i <= start || t.kind !== 'text' || usedPriceIdx.has(i)) return;
-      let v = null;
-      const m = t.text.match(PRICE_RE);
-      if (m) v = num(m[1]);
-      else if (/^[¥￥]$/.test(t.text) && tokens[i + 1] && tokens[i + 1].kind === 'text' && NUM_RE.test(tokens[i + 1].text) && !usedPriceIdx.has(i + 1)) v = num(tokens[i + 1].text);
-      if (v == null || isStruck(t.el)) return;
-      if (v > totalCny) totalCny = v;
-    });
-    const all = tokens.filter((t) => t.kind === 'text').map((t) => t.text).join(' ');
+    for (let j = 0; j < texts.length; j++) {
+      if (used.has(j)) continue;
+      const p = priceAt(texts, j);
+      if (!p || isStruck(texts[j].el)) continue;
+      if (p.v > totalCny) totalCny = p.v;
+    }
+    const all = texts.map((t) => t.text).join(' ');
     const krw = all.match(/₩\s*([\d,]+)/);
     const ship = all.match(/含运费\s*[¥￥]?\s*([\d.]+)/);
     const date = all.match(/(\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}(?::\d{2})?)/);
-    const status = STATUS_WORDS.find((w) => tokens.some((t) => t.kind === 'text' && t.text === w)) || '';
-    const goods = items.reduce((s, it) => s + it.unitCny * it.qty, 0);
+    const status = STATUS_WORDS.find((w) => texts.some((t) => t.text === w)) || '';
+    const goods = items.reduce((s2, it) => s2 + it.unitCny * it.qty, 0);
     const shipCny = ship ? Number(ship[1]) : 0;
     if (!totalCny) totalCny = Math.round((goods + shipCny) * 100) / 100;
 
@@ -296,8 +318,11 @@
       if (!it.qty) problems.push(`${label}수량을 못 읽었어요`);
       if (!it.title) problems.push(`${label}상품명을 못 읽었어요`);
     });
-    // 결제금액이 상품 합계와 너무 다르면 잘못 읽은 것일 수 있다(할인·운임으로 조금 다른 건 괜찮다).
-    if (goods > 0 && (totalCny < goods * 0.5 || totalCny > goods * 2 + shipCny + 1)) problems.push(`결제금액(¥${totalCny})이 상품 합계(¥${goods.toFixed(2)})와 많이 달라요`);
+    if (pairs.length !== starts.length) problems.push(`상품 사진 ${starts.length}개, 가격·수량 ${pairs.length}개로 수가 안 맞아요`);
+    // 스스로 검산: 단가×수량 합계가 주문 금액과 크게 다르면 다른 주문 것이 섞였거나 잘못 읽은 것이다.
+    if (goods > 0 && (totalCny < goods * 0.5 || totalCny > goods * 2 + shipCny + 1)) {
+      problems.push(`검산이 안 맞아요: 단가×수량 합계 ¥${goods.toFixed(2)} ↔ 주문 금액 ¥${totalCny.toFixed(2)}`);
+    }
 
     return {
       orderId: id,
@@ -308,7 +333,8 @@
       totalKrw: krw ? num(krw[1]) : 0,
       items,
       problems,
-      card,
+      card: head,
+      tokens,
     };
   };
 
@@ -395,11 +421,9 @@
 
   // ───────── 상태 ─────────
   let orders = []; // 이 화면에서 읽은 주문
-  let basket = {}; // 담은 주문 (orderId → 주문)
+  let basket = {}; // 담은 주문 (orderId → 주문, items에는 담은 상품만)
   let tracking = {}; // orderId → { packages, fetchedAt, error }
-  const checked = new Set();
   let open = true;
-  let view = 'page'; // 'page' 이 화면 | 'basket' 담은 목록
   let toast = '';
   let toastTimer = null;
   let tracking_busy = false;
@@ -410,15 +434,27 @@
     toastTimer = setTimeout(() => {
       toast = '';
       render();
-    }, 5000);
+    }, 6000);
     render();
   };
 
+  // 예전 방식으로 담은 것(상품 번호 idx 없음)도 읽을 수 있게 맞춘다.
+  const normalizeBasket = (b) => {
+    const out = {};
+    Object.entries(b || {}).forEach(([k, o]) => {
+      out[k] = { ...o, items: (o.items || []).map((it, i) => (it.idx == null ? { ...it, idx: i } : it)) };
+    });
+    return out;
+  };
+  const basketItem = (orderId, idx) => ((basket[orderId] || {}).items || []).find((x) => x.idx === idx);
+
+  // 담은 상품이 있는 주문만 운송장을 물어본다.
   const loadTrackingQueue = async (force) => {
     if (tracking_busy) return;
     tracking_busy = true;
     try {
       for (const o of orders) {
+        if (!basket[o.orderId]) continue;
         const cur = tracking[o.orderId];
         const fresh = cur && !cur.error && Date.now() - cur.fetchedAt < TRACK_FRESH_MS;
         if (!force && fresh) continue;
@@ -434,10 +470,13 @@
         } catch (err) {
           tracking[o.orderId] = { packages: (cur && cur.packages) || [], fetchedAt: Date.now(), error: String((err && err.message) || err) };
         }
-        // 담아 둔 주문이면 운송장도 같이 고친다.
-        if (basket[o.orderId] && tracking[o.orderId].packages.length) {
-          basket[o.orderId] = { ...basket[o.orderId], packages: tracking[o.orderId].packages };
-          await storageSet(BASKET_KEY, basket).catch(() => {});
+        if (tracking[o.orderId].packages.length) {
+          const fresh2 = normalizeBasket(await storageGet(BASKET_KEY));
+          if (fresh2[o.orderId]) {
+            fresh2[o.orderId] = { ...fresh2[o.orderId], packages: tracking[o.orderId].packages };
+            basket = fresh2;
+            await storageSet(BASKET_KEY, basket).catch(() => {});
+          }
         }
         render();
         await new Promise((r) => setTimeout(r, 250));
@@ -452,86 +491,151 @@
     }
   };
 
+  // ───────── 1688 화면의 상품마다 [＋ 담기] 버튼 ─────────
+  const pickButtons = new Map(); // `${orderId}#${idx}` → 버튼
+  const BTN_BASE = 'display:block;margin:6px 0 0;padding:3px 9px;font-size:12px;line-height:18px;border-radius:6px;cursor:pointer;font-weight:700;white-space:nowrap;font-family:inherit;';
+  const paintButton = (btn, o, idx) => {
+    const it = basketItem(o.orderId, idx);
+    if (o.problems.length) {
+      btn.textContent = '⚠ 못 읽음';
+      btn.title = o.problems.join('\n');
+      btn.style.cssText = `${BTN_BASE}border:1px solid #ccc;background:#f5f5f5;color:#999;`;
+    } else if (it) {
+      btn.textContent = it.used8282At || it.usedAppAt ? `✅ 담음${it.used8282At ? '·8282' : ''}${it.usedAppAt ? '·앱' : ''}` : '✅ 담음 (빼기)';
+      btn.title = '누르면 담은 목록에서 빼요';
+      btn.style.cssText = `${BTN_BASE}border:1px solid #ff6a00;background:#ff6a00;color:#fff;`;
+    } else {
+      btn.textContent = '＋ 담기';
+      btn.title = '이 상품을 8282·로켓 앱으로 보낼 목록에 담아요';
+      btn.style.cssText = `${BTN_BASE}border:1px solid #ff6a00;background:#fff;color:#ff6a00;`;
+    }
+  };
+  const syncButtons = () => {
+    const live = new Set();
+    orders.forEach((o) =>
+      o.items.forEach((item, idx) => {
+        const img = item._img;
+        if (!img || !img.isConnected) return;
+        const key = `${o.orderId}#${idx}`;
+        live.add(key);
+        let btn = pickButtons.get(key);
+        if (!btn || !btn.isConnected) {
+          btn = document.createElement('button');
+          btn.type = 'button';
+          btn.setAttribute('data-rocket-pick', key);
+          btn.addEventListener('click', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            const cur = orders.find((x) => x.orderId === o.orderId);
+            if (cur) toggleItem(cur, idx);
+          });
+          // 사진을 감싼 링크가 있으면 링크 밖(바로 뒤)에 둔다(누를 때 상품 페이지로 넘어가지 않게).
+          let target = img;
+          for (let e = img, n = 0; e && n < 3; e = deepParent(e), n++) if (e.tagName === 'A') { target = e; break; }
+          target.insertAdjacentElement('afterend', btn);
+          pickButtons.set(key, btn);
+        }
+        paintButton(btn, o, idx);
+      }),
+    );
+    pickButtons.forEach((btn, key) => {
+      if (!live.has(key)) {
+        btn.remove();
+        pickButtons.delete(key);
+      }
+    });
+  };
+
   let lastSig = '';
   let lastQuick = '';
   const rescan = () => {
     if (document.hidden) return;
+    // 1688이 화면을 다시 그려 사진이 바뀌었으면 처음부터 다시 읽는다.
+    if (orders.some((o) => o.items.some((it) => it._img && !it._img.isConnected))) lastQuick = '';
     let found;
     try {
-      // 화면 글자가 그대로면(주문번호·글자 수가 같으면) 다시 읽지 않는다.
+      // 화면 글자가 그대로면 다시 읽지 않는다(우리가 붙인 버튼 글자는 빼고 센다).
       const all = collect(document.body);
       const texts = all.filter((t) => t.kind === 'text').map((t) => t.text);
       const quick = `${texts.length}|${texts.join('').length}|${all.filter((t) => t.kind === 'img').length}`;
-      if (quick === lastQuick) return;
+      if (quick === lastQuick) {
+        syncButtons();
+        return;
+      }
       lastQuick = quick;
-      found = findOrderCards(all).map(parseCard);
+      found = findOrders(all).map(parseOrder);
     } catch (err) {
       console.warn('[로켓] 1688 주문 읽기 실패', err);
       return;
     }
-    const sig = JSON.stringify(found.map((o) => [o.orderId, o.totalCny, o.items.map((it) => [it.title, it.spec, it.unitCny, it.qty])]));
     orders = found;
+    syncButtons();
+    const sig = JSON.stringify(found.map((o) => [o.orderId, o.totalCny, o.problems, o.items.map((it) => [it.title, it.spec, it.unitCny, it.qty])]));
     if (sig === lastSig) return;
     lastSig = sig;
-    const ids = new Set(orders.map((o) => o.orderId));
-    Array.from(checked).forEach((k) => {
-      if (!ids.has(k)) checked.delete(k);
-    });
     render();
     loadTrackingQueue(false);
   };
 
   // ───────── 담기 ─────────
-  const toBasketEntry = (o) => {
-    const prev = basket[o.orderId] || {};
-    const t = tracking[o.orderId];
-    return {
-      orderId: o.orderId,
-      orderTime: o.orderTime,
-      status: o.status,
-      totalCny: o.totalCny,
-      shipCny: o.shipCny,
-      totalKrw: o.totalKrw,
-      items: o.items,
-      packages: (t && t.packages && t.packages.length ? t.packages : prev.packages) || [],
-      addedAt: prev.addedAt || Date.now(),
-      updatedAt: Date.now(),
-      ...(prev.used8282At ? { used8282At: prev.used8282At } : {}),
-      ...(prev.usedAppAt ? { usedAppAt: prev.usedAppAt, usedAppCode: prev.usedAppCode || '' } : {}),
-    };
-  };
-  const addChecked = async () => {
-    const picked = orders.filter((o) => checked.has(o.orderId));
-    if (!picked.length) return showToast('담을 주문을 먼저 골라 주세요.');
-    const bad = picked.filter((o) => o.problems.length);
-    if (bad.length) {
-      return showToast(`잘못 읽은 주문이 있어요(${bad.map((o) => `…${o.orderId.slice(-6)}`).join(', ')}). 그 주문은 빼거나 "진단 저장"을 눌러 보내 주세요.`);
+  // 상품 하나를 담거나 뺀다. 결제금액(원화·위안)은 주문 전체 기준으로 이 상품 몫을 미리 나눠 둔다
+  // (주문의 일부 상품만 담아도 금액이 맞게).
+  const toggleItem = async (o, idx) => {
+    if (o.problems.length) {
+      alert(`이 주문은 제대로 못 읽었어요:\n· ${o.problems.join('\n· ')}\n\n오른쪽 창의 "🔧 진단 저장"을 눌러 파일을 보내 주세요.`);
+      return;
     }
-    const noTrack = picked.filter((o) => !((tracking[o.orderId] || {}).packages || []).length);
     try {
-      const fresh = (await storageGet(BASKET_KEY)) || {};
-      basket = { ...fresh };
-      picked.forEach((o) => {
-        basket[o.orderId] = toBasketEntry(o);
-      });
+      basket = normalizeBasket(await storageGet(BASKET_KEY));
+      const entry = basket[o.orderId];
+      const exists = entry && entry.items.find((x) => x.idx === idx);
+      if (exists) {
+        if ((exists.used8282At || exists.usedAppAt) && !confirm('이미 8282나 앱에 넣은 상품이에요. 담은 목록에서 뺄까요?')) return;
+        entry.items = entry.items.filter((x) => x.idx !== idx);
+        if (!entry.items.length) delete basket[o.orderId];
+      } else {
+        const weights = o.items.map((it) => it.unitCny * it.qty);
+        const sum = weights.reduce((a, w) => a + w, 0) || 1;
+        const share = weights[idx] / sum;
+        const { _img, ...item } = o.items[idx];
+        const t = tracking[o.orderId];
+        const base = entry || { orderId: o.orderId, items: [], packages: [], addedAt: Date.now() };
+        basket[o.orderId] = {
+          ...base,
+          orderTime: o.orderTime,
+          status: o.status,
+          totalCny: o.totalCny,
+          shipCny: o.shipCny,
+          totalKrw: o.totalKrw,
+          itemCount: o.items.length,
+          packages: (t && t.packages && t.packages.length ? t.packages : base.packages) || [],
+          items: [...base.items, { ...item, idx, krw: Math.round(o.totalKrw * share), cnyShare: Math.round(o.totalCny * share * 100) / 100, addedAt: Date.now() }].sort((a, b) => a.idx - b.idx),
+          updatedAt: Date.now(),
+        };
+      }
       await storageSet(BASKET_KEY, basket);
-      checked.clear();
-      showToast(`${picked.length}건 담았어요.${noTrack.length ? ` (운송장 없는 ${noTrack.length}건은 운송장이 생기면 이 화면을 열 때 채워져요)` : ''} 8282 신청서·로켓 앱 장바구니에서 가져다 쓰면 돼요.`);
+      syncButtons();
+      render();
+      if (!exists) loadTrackingQueue(false);
     } catch (err) {
       showToast(`담기 실패: ${err.message || err}`);
     }
   };
-  const removeFromBasket = async (orderId) => {
-    const fresh = (await storageGet(BASKET_KEY)) || {};
-    delete fresh[orderId];
-    basket = fresh;
+  const removeItem = async (orderId, idx) => {
+    basket = normalizeBasket(await storageGet(BASKET_KEY));
+    const entry = basket[orderId];
+    if (!entry) return;
+    entry.items = entry.items.filter((x) => x.idx !== idx);
+    if (!entry.items.length) delete basket[orderId];
     await storageSet(BASKET_KEY, basket).catch((err) => showToast(err.message));
+    syncButtons();
     render();
   };
   const clearBasket = async () => {
-    if (!confirm('담은 주문을 모두 지울까요? (8282·앱에 이미 넣은 것은 그대로 남아요)')) return;
+    if (!confirm('담은 상품을 모두 지울까요? (8282·앱에 이미 넣은 것은 그대로 남아요)')) return;
     basket = {};
     await storageSet(BASKET_KEY, basket).catch((err) => showToast(err.message));
+    syncButtons();
     render();
   };
 
@@ -582,14 +686,14 @@
       at: new Date().toString(),
       ua: navigator.userAgent,
       hasToken: !!readToken(),
-      orders: orders.map((o) => ({ ...o, card: undefined })),
+      orders: orders.map((o) => ({ ...o, card: undefined, tokens: undefined, items: o.items.map(({ _img, ...it }) => it) })),
       tracking,
       firstTrack,
       lastMtopRaw,
       cards: orders.slice(0, 3).map((o) => ({
         orderId: o.orderId,
-        tokens: collect(o.card).slice(0, 400).map((t) => (t.kind === 'text' ? t.text : t.kind === 'img' ? `[img ${imgSrc(t.el).slice(0, 120)} w=${Math.round(t.el.getBoundingClientRect().width)}]` : `[a ${String(t.href).slice(0, 160)}]`)),
-        html: serialize(o.card, 150000),
+        tokens: o.tokens.slice(0, 400).map((t) => (t.kind === 'text' ? t.text : t.kind === 'img' ? `[img ${imgSrc(t.el).slice(0, 120)} w=${Math.round(t.el.getBoundingClientRect().width)}]` : `[a ${String(t.href).slice(0, 160)}]`)),
+        html: serialize(deepParent(deepParent(deepParent(deepParent(o.card)))) || o.card, 150000),
       })),
       pageHtml: orders.length ? '' : serialize(document.body, 400000),
     };
@@ -649,8 +753,11 @@
     .it .sp { color: #888; margin-top: 1px; }
     .it .pq { font-weight: 700; margin-top: 1px; }
     .tot { margin-top: 6px; text-align: right; font-weight: 700; }
-    .prob { margin-top: 6px; color: #cf1322; line-height: 1.5; }
-    .del { border: 0; background: none; color: #999; cursor: pointer; font-size: 12px; margin-left: auto; }
+    .prob { color: #cf1322; line-height: 1.5; }
+    .hint { color: #666; line-height: 1.5; }
+    .hint b { color: #ff6a00; }
+    .del { border: 0; background: none; color: #bbb; cursor: pointer; font-size: 13px; align-self: flex-start; padding: 0 2px; }
+    .del:hover { color: #cf1322; }
   `;
   const esc = (s) => String(s == null ? '' : s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
   const cny = (n) => `¥${(Number(n) || 0).toFixed(2)}`;
@@ -670,78 +777,50 @@
     if (t.notShipped) return '<div class="trk no">아직 발송 전</div>';
     return '<div class="trk no">운송장 없음(발송 전이거나 직접 배송)</div>';
   };
-  const itemsHtml = (items) =>
-    items
+  const itemTags = (it) =>
+    `${it.used8282At ? '<span class="tag b">8282 넣음</span>' : ''}${it.usedAppAt ? `<span class="tag b">앱${it.usedAppCode ? ` ${esc(it.usedAppCode)}` : ''} 넣음</span>` : ''}`;
+  const itemsHtml = (b) =>
+    (b.items || [])
       .map(
         (it) => `<div class="it">${it.imageUrl ? `<img src="${esc(it.imageUrl)}_80x80.jpg" alt="">` : ''}<div class="t">
           <div class="nm">${esc(it.title || '(상품명 없음)')}</div>
           ${it.spec ? `<div class="sp">${esc(it.spec)}</div>` : ''}
-          <div class="pq">${cny(it.unitCny)} × ${it.qty}개</div></div></div>`,
+          <div class="pq">${cny(it.unitCny)} × ${it.qty}개 ${itemTags(it)}</div></div>
+          <button class="del" data-act="remove" data-id="${b.orderId}" data-idx="${it.idx}" title="담은 목록에서 빼기">✕</button></div>`,
       )
       .join('');
-  const usedTags = (b) =>
-    b ? `<span class="tag g">담음</span>${b.used8282At ? '<span class="tag b">8282</span>' : ''}${b.usedAppAt ? `<span class="tag b">앱${b.usedAppCode ? ` ${esc(b.usedAppCode)}` : ''}</span>` : ''}` : '';
 
   const render = () => {
     if (!panelHost.isConnected) document.documentElement.appendChild(panelHost);
     const listEl = root.querySelector('.list');
     const scroll = listEl ? listEl.scrollTop : 0;
-    const basketList = Object.values(basket).sort((a, b) => (b.addedAt || 0) - (a.addedAt || 0));
+    const basketList = Object.values(basket).sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
+    const itemCount = basketList.reduce((s2, b) => s2 + (b.items || []).length, 0);
     if (!open) {
-      root.innerHTML = `<style>${css}</style><button class="pill" data-act="open">📦 1688 주문 담기${basketList.length ? ` · ${basketList.length}` : ''}</button>`;
+      root.innerHTML = `<style>${css}</style><button class="pill" data-act="open">📦 담은 상품${itemCount ? ` ${itemCount}개` : ''}</button>`;
       return;
     }
-    const pickedCount = orders.filter((o) => checked.has(o.orderId)).length;
-    let body = '';
-    if (view === 'page') {
-      body = orders.length
-        ? orders
-            .map((o) => {
-              const b = basket[o.orderId];
-              const bad = o.problems.length > 0;
-              return `<div class="ord ${checked.has(o.orderId) ? 'on' : ''} ${bad ? 'bad' : ''}" data-act="jump" data-id="${o.orderId}">
-                <div class="oh"><input type="checkbox" data-act="check" data-id="${o.orderId}" ${checked.has(o.orderId) ? 'checked' : ''}>
-                <span class="oid">…${esc(o.orderId.slice(-8))}</span><span class="muted">${esc(o.orderTime.slice(5, 16))}</span>
-                <span style="margin-left:auto;display:flex;gap:3px">${usedTags(b)}</span></div>
-                ${trackHtml(o.orderId, b && b.packages)}
-                ${itemsHtml(o.items)}
-                <div class="tot">${cny(o.totalCny)}${krwText(o.totalKrw)}${o.shipCny ? ` <span class="muted">운임 ${cny(o.shipCny)}</span>` : ''}</div>
-                ${bad ? `<div class="prob">⚠ ${o.problems.map(esc).join('<br>⚠ ')}</div>` : ''}
-              </div>`;
-            })
-            .join('')
-        : '<div class="empty">이 화면에서 주문을 못 찾았어요.<br>주문목록이 다 뜬 뒤에도 그대로면 아래 "진단 저장"을 눌러 파일을 보내 주세요.</div>';
-    } else {
-      body = basketList.length
-        ? basketList
-            .map(
-              (b) => `<div class="ord">
-                <div class="oh"><span class="oid">…${esc(b.orderId.slice(-8))}</span><span class="muted">${esc((b.orderTime || '').slice(5, 16))}</span>
-                <span style="display:flex;gap:3px">${usedTags(b)}</span>
-                <button class="del" data-act="remove" data-id="${b.orderId}" title="담은 목록에서 빼기">✕</button></div>
-                ${trackHtml(b.orderId, b.packages)}
-                ${itemsHtml(b.items || [])}
-                <div class="tot">${cny(b.totalCny)}${krwText(b.totalKrw)}</div>
-              </div>`,
-            )
-            .join('')
-        : '<div class="empty">아직 담은 주문이 없어요.</div>';
-    }
+    const bad = orders.filter((o) => o.problems.length);
+    const body = basketList.length
+      ? basketList
+          .map(
+            (b) => `<div class="ord" data-act="jump" data-id="${b.orderId}">
+              <div class="oh"><span class="oid">…${esc(b.orderId.slice(-8))}</span><span class="muted">${esc((b.orderTime || '').slice(5, 16))}</span>
+              ${b.itemCount > 1 ? `<span class="muted">· 상품 ${b.itemCount}개 중 ${(b.items || []).length}개</span>` : ''}</div>
+              ${trackHtml(b.orderId, b.packages)}
+              ${itemsHtml(b)}
+            </div>`,
+          )
+          .join('')
+      : '<div class="empty">아직 담은 상품이 없어요.<br>왼쪽 1688 화면에서 상품 사진 아래 <b style="color:#ff6a00">＋ 담기</b>를 누르세요.</div>';
     root.innerHTML = `<style>${css}</style>
       <div class="box">
-        <div class="hd"><b>📦 1688 주문 → 8282·로켓</b><button class="x" data-act="close" title="접기">–</button></div>
-        <div class="tabs">
-          <button class="tab ${view === 'page' ? 'on' : ''}" data-act="view-page">이 화면 주문 ${orders.length}</button>
-          <button class="tab ${view === 'basket' ? 'on' : ''}" data-act="view-basket">담은 주문 ${basketList.length}</button>
-        </div>
+        <div class="hd"><b>📦 담은 상품 ${itemCount}개</b><button class="x" data-act="close" title="접기">–</button></div>
         <div class="acts">
-          ${
-            view === 'page'
-              ? `<button class="btn main" data-act="add" ${pickedCount ? '' : 'disabled'}>✅ 고른 주문 담기${pickedCount ? ` (${pickedCount}건)` : ''}</button>
-                 <div class="row2"><button class="btn" data-act="all">전부 고르기</button><button class="btn" data-act="none">고른 것 풀기</button></div>
-                 <div class="row2"><button class="btn" data-act="retrack">🔄 운송장 다시</button><button class="btn" data-act="diag">🔧 진단 저장</button></div>`
-              : `<button class="btn" data-act="clear">🗑 담은 주문 모두 지우기</button>`
-          }
+          <div class="hint">1688 화면의 상품 사진 아래 <b>＋ 담기</b>로 골라요. 담은 상품은 8282 신청서·로켓 앱 장바구니에서 가져다 써요.</div>
+          ${bad.length ? `<div class="prob">⚠ 이 화면에서 못 읽은 주문 ${bad.length}건(${bad.map((o) => `…${esc(o.orderId.slice(-6))}`).join(', ')}) → 아래 "진단 저장"을 눌러 주세요</div>` : ''}
+          <div class="row2"><button class="btn" data-act="retrack">🔄 운송장 다시</button><button class="btn" data-act="diag">🔧 진단 저장</button></div>
+          ${basketList.length ? '<button class="btn" data-act="clear">🗑 담은 상품 모두 지우기</button>' : ''}
         </div>
         ${toast ? `<div class="toast">${esc(toast)}</div>` : ''}
         <div class="list">${body}</div>
@@ -755,27 +834,23 @@
     if (!el) return;
     const act = el.dataset.act;
     const id = el.dataset.id;
-    if (act === 'check') {
+    if (act === 'remove') {
       e.stopPropagation();
-      if (el.checked) checked.add(id);
-      else checked.delete(id);
-      render();
+      removeItem(id, Number(el.dataset.idx));
       return;
     }
     if (act === 'jump') {
-      // 카드를 누르면 고르기/풀기 + 1688 화면의 그 주문으로 스크롤.
+      // 담은 주문을 누르면 1688 화면의 그 주문으로 스크롤.
       const o = orders.find((x) => x.orderId === id);
-      if (checked.has(id)) checked.delete(id);
-      else checked.add(id);
-      render();
-      if (o && o.card && o.card.scrollIntoView) {
-        o.card.scrollIntoView({ behavior: 'smooth', block: 'center' });
-        const prev = o.card.style.outline;
-        o.card.style.outline = '3px solid #ff6a00';
+      const el2 = o && o.card;
+      if (el2 && el2.scrollIntoView) {
+        el2.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        const prev = el2.style.outline;
+        el2.style.outline = '3px solid #ff6a00';
         setTimeout(() => {
-          o.card.style.outline = prev;
+          el2.style.outline = prev;
         }, 1500);
-      }
+      } else showToast('이 주문은 지금 1688 화면(이 쪽)에 없어요.');
       return;
     }
     if (act === 'open' || act === 'close') {
@@ -784,21 +859,8 @@
       render();
       return;
     }
-    if (act === 'view-page' || act === 'view-basket') {
-      view = act === 'view-page' ? 'page' : 'basket';
-      render();
-      return;
-    }
-    if (act === 'add') addChecked();
-    else if (act === 'all') {
-      orders.forEach((o) => checked.add(o.orderId));
-      render();
-    } else if (act === 'none') {
-      checked.clear();
-      render();
-    } else if (act === 'retrack') loadTrackingQueue(true);
+    if (act === 'retrack') loadTrackingQueue(true);
     else if (act === 'diag') saveDiagnostics();
-    else if (act === 'remove') removeFromBasket(id);
     else if (act === 'clear') clearBasket();
   });
 
@@ -806,7 +868,8 @@
   try {
     chrome.storage.onChanged.addListener((changes, area) => {
       if (area !== 'local' || !changes[BASKET_KEY]) return;
-      basket = changes[BASKET_KEY].newValue || {};
+      basket = normalizeBasket(changes[BASKET_KEY].newValue);
+      syncButtons();
       render();
     });
   } catch (err) {}
@@ -815,7 +878,13 @@
   const start = async () => {
     if (started) return;
     started = true;
-    basket = (await storageGet(BASKET_KEY)) || {};
+    basket = normalizeBasket(await storageGet(BASKET_KEY));
+    // 예전 방식(주문을 통째로 담던 때, itemCount 없음)으로 담긴 것은 헷갈리니 지운다.
+    const old = Object.keys(basket).filter((k) => basket[k].itemCount == null);
+    if (old.length) {
+      old.forEach((k) => delete basket[k]);
+      await storageSet(BASKET_KEY, basket).catch(() => {});
+    }
     tracking = (await storageGet(TRACK_KEY)) || {};
     const savedOpen = await storageGet(PANEL_OPEN_KEY);
     open = savedOpen !== false;

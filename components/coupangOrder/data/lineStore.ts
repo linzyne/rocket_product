@@ -10,8 +10,8 @@
 //
 // 발주확인·예약·쉽먼트 화면은 예전 모양(목록) 그대로 읽고 쓴다. 각 저장소 파일(orderWorkCloud·reservationStore·
 // shipOutStore)이 화면이 준 목록과 지금 줄들을 비교해서 바뀐 줄만 여기에 적는다.
-import { collection, doc, getDocFromServer, getDocsFromServer, onSnapshot, runTransaction, setDoc, writeBatch } from 'firebase/firestore';
-import { db, ensureSignedIn } from '../../../utils/firebase';
+import { collection, doc, getDocFromServer, getDocsFromServer, runTransaction, setDoc, writeBatch } from 'firebase/firestore';
+import { db, whenSignedIn, onSnapshot } from '../../../utils/firebase';
 import { dateKeyYMD } from '../utils/dateUtils';
 
 export type Place = 'work' | 'reserve' | 'ship' | 'trash';
@@ -151,7 +151,7 @@ export function commit(changed: Line[]) {
   };
   // 로그인이 끝나 있으면 바로 보낸다(그래야 이 기기에서 쓴 순서대로 클라우드에 간다).
   if (signedIn) send();
-  else ensureSignedIn().then(send);
+  else whenSignedIn().then(send);
 }
 
 // 열쇠가 같은 줄 중에서 하나 고르기. prefer 순서의 자리에서 먼저 찾고, taken에 든 것은 건너뛴다.
@@ -367,7 +367,7 @@ export function startLines() {
   }
   const firestore = db;
   (async () => {
-    await ensureSignedIn();
+    await whenSignedIn();
     signedIn = true;
     try {
       await migrate(firestore);

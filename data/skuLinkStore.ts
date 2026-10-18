@@ -3,8 +3,8 @@
 // 여기에 남긴다. 판매량(어제 재고 + 그 사이 입고 − 오늘 재고)을 낼 때 이 짝으로 입고를 붙인다.
 //
 //  appSettings/skuLinks : { links: { [sku]: adsId }, updatedAt }
-import { doc, onSnapshot, setDoc } from 'firebase/firestore';
-import { db, ensureSignedIn } from '../utils/firebase';
+import { doc, setDoc } from 'firebase/firestore';
+import { db, ensureSignedIn, onSnapshot } from '../utils/firebase';
 
 export type SkuLinks = Record<string, string>;
 

@@ -5,8 +5,8 @@
 //    receipts : 수입입고 기록. 나눠서 도착하면 여러 번 쌓인다. 상품별 수량·단가와 관세사비·배송비·작업비.
 //
 // Firebase 설정이 없으면 이 기기의 localStorage에만 저장한다.
-import { collection, doc, onSnapshot, setDoc, deleteDoc } from 'firebase/firestore';
-import { db, ensureSignedIn } from '../utils/firebase';
+import { collection, doc, setDoc, deleteDoc } from 'firebase/firestore';
+import { db, ensureSignedIn, onSnapshot } from '../utils/firebase';
 import { productMatchKey } from './inventoryStore';
 import type { OfficeMatch } from './inventoryStore';
 

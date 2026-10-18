@@ -6,8 +6,8 @@
 // 예전에는 발송대기에서만 출고 건 안(ShipOut.readyKeys)에 적었다. 그 표시도 준비됨으로 같이 본다.
 // Firebase 설정이 없으면 이 기기의 localStorage에만 저장한다.
 import { useEffect, useMemo, useState } from 'react';
-import { collection, doc, onSnapshot, writeBatch } from 'firebase/firestore';
-import { db, ensureSignedIn, waitAtMost } from '../../../utils/firebase';
+import { collection, doc, writeBatch } from 'firebase/firestore';
+import { db, ensureSignedIn, waitAtMost, onSnapshot } from '../../../utils/firebase';
 
 const COLLECTION = 'lineReady';
 const LOCAL_KEY = 'lineReady';

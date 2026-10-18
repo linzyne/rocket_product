@@ -22,7 +22,8 @@ import { subscribeMarks, setMark } from '../coupangOrder/data/poMarkStore';
 import { useLineHanjung } from '../coupangOrder/data/useLineHanjung';
 import { addShipOut, markShipOuts, splitShipOut, updateShipOutLine, mergeShipOuts, restoreOrders, readShipOuts, renameShipOutOrder } from '../coupangOrder/data/shipOutStore';
 import type { ShipOutLine } from '../coupangOrder/data/shipOutStore';
-import { linesAt } from '../coupangOrder/data/lineStore';
+import { linesAt, isLinesReady, subscribeLines } from '../coupangOrder/data/lineStore';
+import { isShipOutsReady } from '../coupangOrder/data/shipOutStore';
 import { boxLabel, buildDisplayRows, expandBoxSplit, totalBoxCount, parseBoxNo, isBoxSplit, parseBoxSplit, joinBoxSplit } from '../coupangOrder/utils/dataProcessor';
 import { LineCheckMenu, BoxPicker } from '../coupangOrder/components/OrderTable';
 import { HanjungOrder, subscribeHanjung, productSummary, nameKey, makeHanjungOfficeLookup, sameName, saveHanjungOrder, assignRemaining } from '../../data/hanjungStore';
@@ -358,7 +359,16 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
   useEffect(() => subscribeReservations(setReservations), []);
   useEffect(() => subscribeShipOuts(setShipOuts), []);
   useEffect(() => subscribeShipments(setBatches), []);
-  useEffect(() => subscribeConfirmed(setConfirmedMap), []);
+  const [confirmedLoaded, setConfirmedLoaded] = useState(false);
+  useEffect(() => subscribeConfirmed(m => { setConfirmedMap(m); setConfirmedLoaded(true); }), []);
+  const [linesOk, setLinesOk] = useState(() => isLinesReady() && isShipOutsReady());
+  useEffect(() => {
+    const check = () => setLinesOk(isLinesReady() && isShipOutsReady());
+    const t = setInterval(check, 500);
+    const stop = subscribeLines(check);
+    return () => { clearInterval(t); stop(); };
+  }, []);
+  const cloudReady = linesOk && confirmedLoaded;
   useEffect(() => onNeedWaybill(setWaybillBatch), []);
   // 택배예약 → 서허 일괄등록 자동 진행(shipmentRunner). 보내는사람·택배주소는 쉽먼트생성 화면 설정 그대로 쓴다.
   const [addresses, setAddresses] = useState<AddressEntry[]>(loadLocalAddresses);
@@ -1642,6 +1652,19 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
   const pageStyle: React.CSSProperties = { minHeight: '100vh', background: '#fff', color: '#1a1a1a', fontFamily: "'Apple SD Gothic Neo', 'Malgun Gothic', 'Noto Sans KR', sans-serif" };
 
   // ── 단계별 보기: 발주서마다 한 장, 위쪽 탭으로 단계 고르기 ──
+  // 클라우드에서 발주 줄·출고 건·발주확정 표시를 다 받기 전에는 판을 그리지 않는다(이 기기의 묵은 사본으로 그리면
+  // 발주서가 엉뚱한 칸에 보이고, 그 상태로 옮기면 꼬인다).
+  if (!cloudReady) {
+    return (
+      <div style={{ ...pageStyle, display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '60vh' }}>
+        <div style={{ textAlign: 'center', fontSize: 14, color: '#666' }}>
+          <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 6 }}>☁️ 발주서를 클라우드에서 받는 중…</div>
+          <div>오래 걸리면 인터넷을 확인하고 새로고침해 주세요.</div>
+        </div>
+      </div>
+    );
+  }
+
   if (view === 'list') {
     const active = orders.filter(match);
     const inBoard = (o: FlowOrder) => BOARD_STAGES.includes(o.stage);

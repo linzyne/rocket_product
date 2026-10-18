@@ -4,8 +4,8 @@
 //
 // 문서 하나가 발주서 하나라 어느 컴퓨터에서 누르든 그 칸 하나만 바뀌고 모든 컴퓨터에 똑같이 간다.
 // Firebase 설정이 없으면 이 기기의 localStorage에만 둔다.
-import { collection, doc, onSnapshot, setDoc, deleteDoc } from 'firebase/firestore';
-import { db, ensureSignedIn } from '../../../utils/firebase';
+import { collection, doc, setDoc, deleteDoc } from 'firebase/firestore';
+import { db, ensureSignedIn, onSnapshot } from '../../../utils/firebase';
 
 const COLLECTION = 'coupangPoConfirmed';
 const LOCAL_KEY = 'coupangPoConfirmed';

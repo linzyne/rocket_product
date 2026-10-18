@@ -64,8 +64,8 @@ import { generateId } from './utils/id';
 import { generateBarcodeNumber } from './utils/barcode';
 import { resizeImageDataUrl } from './utils/imageResize';
 import { withCoLtdSuffix } from './utils/manufacturerFormat';
-import { db, isFirebaseConfigured, ensureSignedIn } from './utils/firebase';
-import { collection, doc, setDoc, deleteDoc, onSnapshot, query, where } from 'firebase/firestore';
+import { db, isFirebaseConfigured, ensureSignedIn, onSnapshot } from './utils/firebase';
+import { collection, doc, setDoc, deleteDoc, query, where } from 'firebase/firestore';
 import { stripClonedScripts, withTimeout, withInlineImageMetrics } from './utils/html2canvasHelpers';
 
 // This tells TypeScript that the global variables from CDNs exist.

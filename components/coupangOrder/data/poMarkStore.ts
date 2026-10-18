@@ -1,7 +1,7 @@
 // 발주서마다 사람이 쓰는 체크 표시(인쇄 아이콘 옆 작은 체크칸). 뜻은 사람이 정한다. 켜 두면 그대로 남는다.
 //  coupangPoMark/{발주번호} : { no, at }   (문서가 있으면 체크됨)
-import { collection, doc, onSnapshot, setDoc, deleteDoc } from 'firebase/firestore';
-import { db, ensureSignedIn } from '../../../utils/firebase';
+import { collection, doc, setDoc, deleteDoc } from 'firebase/firestore';
+import { db, ensureSignedIn, onSnapshot } from '../../../utils/firebase';
 
 const COLLECTION = 'coupangPoMark';
 const LOCAL_KEY = 'coupangPoMark';

@@ -3,8 +3,8 @@
 //
 //  shipmentBatches : 문서 id = 만든 시각으로 만든 번호(S260923-01 …)
 //    센터 → 박스 → 그 박스에 담은 상품들(발주번호·상품명·확정수량). 박스 하나 = 택배 한 건 = 운송장 하나.
-import { collection, doc, onSnapshot, setDoc, deleteDoc, arrayUnion } from 'firebase/firestore';
-import { db, ensureSignedIn } from '../utils/firebase';
+import { collection, doc, setDoc, deleteDoc, arrayUnion } from 'firebase/firestore';
+import { db, ensureSignedIn, onSnapshot } from '../utils/firebase';
 
 export interface ShipmentLine {
   발주번호: string;

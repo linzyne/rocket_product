@@ -4,8 +4,8 @@
 //  coupangReceives : 문서 id = 구분|발주번호|SKU번호|입고일시 (같은 줄은 덮어씀)
 //
 // Firebase 설정이 없으면 이 기기의 localStorage에만 저장한다.
-import { collection, doc, onSnapshot, writeBatch, deleteDoc } from 'firebase/firestore';
-import { db, ensureSignedIn, waitAtMost } from '../utils/firebase';
+import { collection, doc, writeBatch, deleteDoc } from 'firebase/firestore';
+import { db, ensureSignedIn, waitAtMost, onSnapshot } from '../utils/firebase';
 import type { HanjungOrder } from './hanjungStore';
 
 export interface ReceiveRow {

@@ -5,8 +5,8 @@
 //                   사무실 재고는 지워지지 않는다.
 //
 // Firebase 설정이 없으면 이 기기의 localStorage에만 저장한다.
-import { collection, doc, onSnapshot, writeBatch, setDoc } from 'firebase/firestore';
-import { db, ensureSignedIn, waitAtMost } from '../utils/firebase';
+import { collection, doc, writeBatch, setDoc } from 'firebase/firestore';
+import { db, ensureSignedIn, waitAtMost, onSnapshot } from '../utils/firebase';
 
 export interface InventoryItem {
   adsId: string;

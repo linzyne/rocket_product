@@ -5,8 +5,8 @@
 //
 // 로켓재고·판매량은 상품관리 상품(adsId)으로, 입고는 서허 SKU번호로 줄을 만들기 때문에 두 벌을 둔다.
 // 목록에 없는 상품은 순서를 정하지 않은 것이라 정해진 것들 뒤에 붙는다.
-import { doc, onSnapshot, setDoc } from 'firebase/firestore';
-import { db, ensureSignedIn } from '../utils/firebase';
+import { doc, setDoc } from 'firebase/firestore';
+import { db, ensureSignedIn, onSnapshot } from '../utils/firebase';
 
 export type OrderKind = 'ads' | 'sku';
 export type ProductOrder = { ads: string[]; sku: string[] };

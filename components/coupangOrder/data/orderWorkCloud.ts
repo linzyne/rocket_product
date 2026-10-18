@@ -4,8 +4,8 @@
 // 바뀐 줄만 적는다. 그래서 화면이 묵은 목록을 들고 있어도 그사이 다른 컴퓨터가 넣거나 옮긴 줄을 건드리지 않는다.
 //
 //  appState/coupangOrderWorkMeta : { fileName, done, seen }  (줄 말고 머리 정보만)
-import { doc, onSnapshot, setDoc } from 'firebase/firestore';
-import { db, ensureSignedIn } from '../../../utils/firebase';
+import { doc, setDoc } from 'firebase/firestore';
+import { db, ensureSignedIn, onSnapshot } from '../../../utils/firebase';
 import {
   Line, LineFields, allLines, linesAt, commit, pickLine, newLine, moved, patched, trashed, fieldsOf, lineKey,
   subscribeLines, whenReady, startLines,

@@ -1,6 +1,6 @@
 import { initializeApp, FirebaseOptions } from 'firebase/app';
 import { getAuth, signInAnonymously, onAuthStateChanged, Auth } from 'firebase/auth';
-import { getFirestore, enableIndexedDbPersistence, Firestore } from 'firebase/firestore';
+import { getFirestore, enableIndexedDbPersistence, Firestore, onSnapshot as fsOnSnapshot } from 'firebase/firestore';
 
 const firebaseConfig: FirebaseOptions = {
   apiKey: process.env.FIREBASE_API_KEY,
@@ -38,9 +38,9 @@ export const waitAtMost = <T,>(work: Promise<T>, ms = 20000): Promise<T | undefi
 
 let signInPromise: Promise<void> | null = null;
 
-// Firestore 보안 규칙이 "로그인된 사용자만 읽기/쓰기 허용"이라, 실제 쓰기 전에 익명으로 한 번
-// 로그인해둔다. 사용자에게는 아무 화면도 보이지 않고 조용히 처리된다.
-export const ensureSignedIn = (): Promise<void> => {
+// 로그인이 실제로 끝날 때까지 기다린다. 실패하면 5초마다 다시 시도한다(로그인 없이 읽으면 보안 규칙에 막히고,
+// 막힌 구독은 다시 살아나지 않아 이 기기에 남은 묵은 사본만 보이게 된다).
+export const whenSignedIn = (): Promise<void> => {
   if (!authInstance) return Promise.resolve();
   const auth = authInstance;
   if (!signInPromise) {
@@ -51,12 +51,45 @@ export const ensureSignedIn = (): Promise<void> => {
           resolve();
         }
       });
-      signInAnonymously(auth).catch(error => {
-        console.error('Firebase 익명 로그인 실패:', error);
-        resolve();
-      });
+      const tryOnce = () => {
+        if (auth.currentUser) return;
+        signInAnonymously(auth).catch(error => {
+          console.error('Firebase 익명 로그인 실패(5초 뒤 다시):', error);
+          setTimeout(tryOnce, 5000);
+        });
+      };
+      tryOnce();
     });
   }
-  // 로그인도 끝나지 않을 수 있다. 못 해도 쓰기는 기기에 쌓아두고 나중에 올라간다.
-  return waitAtMost(signInPromise, 15000).then(() => {});
+  return signInPromise;
 };
+
+// Firestore 보안 규칙이 "로그인된 사용자만 읽기/쓰기 허용"이라, 실제 쓰기 전에 익명으로 한 번
+// 로그인해둔다. 사용자에게는 아무 화면도 보이지 않고 조용히 처리된다.
+// 저장 버튼이 멈추지 않게 15초까지만 기다린다(구독은 아래 onSnapshot이 로그인될 때까지 기다린다).
+export const ensureSignedIn = (): Promise<void> => waitAtMost(whenSignedIn(), 15000).then(() => {});
+
+// firebase/firestore의 onSnapshot 대신 쓴다. 로그인이 끝난 뒤에 듣기 시작하고, 끊기거나 막히면 5초 뒤 다시 듣는다.
+// (원래 onSnapshot은 한 번 오류가 나면 그대로 멈춰서, 화면이 클라우드 소식을 영영 못 받는다.)
+export const onSnapshot = ((ref: unknown, ...args: unknown[]) => {
+  const options = args[0] && typeof args[0] === 'object' ? args.shift() : undefined;
+  const next = args[0] as (snap: unknown) => void;
+  const error = args[1] as ((err: Error) => void) | undefined;
+  let stop: () => void = () => {};
+  let dead = false;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const start = () => {
+    whenSignedIn().then(() => {
+      if (dead) return;
+      const onError = (err: Error) => {
+        error?.(err);
+        if (dead) return;
+        timer = setTimeout(start, 5000);
+      };
+      const listen = fsOnSnapshot as unknown as (...a: unknown[]) => () => void;
+      stop = options ? listen(ref, options, next, onError) : listen(ref, next, onError);
+    });
+  };
+  start();
+  return () => { dead = true; if (timer) clearTimeout(timer); stop(); };
+}) as typeof fsOnSnapshot;

@@ -5,8 +5,8 @@
 //  hanjungQueue : 문서 id = 발주번호·상품이름·확정수량으로 만든 키(같은 줄은 한 번만).
 //
 // Firebase 설정이 없으면 이 기기의 localStorage에만 저장한다.
-import { collection, doc, onSnapshot, writeBatch, deleteDoc } from 'firebase/firestore';
-import { db, ensureSignedIn, waitAtMost } from '../../../utils/firebase';
+import { collection, doc, writeBatch, deleteDoc } from 'firebase/firestore';
+import { db, ensureSignedIn, waitAtMost, onSnapshot } from '../../../utils/firebase';
 import type { OrderRow } from '../types';
 import { dateKeyYMD, normalizeDateValue } from '../utils/dateUtils';
 

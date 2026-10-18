@@ -2,8 +2,8 @@
 // 같은 자리를 이어받는다. 이 기기의 localStorage에도 같이 남겨서 처음 뜰 때 바로 보이게 한다.
 //
 //  appSettings/poCursor : { lastOrderNo, updatedAt }
-import { doc, onSnapshot, setDoc } from 'firebase/firestore';
-import { db, ensureSignedIn } from '../../../utils/firebase';
+import { doc, setDoc } from 'firebase/firestore';
+import { db, ensureSignedIn, onSnapshot } from '../../../utils/firebase';
 
 const LOCAL_KEY = 'poLastOrderNo';
 const DOC_PATH = ['appSettings', 'poCursor'] as const;

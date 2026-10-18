@@ -3,8 +3,8 @@
 //  collectStatus/last : { po: { at, message }, receive: {...}, stock: {...} }
 //
 // 다른 컴퓨터에서 한 수집도 보이게 클라우드에 둔다. Firebase 설정이 없거나 저장이 막히면 이 기기에만 남는다.
-import { doc, onSnapshot, setDoc } from 'firebase/firestore';
-import { db, ensureSignedIn, waitAtMost } from '../utils/firebase';
+import { doc, setDoc } from 'firebase/firestore';
+import { db, ensureSignedIn, waitAtMost, onSnapshot } from '../utils/firebase';
 
 export type CollectKind = 'po' | 'receive' | 'stock';
 export type CollectDone = { at: number; message: string };

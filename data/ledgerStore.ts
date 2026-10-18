@@ -4,8 +4,8 @@
 //  ledgerEntries : 문서 id = 기록 id
 //
 // Firebase 설정이 없으면 이 기기의 localStorage에만 저장한다.
-import { collection, doc, onSnapshot, setDoc, deleteDoc } from 'firebase/firestore';
-import { db, ensureSignedIn } from '../utils/firebase';
+import { collection, doc, setDoc, deleteDoc } from 'firebase/firestore';
+import { db, ensureSignedIn, onSnapshot } from '../utils/firebase';
 
 export const OUT_CATEGORIES = ['임대료', '마케팅비', '택배비', '식대', '통신비', '기타비용'] as const;
 export const IN_CATEGORIES = ['기타입금'] as const;

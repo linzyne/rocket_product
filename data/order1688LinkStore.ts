@@ -2,8 +2,8 @@
 // 1688 상품명(중국어)과 쿠팡 발주 상품명이 전혀 달라서 이름으로는 짝을 못 찾기 때문에, 고른 짝을 남긴다.
 //
 //  appSettings/order1688Links : { links: { [item1688Key]: 상품이름 }, updatedAt }
-import { doc, onSnapshot, setDoc } from 'firebase/firestore';
-import { db, ensureSignedIn } from '../utils/firebase';
+import { doc, setDoc } from 'firebase/firestore';
+import { db, ensureSignedIn, onSnapshot } from '../utils/firebase';
 
 export type Order1688Links = Record<string, string>;
 

@@ -4,8 +4,8 @@
 //  appSettings/coupangShipping : { addresses, sender, updatedAt }
 //
 // 클라우드에 아직 저장된 게 없으면(처음 한 번) 이 기기에 있던 값을 올려 보낸다.
-import { doc, onSnapshot, setDoc } from 'firebase/firestore';
-import { db, ensureSignedIn } from '../../../utils/firebase';
+import { doc, setDoc } from 'firebase/firestore';
+import { db, ensureSignedIn, onSnapshot } from '../../../utils/firebase';
 import type { AddressEntry, SenderInfo } from '../types';
 import { DEFAULT_ADDRESSES } from './addresses';
 

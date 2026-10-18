@@ -6,8 +6,8 @@
 //
 // 화면에는 예전처럼 "출고 건 + 줄 목록"을 통째로 준다. 저장할 때는 전과 후를 비교해서 바뀐 머리 정보와
 // 바뀐 줄만 적는다. 줄을 발주확인·예약에서 데려오거나 돌려보내는 일은 그 줄의 place 칸만 바꾼다.
-import { collection, deleteDoc, doc, onSnapshot, setDoc } from 'firebase/firestore';
-import { db, ensureSignedIn } from '../../../utils/firebase';
+import { collection, deleteDoc, doc, setDoc } from 'firebase/firestore';
+import { db, ensureSignedIn, onSnapshot } from '../../../utils/firebase';
 import type { OrderRow } from '../types';
 import { dateKeyYMD, ymdSortKey } from '../utils/dateUtils';
 import { isBoxSplit, parseBoxSplit, boxLabel } from '../utils/dataProcessor';
@@ -92,11 +92,16 @@ const saveMetasLocal = () => {
 };
 
 let metaStarted = false;
+let metasReady = !db;
+export const isShipOutsReady = () => metasReady;
 const startMeta = () => {
   if (metaStarted || !db) return;
   metaStarted = true;
   const firestore = db;
-  ensureSignedIn().then(() => onSnapshot(collection(firestore, COLLECTION), snap => {
+  ensureSignedIn().then(() => onSnapshot(collection(firestore, COLLECTION), { includeMetadataChanges: true }, snap => {
+    // 처음은 서버에서 온 소식으로만 맞춘다(이 기기의 묵은 사본으로 발송완료 건을 쉽먼트에 보이지 않게).
+    if (!metasReady && snap.metadata.fromCache) return;
+    metasReady = true;
     metas.clear();
     // 예전 문서에 남아 있는 lines 칸은 보지 않는다(줄은 lineStore에 있다).
     snap.docs.forEach(d => metas.set(d.id, metaOf({ ...(d.data() as ShipOut), id: d.id })));

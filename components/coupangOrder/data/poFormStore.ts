@@ -6,8 +6,8 @@
 // 새 주문을 받아 올 때 그 파일을 그대로 남겨 두었다가, "발주확정 올리기"를 누르면 그 발주서들의 줄만 모아
 // I열(확정수량)과 M열(납품부족사유)을 채운 파일을 만든다. 나머지 칸은 받은 그대로 둔다.
 import * as XLSX from 'xlsx';
-import { collection, deleteDoc, doc, onSnapshot, setDoc } from 'firebase/firestore';
-import { db, ensureSignedIn } from '../../../utils/firebase';
+import { collection, deleteDoc, doc, setDoc } from 'firebase/firestore';
+import { db, ensureSignedIn, onSnapshot } from '../../../utils/firebase';
 import { rememberPrices } from '../../../data/coupangPriceStore';
 import { rememberBarcodes } from '../../../data/coupangBarcodeStore';
 

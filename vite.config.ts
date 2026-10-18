@@ -10,6 +10,16 @@ export default defineConfig(({ mode }) => {
         host: '0.0.0.0',
       },
       plugins: [react()],
+      // 파일 이름 해시가 우연히 "-px.js"처럼 광고차단 목록에 걸리는 모양이 되면 앱이 안 뜬다. 해시를 점(.) 뒤에 두고 이름 앞을 고정한다.
+      build: {
+        rollupOptions: {
+          output: {
+            entryFileNames: 'assets/app.[hash].js',
+            chunkFileNames: 'assets/chunk.[hash].js',
+            assetFileNames: 'assets/file.[hash][extname]',
+          },
+        },
+      },
       define: {
         'process.env.API_KEY': JSON.stringify(env.GEMINI_API_KEY),
         'process.env.GEMINI_API_KEY': JSON.stringify(env.GEMINI_API_KEY),

@@ -580,7 +580,7 @@ const HanjungOrderPage: React.FC = () => {
   const productNames = useProductNames(orders);
   // 도착(수입입고)을 적고 있는 건. 머리줄의 "📦 도착 기록"을 누르면 펼쳐서 입력 칸을 띄운다.
   const [receiving, setReceiving] = useState<string | null>(null);
-  // 펼친 건 안에서 더 펼친 칸(쿠팡 발주 목록·도착 기록·쿠팡 입고). 기본은 접어서 상품표만 보이게 한다.
+  // 펼친 건 안에서 더 펼친 칸(발주서 목록·사무실 도착·물류창고입고). 기본은 접어서 상품표만 보이게 한다.
   const [folds, setFolds] = useState<Set<string>>(new Set());
   const foldOpen = (k: string) => folds.has(k);
   const toggleFold = (k: string) => setFolds(prev => {
@@ -1048,7 +1048,12 @@ const HanjungOrderPage: React.FC = () => {
                 <span className={`text-xs font-semibold px-2.5 py-1 rounded-full border whitespace-nowrap ${st.cls}`}>{st.text}</span>
                 <span className="flex items-center gap-1 text-xs">
                   <Step label="도착" done={t.received} total={t.ordered} />
-                  {allocated > 0 && <><span className="text-gray-300">›</span><Step label="쿠팡" done={settle.qty} total={allocated} /></>}
+                  {allocated > 0 && (() => {
+                    // 발송완료: 이 건이 맡은 발주 줄 중 발송완료된 줄 수(탭의 발송대기·발송완료와 같은 기준).
+                    const mine = o.lines.filter(l => lineAlloc(l) > 0);
+                    const sent = mine.filter(l => sentNos.has(String(l.발주번호 || '').trim())).length;
+                    return <><span className="text-gray-300">›</span><Step label="발송완료" done={sent} total={mine.length} /></>;
+                  })()}
                 </span>
                 {t.status !== 'done' && (
                   <button
@@ -1107,7 +1112,7 @@ const HanjungOrderPage: React.FC = () => {
                         <th className="text-left font-medium py-1 pr-3">상품</th>
                         <th className="w-28 text-left font-medium pl-3" title="1688에 주문한 수량. 배정 = 쿠팡 발주에 연결한 수량, 여유 = 남는 것(다음 발주에 씀)">주문</th>
                         <th className="w-28 text-left font-medium pl-3" title="사무실에 도착한 수량 / 주문 수량">사무실 도착</th>
-                        <th className="w-28 text-left font-medium pl-3" title="쿠팡 물류센터에 입고(정산)된 수량 / 배정 수량">쿠팡 입고</th>
+                        <th className="w-28 text-left font-medium pl-3" title="물류창고입고(쿠팡 정산 자료)에 잡힌 수량 / 배정 수량">물류창고입고</th>
                         <th className="w-28 text-right font-medium pl-3" title="연결된 쿠팡 발주금액(매입가 × 배정 수량) 합">쿠팡 발주금액</th>
                       </tr>
                     </thead>
@@ -1142,7 +1147,7 @@ const HanjungOrderPage: React.FC = () => {
                   </div>
 
                   <div className="border-t border-gray-100 pt-1 space-y-0.5">
-                    {edit?.code !== o.code && foldHead(`${o.code}|lines`, `쿠팡 발주 ${o.lines.length}건`, Array.from(new Set(o.lines.map(l => l.물류센터))).slice(0, 4).join(' · '))}
+                    {edit?.code !== o.code && foldHead(`${o.code}|lines`, `발주서 ${o.lines.length}건`, Array.from(new Set(o.lines.map(l => l.물류센터))).slice(0, 4).join(' · '))}
                     {edit?.code === o.code ? (
                       <div className="border border-blue-200 bg-blue-50/40 rounded-lg p-2 space-y-1">
                         {/* 번호는 머리줄의 번호(✎)를 눌러 바꾼다. */}
@@ -1210,11 +1215,11 @@ const HanjungOrderPage: React.FC = () => {
 
                   {/* 도착한 상품 종류 수(건)와 개수 */}
                   {o.receipts.length > 0 && foldHead(`${o.code}|receipts`,
-                    `도착 ${new Set(o.receipts.flatMap(r => r.items.filter(it => (Number(it.qty) || 0) > 0).map(it => it.상품이름))).size}건 · ${o.receipts.reduce((n, r) => n + r.items.reduce((m, it) => m + (Number(it.qty) || 0), 0), 0)}개`,
+                    `사무실 도착 ${new Set(o.receipts.flatMap(r => r.items.filter(it => (Number(it.qty) || 0) > 0).map(it => it.상품이름))).size}건 · ${o.receipts.reduce((n, r) => n + r.items.reduce((m, it) => m + (Number(it.qty) || 0), 0), 0)}개`,
                     `총원가 ${won(t.totalCost)}`)}
                   {foldOpen(`${o.code}|receipts`) && <div className="pl-7"><ReceiptHistory order={o} /></div>}
 
-                  {settle.rows.length > 0 && foldHead(`${o.code}|settle`, `쿠팡 입고 ${settle.rows.length}건`, `정산 ${won(settle.total)}`)}
+                  {settle.rows.length > 0 && foldHead(`${o.code}|settle`, `물류창고입고 ${settle.rows.length}건`, `정산 ${won(settle.total)}`)}
                   {settle.rows.length > 0 && foldOpen(`${o.code}|settle`) && (
                     <div className="pl-7 overflow-x-auto">
                       {/* 쿠팡 입고(정산) 줄: 입고일 · 발주번호 · 상품 · 수량 · 정산 금액 · 지급일 */}

@@ -1159,6 +1159,27 @@ export const KimchiSectionPanel: React.FC<KimchiSectionPanelProps> = ({
     endDrag();
   };
 
+  // 마우스를 올려 둔 섹션의 사진 칸. 클릭(포커스) 없이 Ctrl/⌘+V만 눌러도 이 섹션에 붙여 넣는다.
+  const [pasteTarget, setPasteTarget] = React.useState<string | null>(null);
+  React.useEffect(() => {
+    if (!pasteTarget) return;
+    const onPaste = (e: ClipboardEvent) => {
+      // "+"에 포커스해서 붙여 넣은 건 그쪽(onPaste)에서 이미 처리했다. 글자 칸에 붙여 넣는 것도 건드리지 않는다.
+      if (e.defaultPrevented) return;
+      const t = e.target as HTMLElement | null;
+      if (t && (t.isContentEditable || /^(INPUT|TEXTAREA)$/.test(t.tagName))) return;
+      const files = Array.from(e.clipboardData?.items || [])
+        .filter(item => item.kind === 'file' && item.type.startsWith('image/'))
+        .map(item => item.getAsFile())
+        .filter((f): f is File => !!f);
+      if (!files.length) return;
+      e.preventDefault();
+      onAddFiles(pasteTarget, files);
+    };
+    document.addEventListener('paste', onPaste);
+    return () => document.removeEventListener('paste', onPaste);
+  }, [pasteTarget, onAddFiles]);
+
   // "+" 타일을 클릭해 포커스한 뒤 Ctrl/⌘+V로 클립보드 이미지를 바로 그 섹션에 넣는다
   // (기본 템플릿의 handlePastePhoto와 같은 방식).
   const handlePaste = (sectionId: string) => (e: React.ClipboardEvent) => {
@@ -1400,6 +1421,8 @@ export const KimchiSectionPanel: React.FC<KimchiSectionPanelProps> = ({
                 setDropTarget({ sectionId: section.id });
               }}
               onDrop={handleDrop(section.id)}
+              onMouseEnter={() => setPasteTarget(full ? null : section.id)}
+              onMouseLeave={() => setPasteTarget(prev => (prev === section.id ? null : prev))}
               className={`flex flex-wrap items-center gap-2 rounded-md transition-colors ${
                 dropTarget?.sectionId === section.id && !dropTarget.photoId ? 'ring-2 ring-blue-500 ring-inset' : ''
               }`}
@@ -1408,7 +1431,7 @@ export const KimchiSectionPanel: React.FC<KimchiSectionPanelProps> = ({
                 <label
                   tabIndex={0}
                   onPaste={handlePaste(section.id)}
-                  title="클릭해서 파일 선택, 또는 포커스 후 Ctrl+V(⌘V)로 붙여넣기"
+                  title="클릭해서 파일 선택, 또는 마우스를 올리고 Ctrl+V(⌘V)로 바로 붙여넣기"
                   className="relative w-14 h-14 flex items-center justify-center rounded-md border-2 border-dashed border-slate-600 text-slate-500 hover:border-blue-500 hover:text-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 cursor-pointer transition-colors text-xl leading-none"
                 >
                   +

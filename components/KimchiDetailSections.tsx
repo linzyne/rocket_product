@@ -1404,7 +1404,7 @@ export const KimchiSectionPanel: React.FC<KimchiSectionPanelProps> = ({
                   tabIndex={0}
                   onPaste={handlePaste(section.id)}
                   title="클릭해서 파일 선택, 또는 포커스 후 Ctrl+V(⌘V)로 붙여넣기"
-                  className="w-14 h-14 flex items-center justify-center rounded-md border-2 border-dashed border-slate-600 text-slate-500 hover:border-blue-500 hover:text-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 cursor-pointer transition-colors text-xl leading-none"
+                  className="relative w-14 h-14 flex items-center justify-center rounded-md border-2 border-dashed border-slate-600 text-slate-500 hover:border-blue-500 hover:text-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 cursor-pointer transition-colors text-xl leading-none"
                 >
                   +
                   <input

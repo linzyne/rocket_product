@@ -3563,7 +3563,7 @@ const DetailPageBuilderModal: React.FC<DetailPageBuilderModalProps> = ({ isOpen,
                   ))}
                   <label
                     title="색 직접 고르기"
-                    className="w-5 h-5 rounded-full flex-shrink-0 cursor-pointer border border-slate-600 bg-gradient-to-br from-pink-400 via-yellow-300 to-sky-400"
+                    className="relative w-5 h-5 rounded-full flex-shrink-0 cursor-pointer border border-slate-600 bg-gradient-to-br from-pink-400 via-yellow-300 to-sky-400"
                   >
                     <input
                       type="color"
@@ -3804,7 +3804,7 @@ const DetailPageBuilderModal: React.FC<DetailPageBuilderModalProps> = ({ isOpen,
                     저장해둔 글을 불러왔습니다. 사진 {cloudText.photoCount}장을 처음과 같은 순서로 다시 올려주세요 (지금 {photos.length}장).
                   </p>
                 )}
-                <label className="text-xs px-2 py-1.5 bg-blue-600 rounded-md text-white hover:bg-blue-500 cursor-pointer inline-flex items-center gap-1">
+                <label className="relative text-xs px-2 py-1.5 bg-blue-600 rounded-md text-white hover:bg-blue-500 cursor-pointer inline-flex items-center gap-1">
                   <UploadIcon className="h-3.5 w-3.5" /> 파일 업로드
                   <input type="file" accept="image/*" multiple className="sr-only" onChange={handleFilesSelect} />
                 </label>
@@ -4147,7 +4147,7 @@ const DetailPageBuilderModal: React.FC<DetailPageBuilderModalProps> = ({ isOpen,
                 e.preventDefault();
                 insertPhotosAtTarget(files);
               }}
-              className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold bg-blue-600 text-white rounded-md hover:bg-blue-500 cursor-pointer transition-colors"
+              className="relative flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold bg-blue-600 text-white rounded-md hover:bg-blue-500 cursor-pointer transition-colors"
             >
               <UploadIcon className="h-3.5 w-3.5" /> 여기에 사진 넣기
               <input
@@ -4192,7 +4192,7 @@ const DetailPageBuilderModal: React.FC<DetailPageBuilderModalProps> = ({ isOpen,
           <label
             title="색 직접 고르기"
             onClick={() => { colorPickingRef.current = true; colorPickSpanRef.current = null; }}
-            className="w-5 h-5 rounded-full border border-slate-500 flex-shrink-0 cursor-pointer bg-gradient-to-br from-pink-400 via-yellow-300 to-sky-400"
+            className="relative w-5 h-5 rounded-full border border-slate-500 flex-shrink-0 cursor-pointer bg-gradient-to-br from-pink-400 via-yellow-300 to-sky-400"
           >
             <input
               type="color"

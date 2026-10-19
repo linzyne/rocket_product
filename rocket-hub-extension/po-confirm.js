@@ -104,9 +104,14 @@
       stack.appendChild(panel);
     }
     panel.style.display = '';
+    // 끝난 건 초록, 멈춘 건 빨강으로 상자 전체를 칠해서 한눈에 구분되게.
+    panel.style.background = p.step === 'done' ? '#f0fdf4' : p.step === 'error' ? '#fef2f2' : '#fff';
+    panel.style.border = p.step === 'done' ? '2px solid #059669' : p.step === 'error' ? '2px solid #dc2626' : '1px solid #e3e8ef';
     const color = p.step === 'error' ? '#dc2626' : p.step === 'done' ? '#059669' : '#1d4ed8';
     const msgs = (p.messages || []).map((m) => `<div style="margin-top:4px;color:#334155;font-size:12px">💬 ${String(m).replace(/</g, '&lt;')}</div>`).join('');
     panel.innerHTML =
+      (p.step === 'done' ? `<div style="display:inline-block;background:#059669;color:#fff;font-weight:800;font-size:13px;border-radius:6px;padding:2px 10px;margin-bottom:6px">✅ 완료 — 닫아도 돼요</div>` : '') +
+      (p.step === 'error' ? `<div style="display:inline-block;background:#dc2626;color:#fff;font-weight:800;font-size:13px;border-radius:6px;padding:2px 10px;margin-bottom:6px">⛔ 멈춤 — 확인 필요</div>` : '') +
       `<div style="font-weight:700;margin-bottom:4px">📤 발주확정 파일 업로드</div>` +
       `<div style="color:#64748b;font-size:12px">발주 ${(p.orderNos || []).length}건 · ${String((p.file && p.file.name) || '').replace(/</g, '&lt;')}</div>` +
       `<div style="margin-top:6px;color:${color}">${p.status || ''}</div>${msgs}` +
@@ -114,9 +119,6 @@
       (p.step === 'done'
         ? `<button data-act="hide" style="border:1px solid #bbf7d0;background:#f0fdf4;color:#047857;border-radius:6px;padding:4px 10px;cursor:pointer;font-size:12px">닫기</button></div>`
         : `<button data-act="stop" style="border:1px solid #fecaca;background:#fff1f2;color:#b91c1c;border-radius:6px;padding:4px 10px;cursor:pointer;font-size:12px">멈춤</button></div>`);
-    // 다 올렸으면 8초 뒤 저절로 닫는다(다른 진행 상자를 가리지 않게). 기록은 남겨 둔다(앱이 결과를 받아 감).
-    clearTimeout(panel._autoHide);
-    if (p.step === 'done') panel._autoHide = setTimeout(() => { patch({ hidden: true }); panel.style.display = 'none'; }, 8000);
     panel.onclick = (e) => {
       if (e.target && e.target.getAttribute && e.target.getAttribute('data-act') === 'hide') {
         patch({ hidden: true });

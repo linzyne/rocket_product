@@ -116,9 +116,14 @@
       stack.appendChild(panel);
     }
     panel.style.display = '';
+    // 끝난 건 초록, 멈춘 건 빨강으로 상자 전체를 칠해서 한눈에 구분되게.
+    panel.style.background = p.step === 'done' ? '#f0fdf4' : p.step === 'error' ? '#fef2f2' : '#fff';
+    panel.style.border = p.step === 'done' ? '2px solid #059669' : p.step === 'error' ? '2px solid #dc2626' : '1px solid #e3e8ef';
     const color = p.step === 'error' ? '#dc2626' : p.step === 'done' ? '#059669' : '#1d4ed8';
     const msgs = (p.messages || []).map((m) => `<div style="margin-top:4px;color:#334155;font-size:12px">💬 ${String(m).replace(/</g, '&lt;')}</div>`).join('');
     panel.innerHTML =
+      (p.step === 'done' ? `<div style="display:inline-block;background:#059669;color:#fff;font-weight:800;font-size:13px;border-radius:6px;padding:2px 10px;margin-bottom:6px">✅ 완료 — 닫아도 돼요</div>` : '') +
+      (p.step === 'error' ? `<div style="display:inline-block;background:#dc2626;color:#fff;font-weight:800;font-size:13px;border-radius:6px;padding:2px 10px;margin-bottom:6px">⛔ 멈춤 — 확인 필요</div>` : '') +
       `<div style="font-weight:700;margin-bottom:4px">📤 쉽먼트 일괄등록 업로드</div>` +
       `<div style="color:#64748b;font-size:12px">${p.batchId || ''} · 발송일 ${p.shipDate || ''} ${p.shipTime || ''}</div>` +
       `<div style="margin-top:6px;color:${color}">${p.status || ''}</div>${msgs}` +

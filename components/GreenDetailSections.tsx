@@ -398,8 +398,8 @@ export const GreenPreview: React.FC<GreenPreviewProps> = ({
             {steps.map((step, idx) => {
               if (!blank && !step.title.trim() && !step.desc.trim() && !photos[idx]) return null;
               return (
-                <div key={idx} style={{ display: 'flex', alignItems: 'center', gap: 36, padding: `0 ${SIDE}px`, marginBottom: 30 }}>
-                  <PhotoBox photo={photos[idx]} size={290} radius={18} />
+                <div key={idx} style={{ display: 'flex', alignItems: 'center', gap: 30, padding: `0 ${SIDE}px`, marginBottom: 30 }}>
+                  <PhotoBox photo={photos[idx]} size={380} radius={18} />
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ display: 'flex', alignItems: 'baseline', gap: 10 }}>
                       <span style={{ ...S.stepTitle, color: accent, flexShrink: 0 }}>{idx + 1}.</span>

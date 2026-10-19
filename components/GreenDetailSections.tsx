@@ -355,26 +355,29 @@ export const GreenPreview: React.FC<GreenPreviewProps> = ({
         );
 
       // 인증: 강조색 바탕에 흰 글씨. 첫 사진은 동그란 로고, 나머지는 흰 테두리 인증서로 나란히.
+      // 인증: 제목 → 설명 → 인증서 사진(액자처럼 흰 테두리 + 안쪽 가는 선 + 그림자). 여러 장이면 나란히.
       case 'gCert': {
-        const [logo, ...docs] = photos;
+        const docs = photos;
         return (
           <div style={{ padding: '90px 0 100px', background: section.backgroundColor ? undefined : accent }}>
-            {(logo || blank) && (
-              <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 36 }}>
-                <PhotoBox photo={logo} size={190} round contain style={{ border: '6px solid #ffffff' }} />
-              </div>
-            )}
             <div style={{ padding: `0 ${SIDE}px` }}>
               {show(section.headline) && edit('headline', '제목', { ...S.title, color: '#ffffff' })}
               {show(section.body) && <>{gap(22)}{edit('body', '설명', { ...S.body, color: '#ffffff', opacity: 0.92 })}</>}
             </div>
-            {docs.length > 0 && (
-              <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'flex-start', gap: 30, padding: `60px ${SIDE}px 0` }}>
-                {docs.map(photo => (
-                  <div key={photo.id} style={{ flex: 1, maxWidth: 320, background: '#ffffff', padding: 14, boxShadow: '0 8px 20px rgba(0,0,0,0.18)' }}>
-                    {renderPhoto(photo, 0)}
+            {(docs.length > 0 || blank) && (
+              <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'flex-start', gap: 30, padding: `56px ${SIDE}px 0` }}>
+                {docs.length > 0 ? docs.map(photo => (
+                  <div key={photo.id} style={{
+                    flex: 1, maxWidth: docs.length === 1 ? 460 : 320, background: '#ffffff', padding: 16,
+                    boxShadow: '0 10px 26px rgba(0,0,0,0.25)',
+                  }}>
+                    <div style={{ border: '1px solid rgba(0,0,0,0.15)', padding: 8 }}>{renderPhoto(photo, 0)}</div>
                   </div>
-                ))}
+                )) : (
+                  <div style={{ width: 460, height: 300, background: '#ffffff', padding: 16, boxShadow: '0 10px 26px rgba(0,0,0,0.25)' }}>
+                    <div style={{ height: '100%', border: '1px solid rgba(0,0,0,0.15)' }} />
+                  </div>
+                )}
               </div>
             )}
           </div>

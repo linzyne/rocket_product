@@ -28,7 +28,7 @@ export type KimchiSectionKind =
   | 'gTitle'   // 강조색 작은 문구 + 큰 제목 + 사진 (구간 소개)
   | 'gCompare' // 제목·설명 + 남의 제품(흑백·회색 카드, ✕) vs 우리 제품(강조색 카드, ✓) 두 열
   | 'gCheck'   // Point. N + 제목 두 줄 + 설명 + 사진
-  | 'gCert'    // 강조색 바탕 + 동그란 인증 로고 + 제목 + 설명 + 인증서 사진
+  | 'gCert'    // 강조색 바탕 + 제목 + 설명 + 인증서 사진(액자)
   | 'gSteps'   // 제목 두 줄 + 단계별 [왼쪽 사진 | 번호·제목·설명]
   | 'gPackage' // 흰 상자 안 제품 사진 + 강조색 알약(구성) + 작은 안내
   // ── 모든 틀 공통 ── 배송·FAQ·반품·CS 안내 한 블록. 문구는 카테고리 공통(DetailCommonInfo)이고
@@ -251,7 +251,7 @@ export function createKimchiSection(kind: KimchiSectionKind, overrides: Partial<
       }
     : kind === 'gCheck' ? { headline: '', headlineAccent: '', body: '', hint: '이 체크포인트를 보여주는 사진' }
     : kind === 'gCert' ? {
-        headline: '', body: '', hint: '첫 장 = 동그란 인증 로고, 나머지 = 인증서(나란히)',
+        headline: '', body: '', hint: '인증서 사진 — 글씨 아래에 액자처럼 들어가요(여러 장이면 나란히)',
       }
     : kind === 'gSteps' ? {
         headline: '', headlineAccent: '',

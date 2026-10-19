@@ -148,6 +148,19 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
   const [mobileStage, setMobileStage] = useState<Stage>(BOARD_STAGES[0]);
   // 새 발주서 창(새 주문 수집 · 확정수량 고치기 · 발주확정 올리기)
   const [newOpen, setNewOpen] = useState(false);
+  // 칸마다 정렬: 입고예정일순(급한 것 위) / 최신순(이 칸에 막 들어온 것 위). 이 기기에 기억한다.
+  type SortMode = 'date' | 'new';
+  const SORT_KEY = 'coupangFlow.sort';
+  const [sorts, setSorts] = useState<Partial<Record<Stage, SortMode>>>(() => {
+    try { return JSON.parse(localStorage.getItem(SORT_KEY) || '{}') || {}; } catch { return {}; }
+  });
+  // 처음엔 예전과 같게: 발주확정·쉽먼트는 입고예정일순, 발송대기는 최신순.
+  const sortOf = (st: Stage): SortMode => sorts[st] || (st === 4 ? 'new' : 'date');
+  const setSortOf = (st: Stage, mode: SortMode) => setSorts(prev => {
+    const next = { ...prev, [st]: mode };
+    try { localStorage.setItem(SORT_KEY, JSON.stringify(next)); } catch {}
+    return next;
+  });
   // 인쇄 아이콘 옆 작은 체크칸(사람이 쓰는 표시, 켜면 그대로 남는다).
   const [marks, setMarks] = useState<Set<string>>(new Set());
   useEffect(() => subscribeMarks(setMarks), []);
@@ -465,17 +478,51 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
     });
   };
   const allReady = (o: FlowOrder) => o.lines.length > 0 && o.lines.every(l => lineIsReady(o, l));
+  // 이 칸에 들어온 때. 발주확정 = 확정 표시(또는 예약·대기로 넘긴 때, 없으면 발주서가 처음 들어온 때),
+  // 쉽먼트 = 출고 건을 만든 때(발송대기에서 되돌렸으면 그때), 발송대기 = 발송대기로 누른 때(없으면 서허 등록 때).
+  const reserveAt = new Map<string, number>();
+  linesAt('reserve').forEach(l => reserveAt.set(l.발주번호, Math.max(reserveAt.get(l.발주번호) || 0, l.savedAt || 0)));
+  const enteredAt = (o: FlowOrder): number =>
+    o.stage === 1 ? (Math.max(confirmed[o.no] || 0, reserveAt.get(o.no) || 0) || seenAt[o.no] || 0)
+    : o.stage === 2 ? Math.max(o.item?.createdAt || 0, o.item?.undoneAt || 0)
+    : o.item?.doneAt || o.item?.uploadedAt || o.item?.createdAt || 0;
+  // 상자(덩어리) 단위로 최신순: 덩어리 안에서 가장 늦게 들어온 때로 덩어리 순서를 정하고, 덩어리 안은 원래 순서 그대로.
+  const newestFirst = (list: FlowOrder[], keyOf: (o: FlowOrder) => string) => {
+    const groupAt = new Map<string, number>();
+    const firstSeen = new Map<string, number>();
+    list.forEach((o, idx) => {
+      const k = keyOf(o);
+      groupAt.set(k, Math.max(groupAt.get(k) || 0, enteredAt(o)));
+      if (!firstSeen.has(k)) firstSeen.set(k, idx);
+    });
+    const pos = new Map(list.map((o, idx) => [o, idx]));
+    list.sort((a, b) => (groupAt.get(keyOf(b))! - groupAt.get(keyOf(a))!)
+      || firstSeen.get(keyOf(a))! - firstSeen.get(keyOf(b))!
+      || pos.get(a)! - pos.get(b)!);
+  };
   const boxes = STAGES.map((_, i) => {
     const list = orders.filter(o => o.stage === i && match(o));
     if (i === 5) list.sort((a, b) => (b.item?.sentDate || '').localeCompare(a.item?.sentDate || ''));
+    if (BOARD_STAGES.includes(i as Stage) && sortOf(i as Stage) === 'date') {
+      // 입고예정일순: 급한 것이 위로. 같은 날이면 센터 → 출고 건 순으로 붙여서 덩어리가 흩어지지 않게.
+      if (i >= 2) list.sort((a, b) =>
+        ymdSortKey(seatOf(a).date) - ymdSortKey(seatOf(b).date)
+        || seatOf(a).center.localeCompare(seatOf(b).center, 'ko', { numeric: true })
+        || (a.item?.createdAt || 0) - (b.item?.createdAt || 0)
+        || (a.item?.id || a.no).localeCompare(b.item?.id || b.no));
+      return list;
+    }
+    if (i === 1) {
+      newestFirst(list, o => `${o.date}|${o.center.trim()}`);
+      return list;
+    }
     // 쉽먼트: 발주확정에서 막 넘어온 것(출고 건을 늦게 만든 것)이 위로. 준비됨·재고에서 쓰기·체크칸 같은
     // 상태가 바뀌어도 자리는 움직이지 않는다(그 안에서는 원래 순서).
-    // 쉽먼트: 입고예정일이 빠른(급한) 것이 위로. 같은 날이면 센터 → 출고 건 순으로 붙여서 덩어리가 흩어지지 않게.
-    if (i === 2) list.sort((a, b) =>
-      ymdSortKey(seatOf(a).date) - ymdSortKey(seatOf(b).date)
-      || seatOf(a).center.localeCompare(seatOf(b).center, 'ko', { numeric: true })
-      || (a.item?.createdAt || 0) - (b.item?.createdAt || 0)
-      || (a.item?.id || a.no).localeCompare(b.item?.id || b.no));
+    // 쉽먼트 최신순: 막 넘어온 출고 건이 위로(출고 건 = 한 상자).
+    if (i === 2) {
+      list.sort((a, b) => ymdSortKey(seatOf(a).date) - ymdSortKey(seatOf(b).date));
+      newestFirst(list, o => `${o.item?.id || o.no}|${o.date}|${o.center.trim()}`);
+    }
     // 발송대기: 늦게 넘어온 것이 위, 먼저 넘어온 것은 아래로 쌓인다(넘어온 때 = 발송대기로 누른 때, 없으면 서허 등록 때).
     if (i === 4) {
       const at = (o: FlowOrder) => o.item?.doneAt || o.item?.uploadedAt || o.item?.createdAt || 0;
@@ -1713,6 +1760,23 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
 
   // ── 상자 보기 ──
   const shownStages = isMobile ? [mobileStage] : BOARD_STAGES;
+  // 칸 제목 오른쪽 "입고예정일순 | 최신순"
+  const sortToggle = (st: Stage) => (
+    <span style={{ marginLeft: 'auto', display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 11.5, whiteSpace: 'nowrap' }}>
+      {(['date', 'new'] as const).map((m, k) => {
+        const on = sortOf(st) === m;
+        return (
+          <React.Fragment key={m}>
+            {k > 0 && <span style={{ color: '#d6d3d1' }}>|</span>}
+            <button onClick={() => setSortOf(st, m)} style={{
+              border: 'none', background: 'none', padding: 0, cursor: 'pointer', fontSize: 11.5,
+              fontWeight: on ? 800 : 500, color: on ? ORANGE : '#a8a29e',
+            }}>{m === 'date' ? '입고예정일순' : '최신순'}</button>
+          </React.Fragment>
+        );
+      })}
+    </span>
+  );
   return (
     <div style={pageStyle}>
       <header style={{ background: '#fff', borderBottom: '1px solid #f0f0f0', position: 'sticky', top: 0, zIndex: 10 }}>
@@ -1763,6 +1827,7 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
                 <span style={{ fontSize: 12, fontWeight: 800, color: '#fff', background: ORANGE, opacity: list.length ? 1 : 0.45, borderRadius: 999, padding: '0 7px' }}>{list.length}</span>
                 {stuck > 0 && <span style={{ fontSize: 11.5, fontWeight: 800, color: RED }}>⛔ {stuck}</span>}
                 {i === 5 && <span style={{ fontSize: 10.5, color: '#a8a29e', marginLeft: 'auto' }}>최근 {SENT_DAYS}일</span>}
+                {BOARD_STAGES.includes(i) && sortToggle(i)}
               </div>
             );
           })}

@@ -44,8 +44,11 @@ const STAGE_LABEL: Record<Stage, { text: string; cls: string }> = {
   arrived: { text: '🏠 쿠팡입고 대기', cls: 'bg-violet-50 text-violet-700 border-violet-200' },
   settled: { text: '🎉 완료', cls: 'bg-emerald-50 text-emerald-700 border-emerald-200' },
 };
-// 다 도착했고 배정(쿠팡 몫)만큼 쿠팡에 입고됐으면 완료. 배정 없는 건(여유만 산 건)은 도착하면 완료.
-const stageOf = (o: HanjungOrder, settleQty: number): Stage => {
+// 완료: 배정(쿠팡 몫) 줄의 발주서가 모두 발송완료됐거나, 정산 자료(물류창고입고)로 배정만큼 쿠팡에 들어갔으면.
+// 배정 없는 건(여유만 산 건)은 도착하면 완료. 그 밖에 다 도착했으면 쿠팡입고 대기(= 도착했지만 아직 다 안 보냄).
+const stageOf = (o: HanjungOrder, settleQty: number, sentNos: Set<string>): Stage => {
+  const mine = o.lines.filter(l => lineAlloc(l) > 0);
+  if (mine.length && mine.every(l => sentNos.has(String(l.발주번호 || '').trim()))) return 'settled';
   const t = orderTotals(o);
   if (t.status !== 'done') return t.status;
   const allocated = productSummary(o).reduce((s, p) => s + p.allocated, 0);
@@ -658,7 +661,10 @@ const HanjungOrderPage: React.FC = () => {
   });
   useEffect(() => subscribeReceives(setReceives), []);
 
-  const stages = useMemo(() => new Map(orders.map(o => [o.code, stageOf(o, settlementOf(o, receives).qty)])), [orders, receives]);
+  // 발송완료된 발주서 번호(출고 건에 보낸 날이 적힌 것).
+  const [sentNos, setSentNos] = useState<Set<string>>(new Set());
+  useEffect(() => subscribeShipOuts(list => setSentNos(new Set(list.filter(i => i.sentDate).flatMap(i => i.lines.map(l => String(l.발주번호 || '').trim())).filter(Boolean)))), []);
+  const stages = useMemo(() => new Map(orders.map(o => [o.code, stageOf(o, settlementOf(o, receives).qty, sentNos)])), [orders, receives, sentNos]);
   const tabCount = (id: typeof tab) => orders.filter(o => TABS.find(t => t.id === id)!.has(stages.get(o.code)!)).length;
   // 검색하면 탭과 상관없이 전체에서 찾는다.
   const list = useMemo(() => {

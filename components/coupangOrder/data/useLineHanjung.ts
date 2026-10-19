@@ -113,7 +113,7 @@ export function useLineHanjung(note: (text: string) => void = t => alert(t)) {
             alloc = spare;
             toQueue = need - spare;
           } else if (action.mode === 'grow') {
-            orderQty = { ...orderQty, [orderQtyName(orderQty, name)]: p.ordered + (need - spare) };
+            orderQty = { ...orderQty, [orderQtyName(orderQty, name)]: Math.max(p.ordered, p.received) + (need - spare) };
           }
         }
         if (alloc > 0) {

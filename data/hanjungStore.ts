@@ -156,7 +156,7 @@ export const productOrderQty = (order: HanjungOrder, name: string) => {
 // 상품별 주문·배정·입고 수량. 상품 순서는 발주 줄 순서를 따른다.
 //  ordered  : 1688에 주문한 수량
 //  allocated: 그중 쿠팡 발주 줄에 연결한 수량
-//  spare    : 여유(주문 − 배정). 아직 어느 쿠팡 발주에도 안 쓴 수량
+//  spare    : 여유(주문 − 배정). 아직 어느 쿠팡 발주에도 안 쓴 수량. 주문보다 더 왔으면 온 수량 − 배정
 export const productSummary = (order: HanjungOrder) => {
   const map = new Map<string, { 상품이름: string; ordered: number; allocated: number; spare: number; received: number; cost: number }>();
   // 이름만 조금 다른 같은 상품은 한 줄로 합친다. 보여주는 이름은 먼저 나온 것(쿠팡 발주 줄 이름).
@@ -178,7 +178,8 @@ export const productSummary = (order: HanjungOrder) => {
       e.cost += it.qty * it.unitCost;
     }
   }
-  map.forEach(e => { e.spare = Math.max(0, e.ordered - e.allocated); });
+  // 주문보다 더 온 만큼(덤·추가 도착)도 사무실에 있는 여유다.
+  map.forEach(e => { e.spare = Math.max(0, Math.max(e.ordered, e.received) - e.allocated); });
   return Array.from(map.values());
 };
 
@@ -630,7 +631,7 @@ export const assignRemaining = (order: HanjungOrder, line: FillLine, qty: number
   let next = addAlloc(order, line, qty, key);
   if (grow && qty > spare) {
     const name = orderQtyName(next.orderQty, line.상품이름);
-    next = { ...next, orderQty: { ...(next.orderQty || {}), [name]: (p ? p.ordered : 0) + (qty - spare) } };
+    next = { ...next, orderQty: { ...(next.orderQty || {}), [name]: (p ? Math.max(p.ordered, p.received) : 0) + (qty - spare) } };
   }
   return next;
 };

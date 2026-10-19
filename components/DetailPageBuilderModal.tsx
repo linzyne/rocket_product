@@ -106,6 +106,8 @@ interface DetailPageBuilderModalProps {
   // 공통 안내(주문 마감·배송·반품·CS·FAQ)의 문구·디자인은 카테고리마다 따로다.
   commonCategoryId?: string;
   commonDefaultDesign?: CommonDesign;
+  // 상페마다 따로 두는 공통 안내 문구의 열쇠(카테고리~상페). 없으면 문구도 카테고리 공통.
+  commonPageKey?: string;
   // 틀 바꾸기 버튼. 없으면 버튼을 안 보인다.
   onChangeSectionTemplate?: (template: SectionTemplateId) => void;
 }
@@ -395,7 +397,7 @@ const renumberPointBadges = (sections: KimchiSection[]) => {
   });
 };
 
-const DetailPageBuilderModal: React.FC<DetailPageBuilderModalProps> = ({ isOpen, onClose, product, groupProducts, onSave, onSaveThumbnail, templateId = 'basic', importedPhotos, onImportedPhotosUsed, embedded = false, draftId = STANDALONE_DRAFT_ID, sectionTemplate = 'kimchi' as SectionTemplateId, onChangeSectionTemplate, commonCategoryId = 'kimchi', commonDefaultDesign = 'A' as CommonDesign }) => {
+const DetailPageBuilderModal: React.FC<DetailPageBuilderModalProps> = ({ isOpen, onClose, product, groupProducts, onSave, onSaveThumbnail, templateId = 'basic', importedPhotos, onImportedPhotosUsed, embedded = false, draftId = STANDALONE_DRAFT_ID, sectionTemplate = 'kimchi' as SectionTemplateId, onChangeSectionTemplate, commonCategoryId = 'kimchi', commonDefaultDesign = 'A' as CommonDesign, commonPageKey }) => {
   const [photos, setPhotos] = useState<PhotoItem[]>([]);
   const isKimchi = templateId === 'kimchi';
   // 김치 템플릿 전용 상태. 사진 배열(photos)은 두 템플릿이 그대로 공유해서 자르기·드래그 정렬·
@@ -425,7 +427,7 @@ const DetailPageBuilderModal: React.FC<DetailPageBuilderModalProps> = ({ isOpen,
   });
   const kimchiAccent = kimchiAccents[kimchiSkin];
   // 모든 틀에 공통으로 끼워 넣는 안내(주문 마감 / 배송·반품·CS·FAQ). 문구·디자인은 카테고리마다 따로.
-  const [commonInfo, updateCommonInfo, setCommonDesign, setDeadlineDesign] = useCommonInfo(commonCategoryId, commonDefaultDesign);
+  const [commonInfo, updateCommonInfo, setCommonDesign, setDeadlineDesign] = useCommonInfo(commonCategoryId, commonDefaultDesign, commonPageKey);
   // 주문 마감 디자인은 공통 안내와 따로 고른다. 틀에 배송 고지 섹션이 있으면(1번 틀) 처음엔 그걸 쓴다.
   const hasOwnDeadline = kimchiSections.some(isOwnDeadlineSection);
   const commonDeadlineDesign = commonInfo.deadlineDesign === 'own' && !hasOwnDeadline

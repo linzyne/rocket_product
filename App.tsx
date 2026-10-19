@@ -30,7 +30,7 @@ import ImageRenamer from './components/ImageRenamer';
 import ImageEditorModal from './components/ImageEditorModal';
 import DetailPageBuilderModal from './components/DetailPageBuilderModal';
 import DetailCategoryTabs, { DetailCategory, DetailPage, KIMCHI_CATEGORY_ID, draftIdForCategory, draftIdForPage, getCategoryPages, getActivePage, loadDetailCategories, saveDetailCategories, loadActiveCategoryId, saveActiveCategoryId } from './components/DetailCategoryTabs';
-import { defaultCommonDesign } from './components/DetailCommonInfo';
+import { defaultCommonDesign, commonPageKey, moveCommonPageText } from './components/DetailCommonInfo';
 import { deleteDetailPageDraft, loadDetailPageDraft, saveDetailPageDraft, listDetailPageDrafts } from './data/detailPageDrafts';
 import AppSidebar, { AppMenuId, isAppMenuId, MenuPlaceholder } from './components/AppSidebar';
 import MissingFieldsModal from './components/MissingFieldsModal';
@@ -2889,6 +2889,8 @@ const App: React.FC = () => {
     setMovingDetailPage(true);
     try {
       await new Promise(resolve => window.setTimeout(resolve, 600));
+      // 이 상페의 공통 안내 문구도 함께 옮긴다.
+      moveCommonPageText(commonPageKey(fromCategoryId, pageId), commonPageKey(target.id, newPage.id));
       for (const template of ['kimchi', 'green'] as const) {
         const oldId = draftIdForPage(fromCategoryId, pageId, template);
         const newId = draftIdForPage(target.id, newPage.id, template);
@@ -3454,6 +3456,7 @@ const App: React.FC = () => {
             onChangeSectionTemplate={changeDetailCategoryTemplate}
             commonCategoryId={activeDetailCategoryId}
             commonDefaultDesign={defaultCommonDesign(detailCategories.findIndex(c => c.id === activeDetailCategoryId))}
+            commonPageKey={commonPageKey(activeDetailCategoryId, activeDetailPage.id)}
             embedded
           />
           )}

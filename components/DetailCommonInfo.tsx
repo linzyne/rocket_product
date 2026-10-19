@@ -159,31 +159,64 @@ const loadCommonInfo = (categoryId: string, fallbackDesign: CommonDesign): Commo
 export const defaultCommonDesign = (categoryIndex: number): CommonDesign =>
   (['A', 'B', 'C'] as const)[Math.max(0, categoryIndex) % 3];
 
-// 같은 카테고리를 연 다른 에디터(상품 탭 등)도 같은 값을 보도록 고칠 때 알린다.
-export const useCommonInfo = (categoryId: string, fallbackDesign: CommonDesign) => {
-  const [info, setInfo] = useState<CommonInfo>(() => loadCommonInfo(categoryId, fallbackDesign));
+// 상페(상품)마다 따로 두는 공통 안내 문구. 디자인(A/B/C·주문 마감 디자인)만 카테고리 공통이다.
+// 아직 고친 적 없는 상페는 카테고리에 저장돼 있던 문구를 그대로 보여 준다(예전 상페 문구가 사라지지 않게).
+const PAGE_PREFIX = 'detailCommonInfo:page:';
+const TEXT_KEYS = ['deadline', 'shipping', 'refund', 'cs', 'faq'] as const;
+export const commonPageKey = (categoryId: string, pageId: string) => `${categoryId}~${pageId}`;
+
+const loadPageInfo = (categoryId: string, fallbackDesign: CommonDesign, pageKey?: string): CommonInfo => {
+  const cat = loadCommonInfo(categoryId, fallbackDesign);
+  if (!pageKey) return cat;
+  const own = readJson(PAGE_PREFIX + pageKey) as Partial<CommonInfo> | null;
+  if (!own) return cat;
+  const merged = { ...cat } as Record<string, unknown>;
+  for (const key of TEXT_KEYS) if (own[key]) merged[key] = { ...cat[key], ...own[key] };
+  return merged as unknown as CommonInfo;
+};
+
+// 상페를 다른 카테고리로 옮길 때 그 상페의 문구도 따라가게 한다.
+export const moveCommonPageText = (fromKey: string, toKey: string) => {
+  try {
+    const v = localStorage.getItem(PAGE_PREFIX + fromKey);
+    if (v == null) return;
+    localStorage.setItem(PAGE_PREFIX + toKey, v);
+    localStorage.removeItem(PAGE_PREFIX + fromKey);
+  } catch { /* 못 옮기면 옮긴 상페는 카테고리 문구로 시작 */ }
+};
+
+// 같은 상페를 연 다른 에디터도 같은 값을 보도록 고칠 때 알린다.
+// pageKey가 있으면 문구는 그 상페에, 디자인은 카테고리에 저장한다.
+export const useCommonInfo = (categoryId: string, fallbackDesign: CommonDesign, pageKey?: string) => {
+  const load = useCallback(() => loadPageInfo(categoryId, fallbackDesign, pageKey), [categoryId, fallbackDesign, pageKey]);
+  const [info, setInfo] = useState<CommonInfo>(load);
   useEffect(() => {
-    setInfo(loadCommonInfo(categoryId, fallbackDesign));
-    const sync = () => setInfo(loadCommonInfo(categoryId, fallbackDesign));
+    setInfo(load());
+    const sync = () => setInfo(load());
     window.addEventListener(CHANGE_EVENT, sync);
     return () => window.removeEventListener(CHANGE_EVENT, sync);
-  }, [categoryId, fallbackDesign]);
-  const save = useCallback((next: CommonInfo) => {
-    try { localStorage.setItem(KEY_PREFIX + categoryId, JSON.stringify(next)); } catch { /* 이번 화면에만 반영 */ }
-    setInfo(next);
-    window.dispatchEvent(new Event(CHANGE_EVENT));
-  }, [categoryId]);
+  }, [load]);
+  const notify = () => { setInfo(load()); window.dispatchEvent(new Event(CHANGE_EVENT)); };
+  const saveCategory = useCallback((patch: Partial<CommonInfo>) => {
+    const cur = readJson(KEY_PREFIX + categoryId) || {};
+    try { localStorage.setItem(KEY_PREFIX + categoryId, JSON.stringify({ ...loadCommonInfo(categoryId, fallbackDesign), ...cur, ...patch })); } catch { /* 이번 화면에만 반영 */ }
+    notify();
+  }, [categoryId, fallbackDesign, load]); // eslint-disable-line react-hooks/exhaustive-deps
   const update = useCallback(<K extends 'deadline' | 'shipping' | 'refund' | 'cs' | 'faq'>(key: K, patch: Partial<CommonInfo[K]>) => {
-    const next = { ...loadCommonInfo(categoryId, fallbackDesign) };
-    next[key] = { ...next[key], ...patch };
-    save(next);
-  }, [categoryId, fallbackDesign, save]);
-  const setDesign = useCallback((design: CommonDesign) => {
-    save({ ...loadCommonInfo(categoryId, fallbackDesign), design });
-  }, [categoryId, fallbackDesign, save]);
-  const setDeadlineDesign = useCallback((deadlineDesign: DeadlineDesign) => {
-    save({ ...loadCommonInfo(categoryId, fallbackDesign), deadlineDesign });
-  }, [categoryId, fallbackDesign, save]);
+    const now = load();
+    const nextPart = { ...now[key], ...patch };
+    if (pageKey) {
+      // 이 상페의 문구만 바꾼다. 처음 고칠 때는 지금 보이는 문구(카테고리 문구) 전체를 이 상페 몫으로 떼어 둔다.
+      const text = Object.fromEntries(TEXT_KEYS.map(k => [k, now[k]])) as Record<string, unknown>;
+      text[key] = nextPart;
+      try { localStorage.setItem(PAGE_PREFIX + pageKey, JSON.stringify(text)); } catch { /* 이번 화면에만 반영 */ }
+      notify();
+    } else {
+      saveCategory({ [key]: nextPart } as Partial<CommonInfo>);
+    }
+  }, [load, pageKey, saveCategory]); // eslint-disable-line react-hooks/exhaustive-deps
+  const setDesign = useCallback((design: CommonDesign) => saveCategory({ design }), [saveCategory]);
+  const setDeadlineDesign = useCallback((deadlineDesign: DeadlineDesign) => saveCategory({ deadlineDesign }), [saveCategory]);
   return [info, update, setDesign, setDeadlineDesign] as const;
 };
 

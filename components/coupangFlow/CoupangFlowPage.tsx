@@ -730,15 +730,11 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
                   return text ? <span style={{ flexShrink: 0, fontSize: 11, color: '#6b7280', whiteSpace: 'nowrap' }}>{text}</span> : null;
                 })()}
                 {o.stage === 2 && l.stage === 2 && l.ship && o.item && (() => {
-                  // 박스: 택배예약 전에는 고를 수 있고, 예약한 뒤에는 보기만.
+                  // 박스: 쉽먼트 번호가 붙은 뒤에도 고칠 수 있다(서허·송장은 따로 고쳐야 한다).
                   const item = o.item!;
                   const v = l.ship!.쉼먼트 || '';
                   const maxNo = Math.max(1, ...shipOuts.filter(x => x.center.trim() === item.center.trim() && x.date === item.date).flatMap(x => x.lines).map(x => isBoxSplit(x.쉼먼트 || '') ? Math.max(...parseBoxSplit(x.쉼먼트 || '').map(p => p.no)) : parseBoxNo(x.쉼먼트 || '') || 0));
                   const splitText = isBoxSplit(v) ? parseBoxSplit(v).map(p => `${p.no}번×${p.qty}`).join(' ') : '';
-                  if (o.item?.shipmentNos?.[o.no]) {
-                    const text = splitText || (parseBoxNo(v) ? `박스 ${parseBoxNo(v)}` : '');
-                    return text ? <span style={{ flexShrink: 0, fontSize: 11, color: '#6b7280', whiteSpace: 'nowrap' }}>{text}</span> : null;
-                  }
                   const openSplit = () => {
                     const total = Number(l.ship!.확정수량) || 0;
                     const now = isBoxSplit(v) ? parseBoxSplit(v) : [{ no: parseBoxNo(v) || 1, qty: total }];

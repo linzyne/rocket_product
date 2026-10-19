@@ -149,6 +149,8 @@ export interface KimchiSection {
   photoGap?: number;
   // 사진을 페이지 좌우 끝까지 꽉 채운다(좌우 여백 없음). 비워두면 스킨이 원래 두던 여백 그대로.
   photoFull?: boolean;
+  // 안내사항(notes)의 "박스" 변형: 목록 없이 큰 제목만 있는 빈 상자. 올린 사진은 상자 폭에 맞춰 아래로 들어간다.
+  boxOnly?: boolean;
   // 이 섹션과 다음 섹션 사이에 남길 간격(860px 캔버스 기준 px). 0이면 다음 섹션이 딱 붙는다.
   // 비워두면 스킨이 원래 쓰던 간격(KIMCHI_SKIN_SECTION_GAP)을 그대로 쓴다.
   sectionGap?: number;
@@ -481,6 +483,23 @@ export function appendKimchiSection(sections: KimchiSection[], kind: KimchiSecti
 // 그것도 없으면 맨 뒤.
 export const isProductInfoSection = (s: KimchiSection) =>
   s.kind === 'pairs' && (['표시사항', '상세정보'].includes(s.promptLabel || '') || /상세\s*정보|표시사항/.test(s.title));
+// "박스추가": 안내사항 섹션의 박스 변형을 하나 더한다. 마지막 박스 뒤, 없으면 안내(배송·FAQ…) 앞에 넣는다.
+export function appendBoxSection(sections: KimchiSection[]): KimchiSection[] {
+  const boxes = sections.filter(s => s.kind === 'notes' && s.boxOnly);
+  const section = createKimchiSection('notes', {
+    boxOnly: true, title: '', items: [], guideDesign: 'A', multiplePhotos: true,
+    promptLabel: boxes.length ? `박스 ${String(boxes.length + 1).padStart(2, '0')}` : '박스',
+    hint: '사진을 넣으면 박스 폭에 맞춰 제목 아래로 들어가요',
+  });
+  let at = -1;
+  sections.forEach((s, i) => { if (s.kind === 'notes' && s.boxOnly) at = i + 1; });
+  if (at === -1) {
+    const firstGuide = sections.findIndex(s => s.kind === 'guide');
+    at = firstGuide === -1 ? sections.length : firstGuide;
+  }
+  return [...sections.slice(0, at), section, ...sections.slice(at)];
+}
+
 function guideInsertIndex(sections: KimchiSection[]): number {
   let last = -1;
   sections.forEach((s, i) => { if (s.kind === 'guide') last = i; });
@@ -576,7 +595,7 @@ export function kimchiSectionHasText(section: KimchiSection): boolean {
     case 'guide':
       return true;
     case 'notes':
-      return (section.items || []).some(filled);
+      return section.boxOnly ? filled(section.title) : (section.items || []).some(filled);
   }
 }
 

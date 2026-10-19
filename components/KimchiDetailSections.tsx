@@ -1211,7 +1211,7 @@ export const KimchiSectionPanel: React.FC<KimchiSectionPanelProps> = ({
           <div key={section.id} className="rounded-lg border border-slate-700 bg-slate-800/40 p-2.5 space-y-2">
             <div className="flex items-center gap-1.5">
               <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-700 text-slate-300 flex-shrink-0">
-                {KIND_BADGE[section.kind]}
+                {section.boxOnly ? '박스' : KIND_BADGE[section.kind]}
               </span>
               {/* 붙여넣기 라벨에 쓰이는 이름. 같은 종류가 여러 개일 때(소구점 01/02/03) 어느 섹션인지
                   이걸로 구분한다 — 제목을 비워두는 섹션이 많아서 제목만으로는 알 수 없다. */}
@@ -1271,7 +1271,7 @@ export const KimchiSectionPanel: React.FC<KimchiSectionPanelProps> = ({
             </div>
 
             {/* 공통 안내 섹션: 어느 안내인지와 디자인만 고른다(문구는 미리보기에서 — 카테고리 공통). */}
-            {section.kind === 'notes' && (
+            {section.kind === 'notes' && !section.boxOnly && (
               <div className="flex flex-wrap items-center gap-1">
                 <span className="text-[11px] text-slate-400 mr-1">디자인</span>
                 {([['A', 'A 상자'], ['B', 'B 번호줄'], ['C', 'C 띠']] as const).map(([id, label]) => (
@@ -1586,13 +1586,15 @@ export const KimchiSectionAddBar: React.FC<{
   kinds: KimchiSection['kind'][];
   addSection: (kind: KimchiSection['kind']) => void;
   removeSection: (id: string) => void;
-}> = ({ sections, kinds, addSection, removeSection }) => (
+  // "박스추가"(안내사항의 박스 변형). 없으면 버튼을 안 보인다.
+  addBox?: () => void;
+}> = ({ sections, kinds, addSection, removeSection, addBox }) => (
   <div className="flex flex-wrap gap-1.5">
     <p className="text-xs font-bold text-slate-400 uppercase tracking-wider w-full">
       섹션 추가 <span className="text-slate-500 normal-case">· 총 {sections.length}개</span>
     </p>
     {kinds.map(kind => {
-      const ofKind = sections.filter(section => section.kind === kind);
+      const ofKind = sections.filter(section => section.kind === kind && !section.boxOnly);
       const last = ofKind[ofKind.length - 1];
       return (
         <div key={kind} className="flex items-stretch rounded overflow-hidden bg-slate-700 text-xs">
@@ -1617,5 +1619,26 @@ export const KimchiSectionAddBar: React.FC<{
         </div>
       );
     })}
+    {addBox && (() => {
+      const boxes = sections.filter(section => section.kind === 'notes' && section.boxOnly);
+      const last = boxes[boxes.length - 1];
+      return (
+        <div className="flex items-stretch rounded overflow-hidden bg-slate-700 text-xs">
+          <button onClick={addBox} className="px-2 py-1 text-slate-200 hover:bg-slate-600 transition-colors" title="큰 제목만 있는 빈 박스를 하나 더해요(사진은 박스 폭에 맞춰 들어가요)">
+            + 박스추가
+            {boxes.length > 0 && <span className="ml-1 text-amber-300 font-bold">{boxes.length}</span>}
+          </button>
+          {last && (
+            <button
+              onClick={() => { if (window.confirm('마지막 박스와 거기 올린 사진을 삭제할까요?')) removeSection(last.id); }}
+              title="마지막 박스 삭제"
+              className="px-1.5 border-l border-slate-600 text-slate-400 hover:bg-red-600 hover:text-white transition-colors"
+            >
+              ×
+            </button>
+          )}
+        </div>
+      );
+    })()}
   </div>
 );

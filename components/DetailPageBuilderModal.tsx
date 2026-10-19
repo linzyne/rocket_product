@@ -47,6 +47,7 @@ import {
   removeKimchiSection,
   duplicateKimchiSection,
   appendKimchiSection,
+  appendBoxSection,
   kimchiSectionHasText,
   buildKimchiCopyPrompt,
   parseKimchiCopyText,
@@ -2415,6 +2416,11 @@ const DetailPageBuilderModal: React.FC<DetailPageBuilderModalProps> = ({ isOpen,
     setKimchiSections(prev => appendKimchiSection(prev, kind));
   };
 
+  const addBoxSection = () => {
+    scrollToNewSectionRef.current = new Set(kimchiSections.map(sec => sec.id));
+    setKimchiSections(prev => appendBoxSection(prev));
+  };
+
   const duplicateKimchiSectionById = (id: string) => {
     setKimchiSections(prev => duplicateKimchiSection(prev, id));
   };
@@ -3476,7 +3482,7 @@ const DetailPageBuilderModal: React.FC<DetailPageBuilderModalProps> = ({ isOpen,
 
           {/* Side panel: inputs only — everything else is edited directly in the preview */}
           <div className="lg:w-80 flex-shrink-0 flex flex-col gap-4 overflow-y-auto pr-1">
-            {isKimchi && <KimchiSectionAddBar sections={kimchiSections} kinds={TEMPLATE_KINDS[sectionTemplate]} addSection={addKimchiSection} removeSection={removeKimchiSectionById} />}
+            {isKimchi && <KimchiSectionAddBar sections={kimchiSections} kinds={TEMPLATE_KINDS[sectionTemplate]} addSection={addKimchiSection} removeSection={removeKimchiSectionById} addBox={addBoxSection} />}
             {isKimchi && onChangeSectionTemplate && (
               <div className="space-y-2 pt-2 border-t border-slate-700">
                 <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">틀</p>

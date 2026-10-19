@@ -85,6 +85,35 @@ const NotesSection: React.FC<NotesSectionProps> = ({ section, photos, updateSect
   );
   const design = section.guideDesign ?? 'A';
 
+  // 박스: 느낌표 동그라미 + 큰 제목만 있는 빈 상자. 사진은 상자 폭에 맞춰 제목 아래로 차례로(높이는 사진 비율대로).
+  if (section.boxOnly) {
+    return (
+      <div style={{ padding: `80px ${SIDE}px` }}>
+        <div style={{ background: kimchiTint(accent, 0.07), border: `2px solid ${kimchiTint(accent, 0.25)}`, borderRadius: 28, padding: '50px 50px 50px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+            <div style={{
+              width: px(52), height: px(52), borderRadius: '50%', background: accent, color: '#ffffff', flexShrink: 0,
+              fontFamily, fontWeight: 900, fontSize: px(30), display: 'flex', alignItems: 'center', justifyContent: 'center',
+            }}>!</div>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <EditableText value={section.title} onChange={v => updateSection(section.id, { title: v })} placeholder="제목" style={t(typeScale.heading * 0.85, { fontWeight: 800 })} />
+            </div>
+          </div>
+          {photos.map((photo, idx) => (
+            <img
+              key={photo.id}
+              data-photo-id={photo.id}
+              src={photo.dataUrl}
+              alt=""
+              draggable={false}
+              style={{ display: 'block', width: '100%', height: 'auto', borderRadius: 16, marginTop: idx === 0 ? 34 : 16 }}
+            />
+          ))}
+        </div>
+      </div>
+    );
+  }
+
   // A 상자: 옅은 강조색 상자 안에 느낌표 동그라미 + 제목, 점 목록.
   if (design === 'A') {
     return (

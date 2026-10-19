@@ -1208,7 +1208,7 @@ export const KimchiSectionPanel: React.FC<KimchiSectionPanelProps> = ({
         const photos = photosBySection[section.id] || [];
         const full = !section.multiplePhotos && photos.length >= 1;
         return (
-          <div key={section.id} className="rounded-lg border border-slate-700 bg-slate-800/40 p-2.5 space-y-2">
+          <div key={section.id} data-panel-section-id={section.id} className="rounded-lg border border-slate-700 bg-slate-800/40 p-2.5 space-y-2">
             <div className="flex items-center gap-1.5">
               <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-700 text-slate-300 flex-shrink-0">
                 {section.boxOnly ? '박스' : KIND_BADGE[section.kind]}

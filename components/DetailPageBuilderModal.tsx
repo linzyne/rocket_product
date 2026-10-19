@@ -1214,6 +1214,9 @@ const DetailPageBuilderModal: React.FC<DetailPageBuilderModalProps> = ({ isOpen,
 
   // 섹션을 더하면 미리보기를 그 섹션 자리로 옮겨 보여 준다(맨 아래에 들어가면 안 보여서 어디 갔는지 몰랐다).
   const scrollToNewSectionRef = useRef<Set<string> | null>(null);
+  // 미리보기를 굴리면 오른쪽 섹션 목록도 지금 보고 있는 섹션의 카드로 따라간다(찾으러 스크롤하지 않게).
+  const sidePanelRef = useRef<HTMLDivElement>(null);
+  const followRef = useRef<{ id: string; frame: number }>({ id: '', frame: 0 });
   useEffect(() => {
     const before = scrollToNewSectionRef.current;
     if (!before) return;
@@ -2411,6 +2414,31 @@ const DetailPageBuilderModal: React.FC<DetailPageBuilderModalProps> = ({ isOpen,
     });
   };
 
+  const followPreview = (scroller: HTMLElement) => {
+    if (followRef.current.frame) return;
+    // 굴리는 동안 0.06초에 한 번만 본다(requestAnimationFrame은 창이 가려지면 멈춰서 쓰지 않는다).
+    followRef.current.frame = window.setTimeout(() => {
+      followRef.current.frame = 0;
+      const panel = sidePanelRef.current;
+      const page = previewRef.current;
+      if (!panel || !page) return;
+      const view = scroller.getBoundingClientRect();
+      const line = view.top + view.height * 0.35;
+      const hit = (Array.from(page.querySelectorAll('[data-section-id]')) as HTMLElement[]).find(el => {
+        const r = el.getBoundingClientRect();
+        return r.top <= line && r.bottom > line;
+      });
+      const id = hit?.dataset.sectionId;
+      if (!id || id === followRef.current.id) return;
+      followRef.current.id = id;
+      const card = panel.querySelector<HTMLElement>(`[data-panel-section-id="${id}"]`);
+      if (!card) return;
+      // 오른쪽 칸만 굴린다(페이지 전체가 밀리지 않게).
+      panel.scrollTop += card.getBoundingClientRect().top - panel.getBoundingClientRect().top - 8;
+      card.animate([{ boxShadow: '0 0 0 2px #3b82f6' }, { boxShadow: '0 0 0 2px rgba(59,130,246,0)' }], { duration: 1200 });
+    }, 60);
+  };
+
   const addKimchiSection = (kind: KimchiSection['kind']) => {
     scrollToNewSectionRef.current = new Set(kimchiSections.map(sec => sec.id));
     setKimchiSections(prev => appendKimchiSection(prev, kind));
@@ -3137,7 +3165,7 @@ const DetailPageBuilderModal: React.FC<DetailPageBuilderModalProps> = ({ isOpen,
                 )}
               </div>
             )}
-            <div className="flex-1 min-w-0 bg-slate-950/60 rounded-xl border border-slate-700 p-4 min-h-[320px] max-h-[70vh] overflow-auto flex justify-center items-start">
+            <div onScroll={e => followPreview(e.currentTarget)} className="flex-1 min-w-0 bg-slate-950/60 rounded-xl border border-slate-700 p-4 min-h-[320px] max-h-[70vh] overflow-auto flex justify-center items-start">
             {!hasRenderableContent ? null : (
               <div style={{ transform: `scale(${zoom})`, transformOrigin: 'top center', flexShrink: 0 }}>
               <div style={{ position: 'relative' }} onMouseMove={handlePreviewHover} onMouseLeave={() => setHoverSection(null)}>
@@ -3481,7 +3509,7 @@ const DetailPageBuilderModal: React.FC<DetailPageBuilderModalProps> = ({ isOpen,
           </div>
 
           {/* Side panel: inputs only — everything else is edited directly in the preview */}
-          <div className="lg:w-80 flex-shrink-0 flex flex-col gap-4 overflow-y-auto pr-1">
+          <div ref={sidePanelRef} className="lg:w-80 flex-shrink-0 flex flex-col gap-4 overflow-y-auto pr-1">
             {isKimchi && <KimchiSectionAddBar sections={kimchiSections} kinds={TEMPLATE_KINDS[sectionTemplate]} addSection={addKimchiSection} removeSection={removeKimchiSectionById} addBox={addBoxSection} />}
             {isKimchi && onChangeSectionTemplate && (
               <div className="space-y-2 pt-2 border-t border-slate-700">

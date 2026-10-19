@@ -159,7 +159,8 @@ export const GreenPreview: React.FC<GreenPreviewProps> = ({
             {photos.length > 0 && (
               <div style={{ padding: `50px ${SIDE + 30}px 0` }}>{photoRun(section, photos, 18, 0)}</div>
             )}
-            {gap(60)}
+            {/* 사진 꽉 채우기면 사진이 아래 강조색 띠에 바로 붙는다(흰 여백 없이). */}
+            {gap(section.photoFull && photos.length > 0 && stats.length > 0 ? 0 : 60)}
             {stats.length > 0 && (
               <div style={{ background: accent, display: 'flex', padding: '44px 20px' }}>
                 {stats.map((_, idx) => (

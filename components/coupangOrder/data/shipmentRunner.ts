@@ -32,7 +32,8 @@ export const STEP_LABEL: Record<ShipmentRunStep, string> = {
 // ── 이 탭이 몰고 있는 쉽먼트 ──
 // batch: 이번에 진행할 박스만 남긴 기록 / full: 저장된 기록 전체(송장번호를 적을 때는 이걸 고쳐 저장한다.
 // 남긴 박스만 저장하면 이미 끝난 센터의 박스가 기록에서 지워진다).
-interface Owned { batch: ShipmentBatch; full: ShipmentBatch; itemIds: string[]; lotteSavedAt?: number }
+// redo: "쉽먼트만 다시하기"로 사람이 다시 올리라고 한 발주서(서허에 이미 등록돼 있어도 막지 않는다).
+interface Owned { batch: ShipmentBatch; full: ShipmentBatch; itemIds: string[]; lotteSavedAt?: number; redo?: string[] }
 const owned = new Map<string, Owned>();
 
 const digits = (w: string) => String(w || '').replace(/\D/g, '');
@@ -263,7 +264,8 @@ export function fillAndUpload(buf: ArrayBuffer, id: string, known?: ShipmentBatc
   const batch = o.batch;
   // 서허에 이미 등록된 발주서가 들어 있으면 올리지 않는다(쉽먼트가 두 번 생긴다).
   const reg = new Set([...(o.full.registeredOrders || []), ...(known?.registeredOrders || [])].map(String));
-  const again = orderNosOf(batch).filter(no => reg.has(no));
+  const redo = new Set(o.redo || []);
+  const again = orderNosOf(batch).filter(no => reg.has(no) && !redo.has(no));
   if (again.length) {
     fail(id, 'upload', `⛔ 발주서 ${again.join(', ')}는 서허에 이미 등록됐어요. 두 번 올리지 않게 멈췄어요. 서허 › 택배 쉽먼트에서 확인해 주세요.`);
     return;
@@ -383,6 +385,27 @@ export function resumeShipment(batch: ShipmentBatch, items: ShipOut[]): 'done' |
   if (!allBoxes(trimmed).every(waybillConfirmed)) requestLotte(batch.id);
   else requestForm(batch.id);
   return 'started';
+}
+
+// ── 쉽먼트만 다시하기 ──
+// 고른 발주서만 서허 쉽먼트 일괄등록을 다시 한다. 택배예약은 다시 하지 않고(이미 받은 송장번호 그대로),
+// 서허 양식을 새로 받아 그 발주서 줄만 채워 올린다. 서허에 이미 등록된 발주서여도 사람이 고른 것이니 막지 않는다.
+export function redoShipmentRegister(batch: ShipmentBatch, items: ShipOut[], orderNos: string[]): string | null {
+  const nos = new Set(orderNos.map(n => String(n).trim()).filter(Boolean));
+  const full = withOrdNos(batch);
+  const trimmed: ShipmentBatch = {
+    ...full,
+    centers: full.centers
+      .map(c => ({ ...c, boxes: c.boxes.map(b => ({ ...b, lines: b.lines.filter(l => nos.has(String(l.발주번호 || '').trim())) })).filter(b => b.lines.length) }))
+      .filter(c => c.boxes.length),
+  };
+  if (!allBoxes(trimmed).length) return '쉽먼트 기록(택배예약)에서 이 발주서의 박스를 찾지 못했어요. 택배예약부터 해 주세요.';
+  if (!allBoxes(trimmed).every(b => digits(b.waybill || ''))) return '송장번호가 없는 박스가 있어요. 택배예약(송장)부터 끝내 주세요.';
+  owned.set(batch.id, { batch: trimmed, full, itemIds: items.map(i => i.id), redo: Array.from(nos) });
+  dropForm(batch.id);
+  if (!allBoxes(trimmed).every(waybillConfirmed)) requestLotte(batch.id);
+  else requestForm(batch.id, true);
+  return null;
 }
 
 // ── 확장 소식 받기(앱이 켜질 때 한 번) ──

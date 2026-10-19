@@ -4,7 +4,7 @@ import { subscribeReservations } from '../coupangOrder/data/reservationStore';
 import { ShipOut, subscribeShipOuts, shipOutStage, shipOutBatch } from '../coupangOrder/data/shipOutStore';
 import { ShipmentBatch, subscribeShipments } from '../../data/shipmentStore';
 import { subscribeConfirmed, setConfirmed } from '../coupangOrder/data/poConfirmStore';
-import { resumeShipment, onNeedWaybill, STEP_LABEL, startShipment, fillAndUpload, subscribeLive } from '../coupangOrder/data/shipmentRunner';
+import { resumeShipment, onNeedWaybill, STEP_LABEL, startShipment, fillAndUpload, subscribeLive, redoShipmentRegister } from '../coupangOrder/data/shipmentRunner';
 import type { LiveStatus } from '../coupangOrder/data/shipmentRunner';
 import { loadLocalAddresses, loadLocalSender, subscribeShippingSettings } from '../coupangOrder/data/shippingSettingsStore';
 import type { AddressEntry, SenderInfo } from '../coupangOrder/types';
@@ -1163,6 +1163,26 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
 
   // 고른 것 중 쉽먼트 칸에 있는 발주서 → 발송대기로. 출고 건 단위로 넘어간다(쉽먼트생성대기의 "발송대기로 →"와 같다).
   const pickedShipping = orders.filter(o => o.stage === 2 && picked.has(o.no) && o.item);
+  // 쉽먼트만 다시하기: 고른 쉽먼트 칸 발주서를 서허 쉽먼트 일괄등록만 다시 한다(택배예약·송장은 그대로).
+  // 확장은 한 번에 한 택배예약만 올릴 수 있어서, 고른 발주서가 한 택배예약(쉽먼트 기록)에 든 것일 때만 한다.
+  const redoRegister = () => {
+    const noBatch = pickedShipping.filter(o => !o.batch).map(o => o.no);
+    if (noBatch.length) { alert(`택배예약을 아직 안 한 발주서가 있어요: ${noBatch.join(', ')}\n택배예약부터 해 주세요.`); return; }
+    const batchIds = Array.from(new Set(pickedShipping.map(o => o.batch!.id)));
+    if (batchIds.length > 1) { alert('서로 다른 택배예약에 든 발주서를 같이 골랐어요. 택배예약 하나씩 골라서 다시 해 주세요.'); return; }
+    const batch = pickedShipping[0].batch!;
+    const nos = pickedShipping.map(o => o.no);
+    const had = pickedShipping.filter(o => o.item?.shipmentNos?.[o.no]).map(o => `${o.no}(쉽먼트 ${o.item!.shipmentNos![o.no]})`);
+    if (!window.confirm(
+      `고른 발주서 ${nos.length}건의 서허 쉽먼트 일괄등록만 다시 할까요? 택배예약은 다시 하지 않아요.\n${nos.join(', ')}` +
+      (had.length ? `\n\n⚠ 이미 쉽먼트 번호가 있는 발주서: ${had.join(', ')}\n다시 올리면 서허에 쉽먼트가 하나 더 생겨요. 예전 쉽먼트는 서허에서 직접 취소해 주세요.` : ''),
+    )) return;
+    const items = Array.from(new Map<string, ShipOut>(pickedShipping.map(o => [o.item!.id, o.item!])).values());
+    const err = redoShipmentRegister(batch, items, nos);
+    if (err) { alert(err); return; }
+    setPicked(new Set());
+    setDateNote({ tone: 'ok', text: `발주 ${nos.length}건 쉽먼트 등록을 다시 시작했어요(서허 창이 열려요).` });
+  };
   const sendToWaiting = () => {
     const items = new Map<string, ShipOut>();
     pickedShipping.forEach(o => items.set(o.item!.id, o.item!));
@@ -1439,6 +1459,11 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
     pickedShipping.length > 0 && (
       <button key="back" onClick={backToConfirmed} style={pill('ghost')} title="고른 쉽먼트 발주서를 발주확정 칸으로 되돌려요">
         <span style={{ opacity: 0.7 }}>←</span> 발주확정으로 {countOf(pickedShipping.length)}
+      </button>
+    ),
+    pickedShipping.length > 0 && (
+      <button key="reship" onClick={redoRegister} style={pill('ghost')} title="고른 발주서의 서허 쉽먼트 일괄등록만 다시 해요(택배예약은 그대로)">
+        ↻ 쉽먼트만 다시하기 {countOf(pickedShipping.length)}
       </button>
     ),
     pickedShipping.length > 0 && (

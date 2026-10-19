@@ -1211,6 +1211,29 @@ const DetailPageBuilderModal: React.FC<DetailPageBuilderModalProps> = ({ isOpen,
   // 섹션 문구 고치기 창(✎). 훅이라 아래 return null보다 위에 둔다.
   const [copyEditor, setCopyEditor] = useState<{ sectionId: string; text: string } | null>(null);
 
+  // 섹션을 더하면 미리보기를 그 섹션 자리로 옮겨 보여 준다(맨 아래에 들어가면 안 보여서 어디 갔는지 몰랐다).
+  const scrollToNewSectionRef = useRef<Set<string> | null>(null);
+  useEffect(() => {
+    const before = scrollToNewSectionRef.current;
+    if (!before) return;
+    const added = kimchiSections.find(sec => !before.has(sec.id));
+    if (!added) return;
+    scrollToNewSectionRef.current = null;
+    // 그려진 뒤에 찾는다. 페이지 전체가 아니라 미리보기 칸만 굴린다(페이지가 통째로 밀리지 않게).
+    window.setTimeout(() => {
+      const el = previewRef.current?.querySelector(`[data-section-id="${added.id}"]`) as HTMLElement | null;
+      if (!el) return;
+      let box: HTMLElement | null = previewRef.current;
+      while (box && !(box.scrollHeight > box.clientHeight && /(auto|scroll)/.test(getComputedStyle(box).overflowY))) box = box.parentElement;
+      if (box) {
+        const r = el.getBoundingClientRect();
+        const b = box.getBoundingClientRect();
+        box.scrollTop = box.scrollTop + (r.top - b.top) - 40;
+      }
+      el.animate([{ boxShadow: 'inset 0 0 0 6px #3b82f6' }, { boxShadow: 'inset 0 0 0 6px rgba(59,130,246,0)' }], { duration: 1800 });
+    }, 120);
+  }, [kimchiSections]);
+
   if (!isOpen) return null;
 
   // sectionId를 주면 그 사진을 해당 섹션에 배정한다(김치 템플릿의 섹션별 업로드). 기본 템플릿은
@@ -2388,6 +2411,7 @@ const DetailPageBuilderModal: React.FC<DetailPageBuilderModalProps> = ({ isOpen,
   };
 
   const addKimchiSection = (kind: KimchiSection['kind']) => {
+    scrollToNewSectionRef.current = new Set(kimchiSections.map(sec => sec.id));
     setKimchiSections(prev => appendKimchiSection(prev, kind));
   };
 

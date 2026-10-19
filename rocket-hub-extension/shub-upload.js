@@ -100,12 +100,20 @@
       return;
     }
     if (!panel) {
+      // 진행 상자가 여럿이면(쉽먼트 업로드·발주확정 업로드) 겹치지 않게 오른쪽 아래 한 줄 묶음에 위아래로 쌓는다.
+      let stack = document.getElementById('rocket-hub-panels');
+      if (!stack) {
+        stack = document.createElement('div');
+        stack.id = 'rocket-hub-panels';
+        stack.style.cssText = 'position:fixed;right:16px;bottom:16px;z-index:2147483647;display:flex;flex-direction:column;align-items:flex-end;gap:8px';
+        document.body.appendChild(stack);
+      }
       panel = document.createElement('div');
       panel.style.cssText =
-        'position:fixed;right:16px;bottom:16px;z-index:2147483647;background:#fff;border:1px solid #e3e8ef;' +
+        'background:#fff;border:1px solid #e3e8ef;' +
         'border-radius:10px;box-shadow:0 8px 24px rgba(0,0,0,.12);font:13px -apple-system,BlinkMacSystemFont,"Malgun Gothic",sans-serif;' +
         'color:#111;min-width:260px;max-width:360px;padding:10px 12px';
-      document.body.appendChild(panel);
+      stack.appendChild(panel);
     }
     panel.style.display = '';
     const color = p.step === 'error' ? '#dc2626' : p.step === 'done' ? '#059669' : '#1d4ed8';

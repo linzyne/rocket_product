@@ -83,17 +83,25 @@
   let panel = null;
   const render = (p) => {
     if (!isTop) return;
-    if (!p || Date.now() - (p.savedAt || 0) > MAX_AGE_MS * 3) {
+    if (!p || p.hidden || Date.now() - (p.savedAt || 0) > MAX_AGE_MS * 3) {
       if (panel) panel.style.display = 'none';
       return;
     }
     if (!panel) {
+      // 진행 상자가 여럿이면(쉽먼트 업로드·발주확정 업로드) 겹치지 않게 오른쪽 아래 한 줄 묶음에 위아래로 쌓는다.
+      let stack = document.getElementById('rocket-hub-panels');
+      if (!stack) {
+        stack = document.createElement('div');
+        stack.id = 'rocket-hub-panels';
+        stack.style.cssText = 'position:fixed;right:16px;bottom:16px;z-index:2147483647;display:flex;flex-direction:column;align-items:flex-end;gap:8px';
+        document.body.appendChild(stack);
+      }
       panel = document.createElement('div');
       panel.style.cssText =
-        'position:fixed;right:16px;bottom:16px;z-index:2147483647;background:#fff;border:1px solid #e3e8ef;' +
+        'background:#fff;border:1px solid #e3e8ef;' +
         'border-radius:10px;box-shadow:0 8px 24px rgba(0,0,0,.12);font:13px -apple-system,BlinkMacSystemFont,"Malgun Gothic",sans-serif;' +
         'color:#111;min-width:260px;max-width:360px;padding:10px 12px';
-      document.body.appendChild(panel);
+      stack.appendChild(panel);
     }
     panel.style.display = '';
     const color = p.step === 'error' ? '#dc2626' : p.step === 'done' ? '#059669' : '#1d4ed8';
@@ -102,8 +110,19 @@
       `<div style="font-weight:700;margin-bottom:4px">📤 발주확정 파일 업로드</div>` +
       `<div style="color:#64748b;font-size:12px">발주 ${(p.orderNos || []).length}건 · ${String((p.file && p.file.name) || '').replace(/</g, '&lt;')}</div>` +
       `<div style="margin-top:6px;color:${color}">${p.status || ''}</div>${msgs}` +
-      `<div style="margin-top:8px;text-align:right"><button data-act="stop" style="border:1px solid #fecaca;background:#fff1f2;color:#b91c1c;border-radius:6px;padding:4px 10px;cursor:pointer;font-size:12px">멈춤</button></div>`;
+      `<div style="margin-top:8px;text-align:right">` +
+      (p.step === 'done'
+        ? `<button data-act="hide" style="border:1px solid #bbf7d0;background:#f0fdf4;color:#047857;border-radius:6px;padding:4px 10px;cursor:pointer;font-size:12px">닫기</button></div>`
+        : `<button data-act="stop" style="border:1px solid #fecaca;background:#fff1f2;color:#b91c1c;border-radius:6px;padding:4px 10px;cursor:pointer;font-size:12px">멈춤</button></div>`);
+    // 다 올렸으면 8초 뒤 저절로 닫는다(다른 진행 상자를 가리지 않게). 기록은 남겨 둔다(앱이 결과를 받아 감).
+    clearTimeout(panel._autoHide);
+    if (p.step === 'done') panel._autoHide = setTimeout(() => { patch({ hidden: true }); panel.style.display = 'none'; }, 8000);
     panel.onclick = (e) => {
+      if (e.target && e.target.getAttribute && e.target.getAttribute('data-act') === 'hide') {
+        patch({ hidden: true });
+        panel.style.display = 'none';
+        return;
+      }
       if (e.target && e.target.getAttribute && e.target.getAttribute('data-act') === 'stop') {
         try { chrome.storage.local.remove(KEY); } catch (err) {}
         panel.style.display = 'none';

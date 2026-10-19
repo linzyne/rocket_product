@@ -363,7 +363,12 @@
     // 발주서 칸에 이 발주번호가 "정확히" 든 줄만 본다(다른 번호의 일부로 들어 있는 것은 아니다).
     // 예전에는 못 찾으면 방금 만든 쉽먼트 아무거나 적었다 — 짐작이라 뺐다.
     const hasPo = (cell) => String(cell || '').split(/\D+/).includes(String(no));
-    const hits = t ? t.rows.filter((r) => (lookup || ships.has(r.cells[t.idx.ship])) && hasPo(r.cells[t.idx.po])) : [];
+    // 한 쉽먼트에 발주서가 여럿이면 서허는 발주서 칸을 "145173333 외 1건"처럼 앞 번호만 보여 준다.
+    // 이 발주번호로 검색한 결과이니, 줄여 쓴 줄은 이 발주서도 든 줄로 본다(방금 만든 쉽먼트이거나, 찾기만 할 땐 결과가 한 줄일 때만).
+    const abbreviated = (cell) => /외\s*\d+/.test(String(cell || ''));
+    const exact = t ? t.rows.filter((r) => (lookup || ships.has(r.cells[t.idx.ship])) && hasPo(r.cells[t.idx.po])) : [];
+    const shortRows = t && !exact.length ? t.rows.filter((r) => abbreviated(r.cells[t.idx.po]) && (lookup ? t.rows.length === 1 : ships.has(r.cells[t.idx.ship]))) : [];
+    const hits = exact.length ? exact : shortRows;
     const shipsFound = Array.from(new Set(hits.map((r) => r.cells[t.idx.ship]).filter(Boolean)));
     debug('link', { no, shipsFound, rows: t ? t.rows.slice(0, 5).map((r) => r.cells) : null });
     // 한 발주서가 쉽먼트 두 개에 나뉘어 있으면 어느 하나로 정하지 않고 멈춘다.

@@ -185,6 +185,14 @@ export const moveCommonPageText = (fromKey: string, toKey: string) => {
   } catch { /* 못 옮기면 옮긴 상페는 카테고리 문구로 시작 */ }
 };
 
+// 상페를 복사할 때 그 상페의 문구도 같이 복사한다.
+export const copyCommonPageText = (fromKey: string, toKey: string) => {
+  try {
+    const v = localStorage.getItem(PAGE_PREFIX + fromKey);
+    if (v != null) localStorage.setItem(PAGE_PREFIX + toKey, v);
+  } catch { /* 못 하면 복사본은 카테고리 문구로 시작 */ }
+};
+
 // 같은 상페를 연 다른 에디터도 같은 값을 보도록 고칠 때 알린다.
 // pageKey가 있으면 문구는 그 상페에, 디자인은 카테고리에 저장한다.
 export const useCommonInfo = (categoryId: string, fallbackDesign: CommonDesign, pageKey?: string) => {

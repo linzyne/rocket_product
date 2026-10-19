@@ -30,7 +30,7 @@ import ImageRenamer from './components/ImageRenamer';
 import ImageEditorModal from './components/ImageEditorModal';
 import DetailPageBuilderModal from './components/DetailPageBuilderModal';
 import DetailCategoryTabs, { DetailCategory, DetailPage, KIMCHI_CATEGORY_ID, draftIdForCategory, draftIdForPage, getCategoryPages, getActivePage, loadDetailCategories, saveDetailCategories, loadActiveCategoryId, saveActiveCategoryId } from './components/DetailCategoryTabs';
-import { defaultCommonDesign, commonPageKey, moveCommonPageText } from './components/DetailCommonInfo';
+import { defaultCommonDesign, commonPageKey, moveCommonPageText, copyCommonPageText } from './components/DetailCommonInfo';
 import { deleteDetailPageDraft, loadDetailPageDraft, saveDetailPageDraft, listDetailPageDrafts } from './data/detailPageDrafts';
 import AppSidebar, { AppMenuId, isAppMenuId, MenuPlaceholder } from './components/AppSidebar';
 import MissingFieldsModal from './components/MissingFieldsModal';
@@ -2927,6 +2927,42 @@ const App: React.FC = () => {
     }
   }, [activeDetailPages, detailCategories, activeDetailCategoryId, selectDetailCategory]);
 
+  // 상페를 그대로 복사해 바로 옆에 새 상페로 만든다(1번·2번 틀 작업본과 공통 안내 문구까지). 중간저장은 복사하지 않는다.
+  // 열린 에디터가 마지막 내용까지 저장하도록 먼저 내렸다가 복사하고 새 상페를 띄운다.
+  const [copyingDetailPage, setCopyingDetailPage] = useState(false);
+  const copyDetailPage = useCallback(async (pageId: string) => {
+    const page = activeDetailPages.find(p => p.id === pageId);
+    if (!page) return;
+    const name = window.prompt('복사해서 만들 상페 이름', `${page.name} 복사`)?.trim();
+    if (!name) return;
+    const categoryId = activeDetailCategoryId;
+    const newPage: DetailPage = { ...page, id: generateId(), name };
+    setCopyingDetailPage(true);
+    try {
+      await new Promise(resolve => window.setTimeout(resolve, 600));
+      for (const template of ['kimchi', 'green'] as const) {
+        const saved = await loadDetailPageDraft<unknown>(draftIdForPage(categoryId, pageId, template));
+        if (saved && !(await saveDetailPageDraft(draftIdForPage(categoryId, newPage.id, template), saved.data))) {
+          alert('복사하다가 저장에 실패했어요. 원래 상페는 그대로예요.');
+          return;
+        }
+      }
+      copyCommonPageText(commonPageKey(categoryId, pageId), commonPageKey(categoryId, newPage.id));
+      const latest = loadDetailCategories();
+      const next = latest.map(c => {
+        if (c.id !== categoryId) return c;
+        const pages = getCategoryPages(c);
+        const at = pages.findIndex(p => p.id === pageId);
+        return { ...c, pages: [...pages.slice(0, at + 1), newPage, ...pages.slice(at + 1)], activePageId: newPage.id };
+      });
+      setDetailCategories(next);
+      saveDetailCategories(next);
+      selectDetailCategory(categoryId);
+    } finally {
+      setCopyingDetailPage(false);
+    }
+  }, [activeDetailPages, activeDetailCategoryId, selectDetailCategory]);
+
   const removeDetailPage = useCallback((pageId: string) => {
     const page = activeDetailPages.find(p => p.id === pageId);
     if (!page || activeDetailPages.length <= 1) return;
@@ -3422,6 +3458,7 @@ const App: React.FC = () => {
           onRenamePage={renameDetailPage}
           onRemovePage={removeDetailPage}
           onMovePage={moveDetailPage}
+          onCopyPage={copyDetailPage}
         />
         <div className="flex-1 min-h-0">
           <DetailPageBuilderModal
@@ -3439,8 +3476,8 @@ const App: React.FC = () => {
             onImportedPhotosUsed={() => setImportedDetailPhotos(null)}
             embedded
           />
-          {movingDetailPage ? (
-            <div className="h-full flex items-center justify-center text-slate-400 text-sm">상페를 옮기는 중…</div>
+          {movingDetailPage || copyingDetailPage ? (
+            <div className="h-full flex items-center justify-center text-slate-400 text-sm">{copyingDetailPage ? '상페를 복사하는 중…' : '상페를 옮기는 중…'}</div>
           ) : (
           <DetailPageBuilderModal
             key={`category-${activeDetailCategoryId}-${activeDetailPage.id}-${activeDetailTemplate}`}

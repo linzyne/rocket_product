@@ -1,6 +1,6 @@
 import React, { useMemo } from 'react';
 import EditableText from './EditableText';
-import { PADDING_X, RULE_COLOR, CARD_COLOR, SPACE, SECTION_GAP, DEFAULT_PHOTO_GAP, PHOTO_GAP_MAX, KIMCHI_SKIN_SECTION_GAP, SECTION_GAP_MAX } from '../utils/detailPageLayout';
+import { CANVAS_WIDTH, PADDING_X, RULE_COLOR, CARD_COLOR, SPACE, SECTION_GAP, DEFAULT_PHOTO_GAP, PHOTO_GAP_MAX, KIMCHI_SKIN_SECTION_GAP, SECTION_GAP_MAX } from '../utils/detailPageLayout';
 import { GUIDE_TYPES, KimchiHighlight, KimchiSection, kimchiSectionHasText, sectionBaseLabel } from '../utils/kimchiDetailTemplate';
 
 // 김치 상세페이지 미리보기. 페이지는 "섹션 배열"이고, 섹션 하나가 [문구 + 자기 사진] 한 세트다.
@@ -23,8 +23,13 @@ export interface KimchiPhoto {
 export const makePhotoRun =
   (renderPhoto: (photo: KimchiPhoto, marginBottom: number) => React.ReactNode) =>
   (section: KimchiSection, photos: KimchiPhoto[], inner: number, trailing: number = inner) =>
-    photos.map((photo, idx, arr) =>
-      renderPhoto(photo, idx === arr.length - 1 ? trailing : section.photoGap ?? inner));
+    photos.map((photo, idx, arr) => {
+      const el = renderPhoto(photo, idx === arr.length - 1 ? trailing : section.photoGap ?? inner);
+      // 사진 꽉 채우기: 스킨의 좌우 여백과 상관없이 페이지 폭(860px) 그대로, 가운데 맞춰 편다.
+      return section.photoFull
+        ? <div key={photo.id} style={{ width: CANVAS_WIDTH, maxWidth: 'none', marginLeft: `calc(50% - ${CANVAS_WIDTH / 2}px)` }}>{el}</div>
+        : el;
+    });
 
 // 예고 카드에 붙는 번호. 카드 순서에서 자동으로 나오므로 문구로 받지 않는다 — 카드를 지우거나
 // 순서를 바꿨을 때 번호가 어긋나는 일이 없어야 한다. 스무 개를 넘으면 그냥 숫자로 쓴다.
@@ -1490,6 +1495,19 @@ export const KimchiSectionPanel: React.FC<KimchiSectionPanelProps> = ({
                   </button>
                 )}
               </div>
+            )}
+
+            {/* 사진 꽉 채우기 — 사진을 페이지 좌우 끝까지(좌우 여백 없이). 사진을 이어 붙이는 섹션에만. */}
+            {photos.length >= 1 && !['review', 'cert', 'gCompare', 'gCert', 'gSteps', 'notes'].includes(section.kind) && (
+              <label className="flex items-center gap-2 cursor-pointer select-none" title="사진을 페이지 좌우 끝까지 꽉 채웁니다(좌우 여백 없음)">
+                <input
+                  type="checkbox"
+                  checked={!!section.photoFull}
+                  onChange={e => updateSection(section.id, { photoFull: e.target.checked || undefined })}
+                  className="accent-blue-500 cursor-pointer"
+                />
+                <span className="text-[11px] text-slate-300">사진 꽉 채우기 (좌우 여백 없음)</span>
+              </label>
             )}
 
             {/* 섹션 간격 — 이 섹션과 "다음" 섹션 사이에 남길 여백. 마지막 섹션 뒤는 페이지 끝이라

@@ -41,11 +41,11 @@ type Stage = 'ordered' | 'partial' | 'arrived' | 'settled';
 const STAGE_LABEL: Record<Stage, { text: string; cls: string }> = {
   ordered: { text: '✈️ 오는 중', cls: 'bg-amber-50 text-amber-700 border-amber-200' },
   partial: { text: '📦 일부 도착', cls: 'bg-sky-50 text-sky-700 border-sky-200' },
-  arrived: { text: '🏠 쿠팡입고 대기', cls: 'bg-violet-50 text-violet-700 border-violet-200' },
-  settled: { text: '🎉 완료', cls: 'bg-emerald-50 text-emerald-700 border-emerald-200' },
+  arrived: { text: '🏠 발송대기', cls: 'bg-violet-50 text-violet-700 border-violet-200' },
+  settled: { text: '🎉 발송완료', cls: 'bg-emerald-50 text-emerald-700 border-emerald-200' },
 };
 // 완료: 배정(쿠팡 몫) 줄의 발주서가 모두 발송완료됐거나, 정산 자료(물류창고입고)로 배정만큼 쿠팡에 들어갔으면.
-// 배정 없는 건(여유만 산 건)은 도착하면 완료. 그 밖에 다 도착했으면 쿠팡입고 대기(= 도착했지만 아직 다 안 보냄).
+// 배정 없는 건(여유만 산 건)은 도착하면 완료. 그 밖에 다 도착했으면 발송대기(= 도착했지만 아직 다 안 보냄).
 const stageOf = (o: HanjungOrder, settleQty: number, sentNos: Set<string>): Stage => {
   const mine = o.lines.filter(l => lineAlloc(l) > 0);
   if (mine.length && mine.every(l => sentNos.has(String(l.발주번호 || '').trim()))) return 'settled';
@@ -56,8 +56,8 @@ const stageOf = (o: HanjungOrder, settleQty: number, sentNos: Set<string>): Stag
 };
 const TABS: { id: 'arriving' | 'arrived' | 'settled' | 'all'; text: string; has: (st: Stage) => boolean }[] = [
   { id: 'arriving', text: '⏳ 도착 전', has: st => st === 'ordered' || st === 'partial' },
-  { id: 'arrived', text: '🏠 쿠팡입고 대기', has: st => st === 'arrived' },
-  { id: 'settled', text: '🎉 완료', has: st => st === 'settled' },
+  { id: 'arrived', text: '🏠 발송대기', has: st => st === 'arrived' },
+  { id: 'settled', text: '🎉 발송완료', has: st => st === 'settled' },
   { id: 'all', text: '📋 전체', has: () => true },
 ];
 // 머리줄의 단계 칸: "도착 80/120"처럼 한 것/할 것. 다 되면 초록, 일부면 주황.

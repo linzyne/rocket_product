@@ -1258,7 +1258,8 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
   // 이미 예약한 건(쉽먼트 기록이 있는 건)은 두 번 예약하면 안 되므로 빼고, 멈춘 건은 카드의 "이어서 하기"로.
   // 택배예약 대상: 고른 것 중 서허 등록(쉽먼트 번호)이 안 된 발주서. 이미 택배예약한 것도 사람이 원하면 다시 예약한다
   // (예약은 됐는데 서허에 일부만 올라간 일처럼, 예약을 무시하고 처음부터 다시 해야 할 때).
-  const toReserve = new Set(pickedShipping.filter(o => !o.item!.shipmentNos?.[o.no]).map(o => o.no));
+  // 서허 등록까지 끝난 것도 고르면 대상에 넣는다(재쉽먼트: 서허 쉽먼트·롯데 예약을 직접 취소한 뒤 처음부터 다시). 누를 때 한 번 더 묻는다.
+  const toReserve = new Set(pickedShipping.map(o => o.no));
   const reserveItems = (() => {
     const m = new Map<string, ShipOut>();
     pickedShipping.forEach(o => { if (toReserve.has(o.no)) m.set(o.item!.id, o.item!); });
@@ -1278,15 +1279,20 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
     묶음센터: item.center,
   }))));
   const reserveShip = () => {
-    const registered = pickedShipping.filter(o => !toReserve.has(o.no)).map(o => o.no);
-    const again = pickedShipping.filter(o => toReserve.has(o.no) && reservedOrder(o)).map(o => o.no);
-    if (registered.length && !window.confirm(`서허 등록까지 끝난 발주서는 빼고 해요: ${registered.join(', ')}`)) return;
+    const registered = pickedShipping.filter(o => o.item!.shipmentNos?.[o.no]).map(o => `${o.no}(쉽먼트 ${o.item!.shipmentNos![o.no]})`);
+    const again = pickedShipping.filter(o => !o.item!.shipmentNos?.[o.no] && reservedOrder(o)).map(o => o.no);
+    if (registered.length && !window.confirm(
+      `서허 등록까지 끝난 발주서가 있어요: ${registered.join(', ')}\n\n` +
+      '택배예약부터 처음부터 다시 할까요?\n먼저 서허 › 택배 쉽먼트에서 그 쉽먼트를 취소하고, 롯데에서도 기존 예약을 지워 주세요(안 지우면 쉽먼트·예약이 두 번 생겨요).',
+    )) return;
     if (again.length && !window.confirm(`이미 택배예약한 발주서 ${again.length}건이 있어요: ${again.join(', ')}\n\n예약을 무시하고 택배예약부터 다시 할까요?\n(롯데에 이미 잡힌 예약은 직접 취소해 주세요)`)) return;
     // 고른 발주서 줄만 예약한다. 출고 건에 안 고른 발주서가 섞여 있으면, 예약이 시작된 뒤 고른 줄만 새 출고 건으로 떼어 낸다.
     const pickedOnly = reserveItems.map(it => ({ ...it, lines: it.lines.filter(l => toReserve.has(l.발주번호)) }));
     const whole = pickedOnly.filter((it, i) => it.lines.length === reserveItems[i].lines.length);
     const b = startShipment(rowsOf(pickedOnly), whole.map(i => i.id), addresses, sender, batches);
     if (!b) return;
+    // 재쉽먼트: 예전 서허 등록 표시(등록 완료·쉽먼트 번호·발송대기로)를 지워야 새 등록 결과로만 다시 채워진다.
+    if (registered.length) markShipOuts(whole.map(i => i.id), { uploadedAt: undefined, formSavedAt: undefined, doneAt: undefined, shipmentNos: {} });
     pickedOnly.forEach((it, i) => {
       if (it.lines.length !== reserveItems[i].lines.length) splitShipOut(it.id, Array.from(new Set(it.lines.map(l => l.발주번호))), { batchId: b.id });
     });

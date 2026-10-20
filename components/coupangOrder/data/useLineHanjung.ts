@@ -3,7 +3,7 @@
 //  · setLineHanjung: 고른 대로 맡긴다(발주 대기 / 그 한중발주 / 빼기 / 사무실 재고에서 쓰기)
 import { useEffect, useMemo, useState } from 'react';
 import {
-  HanjungOrder, subscribeHanjung, saveHanjungOrder, freezeOrderQty, productSummary, sameName, orderQtyName, rememberSameProduct,
+  HanjungOrder, subscribeHanjung, saveHanjungOrder, freezeOrderQty, productSummary, sameName, orderQtyName, rememberSameProduct, assignRemaining,
 } from '../../../data/hanjungStore';
 import { HanjungQueueItem, subscribeHanjungQueue, addToHanjungQueue, removeFromHanjungQueue, hanjungQueueKey, makePlaceLookup } from './hanjungQueueStore';
 import { reservationKey } from './reservationStore';
@@ -57,6 +57,34 @@ export function useLineHanjung(note: (text: string) => void = t => alert(t)) {
   // 줄을 떼도 1688에 산 수량(주문 수량)은 그대로라 그만큼 여유로 돌아간다.
   const setLineHanjung = async (line: HLine, action: HanjungAction, onFullReady?: () => void) => {
     if (action.type === 'stock') { await assignFromSpare(line, onFullReady); return; }
+    if (action.type === 'restQueue') {
+      const placed = placesOf(line).reduce((n, p) => n + p.qty, 0);
+      const qty = (Number(line.확정수량) || 0) - placed;
+      if (qty <= 0 || queuedKeys.has(hanjungQueueKey(line))) return;
+      try {
+        await addToHanjungQueue([{ ...line, 배정: qty }], []);
+        note(`${line.상품이름} 남은 ${qty}개를 장바구니에 담았어요.`);
+      } catch (err: any) {
+        alert(`장바구니 저장 실패: ${err?.message || err}`);
+      }
+      return;
+    }
+    if (action.type === 'rest') {
+      // 남은 수량만 그 한중발주에 더 맡긴다. 이미 배정한 곳(사무실 재고 등)은 건드리지 않는다.
+      const order = hanjungOrders.find(o => o.code === action.code);
+      if (!order) return;
+      const placed = placesOf(line).reduce((n, p) => n + p.qty, 0);
+      const qty = (Number(line.확정수량) || 0) - placed;
+      if (qty <= 0) return;
+      const fill = { 발주번호: line.발주번호, 물류센터: line.물류센터, 상품이름: line.상품이름, 확정수량: Number(line.확정수량) || 0, 입고예정일: dateKeyYMD(line.입고예정일).replace(/-/g, '') };
+      try {
+        await saveHanjungOrder(assignRemaining(order, fill, qty, reservationKey(line), action.grow));
+        note(`${line.상품이름} 남은 ${qty}개를 ${order.code}에 맡겼어요.`);
+      } catch (err: any) {
+        alert(`한중발주 저장 실패: ${err?.message || err}`);
+      }
+      return;
+    }
     const k = hanjungQueueKey(line);
     const name = line.상품이름;
     const need = Number(line.확정수량) || 0;

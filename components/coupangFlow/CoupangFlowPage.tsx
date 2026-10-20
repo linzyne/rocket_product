@@ -484,7 +484,24 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
       return !!a && a.received >= a.ordered;
     });
   };
-  const allReady = (o: FlowOrder) => o.lines.length > 0 && o.lines.every(l => lineIsReady(o, l));
+  // 발주서별 상태: 아직 한중발주로 입고중인 수량(✈), 어디에도 안 맡기고 준비됨도 아닌 수량(미배정).
+  const orderStatus = (o: FlowOrder) => {
+    let coming = 0;
+    let unassigned = 0;
+    for (const l of o.lines) {
+      const key = { 발주번호: o.no, 상품이름: l.상품이름, 확정수량: l.확정수량 };
+      const places = placesOf(key);
+      for (const p of places) {
+        if (!p.code) continue;
+        const a = hjArrived.get(`${p.code}│${nameKey(l.상품이름)}`);
+        if (!a || a.received < a.ordered) coming += p.qty;
+      }
+      if (!ready.isReady(key, o.item?.readyKeys)) unassigned += Math.max(0, (Number(l.확정수량) || 0) - places.reduce((n, p) => n + p.qty, 0));
+    }
+    return { coming, unassigned };
+  };
+  // 다 준비됨(초록)은 준비 표시가 다 됐고, 한중발주로 아직 입고중인 것도 없을 때만.
+  const allReady = (o: FlowOrder) => o.lines.length > 0 && o.lines.every(l => lineIsReady(o, l)) && orderStatus(o).coming === 0;
   // 이 칸에 들어온 때. 발주확정 = 확정 표시(또는 예약·대기로 넘긴 때, 없으면 발주서가 처음 들어온 때),
   // 쉽먼트 = 출고 건을 만든 때(발송대기에서 되돌렸으면 그때), 발송대기 = 발송대기로 누른 때(없으면 서허 등록 때).
   const reserveAt = new Map<string, number>();
@@ -1088,6 +1105,18 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
             </span>
           )}
         </div>
+        {/* 발주서 오른쪽 위: 한눈에 보는 상태 — 아직 입고중(파란 비행기), 미배정(빨강). */}
+        {o.stage !== 5 && (() => {
+          const st = orderStatus(o);
+          if (!st.coming && !st.unassigned) return null;
+          const pill = (bg: string): React.CSSProperties => ({ display: 'inline-flex', alignItems: 'center', gap: 3, padding: '1px 8px', borderRadius: 999, background: bg, color: '#fff', fontWeight: 800, fontSize: 11, whiteSpace: 'nowrap' });
+          return (
+            <span style={{ marginLeft: 'auto', display: 'inline-flex', gap: 4, flexShrink: 0 }}>
+              {st.coming > 0 && <span title={`한중발주로 아직 입고중인 수량 ${st.coming}개`} style={pill('#2563eb')}>✈ 입고중 {st.coming}</span>}
+              {st.unassigned > 0 && <span title={`아직 한중발주·장바구니에 안 맡기고 준비됨도 아닌 수량 ${st.unassigned}개`} style={pill(RED)}>미배정 {st.unassigned}</span>}
+            </span>
+          );
+        })()}
       </div>
       {tags(o)}
       {(o.stage < 2 || once) && runNote(o)}

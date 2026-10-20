@@ -23,6 +23,78 @@ type Choice = { mode: '' | 'cart' | 'other' | 'skip'; name: string; remembered?:
 const ckey = (orderId: string, idx: number) => `${orderId}#${idx}`;
 const won = (n: number) => `${Math.round(n).toLocaleString()}원`;
 
+// 앱 상품 고르기: 칸에 글자를 치면 이름에 그 글자가 든 상품만 바로 추려 보여 준다(띄어쓰기·대소문자 무시).
+// 눌러서 목록에서 골라도 된다. 장바구니(발주 대기) 상품이 위, 다른 앱 상품이 아래. Enter = 맨 위 고르기.
+const norm = (v: string) => v.replace(/\s+/g, '').toLowerCase();
+export const ProductPicker: React.FC<{
+  choice: Choice;
+  cart: { name: string; qty: number }[];
+  others: { name: string; from: string }[];
+  bad: boolean;
+  onPick: (c: Choice) => void;
+}> = ({ choice, cart, others, bad, onPick }) => {
+  const shown = choice.mode === 'skip' ? '🚫 이 상품은 빼기' : choice.name;
+  const [text, setText] = useState<string | null>(null);
+  const [open, setOpen] = useState(false);
+  const q = norm(text ?? '');
+  const hit = (name: string) => !q || norm(name).includes(q);
+  const cartHits = cart.filter(g => hit(g.name));
+  const otherHits = others.filter(n => hit(n.name)).slice(0, 60);
+  const typed = (text ?? '').trim();
+  const exact = typed && [...cart.map(g => g.name), ...others.map(n => n.name)].some(n => norm(n) === norm(typed));
+  const pick = (c: Choice) => { onPick(c); setText(null); setOpen(false); };
+  const first = () => {
+    if (cartHits[0]) return pick({ mode: 'cart', name: cartHits[0].name });
+    if (otherHits[0]) return pick({ mode: 'other', name: otherHits[0].name });
+    if (typed) return pick({ mode: 'other', name: typed });
+  };
+  const row = 'w-full text-left px-2 py-1.5 hover:bg-blue-50 truncate';
+  return (
+    <div className="relative">
+      <input
+        value={text ?? shown}
+        placeholder="상품명을 치면 바로 찾아요 (눌러서 고르기도 돼요)"
+        onFocus={e => { setOpen(true); setText(''); e.currentTarget.select(); }}
+        // 이미 칸에 있을 때(방금 고른 뒤 등) 다시 눌러도 목록이 열리게.
+        onClick={() => { if (!open) { setOpen(true); setText(''); } }}
+        onChange={e => { setText(e.target.value); setOpen(true); }}
+        onKeyDown={e => {
+          if (e.key === 'Enter') { e.preventDefault(); first(); }
+          if (e.key === 'Escape') { setText(null); setOpen(false); (e.target as HTMLInputElement).blur(); }
+        }}
+        // 목록을 누를 틈을 주고 닫는다.
+        onBlur={() => window.setTimeout(() => { setOpen(false); setText(null); }, 150)}
+        className={`w-full px-2 py-1 border rounded bg-white ${bad ? 'border-red-400' : 'border-gray-300'}`}
+      />
+      {open && (
+        <div className="absolute z-20 left-0 right-0 mt-1 max-h-64 overflow-y-auto bg-white border border-gray-200 rounded-lg shadow-lg text-xs">
+          {cartHits.length > 0 && <div className="px-2 pt-1.5 pb-0.5 text-[11px] font-bold text-gray-400">🛒 장바구니(발주 대기)</div>}
+          {cartHits.map(g => (
+            <button key={'c' + g.name} type="button" onMouseDown={e => e.preventDefault()} onClick={() => pick({ mode: 'cart', name: g.name })} className={row}>
+              {g.name} <span className="text-gray-400">(필요 {g.qty})</span>
+            </button>
+          ))}
+          {otherHits.length > 0 && <div className="px-2 pt-1.5 pb-0.5 text-[11px] font-bold text-gray-400">📦 다른 앱 상품(여유로 들어가요)</div>}
+          {otherHits.map(n => (
+            <button key={'o' + n.name} type="button" onMouseDown={e => e.preventDefault()} onClick={() => pick({ mode: 'other', name: n.name })} className={row}>
+              {n.name}
+            </button>
+          ))}
+          {typed && !exact && (
+            <button type="button" onMouseDown={e => e.preventDefault()} onClick={() => pick({ mode: 'other', name: typed })} className={`${row} text-blue-600`}>
+              ✍️ "{typed}" 그대로 쓰기
+            </button>
+          )}
+          {!cartHits.length && !otherHits.length && !typed && <div className="px-2 py-2 text-gray-400">상품이 없어요</div>}
+          <button type="button" onMouseDown={e => e.preventDefault()} onClick={() => pick({ mode: 'skip', name: '' })} className={`${row} border-t border-gray-100 text-gray-500`}>
+            🚫 이 상품은 빼기
+          </button>
+        </div>
+      )}
+    </div>
+  );
+};
+
 const Import1688Modal: React.FC<{
   hanjungOrders: HanjungOrder[];
   cart: { name: string; qty: number }[];
@@ -183,7 +255,6 @@ const Import1688Modal: React.FC<{
               const k = ckey(o.orderId, it.idx);
               const c = choices[k] || { mode: '', name: '' };
               const bad = on && (!c.mode || (c.mode !== 'skip' && !c.name.trim()));
-              const selectValue = c.mode === 'cart' ? `cart:${c.name}` : c.mode;
               return (
                 <div key={k} className={`rounded-lg border p-2 bg-white ${bad ? 'border-red-300' : 'border-gray-100'}`}>
                   <div className="flex gap-2">
@@ -216,46 +287,13 @@ const Import1688Modal: React.FC<{
                     <span className="text-gray-500 whitespace-nowrap">→ 앱 상품</span>
                     {c.mode !== 'skip' && <ProductThumb url={c.name.trim() ? imageOf(c.name.trim()) : ''} size={40} />}
                     <div className="flex-1 min-w-0 space-y-1">
-                      <select
-                        value={c.mode === 'other' && c.name && otherNames.some(n => n.name === c.name) ? `name:${c.name}` : selectValue}
-                        onChange={e => {
-                          const v = e.target.value;
-                          if (v.startsWith('cart:')) setChoice(k, { mode: 'cart', name: v.slice(5) });
-                          else if (v.startsWith('name:')) setChoice(k, { mode: 'other', name: v.slice(5) });
-                          else if (v === 'other') setChoice(k, { mode: 'other', name: c.mode === 'other' ? c.name : '' });
-                          else setChoice(k, { mode: v as Choice['mode'], name: '' });
-                        }}
-                        className={`w-full px-2 py-1 border rounded bg-white ${bad ? 'border-red-400' : 'border-gray-300'}`}
-                      >
-                        <option value="">— 골라 주세요 —</option>
-                        {cart.length > 0 && (
-                          <optgroup label="🛒 장바구니(발주 대기)">
-                            {cart.map(g => (
-                              <option key={g.name} value={`cart:${g.name}`}>
-                                {g.name} (필요 {g.qty})
-                              </option>
-                            ))}
-                          </optgroup>
-                        )}
-                        {otherNames.length > 0 && (
-                          <optgroup label="📦 다른 앱 상품(여유로 들어가요)">
-                            {otherNames.map(n => (
-                              <option key={n.name} value={`name:${n.name}`}>{n.name}</option>
-                            ))}
-                          </optgroup>
-                        )}
-                        <option value="other">✍️ 직접 입력…</option>
-                        <option value="skip">🚫 이 상품은 빼기</option>
-                      </select>
-                      {c.mode === 'other' && (
-                        <input
-                          list="import1688-names"
-                          value={c.name}
-                          onChange={e => setChoice(k, { mode: 'other', name: e.target.value })}
-                          placeholder="상품명 입력 → 목록에서 고르기"
-                          className="w-full px-2 py-1 border border-gray-300 rounded bg-white"
-                        />
-                      )}
+                      <ProductPicker
+                        choice={c}
+                        cart={cart}
+                        others={otherNames}
+                        bad={bad}
+                        onPick={next => setChoice(k, next)}
+                      />
                     </div>
                     {c.remembered && <span className="text-[11px] text-sky-600 whitespace-nowrap">기억한 짝</span>}
                   </div>

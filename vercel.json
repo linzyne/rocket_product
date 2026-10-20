@@ -1,0 +1,6 @@
+{
+  "crons": [
+    { "path": "/api/kakao/alert", "schedule": "0 0 * * *" },
+    { "path": "/api/kakao/alert", "schedule": "0 6 * * *" }
+  ]
+}

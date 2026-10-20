@@ -1782,6 +1782,25 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
 
   // ── 상자 보기 ──
   const shownStages = isMobile ? [mobileStage] : BOARD_STAGES;
+  // 카톡 "나에게 보내기" 알림: 처음 한 번 연결, 테스트로 바로 한 통 보내 보기. 정해진 알림은 매일 오전 9시·오후 3시(서버).
+  const kakaoButtons = (
+    <span style={{ marginLeft: 'auto', display: 'inline-flex', gap: 6 }}>
+      <a href="/api/kakao/login" title="카카오 로그인으로 카톡 '나에게 보내기' 알림을 연결해요(처음 한 번)"
+        style={{ fontSize: 12, fontWeight: 700, padding: '4px 10px', borderRadius: 999, background: '#FEE500', color: '#191919', textDecoration: 'none', whiteSpace: 'nowrap' }}>💬 카톡 연결</a>
+      <button
+        onClick={async () => {
+          try {
+            const r = await fetch('/api/kakao/alert?test=1');
+            const j = await r.json();
+            alert(j.ok ? `카톡을 보냈어요(마감 임박 ${j.count}건).` : `카톡을 못 보냈어요: ${j.error}`);
+          } catch (err) {
+            alert(`카톡을 못 보냈어요: ${err instanceof Error ? err.message : String(err)}`);
+          }
+        }}
+        title="지금 카톡으로 한 통 보내 보기"
+        style={{ fontSize: 12, fontWeight: 700, padding: '4px 10px', borderRadius: 999, border: '1px solid #e5e5e5', background: '#fff', cursor: 'pointer', whiteSpace: 'nowrap' }}>카톡 테스트</button>
+    </span>
+  );
   // 칸 제목 오른쪽 "입고예정일순 | 최신순"
   const sortToggle = (st: Stage) => (
     <span style={{ marginLeft: 'auto', display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 11.5, whiteSpace: 'nowrap' }}>
@@ -1807,6 +1826,7 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
           <span style={{ fontSize: 12, color: '#888' }}>발주서가 지금 있는 상자 = 지금 단계</span>
           {newButton}
           {search}
+          {kakaoButtons}
         </div>
       </header>
 

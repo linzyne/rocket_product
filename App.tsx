@@ -465,6 +465,13 @@ const App: React.FC = () => {
   // 발송대기 마감(입고예정일 하루 전)이 다가왔는데 아직 발송대기에 없는 발주. 어느 화면에 있든 메뉴 숫자와 컴퓨터 알림으로 알린다.
   const shipDeadline = useShipDeadline();
   useEffect(() => { notifyShipDeadline(shipDeadline); }, [shipDeadline]);
+  // 카톡 연결(서버 /api/kakao/callback)에서 돌아왔을 때 결과를 알려 주고 주소에서 지운다.
+  useEffect(() => {
+    const kakao = new URLSearchParams(window.location.search).get('kakao');
+    if (!kakao) return;
+    window.history.replaceState(null, '', window.location.pathname + window.location.hash);
+    alert(kakao === 'ok' ? '카톡 알림이 연결됐어요. 카톡에 확인 메시지가 갔을 거예요.' : `카톡 연결에 실패했어요: ${kakao}`);
+  }, []);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
     if (OPENED_FOR_DETAIL) return true;
     try { return localStorage.getItem(SIDEBAR_COLLAPSED_KEY) === '1'; } catch { return false; }

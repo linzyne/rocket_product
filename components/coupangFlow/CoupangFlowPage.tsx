@@ -588,14 +588,26 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
   // ── 카드 조각들(상자 보기·단계별 보기가 같이 쓴다) ──
   // 입고예정일·센터를 가장 크게, 그 아래 발주번호.
   // 발주번호 줄(+쉽먼트 번호·인쇄·체크칸) + 송장번호 줄. 카드 머리와 날짜·센터 덩어리 안에서 같이 쓴다.
-  // 발송대기 마감 임박 딱지: 입고예정일 하루 전까지 발송대기에 없어야 할 발주(오늘까지·지남 = 빨강, 내일까지 = 주황).
+  // 발송대기 마감 딱지: 발주확정·쉽먼트·발송대기 칸의 발주서마다 늘 붙인다. 마감 = 입고예정일 하루 전.
+  //  발송대기에 이미 있으면 초록(마감 지킴). 아직이면 남은 날에 따라 빨강(오늘까지·지남)·주황(내일까지)·회색(그 전).
+  const todayN = Math.floor((Date.now() - new Date().getTimezoneOffset() * 60000) / 86400000);
   const deadlineBadge = (no: string) => {
+    const o = orders.find(x => x.no === no);
+    if (!o || ![1, 2, 4].includes(o.stage)) return null;
+    const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(o.date || '');
+    if (!m) return null;
+    const dueN = Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3])) / 86400000;
+    const dl = new Date((dueN - 1) * 86400000);
+    const dlText = `${dl.getUTCMonth() + 1}/${dl.getUTCDate()}`;
+    const left = dueN - 1 - todayN;
+    const inWaiting = o.stage === 4 && !deadlineByNo.has(no);
     const d = deadlineByNo.get(no);
-    if (!d) return null;
+    const label = inWaiting ? `✓ 발송대기 마감 ${dlText}` : d ? `⏰ 발송대기 ${deadlineText(d)}` : `⏰ 발송대기 마감 ${dlText} (D-${left})`;
+    const bg = inWaiting ? '#16a34a' : left <= 0 ? RED : left === 1 ? '#f59e0b' : '#9ca3af';
     return (
-      <span title={`입고예정일 ${d.due} · 발송대기 마감 ${d.deadline}. 마감까지 발송대기에 안 올리면 쿠팡이 발주를 취소해요.`}
-        style={{ marginLeft: 6, display: 'inline-block', padding: '1px 7px', borderRadius: 999, background: d.daysLeft <= 0 ? RED : '#f59e0b', color: '#fff', fontWeight: 800, fontSize: 11 }}>
-        ⏰ 발송대기 {deadlineText(d)}
+      <span title={`입고예정일 ${o.date} · 발송대기 마감 ${dlText}(입고예정일 하루 전). 마감까지 발송대기에 안 올리면 쿠팡이 발주를 취소해요.`}
+        style={{ marginLeft: 6, display: 'inline-block', padding: '1px 7px', borderRadius: 999, background: bg, color: '#fff', fontWeight: 800, fontSize: 11 }}>
+        {label}
       </span>
     );
   };

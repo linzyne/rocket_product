@@ -93,6 +93,14 @@ const Import1688Modal: React.FC<{
   }, [basket, links, cart]);
 
   const setChoice = (k: string, c: Choice) => setChoices(prev => ({ ...prev, [k]: c }));
+  // 장바구니에 없는 앱 상품도 목록에서 바로 고르게(가나다순, 장바구니 상품은 빼고).
+  const otherNames = useMemo(() => {
+    const seen = new Set<string>();
+    return names
+      .filter(n => n.name.trim() && !cart.some(c => sameName(c.name, n.name)))
+      .filter(n => { const k = n.name.trim(); if (seen.has(k)) return false; seen.add(k); return true; })
+      .sort((a, b) => a.name.localeCompare(b.name, 'ko'));
+  }, [names, cart]);
   const toggle = (id: string) =>
     setPicked(prev => {
       const n = new Set(prev);
@@ -180,7 +188,21 @@ const Import1688Modal: React.FC<{
                 <div key={k} className={`rounded-lg border p-2 bg-white ${bad ? 'border-red-300' : 'border-gray-100'}`}>
                   <div className="flex gap-2">
                     <span className="w-14 h-14 flex-shrink-0 rounded border border-gray-200 bg-gray-50 overflow-hidden">
-                      {it.imageUrl && <img src={`${it.imageUrl}_120x120.jpg`} alt="" className="w-full h-full object-cover" />}
+                      {/* 1688 사진은 다른 사이트에서 부르면(리퍼러) 막히는 일이 있어 리퍼러 없이 부르고, 작은 사진이 안 되면 원본으로. */}
+                      {it.imageUrl && (
+                        <img
+                          src={`${it.imageUrl}_120x120.jpg`}
+                          alt=""
+                          referrerPolicy="no-referrer"
+                          onError={e => {
+                            const img = e.currentTarget;
+                            if (img.dataset.fallback) { img.style.display = 'none'; return; }
+                            img.dataset.fallback = '1';
+                            img.src = it.imageUrl!;
+                          }}
+                          className="w-full h-full object-cover"
+                        />
+                      )}
                     </span>
                     <div className="min-w-0 flex-1 text-xs">
                       <div className="text-gray-800 line-clamp-2">{it.title}</div>
@@ -195,22 +217,34 @@ const Import1688Modal: React.FC<{
                     {c.mode !== 'skip' && <ProductThumb url={c.name.trim() ? imageOf(c.name.trim()) : ''} size={40} />}
                     <div className="flex-1 min-w-0 space-y-1">
                       <select
-                        value={selectValue}
+                        value={c.mode === 'other' && c.name && otherNames.some(n => n.name === c.name) ? `name:${c.name}` : selectValue}
                         onChange={e => {
                           const v = e.target.value;
                           if (v.startsWith('cart:')) setChoice(k, { mode: 'cart', name: v.slice(5) });
+                          else if (v.startsWith('name:')) setChoice(k, { mode: 'other', name: v.slice(5) });
                           else if (v === 'other') setChoice(k, { mode: 'other', name: c.mode === 'other' ? c.name : '' });
                           else setChoice(k, { mode: v as Choice['mode'], name: '' });
                         }}
                         className={`w-full px-2 py-1 border rounded bg-white ${bad ? 'border-red-400' : 'border-gray-300'}`}
                       >
                         <option value="">— 골라 주세요 —</option>
-                        {cart.map(g => (
-                          <option key={g.name} value={`cart:${g.name}`}>
-                            🛒 {g.name} (필요 {g.qty})
-                          </option>
-                        ))}
-                        <option value="other">✍️ 장바구니에 없는 상품…</option>
+                        {cart.length > 0 && (
+                          <optgroup label="🛒 장바구니(발주 대기)">
+                            {cart.map(g => (
+                              <option key={g.name} value={`cart:${g.name}`}>
+                                {g.name} (필요 {g.qty})
+                              </option>
+                            ))}
+                          </optgroup>
+                        )}
+                        {otherNames.length > 0 && (
+                          <optgroup label="📦 다른 앱 상품(여유로 들어가요)">
+                            {otherNames.map(n => (
+                              <option key={n.name} value={`name:${n.name}`}>{n.name}</option>
+                            ))}
+                          </optgroup>
+                        )}
+                        <option value="other">✍️ 직접 입력…</option>
                         <option value="skip">🚫 이 상품은 빼기</option>
                       </select>
                       {c.mode === 'other' && (

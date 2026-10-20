@@ -164,6 +164,7 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
   });
   // 발송대기 마감 임박(입고예정일 하루 전까지 발송대기에 없어야 할 발주). 화면 위 빨간 띠로 알린다.
   const shipDeadline = useShipDeadline();
+  const deadlineByNo = useMemo(() => new Map(shipDeadline.map(d => [d.no, d])), [shipDeadline]);
   const [notifyPerm, setNotifyPerm] = useState(() => (typeof Notification === 'undefined' ? 'unsupported' : Notification.permission));
   // 📦를 눌렀는데 송장이 여럿인 상자(그 상자 아래에 송장번호 고르기를 띄운다).
   const [waybillPick, setWaybillPick] = useState<string | null>(null);
@@ -587,11 +588,23 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
   // ── 카드 조각들(상자 보기·단계별 보기가 같이 쓴다) ──
   // 입고예정일·센터를 가장 크게, 그 아래 발주번호.
   // 발주번호 줄(+쉽먼트 번호·인쇄·체크칸) + 송장번호 줄. 카드 머리와 날짜·센터 덩어리 안에서 같이 쓴다.
+  // 발송대기 마감 임박 딱지: 입고예정일 하루 전까지 발송대기에 없어야 할 발주(오늘까지·지남 = 빨강, 내일까지 = 주황).
+  const deadlineBadge = (no: string) => {
+    const d = deadlineByNo.get(no);
+    if (!d) return null;
+    return (
+      <span title={`입고예정일 ${d.due} · 발송대기 마감 ${d.deadline}. 마감까지 발송대기에 안 올리면 쿠팡이 발주를 취소해요.`}
+        style={{ marginLeft: 6, display: 'inline-block', padding: '1px 7px', borderRadius: 999, background: d.daysLeft <= 0 ? RED : '#f59e0b', color: '#fff', fontWeight: 800, fontSize: 11 }}>
+        ⏰ 발송대기 {deadlineText(d)}
+      </span>
+    );
+  };
   const subLine = (o: FlowOrder) => (
     <>
       <div style={{ fontSize: 11.5, color: '#888', marginTop: 2 }}>
         {/* 발주번호만 따로 감싼다: 앱 전체의 "발주번호 누르면 복사"(utils/copyOrderNo)가 글자가 번호 하나일 때만 복사한다. */}
         발주 <span title="눌러서 발주번호 복사" style={{ cursor: 'copy', textDecoration: 'underline dotted', textUnderlineOffset: 2 }}>{o.no}</span>
+        {deadlineBadge(o.no)}
         {/* 쉽먼트·발송대기 칸: 쉽먼트 번호와 인쇄 아이콘을 같은 줄에 */}
         {o.stage >= 2 && o.item?.shipmentNos?.[o.no] && (
           <span style={{ marginLeft: 10 }}>쉽먼트 <span
@@ -1055,6 +1068,7 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
         {/* 발주서마다는 발주번호만. 쉽먼트·송장 번호·출력(📄)·출력완료 체크는 덩어리 머리에 한 번 */}
         <div style={{ minWidth: 0, fontSize: 11.5, color: '#888', marginTop: 2 }}>
           발주 <span title="눌러서 발주번호 복사" style={{ cursor: 'copy', textDecoration: 'underline dotted', textUnderlineOffset: 2 }}>{o.no}</span>
+          {deadlineBadge(o.no)}
           {o.stage >= 2 && o.item && (
             <span title="이 발주서의 쉽먼트 번호 넣기·고치기" onClick={() => setShipNos([o])}
               style={{ marginLeft: 6, cursor: 'pointer', color: o.item.shipmentNos?.[o.no] ? '#16a34a' : '#b45309' }}>
@@ -1785,6 +1799,10 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
   // 카톡 "나에게 보내기" 알림: 처음 한 번 연결, 테스트로 바로 한 통 보내 보기. 정해진 알림은 매일 오전 9시·오후 3시(서버).
   const kakaoButtons = (
     <span style={{ marginLeft: 'auto', display: 'inline-flex', gap: 6 }}>
+      {notifyPerm === 'default' && (
+        <button onClick={() => Notification.requestPermission().then(p => setNotifyPerm(p))} title="발송대기 마감이 다가오면 컴퓨터 알림으로도 알려 줘요"
+          style={{ fontSize: 12, fontWeight: 700, padding: '4px 10px', borderRadius: 999, border: '1px solid #e5e5e5', background: '#fff', cursor: 'pointer', whiteSpace: 'nowrap' }}>🔔 컴퓨터 알림</button>
+      )}
       <a href="/api/kakao/login" title="카카오 로그인으로 카톡 '나에게 보내기' 알림을 연결해요(처음 한 번)"
         style={{ fontSize: 12, fontWeight: 700, padding: '4px 10px', borderRadius: 999, background: '#FEE500', color: '#191919', textDecoration: 'none', whiteSpace: 'nowrap' }}>💬 카톡 연결</a>
       <button
@@ -1832,31 +1850,6 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
 
       {/* 커다란 판 하나에 단계 칸이 옆으로 나란히(위쪽 머리줄 = 칸 제목). 발주서는 지금 단계 칸 안에 위아래 한 줄로 자리 잡는다. */}
       <main style={{ overflowX: 'hidden', padding: '12px clamp(10px, 3vw, 20px) 70px' }}>
-        {shipDeadline.length > 0 && (
-          <div style={{ border: `2px solid ${RED}`, background: '#fef2f2', borderRadius: 12, padding: '10px 14px', marginBottom: 12 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-              <b style={{ color: RED, fontSize: 14 }}>⏰ 발송대기 마감 임박 {shipDeadline.length}건</b>
-              <span style={{ fontSize: 12, color: '#7f1d1d' }}>입고예정일 하루 전까지 발송대기에 올려야 해요. 안 올리면 쿠팡이 발주를 취소해요.</span>
-              {notifyPerm === 'default' && (
-                <button onClick={() => Notification.requestPermission().then(p => setNotifyPerm(p))}
-                  style={{ marginLeft: 'auto', border: `1px solid ${RED}`, background: '#fff', color: RED, borderRadius: 999, padding: '3px 10px', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>
-                  🔔 컴퓨터 알림 켜기
-                </button>
-              )}
-            </div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 3, marginTop: 6 }}>
-              {shipDeadline.map(d => (
-                <div key={d.no} onClick={() => setQuery(d.no)} title="눌러서 이 발주서만 보기"
-                  style={{ display: 'flex', gap: 10, alignItems: 'baseline', fontSize: 12.5, cursor: 'pointer' }}>
-                  <b style={{ color: d.daysLeft <= 0 ? RED : '#b45309', minWidth: 92 }}>{deadlineText(d)}</b>
-                  <span style={{ fontFamily: 'monospace' }}>{d.no}</span>
-                  <span style={{ color: '#555' }}>{d.center} · 입고 {d.due.slice(5).replace('-', '/')} · 마감 {d.deadline.slice(5).replace('-', '/')}</span>
-                  <span style={{ color: '#888' }}>지금: {d.where}</span>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
         {/* 상품별 주문 수량(발주확정·쉽먼트·발송대기 칸의 발주서 합). 접었다 펼친다. 준비 안 됨 / 준비됨으로 나눠 보여준다. */}
         <ProductQtySummary lines={BOARD_STAGES.flatMap(st => boxes[st]).flatMap(o => o.lines.map(l => ({ 상품이름: l.상품이름, 확정수량: l.확정수량, ready: lineIsReady(o, l) })))} remember={false} />
         {isMobile && (

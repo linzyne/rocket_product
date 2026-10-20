@@ -1118,6 +1118,12 @@
             await patch({ step: 'manual', status: `⛔ 롯데에 ${ordNo} 줄이 여러 개(같은 주문번호로 예약이 두 번)라 어느 송장번호인지 몰라서 넣지 않았어요. 롯데에서 겹친 예약을 지운 뒤 앱에서 "이어서 하기"를 눌러 주세요.`, diag: seen.waybill.why });
             return;
           }
+          // 목록에 이 주문번호 줄은 있는데 운송장번호 칸이 비어 있으면: 출력(발급)이 롯데에서 안 된 것이다.
+          // 60초 동안 "줄을 찾는 중"으로 돌지 않고 15초 뒤 바로 알린다(번호를 짐작해서 넣지는 않는다).
+          if (seen && seen.at >= (p.searchedAt2 || 0) && !seen.waybill.w && !seen.waybill.why && Date.now() - (p.printedAt || 0) > 15000) {
+            await patch({ step: 'manual', status: `⛔ 롯데 목록에 ${ordNo} 줄은 있는데 운송장번호가 비어 있어요. 운송장 출력(발급)이 안 된 것 같아요. 이 화면에서 그 줄을 체크하고 [출력]을 눌러 발급한 뒤, 앱에서 "이어서 하기"를 눌러 주세요.` });
+            return;
+          }
           const fresh = seen && seen.at >= (p.searchedAt2 || 0) && seen.waybill.w;
           const usedByOthers = new Set((p.collected || []).filter((c) => c.ordNo !== ordNo).map((c) => String(c.waybill).replace(/-/g, '')));
           if (!fresh || usedByOthers.has(seen.waybill.w.replace(/-/g, ''))) {

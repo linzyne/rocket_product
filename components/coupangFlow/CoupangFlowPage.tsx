@@ -24,6 +24,7 @@ import { addShipOut, markShipOuts, splitShipOut, updateShipOutLine, mergeShipOut
 import type { ShipOutLine } from '../coupangOrder/data/shipOutStore';
 import { linesAt, isLinesReady, subscribeLines } from '../coupangOrder/data/lineStore';
 import { isShipOutsReady } from '../coupangOrder/data/shipOutStore';
+import { useShipDeadline, deadlineText } from '../coupangOrder/data/useShipDeadline';
 import { boxLabel, buildDisplayRows, expandBoxSplit, totalBoxCount, parseBoxNo, isBoxSplit, parseBoxSplit, joinBoxSplit } from '../coupangOrder/utils/dataProcessor';
 import { LineCheckMenu, BoxPicker } from '../coupangOrder/components/OrderTable';
 import { HanjungOrder, subscribeHanjung, productSummary, nameKey, makeHanjungOfficeLookup, sameName, saveHanjungOrder, assignRemaining } from '../../data/hanjungStore';
@@ -161,6 +162,9 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
     try { localStorage.setItem(SORT_KEY, JSON.stringify(next)); } catch {}
     return next;
   });
+  // 발송대기 마감 임박(입고예정일 하루 전까지 발송대기에 없어야 할 발주). 화면 위 빨간 띠로 알린다.
+  const shipDeadline = useShipDeadline();
+  const [notifyPerm, setNotifyPerm] = useState(() => (typeof Notification === 'undefined' ? 'unsupported' : Notification.permission));
   // 📦를 눌렀는데 송장이 여럿인 상자(그 상자 아래에 송장번호 고르기를 띄운다).
   const [waybillPick, setWaybillPick] = useState<string | null>(null);
   // 인쇄 아이콘 옆 작은 체크칸(사람이 쓰는 표시, 켜면 그대로 남는다).
@@ -1808,6 +1812,31 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
 
       {/* 커다란 판 하나에 단계 칸이 옆으로 나란히(위쪽 머리줄 = 칸 제목). 발주서는 지금 단계 칸 안에 위아래 한 줄로 자리 잡는다. */}
       <main style={{ overflowX: 'hidden', padding: '12px clamp(10px, 3vw, 20px) 70px' }}>
+        {shipDeadline.length > 0 && (
+          <div style={{ border: `2px solid ${RED}`, background: '#fef2f2', borderRadius: 12, padding: '10px 14px', marginBottom: 12 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+              <b style={{ color: RED, fontSize: 14 }}>⏰ 발송대기 마감 임박 {shipDeadline.length}건</b>
+              <span style={{ fontSize: 12, color: '#7f1d1d' }}>입고예정일 하루 전까지 발송대기에 올려야 해요. 안 올리면 쿠팡이 발주를 취소해요.</span>
+              {notifyPerm === 'default' && (
+                <button onClick={() => Notification.requestPermission().then(p => setNotifyPerm(p))}
+                  style={{ marginLeft: 'auto', border: `1px solid ${RED}`, background: '#fff', color: RED, borderRadius: 999, padding: '3px 10px', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>
+                  🔔 컴퓨터 알림 켜기
+                </button>
+              )}
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 3, marginTop: 6 }}>
+              {shipDeadline.map(d => (
+                <div key={d.no} onClick={() => setQuery(d.no)} title="눌러서 이 발주서만 보기"
+                  style={{ display: 'flex', gap: 10, alignItems: 'baseline', fontSize: 12.5, cursor: 'pointer' }}>
+                  <b style={{ color: d.daysLeft <= 0 ? RED : '#b45309', minWidth: 92 }}>{deadlineText(d)}</b>
+                  <span style={{ fontFamily: 'monospace' }}>{d.no}</span>
+                  <span style={{ color: '#555' }}>{d.center} · 입고 {d.due.slice(5).replace('-', '/')} · 마감 {d.deadline.slice(5).replace('-', '/')}</span>
+                  <span style={{ color: '#888' }}>지금: {d.where}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
         {/* 상품별 주문 수량(발주확정·쉽먼트·발송대기 칸의 발주서 합). 접었다 펼친다. 준비 안 됨 / 준비됨으로 나눠 보여준다. */}
         <ProductQtySummary lines={BOARD_STAGES.flatMap(st => boxes[st]).flatMap(o => o.lines.map(l => ({ 상품이름: l.상품이름, 확정수량: l.확정수량, ready: lineIsReady(o, l) })))} remember={false} />
         {isMobile && (

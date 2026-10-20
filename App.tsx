@@ -67,6 +67,7 @@ import { withCoLtdSuffix } from './utils/manufacturerFormat';
 import { db, isFirebaseConfigured, ensureSignedIn, onSnapshot } from './utils/firebase';
 import { collection, doc, setDoc, deleteDoc, query, where } from 'firebase/firestore';
 import { stripClonedScripts, withTimeout, withInlineImageMetrics } from './utils/html2canvasHelpers';
+import { useShipDeadline, notifyShipDeadline } from './components/coupangOrder/data/useShipDeadline';
 
 // This tells TypeScript that the global variables from CDNs exist.
 declare var XLSX: any;
@@ -461,6 +462,9 @@ const App: React.FC = () => {
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved'>('idle');
   const [currentView, setCurrentView] = useState<'products' | 'renamer' | 'productList'>('products');
   const [activeMenu, setActiveMenu] = useState<AppMenuId>(() => (OPENED_FOR_DETAIL ? 'detail' : readMenuFromHash()));
+  // 발송대기 마감(입고예정일 하루 전)이 다가왔는데 아직 발송대기에 없는 발주. 어느 화면에 있든 메뉴 숫자와 컴퓨터 알림으로 알린다.
+  const shipDeadline = useShipDeadline();
+  useEffect(() => { notifyShipDeadline(shipDeadline); }, [shipDeadline]);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
     if (OPENED_FOR_DETAIL) return true;
     try { return localStorage.getItem(SIDEBAR_COLLAPSED_KEY) === '1'; } catch { return false; }
@@ -3180,6 +3184,7 @@ const App: React.FC = () => {
         onSelect={setActiveMenu}
         collapsed={sidebarCollapsed}
         onToggleCollapsed={toggleSidebarCollapsed}
+        badges={{ 'coupang-flow': shipDeadline.length }}
       />
       <div className="flex-1 min-w-0">
       <OrderGuardBanner onGoOrder={() => setActiveMenu('coupang-order')} />

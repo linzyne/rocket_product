@@ -121,6 +121,8 @@ interface AppSidebarProps {
   onSelect: (id: AppMenuId) => void;
   collapsed: boolean;
   onToggleCollapsed: () => void;
+  // 메뉴 옆 빨간 숫자(예: 발주 진행 = 발송대기 마감 임박 발주 수).
+  badges?: Partial<Record<AppMenuId, number>>;
 }
 
 // 휴대폰에서는 메뉴가 화면 폭을 먹지 않게 숨겨 두고, 왼쪽 아래 ☰ 단추로 서랍처럼 꺼낸다.
@@ -154,7 +156,7 @@ const AppSidebar: React.FC<AppSidebarProps> = (props) => {
   );
 };
 
-const SidebarNav: React.FC<AppSidebarProps> = ({ active, onSelect, collapsed, onToggleCollapsed }) => {
+const SidebarNav: React.FC<AppSidebarProps> = ({ active, onSelect, collapsed, onToggleCollapsed, badges }) => {
   // "예전 작업"은 접어 둔다. 지금 보고 있는 메뉴가 그 안에 있으면 펼쳐서 보여준다. 펼침 여부는 이 기기에 기억한다.
   const [othersOpen, setOthersOpen] = useState(() => { try { return localStorage.getItem(OTHERS_OPEN_KEY) === '1'; } catch { return false; } });
   const activeInOthers = OLD_IDS.has(active);
@@ -181,6 +183,11 @@ const SidebarNav: React.FC<AppSidebarProps> = ({ active, onSelect, collapsed, on
       >
         {item.icon}
         {!collapsed && <span className="truncate">{item.label}</span>}
+        {!!badges?.[item.id] && (
+          <span title="발송대기 마감이 다가온 발주" className={`${collapsed ? 'absolute ml-6 -mt-4' : 'ml-auto'} min-w-[18px] h-[18px] px-1 rounded-full bg-red-600 text-white text-[11px] font-bold leading-[18px] text-center`}>
+            {badges[item.id]}
+          </span>
+        )}
       </button>
     );
   };

@@ -44,13 +44,14 @@ const STAGE_LABEL: Record<Stage, { text: string; cls: string }> = {
   arrived: { text: '🏠 발송대기', cls: 'bg-violet-50 text-violet-700 border-violet-200' },
   settled: { text: '🎉 발송완료', cls: 'bg-emerald-50 text-emerald-700 border-emerald-200' },
 };
-// 완료: 배정(쿠팡 몫) 줄의 발주서가 모두 발송완료됐거나, 정산 자료(물류창고입고)로 배정만큼 쿠팡에 들어갔으면.
+// 발송완료: 다 도착했고, 배정(쿠팡 몫) 줄의 발주서가 모두 발송완료됐거나 정산 자료(물류창고입고)로 배정만큼 쿠팡에 들어갔으면.
 // 배정 없는 건(여유만 산 건)은 도착하면 완료. 그 밖에 다 도착했으면 발송대기(= 도착했지만 아직 다 안 보냄).
 const stageOf = (o: HanjungOrder, settleQty: number, sentNos: Set<string>): Stage => {
-  const mine = o.lines.filter(l => lineAlloc(l) > 0);
-  if (mine.length && mine.every(l => sentNos.has(String(l.발주번호 || '').trim()))) return 'settled';
+  // 단계는 1688 주문 → 사무실 도착 → 발송 순서다. 다 도착하기 전에는 맡은 발주가 (다른 재고로) 이미 발송됐어도 도착 전이다.
   const t = orderTotals(o);
   if (t.status !== 'done') return t.status;
+  const mine = o.lines.filter(l => lineAlloc(l) > 0);
+  if (mine.length && mine.every(l => sentNos.has(String(l.발주번호 || '').trim()))) return 'settled';
   const allocated = productSummary(o).reduce((s, p) => s + p.allocated, 0);
   return settleQty >= allocated ? 'settled' : 'arrived';
 };

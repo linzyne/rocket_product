@@ -91,7 +91,7 @@ const ProductKeywordPage: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-gray-50 text-gray-900">
       <header className="sticky top-0 z-10 bg-white border-b border-gray-100 px-5 py-3">
         <div className="max-w-3xl flex flex-wrap items-center gap-2">
           <h1 className="text-lg font-bold">상품 키워드</h1>
@@ -99,7 +99,7 @@ const ProductKeywordPage: React.FC = () => {
         </div>
         <div className="max-w-3xl flex flex-wrap items-center gap-2 mt-2">
           <input value={search} onChange={e => setSearch(e.target.value)} placeholder="상품명·키워드 찾기"
-            className="flex-1 min-w-[12rem] px-3 py-1.5 text-sm border border-gray-300 rounded-lg" />
+            className="flex-1 min-w-[12rem] px-3 py-1.5 text-sm text-gray-900 bg-white border border-gray-300 rounded-lg placeholder:text-gray-400" />
           <label className="flex items-center gap-1.5 text-sm text-gray-700 cursor-pointer select-none">
             <input type="checkbox" checked={onlyEmpty} onChange={e => setOnlyEmpty(e.target.checked)} />
             키워드 없는 것만 <b className="text-red-600">{emptyCount}</b>
@@ -120,7 +120,7 @@ const ProductKeywordPage: React.FC = () => {
                   onChange={e => setDraft(prev => ({ ...prev, [g.key]: e.target.value }))}
                   onKeyDown={e => { if (e.key === 'Enter' && changed) save(g); }}
                   placeholder="키워드 (예: 버터크런치)"
-                  className={`w-48 px-2 py-1 text-sm border rounded-md ${g.kw ? 'border-gray-300' : 'border-red-300'}`}
+                  className={`w-48 px-2 py-1 text-sm font-semibold text-gray-900 bg-white border rounded-md placeholder:text-gray-400 placeholder:font-normal ${g.kw ? 'border-gray-300' : 'border-red-300'}`}
                 />
                 <button onClick={() => save(g)} disabled={!changed || saving === g.key}
                   className="px-3 py-1 text-sm font-bold rounded-md bg-blue-600 text-white disabled:bg-gray-200 disabled:text-gray-400">

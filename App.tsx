@@ -3510,6 +3510,12 @@ const App: React.FC = () => {
             commonCategoryId={activeDetailCategoryId}
             commonDefaultDesign={defaultCommonDesign(detailCategories.findIndex(c => c.id === activeDetailCategoryId))}
             commonPageKey={commonPageKey(activeDetailCategoryId, activeDetailPage.id)}
+            sectionCopyTargets={detailCategories.flatMap(c => getCategoryPages(c).map(p => ({
+              label: `${c.name} · ${p.name}${(p.template ?? 'kimchi') !== activeDetailTemplate ? ` (${(p.template ?? 'kimchi') === 'green' ? '2번' : '1번'} 틀)` : ''}`,
+              // 그 상페가 쓰는 틀의 저장본에 넣는다(틀마다 저장본이 따로라, 다른 틀 저장본에 넣으면 열어도 안 보인다).
+              draftId: draftIdForPage(c.id, p.id, p.template ?? 'kimchi'),
+              otherTemplate: (p.template ?? 'kimchi') !== activeDetailTemplate,
+            }))).filter(t => t.draftId !== draftIdForPage(activeDetailCategoryId, activeDetailPage.id, activeDetailTemplate))}
             embedded
           />
           )}

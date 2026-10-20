@@ -109,6 +109,8 @@ interface DetailPageBuilderModalProps {
   commonDefaultDesign?: CommonDesign;
   // 상페마다 따로 두는 공통 안내 문구의 열쇠(카테고리~상페). 없으면 문구도 카테고리 공통.
   commonPageKey?: string;
+  // 섹션을 복사해 넣을 수 있는 다른 상페들(같은 틀의 저장본).
+  sectionCopyTargets?: { label: string; draftId: string; otherTemplate?: boolean }[];
   // 틀 바꾸기 버튼. 없으면 버튼을 안 보인다.
   onChangeSectionTemplate?: (template: SectionTemplateId) => void;
 }
@@ -398,7 +400,7 @@ const renumberPointBadges = (sections: KimchiSection[]) => {
   });
 };
 
-const DetailPageBuilderModal: React.FC<DetailPageBuilderModalProps> = ({ isOpen, onClose, product, groupProducts, onSave, onSaveThumbnail, templateId = 'basic', importedPhotos, onImportedPhotosUsed, embedded = false, draftId = STANDALONE_DRAFT_ID, sectionTemplate = 'kimchi' as SectionTemplateId, onChangeSectionTemplate, commonCategoryId = 'kimchi', commonDefaultDesign = 'A' as CommonDesign, commonPageKey }) => {
+const DetailPageBuilderModal: React.FC<DetailPageBuilderModalProps> = ({ isOpen, onClose, product, groupProducts, onSave, onSaveThumbnail, templateId = 'basic', importedPhotos, onImportedPhotosUsed, embedded = false, draftId = STANDALONE_DRAFT_ID, sectionTemplate = 'kimchi' as SectionTemplateId, onChangeSectionTemplate, commonCategoryId = 'kimchi', commonDefaultDesign = 'A' as CommonDesign, commonPageKey, sectionCopyTargets }) => {
   const [photos, setPhotos] = useState<PhotoItem[]>([]);
   const isKimchi = templateId === 'kimchi';
   // 김치 템플릿 전용 상태. 사진 배열(photos)은 두 템플릿이 그대로 공유해서 자르기·드래그 정렬·
@@ -713,9 +715,11 @@ const DetailPageBuilderModal: React.FC<DetailPageBuilderModalProps> = ({ isOpen,
     if (!isOpen || !isKimchi || draftRestoreStartedRef.current) return;
     draftRestoreStartedRef.current = true;
     let cancelled = false;
+    let done = false;
     void (async () => {
       const saved = await loadDetailPageDraft<KimchiDraft>(draftId);
       if (cancelled) return;
+      done = true;
       const live = liveRef.current;
       // 읽는 사이에 사용자가 벌써 뭔가 올렸다면 그쪽이 최신이다 — 덮지 않는다.
       const untouched = live.photos.length === 0 && live.textBoxes.length === 0 && live.drawObjects.length === 0;
@@ -725,7 +729,8 @@ const DetailPageBuilderModal: React.FC<DetailPageBuilderModalProps> = ({ isOpen,
       }
       setDraftReady(true);
     })();
-    return () => { cancelled = true; };
+    // 다 읽기 전에 정리되면(개발 모드의 두 번 실행 등) 다음 실행이 다시 읽도록 표시를 되돌린다.
+    return () => { cancelled = true; if (!done) draftRestoreStartedRef.current = false; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen, isKimchi]);
 
@@ -2449,6 +2454,39 @@ const DetailPageBuilderModal: React.FC<DetailPageBuilderModalProps> = ({ isOpen,
     setKimchiSections(prev => appendBoxSection(prev));
   };
 
+  // 섹션을 사진까지 그대로 다른 상페의 저장본에 복사한다(같은 자리 순서로). 원래 섹션은 그대로 둔다.
+  const copySectionToPage = async (id: string) => {
+    const targets = sectionCopyTargets || [];
+    if (!targets.length) { alert('복사할 다른 상페가 없어요. 상페를 먼저 만들어 주세요.'); return; }
+    const pick = window.prompt(`이 섹션을 어느 상페로 복사할까요? 번호를 입력하세요.\n\n${targets.map((t, i) => `${i + 1}. ${t.label}`).join('\n')}`, '1')?.trim();
+    if (!pick) return;
+    const target = targets[Number(pick) - 1];
+    if (!target) { alert('번호를 다시 확인해 주세요.'); return; }
+    if (target.otherTemplate && !window.confirm(`"${target.label}"은 다른 틀이라 이 섹션 모양이 그 틀에서는 안 보이거나 다르게 보일 수 있어요. 그래도 복사할까요?`)) return;
+    const idx = kimchiSections.findIndex(sec => sec.id === id);
+    const section = kimchiSections[idx];
+    if (!section) return;
+    const saved = await loadDetailPageDraft<KimchiDraft>(target.draftId);
+    if (!saved) { alert(`"${target.label}"은 아직 한 번도 열지 않아 저장본이 없어요. 그 상페를 한 번 연 뒤 다시 해 주세요.`); return; }
+    const newSectionId = generateId();
+    const mine = photos.filter(p => photoSectionMap[p.id] === id);
+    const newPhotos = mine.map(p => ({ ...p, id: generateId() }));
+    const d = saved.data;
+    const sections = [...(d.kimchiSections || [])];
+    sections.splice(Math.min(idx, sections.length), 0, { ...section, id: newSectionId });
+    const next: KimchiDraft = {
+      ...d,
+      kimchiSections: sections,
+      photos: [...(d.photos || []), ...newPhotos],
+      photoSectionMap: { ...(d.photoSectionMap || {}), ...Object.fromEntries(newPhotos.map(p => [p.id, newSectionId])) },
+    };
+    if (await saveDetailPageDraft(target.draftId, next)) {
+      alert(`"${target.label}"에 복사했어요${newPhotos.length ? `(사진 ${newPhotos.length}장 포함)` : ''}. 그 상페를 열면 ${idx + 1}번째 자리에 있어요.`);
+    } else {
+      alert('복사하다가 저장에 실패했어요.');
+    }
+  };
+
   const duplicateKimchiSectionById = (id: string) => {
     setKimchiSections(prev => duplicateKimchiSection(prev, id));
   };
@@ -3846,6 +3884,7 @@ const DetailPageBuilderModal: React.FC<DetailPageBuilderModalProps> = ({ isOpen,
                 moveSection={moveKimchiSectionBy}
                 removeSection={removeKimchiSectionById}
                 duplicateSection={duplicateKimchiSectionById}
+                copyToPage={sectionCopyTargets && sectionCopyTargets.length ? copySectionToPage : undefined}
                 templateAccent={kimchiAccent}
                 movePhoto={movePhotoToSection}
                 onAddFiles={(sectionId, files) => addPhotoFiles(files, sectionId)}

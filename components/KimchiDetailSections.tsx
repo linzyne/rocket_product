@@ -1078,6 +1078,8 @@ interface KimchiSectionPanelProps {
   moveSection: (id: string, direction: -1 | 1) => void;
   removeSection: (id: string) => void;
   duplicateSection: (id: string) => void;
+  // 이 섹션(사진 포함)을 다른 상페로 복사. 없으면 버튼을 안 보인다.
+  copyToPage?: (id: string) => void;
   // 템플릿 시그니처 색. 섹션이 자기 색을 안 가졌을 때 색상 칸에 이 값이 비쳐 보인다.
   templateAccent: string;
   // 사진을 끌어다 놓았을 때. beforePhotoId가 있으면 그 사진 앞에, 없으면 그 섹션 맨 뒤에 놓는다.
@@ -1138,7 +1140,7 @@ const COUNT_CONTROLS: Partial<Record<KimchiSection['kind'], { label: string; get
 
 export const KimchiSectionPanel: React.FC<KimchiSectionPanelProps> = ({
   sections, photosBySection, updateSection, moveSection, removeSection,
-  duplicateSection, templateAccent, movePhoto, onAddFiles, onRemovePhoto, onPhotoClick,
+  duplicateSection, copyToPage, templateAccent, movePhoto, onAddFiles, onRemovePhoto, onPhotoClick,
   defaultSectionGap, setAllSectionGaps, onEditCopy,
 }) => {
   // 끌고 있는 사진 id와, 지금 올라가 있는 드롭 지점. 드롭 지점은 사진 위(그 앞에 끼워 넣기)이거나
@@ -1259,6 +1261,15 @@ export const KimchiSectionPanel: React.FC<KimchiSectionPanelProps> = ({
               >
                 ⧉
               </button>
+              {copyToPage && (
+                <button
+                  onClick={() => copyToPage(section.id)}
+                  title="이 섹션을 사진까지 그대로 다른 상페로 복사"
+                  className="w-6 h-6 flex-shrink-0 flex items-center justify-center rounded bg-slate-700 text-slate-300 hover:bg-emerald-600 hover:text-white transition-colors text-xs"
+                >
+                  ↗
+                </button>
+              )}
               <button
                 onClick={() => {
                   if (window.confirm('이 섹션과 여기 올린 사진을 삭제할까요?')) removeSection(section.id);

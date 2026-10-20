@@ -23,12 +23,15 @@ const env = (k: string) => (process.env[k] || '').trim();
 // ── 토큰 보관(Upstash Redis REST) ──
 const kvUrl = () => env('KV_REST_API_URL') || env('UPSTASH_REDIS_REST_URL');
 const kvToken = () => env('KV_REST_API_TOKEN') || env('UPSTASH_REDIS_REST_TOKEN');
+const needKv = () => { if (!kvUrl() || !kvToken()) throw new Error('토큰 보관함(Upstash Redis)이 아직 Vercel에 연결되지 않았어요.'); };
 const kvGet = async (key: string): Promise<string | null> => {
+  needKv();
   const r = await fetch(`${kvUrl()}/get/${encodeURIComponent(key)}`, { headers: { Authorization: `Bearer ${kvToken()}` } });
   const j = await r.json() as { result?: string | null };
   return j.result ?? null;
 };
 const kvSet = async (key: string, value: string) => {
+  needKv();
   await fetch(`${kvUrl()}/set/${encodeURIComponent(key)}`, { method: 'POST', headers: { Authorization: `Bearer ${kvToken()}` }, body: value });
 };
 
@@ -154,6 +157,10 @@ export default async function handler(req: any, res: any) {
   const action = String(req.query?.action || '');
   try {
     if (action === 'login') {
+      if (!env('KAKAO_REST_API_KEY')) {
+        res.writeHead(302, { Location: `${APP_URL}/?kakao=${encodeURIComponent('Vercel에 KAKAO_REST_API_KEY가 아직 없어요.')}#/coupang-flow` });
+        return res.end();
+      }
       const url = `https://kauth.kakao.com/oauth/authorize?client_id=${encodeURIComponent(env('KAKAO_REST_API_KEY'))}&redirect_uri=${encodeURIComponent(REDIRECT)}&response_type=code&scope=talk_message`;
       res.writeHead(302, { Location: url });
       return res.end();

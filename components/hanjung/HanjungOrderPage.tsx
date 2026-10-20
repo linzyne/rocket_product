@@ -36,31 +36,7 @@ import { mark1688Used, Order1688Ref } from '../../utils/order1688';
 // 한 건 = 1688에 한 번에 주문하는 묶음(같은 상품 여러 발주 줄을 합친 것).
 // 수입입고(사무실 도착)와 물류창고입고(쿠팡 입고 = 정산)를 건별로 합쳐, 얼마나 정산됐는지 보여준다.
 //  정산률 = 쿠팡 입고 수량 ÷ 수입입고 수량, 차익 = 정산 공급가(부가세 제외) − 총원가
-// 한 건의 단계: 1688 주문 → 사무실 도착 → 쿠팡 입고(정산). 목록 탭도 이 단계로 나눈다.
-type Stage = 'ordered' | 'partial' | 'arrived' | 'settled';
-const STAGE_LABEL: Record<Stage, { text: string; cls: string }> = {
-  ordered: { text: '✈️ 오는 중', cls: 'bg-amber-50 text-amber-700 border-amber-200' },
-  partial: { text: '📦 일부 도착', cls: 'bg-sky-50 text-sky-700 border-sky-200' },
-  arrived: { text: '🏠 발송대기', cls: 'bg-violet-50 text-violet-700 border-violet-200' },
-  settled: { text: '🎉 발송완료', cls: 'bg-emerald-50 text-emerald-700 border-emerald-200' },
-};
-// 발송완료: 다 도착했고, 배정(쿠팡 몫) 줄의 발주서가 모두 발송완료됐거나 정산 자료(물류창고입고)로 배정만큼 쿠팡에 들어갔으면.
-// 배정 없는 건(여유만 산 건)은 도착하면 완료. 그 밖에 다 도착했으면 발송대기(= 도착했지만 아직 다 안 보냄).
-const stageOf = (o: HanjungOrder, settleQty: number, sentNos: Set<string>): Stage => {
-  // 단계는 1688 주문 → 사무실 도착 → 발송 순서다. 다 도착하기 전에는 맡은 발주가 (다른 재고로) 이미 발송됐어도 도착 전이다.
-  const t = orderTotals(o);
-  if (t.status !== 'done') return t.status;
-  const mine = o.lines.filter(l => lineAlloc(l) > 0);
-  if (mine.length && mine.every(l => sentNos.has(String(l.발주번호 || '').trim()))) return 'settled';
-  const allocated = productSummary(o).reduce((s, p) => s + p.allocated, 0);
-  return settleQty >= allocated ? 'settled' : 'arrived';
-};
-const TABS: { id: 'arriving' | 'arrived' | 'settled' | 'all'; text: string; has: (st: Stage) => boolean }[] = [
-  { id: 'arriving', text: '⏳ 도착 전', has: st => st === 'ordered' || st === 'partial' },
-  { id: 'arrived', text: '🏠 발송대기', has: st => st === 'arrived' },
-  { id: 'settled', text: '🎉 발송완료', has: st => st === 'settled' },
-  { id: 'all', text: '📋 전체', has: () => true },
-];
+// 한 건은 1688 주문 → 사무실 도착 → 발송 순서로 간다. 탭으로 나누지 않고 한 화면에 다 보여 주고, 발송 상태는 상품마다 표에서 본다.
 // 머리줄의 단계 칸: "도착 80/120"처럼 한 것/할 것. 다 되면 초록, 일부면 주황.
 const Step: React.FC<{ label: string; done: number; total: number }> = ({ label, done, total }) => {
   const cls = total > 0 && done >= total ? 'bg-emerald-50 text-emerald-700' : done > 0 ? 'bg-amber-50 text-amber-700' : 'bg-gray-50 text-gray-400';
@@ -573,7 +549,6 @@ const PendingPanel: React.FC<{ orders: HanjungOrder[]; onRecord: (act: Act) => v
 const HanjungOrderPage: React.FC = () => {
   const [orders, setOrders] = useState<HanjungOrder[]>([]);
   const [search, setSearch] = useState('');
-  const [tab, setTab] = useState<typeof TABS[number]['id']>('arriving');
   const [open, setOpen] = useState<string | null>(null);
   // 입고대기 수정 중인 건(새 고유번호·고친 줄들). 저장해야 반영된다.
   // items: 품목별 총 주문 수량(need는 그릴 때 남은 쿠팡 줄로 다시 센다).
@@ -665,17 +640,12 @@ const HanjungOrderPage: React.FC = () => {
   // 발송완료된 발주서 번호(출고 건에 보낸 날이 적힌 것).
   const [sentNos, setSentNos] = useState<Set<string>>(new Set());
   useEffect(() => subscribeShipOuts(list => setSentNos(new Set(list.filter(i => i.sentDate).flatMap(i => i.lines.map(l => String(l.발주번호 || '').trim())).filter(Boolean)))), []);
-  const stages = useMemo(() => new Map(orders.map(o => [o.code, stageOf(o, settlementOf(o, receives).qty, sentNos)])), [orders, receives, sentNos]);
-  const tabCount = (id: typeof tab) => orders.filter(o => TABS.find(t => t.id === id)!.has(stages.get(o.code)!)).length;
-  // 검색하면 탭과 상관없이 전체에서 찾는다.
+  // 한 화면에 전부 보여 준다(건 통째로 단계를 나누면 일부만 보낸 건이 엉뚱한 칸에 갔다). 발송 상태는 상품마다 표에서 본다.
   const list = useMemo(() => {
     const k = search.trim().toLowerCase();
-    const inTab = TABS.find(t => t.id === tab)!.has;
-    return orders.filter(o => k
-      ? o.code.toLowerCase().includes(k) || o.lines.some(l => l.상품이름.toLowerCase().includes(k) || l.발주번호.includes(k))
-      : inTab(stages.get(o.code)!)
-    );
-  }, [orders, search, tab, stages]);
+    return orders.filter(o => !k
+      || o.code.toLowerCase().includes(k) || o.lines.some(l => l.상품이름.toLowerCase().includes(k) || l.발주번호.includes(k)));
+  }, [orders, search]);
 
   const handleDelete = (o: HanjungOrder) => {
     const warn = o.receipts.length ? `\n수입입고 기록 ${o.receipts.length}건도 같이 지워져요.` : '';
@@ -992,19 +962,6 @@ const HanjungOrderPage: React.FC = () => {
         <span className="text-sm text-sky-700">물건이 오면 📦 도착 기록을 눌러요</span>
       </div>
       <div className="p-4">
-      {!search.trim() && (
-        <div className="flex flex-wrap gap-2 mb-4">
-          {TABS.map(t => (
-            <button
-              key={t.id}
-              onClick={() => setTab(t.id)}
-              className={`px-4 py-2 text-sm rounded-full border-2 transition-colors ${tab === t.id ? 'border-sky-400 bg-sky-50 text-sky-800 font-bold' : 'border-transparent bg-gray-100 text-gray-600 hover:bg-gray-200'}`}
-            >
-              {t.text} <span className={`ml-0.5 px-1.5 rounded-full text-xs ${tab === t.id ? 'bg-sky-400 text-white' : 'bg-white text-gray-500'}`}>{tabCount(t.id)}</span>
-            </button>
-          ))}
-        </div>
-      )}
 
       {!list.length && (
         <div className="bg-sky-50/30 border-2 border-dashed border-sky-100 rounded-3xl py-12 text-center text-gray-500 text-sm">
@@ -1016,7 +973,6 @@ const HanjungOrderPage: React.FC = () => {
       <div className="space-y-3">
         {list.map(o => {
           const t = orderTotals(o);
-          const st = STAGE_LABEL[stages.get(o.code) || 'ordered'];
           const products = productSummary(o);
           const isOpen = open === o.code;
           const settle = settlementOf(o, receives);
@@ -1046,7 +1002,6 @@ const HanjungOrderPage: React.FC = () => {
                   {products.slice(0, 5).map(p => <ProductThumb key={p.상품이름} url={imageOf(p.상품이름)} size={30} title={`${p.상품이름} · 주문 ${p.ordered}개`} />)}
                   {products.length > 5 && <span className="text-xs text-gray-400">+{products.length - 5}</span>}
                 </span>
-                <span className={`text-xs font-semibold px-2.5 py-1 rounded-full border whitespace-nowrap ${st.cls}`}>{st.text}</span>
                 <span className="flex items-center gap-1 text-xs">
                   <Step label="도착" done={t.received} total={t.ordered} />
                   {allocated > 0 && (() => {
@@ -1113,13 +1068,12 @@ const HanjungOrderPage: React.FC = () => {
                         <th className="text-left font-medium py-1 pr-3">상품</th>
                         <th className="w-28 text-left font-medium pl-3" title="1688에 주문한 수량. 배정 = 쿠팡 발주에 연결한 수량, 여유 = 남는 것(다음 발주에 씀)">주문</th>
                         <th className="w-28 text-left font-medium pl-3" title="사무실에 도착한 수량 / 주문 수량">사무실 도착</th>
-                        <th className="w-28 text-left font-medium pl-3" title="물류창고입고(쿠팡 정산 자료)에 잡힌 수량 / 배정 수량">물류창고입고</th>
+                        <th className="w-32 text-left font-medium pl-3" title="이 상품을 맡은 쿠팡 발주 중 발송완료된 수량 / 배정 수량. 남은 건 발송대기">발송</th>
                         <th className="w-28 text-right font-medium pl-3" title="연결된 쿠팡 발주금액(매입가 × 배정 수량) 합">쿠팡 발주금액</th>
                       </tr>
                     </thead>
                     <tbody>
                       {products.map(p => {
-                        const coupangIn = settle.byProduct.get(p.상품이름) || 0;
                         const bar = (done: number, total: number) => {
                           const pct = total > 0 ? Math.min(100, Math.round((done / total) * 100)) : 0;
                           const color = total > 0 && done >= total ? 'bg-emerald-500' : done > 0 ? 'bg-amber-400' : 'bg-gray-200';
@@ -1138,7 +1092,20 @@ const HanjungOrderPage: React.FC = () => {
                               <div className="text-xs text-gray-400 whitespace-nowrap">배정 {p.allocated}{p.spare > 0 && <> · <span className="text-emerald-600 font-semibold">여유 {p.spare}</span></>}</div>
                             </td>
                             <td>{bar(p.received, p.ordered)}</td>
-                            <td>{p.allocated > 0 ? bar(coupangIn, p.allocated) : <span className="pl-3 text-xs text-gray-300">배정 없음</span>}</td>
+                            <td>{p.allocated > 0 ? (() => {
+                              // 상품마다 발송 상태: 이 상품을 맡은 발주 줄 중 발주서가 발송완료된 수량.
+                              const mine = o.lines.filter(l => lineAlloc(l) > 0 && sameName(l.상품이름, p.상품이름));
+                              const sent = mine.filter(l => sentNos.has(String(l.발주번호 || '').trim())).reduce((n, l) => n + lineAlloc(l), 0);
+                              const wait = Math.max(0, p.allocated - sent);
+                              return (
+                                <div>
+                                  {bar(sent, p.allocated)}
+                                  <div className="pl-3 text-xs whitespace-nowrap">
+                                    {wait > 0 ? <span className="text-violet-700 font-semibold">🏠 발송대기 {wait}</span> : <span className="text-emerald-600 font-semibold">🎉 발송완료</span>}
+                                  </div>
+                                </div>
+                              );
+                            })() : <span className="pl-3 text-xs text-gray-300">배정 없음</span>}</td>
                             <td className="pl-3 text-right font-mono text-sm text-gray-700 whitespace-nowrap">{(() => { const n = linesTotal(o.lines.filter(l => sameName(l.상품이름, p.상품이름))); return n ? won(n) : <span className="text-gray-300">-</span>; })()}</td>
                           </tr>
                         );

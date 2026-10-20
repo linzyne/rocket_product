@@ -400,7 +400,7 @@ export function redoShipmentRegister(batch: ShipmentBatch, items: ShipOut[], ord
       .filter(c => c.boxes.length),
   };
   if (!allBoxes(trimmed).length) return '쉽먼트 기록(택배예약)에서 이 발주서의 박스를 찾지 못했어요. 택배예약부터 해 주세요.';
-  if (!allBoxes(trimmed).every(b => digits(b.waybill || ''))) return '송장번호가 없는 박스가 있어요. 택배예약(송장)부터 끝내 주세요.';
+  // 송장번호가 아직 앱에 없으면(롯데에서 직접 출력한 경우 등) 롯데에서 받아 온 뒤 이어서 등록한다.
   owned.set(batch.id, { batch: trimmed, full, itemIds: items.map(i => i.id), redo: Array.from(nos) });
   dropForm(batch.id);
   if (!allBoxes(trimmed).every(waybillConfirmed)) requestLotte(batch.id);

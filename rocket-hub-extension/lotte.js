@@ -995,9 +995,15 @@
   };
 
   // 미리보기 창: 왼쪽 "운송장종류"를 표준라벨E로 고른 뒤 오른쪽 위 "출력"을 누른다.
+  let previewSeenAt = 0;
   const runPreviewWindow = async (p) => {
     if (!p.previewPrintedAt) {
+      // 미리보기 창이 다 그려지기 전에 누르면 클릭이 안 먹어 발급이 안 된다(10/20 S261020-01). 뜬 뒤 3초는 기다린다.
+      if (!previewSeenAt) previewSeenAt = Date.now();
+      if (document.readyState !== 'complete' || Date.now() - previewSeenAt < 3000) return;
       const how = await pickLabelE();
+      // 운송장종류 목록을 아직 못 찾았으면 누르지 않고 다음 차례에 다시 본다.
+      if (how === '목록 못 찾음' && Date.now() - previewSeenAt < 20000) return;
       const printBtn = findAll(TEXT.print).find((el) => el.closest('button, a, [role="button"], span')) || find(TEXT.print);
       if (!printBtn) return;
       await patch({
@@ -1007,7 +1013,8 @@
       realClick(printBtn);
       return;
     }
-    if (Date.now() - p.previewPrintedAt < 5000) return;
+    // 출력 뒤 롯데가 발급을 마칠 시간을 넉넉히 준다(5초 만에 닫아서 발급이 안 된 일이 있었다).
+    if (Date.now() - p.previewPrintedAt < 12000) return;
     await patch({ step: 'waybillDone', status: '운송장 출력 완료. 번호를 가져오는 중…' });
     await sleep(500);
     window.close();
@@ -1119,9 +1126,17 @@
             return;
           }
           // 목록에 이 주문번호 줄은 있는데 운송장번호 칸이 비어 있으면: 출력(발급)이 롯데에서 안 된 것이다.
-          // 60초 동안 "줄을 찾는 중"으로 돌지 않고 15초 뒤 바로 알린다(번호를 짐작해서 넣지는 않는다).
-          if (seen && seen.at >= (p.searchedAt2 || 0) && !seen.waybill.w && !seen.waybill.why && Date.now() - (p.printedAt || 0) > 15000) {
-            await patch({ step: 'manual', status: `⛔ 롯데 목록에 ${ordNo} 줄은 있는데 운송장번호가 비어 있어요. 운송장 출력(발급)이 안 된 것 같아요. 이 화면에서 그 줄을 체크하고 [출력]을 눌러 발급한 뒤, 앱에서 "이어서 하기"를 눌러 주세요.` });
+          // 짐작해서 넣지 않고, 출력부터 다시 한다(두 번까지). 그래도 안 되면 사람에게 넘긴다.
+          if (seen && seen.at >= (p.searchedAt2 || 0) && !seen.waybill.w && !seen.waybill.why && Date.now() - (p.printedAt || 0) > 30000) {
+            const tries = Number(p.reprintTries) || 0;
+            if (tries < 2) {
+              await patch({
+                step: 'waybillPage', reprintTries: tries + 1, printedAt: null, previewPrintedAt: null, searchedAt2: 0,
+                status: `${ordNo} 운송장이 발급되지 않아서 다시 출력해요… (${tries + 1}/2)`,
+              });
+              return;
+            }
+            await patch({ step: 'manual', status: `⛔ ${ordNo} 운송장을 두 번 다시 출력했는데도 발급이 안 됐어요. 롯데 미리보기 창에서 직접 [출력]을 눌러 주신 뒤 앱에서 "이어서 하기"를 눌러 주세요.` });
             return;
           }
           const fresh = seen && seen.at >= (p.searchedAt2 || 0) && seen.waybill.w;
@@ -1308,6 +1323,15 @@
               await patch({
                 step: 'manual',
                 status: `${ordNo}로 조회했더니 ${shownCount() >= 0 ? shownCount() : gridRows.length}줄이 나와서 출력하지 않았어요(다른 송장을 출력하지 않으려고). 이 창 아래 [다시 조회]를 눌러 주세요. 계속 이러면 롯데에 같은 주문번호 예약이 두 번 들어간 거라, 겹친 예약을 지워 주세요.`,
+              });
+              return;
+            }
+            // 이미 운송장이 발급된 줄(사람이 롯데에서 직접 출력한 경우 등)은 다시 출력하지 않고 그 번호를 읽어 온다.
+            const already = byOrder.get(ordNo);
+            if (already && already.waybill && already.waybill.w) {
+              await patch({
+                step: 'waybillDone', printedAt: Date.now(), searchedAt2: 0,
+                status: `${ordNo}는 이미 운송장이 발급돼 있어요(${already.waybill.w}). 다시 출력하지 않고 번호를 가져와요…`,
               });
               return;
             }

@@ -5,7 +5,7 @@
 //    receipts : 수입입고 기록. 나눠서 도착하면 여러 번 쌓인다. 상품별 수량·단가와 관세사비·배송비·작업비.
 //
 // Firebase 설정이 없으면 이 기기의 localStorage에만 저장한다.
-import { collection, doc, setDoc, deleteDoc } from 'firebase/firestore';
+import { collection, doc, setDoc, deleteDoc, deleteField } from 'firebase/firestore';
 import { db, ensureSignedIn, onSnapshot } from '../utils/firebase';
 import { productMatchKey } from './inventoryStore';
 import type { OfficeMatch } from './inventoryStore';
@@ -86,18 +86,19 @@ const LOCAL_KEY = 'hanjungOrders';
 // 두어 다시 묻지 않는다.
 //  aliases : 열쇠(rawKey) → 쿠팡 발주 쪽 이름
 //  notSame : "열쇠A│열쇠B" → true
-type AliasState = { aliases: Record<string, string>; notSame: Record<string, boolean> };
+//  keywords: 열쇠(rawKey) → 사람이 정한 상품 키워드. 키워드가 같은 이름은 어디서든 같은 상품이다(연결보다 먼저 본다).
+type AliasState = { aliases: Record<string, string>; notSame: Record<string, boolean>; keywords: Record<string, string> };
 const ALIAS_COLLECTION = 'productAliases';
 const ALIAS_DOC = 'map';
 const ALIAS_LOCAL_KEY = 'productAliases';
-let aliasState: AliasState = { aliases: {}, notSame: {} };
+let aliasState: AliasState = { aliases: {}, notSame: {}, keywords: {} };
 const aliasListeners = new Set<() => void>();
 const readLocalAliases = (): AliasState => {
   try {
     const v = JSON.parse(localStorage.getItem(ALIAS_LOCAL_KEY) || '');
-    return { aliases: v.aliases || {}, notSame: v.notSame || {} };
+    return { aliases: v.aliases || {}, notSame: v.notSame || {}, keywords: v.keywords || {} };
   } catch {
-    return { aliases: {}, notSame: {} };
+    return { aliases: {}, notSame: {}, keywords: {} };
   }
 };
 // 이 컴퓨터에 남겨 둔 값으로 먼저 시작한다(클라우드 응답이 늦어도 화면을 열자마자 같은 상품으로 보이게).
@@ -114,10 +115,34 @@ export const isNotSame = (a: string, b: string) => !!aliasState.notSame[pairKey(
 
 // 같은 상품인지 볼 때 쓰는 열쇠. 띄어쓰기·쉼표만 다른 이름("핑크 1개 30cm" / "핑크, 1개, 30cm")은
 // 글자만 남겨 맞추고, 사람이 같은 상품이라고 연결한 이름은 연결한 이름의 열쇠로 바꾼다.
+// 키워드가 있으면 키워드가 열쇠다(이름이 아무리 달라도 키워드가 같으면 같은 상품).
+const kwKey = (kw: string) => `kw:${kw.replace(/\s+/g, '').toLowerCase()}`;
 export const nameKey = (name: string) => {
   const k = rawKey(name);
+  const kw = aliasState.keywords[k];
+  if (kw && kw.trim()) return kwKey(kw);
   const to = aliasState.aliases[k];
-  return to ? rawKey(to) : k;
+  if (!to) return k;
+  const tk = rawKey(to);
+  const kw2 = aliasState.keywords[tk];
+  return kw2 && kw2.trim() ? kwKey(kw2) : tk;
+};
+// 이 이름에 직접 정한 키워드(연결로 따라오는 건 빼고).
+export const productKeyword = (name: string) => (aliasState.keywords[rawKey(name)] || '').trim();
+export const subscribeProductKeywords = (cb: () => void) => {
+  aliasListeners.add(cb);
+  return () => { aliasListeners.delete(cb); };
+};
+// 상품 이름들에 키워드를 정한다(빈 글자면 지움). 모든 기기에 바로 간다.
+export const setProductKeywords = async (names: string[], keyword: string) => {
+  const kw = keyword.trim();
+  const keys = Array.from(new Set(names.map(rawKey).filter(Boolean)));
+  const keywords = { ...aliasState.keywords };
+  keys.forEach(k => { if (kw) keywords[k] = kw; else delete keywords[k]; });
+  setAliasState({ ...aliasState, keywords });
+  if (!db) return;
+  await ensureSignedIn();
+  await setDoc(doc(db, ALIAS_COLLECTION, ALIAS_DOC), { keywords: Object.fromEntries(keys.map(k => [k, kw ? kw : deleteField()])) }, { merge: true });
 };
 
 // 사람이 고른 답을 적는다. same이면 from 이름을 to(쿠팡 발주 이름)와 같은 상품으로 본다.
@@ -125,6 +150,7 @@ export const rememberSameProduct = async (from: string, to: string, same: boolea
   const next: AliasState = {
     aliases: same ? { ...aliasState.aliases, [rawKey(from)]: to } : aliasState.aliases,
     notSame: same ? aliasState.notSame : { ...aliasState.notSame, [pairKey(from, to)]: true },
+    keywords: aliasState.keywords,
   };
   setAliasState(next);
   if (!db) return;
@@ -294,7 +320,7 @@ export const subscribeHanjung = (listener: Listener): (() => void) => {
         const fromCache = snap.metadata.fromCache;
         if (!snap.exists() && fromCache) return;
         const v = (snap.data() || {}) as Partial<AliasState>;
-        setAliasState({ aliases: v.aliases || {}, notSame: v.notSame || {} });
+        setAliasState({ aliases: v.aliases || {}, notSame: v.notSame || {}, keywords: v.keywords || {} });
       },
       error => console.error('같은 상품 연결 동기화 실패:', error)
     );

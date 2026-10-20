@@ -17,6 +17,7 @@ export type AppMenuId =
   | 'cn-order'
   | 'import-in'
   | 'warehouse-in'
+  | 'product-keywords'
   | 'product-manage'
   | 'rocket-stock'
   | 'rocket-sales'
@@ -76,6 +77,7 @@ export const MENU_GROUPS: { title: string; items: MenuItem[] }[] = [
     title: '사무실',
     items: [
       { id: 'product-manage', label: '사무실재고', ready: true, icon: icon('M4 6h16M4 10h16M4 14h16M4 18h16') },
+      { id: 'product-keywords', label: '상품 키워드', ready: true, icon: icon('M7 7h.01M7 3h5a2 2 0 011.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A2 2 0 013 12V7a4 4 0 014-4z') },
     ],
   },
   {
@@ -184,7 +186,7 @@ const SidebarNav: React.FC<AppSidebarProps> = ({ active, onSelect, collapsed, on
         {item.icon}
         {!collapsed && <span className="truncate">{item.label}</span>}
         {!!badges?.[item.id] && (
-          <span title="발송대기 마감이 다가온 발주" className={`${collapsed ? 'absolute ml-6 -mt-4' : 'ml-auto'} min-w-[18px] h-[18px] px-1 rounded-full bg-red-600 text-white text-[11px] font-bold leading-[18px] text-center`}>
+          <span title={item.id === 'product-keywords' ? '키워드를 아직 안 정한 상품' : '발송대기 마감이 다가온 발주'} className={`${collapsed ? 'absolute ml-6 -mt-4' : 'ml-auto'} min-w-[18px] h-[18px] px-1 rounded-full bg-red-600 text-white text-[11px] font-bold leading-[18px] text-center`}>
             {badges[item.id]}
           </span>
         )}

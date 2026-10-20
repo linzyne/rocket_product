@@ -68,6 +68,7 @@ import { db, isFirebaseConfigured, ensureSignedIn, onSnapshot } from './utils/fi
 import { collection, doc, setDoc, deleteDoc, query, where } from 'firebase/firestore';
 import { stripClonedScripts, withTimeout, withInlineImageMetrics } from './utils/html2canvasHelpers';
 import { useShipDeadline, notifyShipDeadline } from './components/coupangOrder/data/useShipDeadline';
+import ProductKeywordPage, { useUnkeyedCount } from './components/ProductKeywordPage';
 
 // This tells TypeScript that the global variables from CDNs exist.
 declare var XLSX: any;
@@ -465,6 +466,8 @@ const App: React.FC = () => {
   // 발송대기 마감(입고예정일 하루 전)이 다가왔는데 아직 발송대기에 없는 발주. 어느 화면에 있든 메뉴 숫자와 컴퓨터 알림으로 알린다.
   const shipDeadline = useShipDeadline();
   useEffect(() => { notifyShipDeadline(shipDeadline); }, [shipDeadline]);
+  // 키워드를 안 정한 상품 수(새 상품이 생기면 메뉴 옆 숫자로 알려 준다).
+  const unkeyed = useUnkeyedCount();
   // 카톡 연결(서버 /api/kakao/callback)에서 돌아왔을 때 결과를 알려 주고 주소에서 지운다.
   useEffect(() => {
     const kakao = new URLSearchParams(window.location.search).get('kakao');
@@ -3191,7 +3194,7 @@ const App: React.FC = () => {
         onSelect={setActiveMenu}
         collapsed={sidebarCollapsed}
         onToggleCollapsed={toggleSidebarCollapsed}
-        badges={{ 'coupang-flow': shipDeadline.length }}
+        badges={{ 'coupang-flow': shipDeadline.length, 'product-keywords': unkeyed }}
       />
       <div className="flex-1 min-w-0">
       <OrderGuardBanner onGoOrder={() => setActiveMenu('coupang-order')} />
@@ -3449,6 +3452,7 @@ const App: React.FC = () => {
       {/* 수입입고는 한중발주 화면 안으로 합쳤다(예전 주소 #import-in으로 와도 한중발주를 보여준다). */}
       {(activeMenu === 'cn-order' || activeMenu === 'import-in') && <HanjungOrderPage />}
       {activeMenu === 'warehouse-in' && <WarehouseInPage />}
+      {activeMenu === 'product-keywords' && <ProductKeywordPage />}
       {activeMenu === 'ledger' && <LedgerPage />}
       {!['collect', 'proposal', 'detail', 'product-manage', 'rocket-stock', 'rocket-sales', 'rocket-in', 'order-search', 'coupang-order', 'coupang-ship', 'coupang-send', 'cn-order', 'import-in', 'warehouse-in', 'ledger'].includes(activeMenu) && <MenuPlaceholder id={activeMenu} />}
       {/* 상세페이지 에디터는 상품 행에서 연 것과 카테고리 탭에서 연 것을 따로 둔다. 둘 다 계속

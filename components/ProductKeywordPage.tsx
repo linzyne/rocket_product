@@ -125,6 +125,16 @@ const ProductKeywordPage: React.FC = () => {
   const save = async (g: typeof groups[number]) => {
     const kw = (draft[g.key] ?? g.kw).trim();
     if (!kw && (checked[g.key]?.size || 0) > 0) { alert('같이 묶으려면 키워드를 넣어 주세요.'); return; }
+    // 같은 키워드로 합쳐질 이름들(이 카드·체크한 후보·이미 그 키워드를 쓰는 묶음) 중 색·옵션이 다른 게 있으면 한 번 더 묻는다.
+    if (kw) {
+      const all = [
+        ...g.list.map(n => n.name),
+        ...groups.filter(o => checked[g.key]?.has(o.key)).flatMap(o => o.list.map(n => n.name)),
+        ...groups.filter(o => o.key !== g.key && o.kw && o.kw.replace(/\s+/g, '').toLowerCase() === kw.replace(/\s+/g, '').toLowerCase()).flatMap(o => o.list.map(n => n.name)),
+      ];
+      const clash = clashIn(all);
+      if (clash && !window.confirm(`색상이나 옵션이 다른 상품이 같은 키워드로 묶여요:\n· ${clash[0]}\n· ${clash[1]}\n\n보통은 키워드를 다르게 정해요(예: "${kw} ${(colorsOf(clash[0])[0] || '옵션')}"). 그래도 같은 상품으로 묶을까요?`)) return;
+    }
     setSaving(g.key);
     try {
       // 이 카드 이름 + 체크한 비슷한 이름 모두에 같은 키워드.
@@ -139,6 +149,13 @@ const ProductKeywordPage: React.FC = () => {
     }
   };
   // 같은 키워드를 쓰는 다른 묶음(저장하면 하나로 합쳐진다).
+  // 묶으려는 이름들 사이에 색·옵션이 다른 쌍이 있는지(있으면 다른 상품일 가능성이 크다).
+  const clashIn = (names: string[]) => {
+    for (let i = 0; i < names.length; i++) for (let j = i + 1; j < names.length; j++) {
+      if (colorClash(names[i], names[j]) || optionClash(names[i], names[j])) return [names[i], names[j]];
+    }
+    return null;
+  };
   const mergeWith = (g: typeof groups[number]) => {
     const kw = (draft[g.key] ?? '').replace(/\s+/g, '').toLowerCase();
     if (!kw) return [];
@@ -175,7 +192,7 @@ const ProductKeywordPage: React.FC = () => {
                   value={value}
                   onChange={e => setDraft(prev => ({ ...prev, [g.key]: e.target.value }))}
                   onKeyDown={e => { if (e.key === 'Enter' && changed) save(g); }}
-                  placeholder="키워드 (예: 버터크런치)"
+                  placeholder="키워드 (색·옵션까지: 손잡이필통 블랙)"
                   className={`w-48 px-2 py-1 text-sm font-semibold text-gray-900 bg-white border rounded-md placeholder:text-gray-400 placeholder:font-normal ${g.kw ? 'border-gray-300' : 'border-red-300'}`}
                 />
                 <button onClick={() => save(g)} disabled={!changed || saving === g.key}
@@ -184,9 +201,12 @@ const ProductKeywordPage: React.FC = () => {
                 </button>
                 {g.kw && !changed && <span className="text-xs text-emerald-600 font-semibold">✓ {g.kw}</span>}
               </div>
-              {merge.length > 0 && (
-                <div className="mt-1.5 text-xs text-blue-700">저장하면 같은 키워드의 {merge.reduce((n, o) => n + o.list.length, 0)}개 이름과 하나로 합쳐져요: {merge.flatMap(o => o.list.map(n => n.name)).slice(0, 3).join(' / ')}</div>
-              )}
+              {merge.length > 0 && (() => {
+                const clash = clashIn([...g.list.map(n => n.name), ...merge.flatMap(o => o.list.map(n => n.name))]);
+                return clash
+                  ? <div className="mt-1.5 text-xs font-bold text-red-600">⚠ 색상·옵션이 다른 상품과 합쳐져요: {merge.flatMap(o => o.list.map(n => n.name)).slice(0, 2).join(' / ')} — 키워드를 다르게 정해 주세요(예: 색상 붙이기)</div>
+                  : <div className="mt-1.5 text-xs text-blue-700">저장하면 같은 키워드의 {merge.reduce((n, o) => n + o.list.length, 0)}개 이름과 하나로 합쳐져요: {merge.flatMap(o => o.list.map(n => n.name)).slice(0, 3).join(' / ')}</div>;
+              })()}
               <div className="mt-2 space-y-1">
                 {g.list.map(n => (
                   <div key={n.name} className="flex items-baseline gap-2 text-sm">

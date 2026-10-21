@@ -329,54 +329,57 @@ export default function CoupangSendPage({ onGoShip, view = 'waiting' }: { onGoSh
                 </button>
               ))}
             </div>
-            {(
-              <div style={{ marginTop: 10, border: '1px solid #eee', borderRadius: 10, overflow: 'hidden' }}>
-                {sentShown.map(item => {
-                  const nos = boxesOf(item).map(([no]) => no).filter(Boolean);
-                  return (
-                    // 칸 너비를 고정해서 줄마다 세로로 맞춘다: 보낸 날 · 센터 · 입고일 · 발주번호·쉽먼트 번호 · 박스 수 · 운송장 · 단추.
-                    <div key={item.id} style={{
-                      display: 'grid', gridTemplateColumns: '84px 70px 96px 230px 64px 1fr auto auto', alignItems: 'center',
-                      columnGap: 12, padding: '8px 12px', borderTop: '1px solid #f4f4f4', fontSize: 12,
-                    }}>
-                      <b style={{ color: GREEN, whiteSpace: 'nowrap' }}>{dayText(item.sentDate || '')}</b>
-                      <span style={{ fontWeight: 700, color: '#333', whiteSpace: 'nowrap' }}>{item.center}</span>
-                      <span style={{ color: '#888', whiteSpace: 'nowrap' }}>입고 {dayText(item.date)}</span>
-                      {/* 발주번호마다 한 줄씩 쌓고, 옆에 그 발주서의 쉽먼트 번호. */}
-                      <span style={{ display: 'flex', flexDirection: 'column', gap: 1, fontSize: 11.5, fontFamily: 'monospace' }}>
-                        {Array.from(new Set<string>(item.lines.map(l => String(l.발주번호 || '')))).filter(Boolean).map(no => {
-                          const ship = item.shipmentNos?.[no];
-                          return (
-                            <span key={no} style={{ whiteSpace: 'nowrap' }}>
-                              <span style={{ color: '#333', fontWeight: 700 }}>{no}</span>
-                              {ship
-                                ? <span style={{ color: '#0369a1', fontWeight: 700 }}> · 쉽먼트 {ship}</span>
-                                : <span style={{ color: '#ccc' }}> · 쉽먼트 없음</span>}
-                            </span>
-                          );
-                        })}
+            {/* 발주 진행 화면과 같은 상자 모양: 출고 건(택배 상자) 하나 = 카드 하나. 입고일·센터 머리, 발주서마다 상품, 송장·쉽먼트 번호. */}
+            <div style={{ marginTop: 10, display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: 14, alignItems: 'start' }}>
+              {sentShown.map(item => {
+                const nos = boxesOf(item).map(([no]) => no).filter(Boolean);
+                const orders = Array.from(new Set<string>(item.lines.map(l => String(l.발주번호 || '')))).filter(Boolean);
+                return (
+                  <div key={item.id} style={{
+                    background: '#fff', borderRadius: 10, padding: '10px 12px 10px 14px', boxShadow: '0 2px 6px rgba(0,0,0,0.10)',
+                    border: '1px solid #b8b2ab', borderLeft: `5px solid ${GREEN}`, display: 'flex', flexDirection: 'column', gap: 6,
+                  }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', lineHeight: 1.2 }}>
+                      <span style={{ fontSize: 17, fontWeight: 900, color: '#111' }}>{dayText(item.date)}</span>
+                      <span style={{ fontSize: 17, fontWeight: 900, color: ORANGE }}>{item.center}</span>
+                      <span style={{ fontSize: 15, fontWeight: 900, color: '#111' }}>📦 {nos.length}</span>
+                      <span style={{ marginLeft: 'auto', fontSize: 12, fontWeight: 800, color: '#fff', background: GREEN, borderRadius: 999, padding: '1px 8px', whiteSpace: 'nowrap' }}>
+                        ✓ {dayText(item.sentDate || '')} 보냄
                       </span>
-                      <span style={{ fontWeight: 700, whiteSpace: 'nowrap' }}>📦 {nos.length}박스</span>
-                      {/* 운송장번호는 옆으로 늘어나지 않게 박스마다 한 줄씩 쌓는다. */}
-                      <span style={{ display: 'flex', flexDirection: 'column', gap: 1, fontSize: 11.5, color: '#555', fontFamily: 'monospace' }}>
-                        {nos.map(no => (
-                          <span key={no}>
-                            <span style={{ color: '#aaa', fontFamily: 'inherit' }}>박스{no} </span>
-                            {waybillOf(item, no) || <span style={{ color: '#ccc' }}>번호 없음</span>}
-                          </span>
-                        ))}
-                      </span>
-                      <button onClick={() => editWaybills(item)} style={{ ...btn('#888'), height: 24 }} title="이 건의 운송장번호를 고칩니다">
-                        운송장 수정
-                      </button>
-                      <button onClick={() => unsend(item)} style={{ ...btn('#999'), height: 24 }} title="발송 완료를 풀고 발송대기로 되돌립니다">
-                        되돌리기
-                      </button>
                     </div>
-                  );
-                })}
-              </div>
-            )}
+                    {/* 송장: 박스마다 한 줄 */}
+                    <div style={{ fontSize: 11.5, color: '#6b7280', fontFamily: 'monospace', display: 'flex', flexDirection: 'column', gap: 1 }}>
+                      {nos.map(no => (
+                        <span key={no}><span style={{ color: '#aaa' }}>박스{no} 송장 </span>{waybillOf(item, no) || <span style={{ color: '#ccc' }}>번호 없음</span>}</span>
+                      ))}
+                    </div>
+                    {/* 발주서마다: 발주번호 · 쉽먼트 번호, 그 아래 상품 */}
+                    {orders.map(no => {
+                      const ship = item.shipmentNos?.[no];
+                      const lines = item.lines.filter(l => String(l.발주번호 || '') === no);
+                      return (
+                        <div key={no} style={{ borderTop: '1px solid #f3f3f3', paddingTop: 6, display: 'flex', flexDirection: 'column', gap: 3 }}>
+                          <div style={{ fontSize: 11.5, color: '#888' }}>
+                            발주 <span title="눌러서 발주번호 복사" style={{ cursor: 'copy', textDecoration: 'underline dotted', textUnderlineOffset: 2 }}>{no}</span>
+                            {ship ? <span style={{ color: '#0369a1', fontWeight: 700 }}> · 쉽먼트 {ship}</span> : <span style={{ color: '#ccc' }}> · 쉽먼트 없음</span>}
+                          </div>
+                          {lines.map((l, k) => (
+                            <div key={k} style={{ display: 'flex', gap: 8, alignItems: 'baseline', fontSize: 13 }}>
+                              <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: '#333' }} title={l.상품이름}>{l.상품이름}</span>
+                              <b style={{ whiteSpace: 'nowrap' }}>{l.확정수량}개</b>
+                            </div>
+                          ))}
+                        </div>
+                      );
+                    })}
+                    <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end', borderTop: '1px solid #f3f3f3', paddingTop: 6 }}>
+                      <button onClick={() => editWaybills(item)} style={{ ...btn('#888'), height: 24 }} title="이 건의 운송장번호를 고칩니다">운송장 수정</button>
+                      <button onClick={() => unsend(item)} style={{ ...btn('#999'), height: 24 }} title="발송 완료를 풀고 발송대기로 되돌립니다">되돌리기</button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
           </div>
         )}
       </main>

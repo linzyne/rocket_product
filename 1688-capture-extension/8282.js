@@ -129,8 +129,12 @@
     }
     const visible = selectsNow().filter((s) => s.offsetParent !== null);
     const empty = visible.filter((s) => !s.value);
-    if (arc ? !arc.value : empty.length) {
-      (arc ? [arc] : empty).forEach((s) => mark(s, true));
+    // 보이는 칸이 모두 "영문…"으로 골라졌으면 끝이다. ARC_SEQ는 "영문 직접기재"를 고르면 숨겨지거나 비어 있는 칸이라
+    // 그것만 보고 "못 골랐다"고 하면 안 된다(10/21: 잘 골랐는데 못 골랐다고 나옴).
+    const allEnglish = visible.length > 0 && visible.every((s) => s.value && /영문/.test((s.options[s.selectedIndex] || {}).textContent || ''));
+    const arcVisible = !!arc && arc.offsetParent !== null;
+    if (!allEnglish && (arcVisible ? !arc.value : empty.length || !visible.length)) {
+      (arcVisible && !arc.value ? [arc] : empty.length ? empty : visible).forEach((s) => mark(s, true));
       return '통관품목을 "영문 직접기재"로 못 골랐어요(빨간 칸을 직접 골라 주세요)';
     }
     visible.forEach((s) => mark(s, false));

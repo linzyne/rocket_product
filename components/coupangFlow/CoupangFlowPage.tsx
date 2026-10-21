@@ -1081,6 +1081,19 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
     );
   };
 
+  // 발주서 상태 딱지(오른쪽): 아직 입고중(파란 비행기), 미배정(빨강). 발주확정·쉽먼트·발송대기 어디서나 같은 모양.
+  const statusPills = (o: FlowOrder) => {
+    if (o.stage === 5) return null;
+    const st = orderStatus(o);
+    if (!st.coming && !st.unassigned) return null;
+    const pill = (bg: string): React.CSSProperties => ({ display: 'inline-flex', alignItems: 'center', gap: 3, padding: '1px 8px', borderRadius: 999, background: bg, color: '#fff', fontWeight: 800, fontSize: 11, whiteSpace: 'nowrap' });
+    return (
+      <span style={{ marginLeft: 'auto', display: 'inline-flex', gap: 4, flexShrink: 0 }}>
+        {st.coming > 0 && <span title={`한중발주로 아직 입고중인 수량 ${st.coming}개`} style={pill('#2563eb')}>✈ 입고중 {st.coming}</span>}
+        {st.unassigned > 0 && <span title={`아직 한중발주·장바구니에 안 맡기고 준비됨도 아닌 수량 ${st.unassigned}개`} style={pill(RED)}>미배정 {st.unassigned}</span>}
+      </span>
+    );
+  };
   // 날짜·센터 덩어리 안의 발주서: 날짜·센터는 덩어리 머리줄에 있으니 빼고 "발주번호 → 상품목록"만.
   // once: 쉽먼트 이후 덩어리(출고 건)에서는 진행 안내문·이어서 하기를 덩어리에 한 번만 보인다(같은 쉽먼트라 내용이 같다).
   const slim = (o: FlowOrder, once = true) => (
@@ -1106,17 +1119,7 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
           )}
         </div>
         {/* 발주서 오른쪽 위: 한눈에 보는 상태 — 아직 입고중(파란 비행기), 미배정(빨강). */}
-        {o.stage !== 5 && (() => {
-          const st = orderStatus(o);
-          if (!st.coming && !st.unassigned) return null;
-          const pill = (bg: string): React.CSSProperties => ({ display: 'inline-flex', alignItems: 'center', gap: 3, padding: '1px 8px', borderRadius: 999, background: bg, color: '#fff', fontWeight: 800, fontSize: 11, whiteSpace: 'nowrap' });
-          return (
-            <span style={{ marginLeft: 'auto', display: 'inline-flex', gap: 4, flexShrink: 0 }}>
-              {st.coming > 0 && <span title={`한중발주로 아직 입고중인 수량 ${st.coming}개`} style={pill('#2563eb')}>✈ 입고중 {st.coming}</span>}
-              {st.unassigned > 0 && <span title={`아직 한중발주·장바구니에 안 맡기고 준비됨도 아닌 수량 ${st.unassigned}개`} style={pill(RED)}>미배정 {st.unassigned}</span>}
-            </span>
-          );
-        })()}
+        {statusPills(o)}
       </div>
       {tags(o)}
       {(o.stage < 2 || once) && runNote(o)}
@@ -2124,6 +2127,16 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
                       return (
                         <>
                           {toggle}
+                          {/* 박스별 보기에서도 발주서마다 상태 딱지(마감·입고중·미배정)는 늘 보인다. */}
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: 3, marginTop: 6 }}>
+                            {sorted.map(o => (
+                              <div key={`st-${o.no}`} style={{ display: 'flex', alignItems: 'center', gap: 4, flexWrap: 'wrap', fontSize: 11.5, color: '#888' }}>
+                                발주 <span title="눌러서 발주번호 복사" style={{ cursor: 'copy', textDecoration: 'underline dotted', textUnderlineOffset: 2 }}>{o.no}</span>
+                                {deadlineBadge(o.no)}
+                                {statusPills(o)}
+                              </div>
+                            ))}
+                          </div>
                           {lead && runNote(lead)}
                           {lead && actionRow(lead)}
                           {boxNos.map(n => (

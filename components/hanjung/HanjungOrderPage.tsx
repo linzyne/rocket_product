@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import {
   HanjungOrder, HanjungLine, subscribeHanjung, deleteHanjungOrder, saveHanjungOrder, productSummary, orderTotals, productOrderQty, productUnitCost, lineAlloc, sameName, nameKey, ordersNeedingAliasRename, FEE_KEYS, remainingFee,
 } from '../../data/hanjungStore';
-import { ReceiveRow, subscribeReceives, settlementOf, sign } from '../../data/receiveStore';
+import { ReceiveRow, subscribeReceives, settlementOf, sign, matchLine } from '../../data/receiveStore';
 import { nextHanjungCode, closeShortOrder, planShortFill, planFill, FillPlan, FillLine } from '../../data/hanjungStore';
 import { useReady } from '../coupangOrder/data/readyStore';
 import { isLinesReady, startLines } from '../coupangOrder/data/lineStore';
@@ -685,6 +685,44 @@ const HanjungOrderPage: React.FC = () => {
     return a === undefined ? '-' : won(a);
   };
   const linesTotal = (ls: HanjungLine[]) => ls.reduce((n, l) => n + (lineAmount(l) || 0), 0);
+  // 이 한중발주가 맡은 몫의 매출(부가세 제외). 줄마다:
+  //  · 물류창고입고(쿠팡 정산 자료)가 있으면 개당 공급가 × 맡은 수량까지(발주 줄 전체가 정산돼도 이 건 몫만)
+  //  · 정산 자료가 아직 없는 수량은 쿠팡 발주금액(매입가) 개당 값으로
+  //  · 둘 다 없으면 0원(빠진 수량으로 따로 센다)
+  const revenueOf = (o: HanjungOrder) => {
+    let total = 0;
+    let missing = 0;
+    for (const l of o.lines) {
+      const alloc = lineAlloc(l);
+      if (alloc <= 0) continue;
+      const mine = receives.filter(r => matchLine(o, r) === l);
+      const q = mine.reduce((n, r) => n + sign(r) * r.qty, 0);
+      const sup = mine.reduce((n, r) => n + sign(r) * r.totalSupply, 0);
+      const take = q > 0 ? Math.min(alloc, q) : 0;
+      const unitSettled = q > 0 ? sup / q : 0;
+      const unitPrice = (lineAmount(l) || 0) / alloc;
+      total += unitSettled * take + unitPrice * (alloc - take);
+      if (!unitPrice && alloc > take) missing += alloc - take;
+    }
+    return { total: Math.round(total), missing };
+  };
+  // 매입: 이 건이 맡은 수량만큼만(여유는 재고라 빼고, 나중에 그 여유를 쓰는 발주에서 계산된다).
+  //  상품마다 원가 = 도착한 만큼은 도착 기록 원가, 아직 안 온 만큼은 주문 때 적은 단가. 부대비용은 상품 원가 비율로 나눈다.
+  //  그 상품 원가(+부대비용 몫) × 맡은 수량 ÷ 산 수량.
+  const buyOf = (o: HanjungOrder) => {
+    const ps = productSummary(o);
+    const full = ps.map(p => p.cost + Math.max(0, p.ordered - p.received) * productUnitCost(o, p.상품이름));
+    const goods = full.reduce((n, v) => n + v, 0);
+    const fees = Math.max(0, orderTotals(o).totalCost - ps.reduce((n, p) => n + p.cost, 0)) + FEE_KEYS.reduce((n, k) => n + remainingFee(o, k), 0);
+    let total = 0;
+    ps.forEach((p, i) => {
+      const units = Math.max(p.ordered, p.received);
+      if (!units || !p.allocated) return;
+      const withFee = full[i] + (goods > 0 ? fees * (full[i] / goods) : 0);
+      total += withFee * Math.min(1, p.allocated / units);
+    });
+    return Math.round(total);
+  };
   const handleCloseShort = async (o: HanjungOrder) => {
     const { order: closed, releases } = closeShortOrder(o);
     if (!releases.length) return;
@@ -978,7 +1016,9 @@ const HanjungOrderPage: React.FC = () => {
           const settle = settlementOf(o, receives);
           const allocated = products.reduce((sum, p) => sum + p.allocated, 0);
           const rate = t.received > 0 ? Math.round((settle.qty / t.received) * 100) : null;
-          const profit = settle.supply - t.totalCost;
+          const rev = revenueOf(o);
+          const buy = buyOf(o);
+          const profit = rev.total - buy;
           // 입고상세내역의 지급일 = 정산예정일.
           const payDays = Array.from(new Set(settle.rows.map(r => String(r.payDate || '').slice(0, 10)).filter(Boolean))).sort();
           return (
@@ -1029,18 +1069,15 @@ const HanjungOrderPage: React.FC = () => {
                     남은 것 정리
                   </button>
                 )}
-                {/* 순이익 = 정산가(연결된 쿠팡 발주금액 합) − 매입가(상품 + 관세사비·통관비·배송비·작업비).
-                    매입가는 도착한 만큼은 도착 기록 값, 아직 안 온 만큼은 주문 때 적은 단가·부대비용으로. */}
+                {/* 순이익 = 매출(이 건이 맡은 수량만큼의 정산 공급가, 정산 전이면 쿠팡 발주금액) − 매입(상품 + 부대비용). 모두 부가세 제외. */}
                 {(() => {
-                  const sale = linesTotal(o.lines);
-                  const buy = t.totalCost
-                    + products.reduce((n, p) => n + Math.max(0, p.ordered - p.received) * productUnitCost(o, p.상품이름), 0)
-                    + FEE_KEYS.reduce((n, k) => n + remainingFee(o, k), 0);
-                  const net = sale - buy;
+                  const sale = rev.total;
+                  const net = profit;
                   return (
-                    <span className="ml-auto text-right whitespace-nowrap leading-tight" title="순이익 = 정산가(쿠팡 발주금액 합) − 매입가(상품 + 관세사비·통관비·배송비·작업비)">
+                    <span className="ml-auto text-right whitespace-nowrap leading-tight"
+                      title={'순이익 = 매출 − 매입 (부가세 제외)\n매출: 이 한중발주가 맡은 수량만큼의 물류창고입고 정산 공급가, 정산 전인 수량은 쿠팡 발주금액(매입가)\n매입: 이 건이 맡은 수량만큼의 상품 원가 + 부대비용 몫(여유분은 재고라 빼요)'}>
                       <span className="block text-sm">순이익 <b className={!sale || !buy ? 'text-gray-400' : net >= 0 ? 'text-emerald-600' : 'text-red-500'}>{sale && buy ? won(net) : '-'}</b></span>
-                      <span className="block text-[11px] text-gray-400">정산 {sale ? won(sale) : '-'} − 매입 {buy ? won(buy) : '-'}</span>
+                      <span className="block text-[11px] text-gray-400">매출 {sale ? won(sale) : '-'} − 매입 {buy ? won(buy) : '-'}{rev.missing ? ` · 금액 모르는 ${rev.missing}개 빠짐` : ''}{products.some(p => p.spare > 0) ? ' · 여유는 재고라 뺌' : ''}</span>
                     </span>
                   );
                 })()}
@@ -1057,7 +1094,7 @@ const HanjungOrderPage: React.FC = () => {
                       {settle.qty > 0 && <span>쿠팡입고 <b>{settle.qty}</b>개 · 정산 <b>{won(settle.total)}</b></span>}
                       {payDays.length > 0 && <span title={`정산예정일(입고상세내역의 지급일): ${payDays.join(', ')}`}>정산예정 <b>{payDays.slice(0, 2).map(d => d.slice(5).replace('-', '/')).join(', ')}{payDays.length > 2 ? ' 외' : ''}</b></span>}
                       {rate != null && <span>정산률 <b className={rate >= 100 ? 'text-emerald-600' : 'text-amber-600'}>{rate}%</b></span>}
-                      {settle.qty > 0 && t.totalCost > 0 && <span>차익 <b className={profit >= 0 ? 'text-emerald-600' : 'text-red-500'} title="정산 공급가(부가세 제외) − 총원가">{won(profit)}</b></span>}
+                      {rev.total > 0 && buy > 0 && <span>순이익 <b className={profit >= 0 ? 'text-emerald-600' : 'text-red-500'} title="이 건이 맡은 수량만큼의 매출(정산 공급가·정산 전은 발주금액) − 매입(원가+부대비용), 부가세 제외">{won(profit)}</b></span>}
                     </div>
                   )}
                   <div className="overflow-x-auto">
@@ -1115,7 +1152,7 @@ const HanjungOrderPage: React.FC = () => {
                   </div>
 
                   <div className="border-t border-gray-100 pt-1 space-y-0.5">
-                    {edit?.code !== o.code && foldHead(`${o.code}|lines`, `발주서 ${o.lines.length}건`, Array.from(new Set(o.lines.map(l => l.물류센터))).slice(0, 4).join(' · '))}
+                    {edit?.code !== o.code && foldHead(`${o.code}|lines`, `발주서 ${o.lines.length}건 · ${won(linesTotal(o.lines))}`, `${Array.from(new Set(o.lines.map(l => l.물류센터))).slice(0, 4).join(' · ')}${o.lines.some(l => lineAlloc(l) > 0 && lineAmount(l) === undefined) ? ' · 매입가 모르는 줄 있음' : ''}`)}
                     {edit?.code === o.code ? (
                       <div className="border border-blue-200 bg-blue-50/40 rounded-lg p-2 space-y-1">
                         {/* 번호는 머리줄의 번호(✎)를 눌러 바꾼다. */}

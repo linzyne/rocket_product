@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { toEditableHtml, isRichTextBlank } from '../utils/richText';
+import { toEditableHtml, isRichTextBlank, fitLineHeightsToFontSize } from '../utils/richText';
 
 interface EditableTextProps {
   value: string;
@@ -21,7 +21,11 @@ export const EditableText: React.FC<EditableTextProps> = ({ value, onChange, pla
     const el = ref.current;
     if (!el || document.activeElement === el) return;
     const next = toEditableHtml(value);
-    if (el.innerHTML !== next) el.innerHTML = next;
+    if (el.innerHTML !== next) {
+      el.innerHTML = next;
+      // 예전에 줄인 글씨도 줄 간격이 맞게 보이도록(utils/richText.ts 참고).
+      fitLineHeightsToFontSize(el);
+    }
   }, [value]);
 
   // 타이핑 중에 값을 비우면 부모가 "빈 문구는 안 그린다"며 이 블록을 통째로 지워버린다 —

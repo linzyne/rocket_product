@@ -35,6 +35,7 @@ import { KimchiPreviewSales } from './KimchiDetailSectionsSales';
 import { GreenPreview } from './GreenDetailSections';
 import NotesSection from './NotesSection';
 import { CommonDeadline, CommonGuide, COMMON_ORDER, CommonDesign, COMMON_DESIGNS, DEADLINE_DESIGNS, useCommonInfo } from './DetailCommonInfo';
+import { fitLineHeightsToFontSize } from '../utils/richText';
 import {
   KimchiSection,
   createDefaultSectionsFor,
@@ -1996,6 +1997,7 @@ const DetailPageBuilderModal: React.FC<DetailPageBuilderModalProps> = ({ isOpen,
       if (styles.color) contents.querySelectorAll('font[color]').forEach(el => el.removeAttribute('color'));
       span.appendChild(contents);
       range.insertNode(span);
+      if (styles.fontSize) fitLineHeightsToFontSize(editable);
     } catch (err) {
       console.error('부분 서식 적용 실패:', err);
       return null;
@@ -2034,22 +2036,41 @@ const DetailPageBuilderModal: React.FC<DetailPageBuilderModalProps> = ({ isOpen,
 
   // 정렬은 글자 일부가 아니라 그 문구 블록 전체에 건다. 블록 내용을 <div data-align>로 한 번
   // 감싸 값(HTML)에 함께 저장되게 한다 — 다시 누르면 그 div의 정렬만 바꾼다.
+  const blockWrapOf = (editable: HTMLElement): HTMLDivElement => {
+    const only = editable.children.length === 1 && editable.firstElementChild instanceof HTMLDivElement
+      && editable.firstElementChild.hasAttribute('data-align') ? editable.firstElementChild as HTMLDivElement : null;
+    if (only && editable.childNodes.length === 1) return only;
+    const wrap = document.createElement('div');
+    wrap.setAttribute('data-align', '');
+    while (editable.firstChild) wrap.appendChild(editable.firstChild);
+    editable.appendChild(wrap);
+    return wrap;
+  };
+
   const alignSelectionBlock = (align: 'left' | 'center' | 'right') => {
     const range = restoreSelection();
     if (!range) return;
     const editable = editableOfRange(range);
     if (!editable) return;
-    const only = editable.children.length === 1 && editable.firstElementChild instanceof HTMLDivElement
-      && editable.firstElementChild.hasAttribute('data-align') ? editable.firstElementChild as HTMLDivElement : null;
-    if (only && editable.childNodes.length === 1) {
-      only.style.textAlign = align;
-    } else {
-      const wrap = document.createElement('div');
-      wrap.setAttribute('data-align', '');
-      wrap.style.textAlign = align;
-      while (editable.firstChild) wrap.appendChild(editable.firstChild);
-      editable.appendChild(wrap);
+    blockWrapOf(editable).style.textAlign = align;
+    editable.dispatchEvent(new Event('input', { bubbles: true }));
+  };
+
+  // 줄간격도 정렬처럼 문구 블록 전체에 건다(같은 감싸는 div). 단위 없는 배수로 저장해서
+  // 줄마다 글자 크기가 달라도 각 줄이 자기 글자 크기 기준으로 벌어진다.
+  const stepSelectionLineHeight = (delta: number) => {
+    const range = restoreSelection();
+    if (!range) return;
+    const editable = editableOfRange(range);
+    if (!editable) return;
+    const wrap = blockWrapOf(editable);
+    let current = parseFloat(wrap.style.lineHeight);
+    if (!current) {
+      const cs = window.getComputedStyle(editable);
+      current = (parseFloat(cs.lineHeight) / parseFloat(cs.fontSize)) || 1.3;
     }
+    const next = Math.min(3, Math.max(0.8, Math.round((current + delta) * 10) / 10));
+    wrap.style.lineHeight = String(next);
     editable.dispatchEvent(new Event('input', { bubbles: true }));
   };
 
@@ -2062,6 +2083,7 @@ const DetailPageBuilderModal: React.FC<DetailPageBuilderModalProps> = ({ isOpen,
     const text = range.toString();
     range.deleteContents();
     range.insertNode(document.createTextNode(text));
+    fitLineHeightsToFontSize(editable);
     editable.dispatchEvent(new Event('input', { bubbles: true }));
     setFormatBar(null);
   };
@@ -4343,6 +4365,20 @@ const DetailPageBuilderModal: React.FC<DetailPageBuilderModalProps> = ({ isOpen,
             </button>
           ))}
           <span className="w-px h-5 bg-slate-600 mx-0.5" />
+          <button
+            onClick={() => stepSelectionLineHeight(-0.1)}
+            title="줄간격 좁게"
+            className="px-1.5 h-6 rounded bg-slate-700 text-slate-200 hover:bg-slate-600 transition-colors text-xs"
+          >
+            ↕−
+          </button>
+          <button
+            onClick={() => stepSelectionLineHeight(0.1)}
+            title="줄간격 넓게"
+            className="px-1.5 h-6 rounded bg-slate-700 text-slate-200 hover:bg-slate-600 transition-colors text-xs"
+          >
+            ↕+
+          </button>          <span className="w-px h-5 bg-slate-600 mx-0.5" />
           <button
             onClick={clearSelectionFormat}
             title="서식 지우기"

@@ -35,3 +35,78 @@ export function richTextToPlain(value: string): string {
 export function isRichTextBlank(value: string): boolean {
   return richTextToPlain(value).trim() === '';
 }
+
+// 툴바로 글자를 줄이면 그 글자만 <span style="font-size">로 작아지고, 칸 자체 글자 크기는 그대로다.
+// 브라우저는 줄마다 칸 글자 크기만큼의 높이를 최소로 잡기 때문에(strut), 줄 전체를 작게 바꿔도
+// 줄 사이는 원래 큰 글씨 간격 그대로 벌어져 보인다. 한 줄의 글자가 전부 크기 지정 span 안에
+// 있으면 그 줄을 감싼 블록의 글자 크기도 같게 맞춰서 줄 높이가 실제 글자를 따르게 한다.
+const FIT_ATTR = 'data-fit-size';
+const BLOCK_TAGS = new Set(['DIV', 'P']);
+
+function lineFontSize(nodes: Node[], stop: Node): string | null {
+  let max = 0;
+  let sawText = false;
+  const visit = (n: Node): boolean => {
+    if (n.nodeType === 3) {
+      if (!(n.textContent || '').trim()) return true;
+      sawText = true;
+      for (let p = n.parentElement; p && p !== stop; p = p.parentElement) {
+        if (p.hasAttribute(FIT_ATTR)) break;
+        const px = parseFloat(p.style.fontSize);
+        if (px) { max = Math.max(max, px); return true; }
+      }
+      return false;
+    }
+    return Array.from(n.childNodes).every(visit);
+  };
+  return nodes.every(visit) && sawText ? `${max}px` : null;
+}
+
+function fitBlock(block: HTMLElement) {
+  const size = lineFontSize(Array.from(block.childNodes), block);
+  if (size) {
+    block.style.fontSize = size;
+    block.setAttribute(FIT_ATTR, '');
+  } else if (block.hasAttribute(FIT_ATTR)) {
+    block.style.removeProperty('font-size');
+    block.removeAttribute(FIT_ATTR);
+  }
+}
+
+function fitContainer(container: HTMLElement, isRoot: boolean) {
+  const kids = Array.from(container.childNodes);
+  const hasBlock = kids.some(n => n.nodeType === 1 && BLOCK_TAGS.has((n as HTMLElement).tagName));
+  if (!hasBlock) {
+    // 칸 자체(root)는 스타일이 props에서 오므로 손대지 않고, 내용을 블록으로 한 번 감싼다.
+    if (!isRoot) return fitBlock(container);
+    if (!lineFontSize(kids, container)) return;
+    const wrap = document.createElement('div');
+    kids.forEach(n => wrap.appendChild(n));
+    container.appendChild(wrap);
+    return fitBlock(wrap);
+  }
+  // 블록 사이에 낀 글자 덩어리(보통 첫 줄)는 따로 한 줄로 보고 필요하면 블록으로 감싼다.
+  let run: Node[] = [];
+  const flush = (before: Node | null) => {
+    if (run.length && lineFontSize(run, container)) {
+      const wrap = document.createElement('div');
+      container.insertBefore(wrap, before);
+      run.forEach(n => wrap.appendChild(n));
+      fitBlock(wrap);
+    }
+    run = [];
+  };
+  for (const n of kids) {
+    if (n.nodeType === 1 && BLOCK_TAGS.has((n as HTMLElement).tagName)) {
+      flush(n);
+      fitContainer(n as HTMLElement, false);
+    } else {
+      run.push(n);
+    }
+  }
+  flush(null);
+}
+
+export function fitLineHeightsToFontSize(editable: HTMLElement) {
+  fitContainer(editable, true);
+}

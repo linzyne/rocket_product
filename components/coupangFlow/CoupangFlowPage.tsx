@@ -2130,11 +2130,15 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
                           {/* 박스별 보기에서도 발주서마다 상태 딱지(마감·입고중·미배정)는 늘 보인다. */}
                           <div style={{ display: 'flex', flexDirection: 'column', gap: 3, marginTop: 6 }}>
                             {sorted.map(o => (
-                              <div key={`st-${o.no}`} style={{ display: 'flex', alignItems: 'center', gap: 4, flexWrap: 'wrap', fontSize: 11.5, color: '#888' }}>
-                                발주 <span title="눌러서 발주번호 복사" style={{ cursor: 'copy', textDecoration: 'underline dotted', textUnderlineOffset: 2 }}>{o.no}</span>
-                                {deadlineBadge(o.no)}
-                                {statusPills(o)}
-                              </div>
+                              <React.Fragment key={`st-${o.no}`}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexWrap: 'wrap', fontSize: 11.5, color: '#888' }}>
+                                  발주 <span title="눌러서 발주번호 복사" style={{ cursor: 'copy', textDecoration: 'underline dotted', textUnderlineOffset: 2 }}>{o.no}</span>
+                                  {deadlineBadge(o.no)}
+                                  {statusPills(o)}
+                                </div>
+                                {/* 입고예정일·센터 변경 요청 중 / 변경 완료 같은 표시도 발주서별 보기와 똑같이 */}
+                                {tags(o)}
+                              </React.Fragment>
                             ))}
                           </div>
                           {lead && runNote(lead)}

@@ -118,7 +118,10 @@
 
   // 주문 나누기: 화면 전체 글자를 순서대로 늘어놓고, "订单号 숫자"가 나올 때마다 새 주문이 시작된다고 본다.
   // (화면 덩어리 모양에 기대지 않는다. 덩어리로 잡으면 여러 주문이 한 덩어리로 섞이는 일이 있었다.)
-  const PAGE_END_RE = /^(上一页|下一页|跳转|为你推荐|猜你喜欢|共\s*\d+\s*页)/;
+  // 마지막 주문 아래의 쪽번호·추천상품 머리글. 탭마다 문구가 달라서(발송전 탭 등) 짧은 글자에 "추천·喜欢·更多" 같은 말이 들면 끊는다.
+  const PAGE_END_RE = /^(上一页|下一页|跳转|为你推荐|为您推荐|猜你喜欢|共\s*\d+\s*页|没有更多|已经到底)/;
+  const PAGE_END_SHORT_RE = /(推荐|猜你|喜欢|看了又看|买了又买|大家都在买)/;
+  const isPageEnd = (t) => t.kind === 'text' && (PAGE_END_RE.test(t.text) || (t.text.length <= 12 && PAGE_END_SHORT_RE.test(t.text)));
   const findOrders = (all) => {
     const heads = [];
     for (let i = 0; i < all.length; i++) {
@@ -135,7 +138,7 @@
       let end = k + 1 < heads.length ? heads[k + 1].at : all.length;
       // 마지막 주문은 아래쪽 쪽번호·추천상품 앞에서 끊는다.
       if (k + 1 === heads.length) {
-        const stop = all.findIndex((t, i) => i > h.at && t.kind === 'text' && PAGE_END_RE.test(t.text));
+        const stop = all.findIndex((t, i) => i > h.at && isPageEnd(t));
         if (stop > 0) end = stop;
       }
       return { id: h.id, head: h.el, tokens: all.slice(h.at, end) };

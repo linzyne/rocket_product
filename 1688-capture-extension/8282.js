@@ -204,6 +204,15 @@
     };
     set('SHOP_ORD_NO', order.orderId, '오더번호');
     set('PRO_NM', item.title, '상품명(영문)');
+    // "영문 직접기재"를 고르면 통관품목 줄에 영문 품목명을 손으로 적는 칸이 새로 열린다. 비어 있으면 중국어 상품명을 넣는다
+    // (중국어로 적어도 된다). 상품명(영문) 제목 줄의 빈 칸도 같이 채운다. 이미 적힌 칸은 건드리지 않는다.
+    await sleep(300);
+    [rowFor(block, /통관품목/), rowFor(block, /상품명\s*\(?\s*영문/)].forEach((row) => {
+      if (!row) return;
+      textInputs(row)
+        .filter((i) => i.offsetParent !== null && !i.readOnly && !i.disabled && !String(i.value || '').trim())
+        .forEach((i) => setVal(i, item.title));
+    });
     const marketRow = rowFor(block, /마켓등록상품명/);
     const marketInput = marketRow && textInputs(marketRow)[0];
     if (marketInput) setVal(marketInput, item.title);

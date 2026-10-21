@@ -90,6 +90,14 @@ export default function CoupangSendPage({ onGoShip, view = 'waiting' }: { onGoSh
   const [month, setMonth] = useState('');
   const curMonth = months.some(([k]) => k === month) ? month : (months[0]?.[0] || '');
   const sentShown = sent.filter(i => (i.sentDate || '').startsWith(curMonth));
+  // 보낸 날짜별로 묶는다(최근 날짜가 위). 날짜 안에서는 입고예정일·센터 순.
+  const sentByDay = useMemo(() => {
+    const m = new Map<string, ShipOut[]>();
+    sentShown.forEach(i => { const d = (i.sentDate || '').slice(0, 10); m.set(d, [...(m.get(d) || []), i]); });
+    return Array.from(m.entries())
+      .sort((a, b) => b[0].localeCompare(a[0]))
+      .map(([day, items]) => [day, items.sort((x, y) => x.date.localeCompare(y.date) || x.center.localeCompare(y.center, 'ko'))] as const);
+  }, [sentShown]);
 
   // 박스 n번의 운송장번호(쉽먼트 기록을 내용으로 확인해서 확실한 것만).
   const waybillOf = (item: ShipOut, no: number) => waybillForBox(batches, item, no);
@@ -330,8 +338,15 @@ export default function CoupangSendPage({ onGoShip, view = 'waiting' }: { onGoSh
               ))}
             </div>
             {/* 발주 진행 화면과 같은 상자 모양: 출고 건(택배 상자) 하나 = 카드 하나. 입고일·센터 머리, 발주서마다 상품, 송장·쉽먼트 번호. */}
+            {sentByDay.map(([day, dayItems]) => (
+            <div key={day} style={{ marginTop: 18 }}>
+              {/* 보낸 날 머리줄 */}
+              <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, paddingBottom: 6, borderBottom: `2px solid ${GREEN}` }}>
+                <b style={{ fontSize: 16, color: GREEN }}>✓ {dayText(day)} 보냄</b>
+                <span style={{ fontSize: 12, color: '#888' }}>상자 {dayItems.length}개 · 발주 {new Set(dayItems.flatMap(i => i.lines.map(l => l.발주번호))).size}건</span>
+              </div>
             <div style={{ marginTop: 10, display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: 14, alignItems: 'start' }}>
-              {sentShown.map(item => {
+              {dayItems.map(item => {
                 const nos = boxesOf(item).map(([no]) => no).filter(Boolean);
                 const orders = Array.from(new Set<string>(item.lines.map(l => String(l.발주번호 || '')))).filter(Boolean);
                 return (
@@ -343,9 +358,7 @@ export default function CoupangSendPage({ onGoShip, view = 'waiting' }: { onGoSh
                       <span style={{ fontSize: 17, fontWeight: 900, color: '#111' }}>{dayText(item.date)}</span>
                       <span style={{ fontSize: 17, fontWeight: 900, color: ORANGE }}>{item.center}</span>
                       <span style={{ fontSize: 15, fontWeight: 900, color: '#111' }}>📦 {nos.length}</span>
-                      <span style={{ marginLeft: 'auto', fontSize: 12, fontWeight: 800, color: '#fff', background: GREEN, borderRadius: 999, padding: '1px 8px', whiteSpace: 'nowrap' }}>
-                        ✓ {dayText(item.sentDate || '')} 보냄
-                      </span>
+
                     </div>
                     {/* 송장: 박스마다 한 줄 */}
                     <div style={{ fontSize: 11.5, color: '#6b7280', fontFamily: 'monospace', display: 'flex', flexDirection: 'column', gap: 1 }}>
@@ -380,6 +393,8 @@ export default function CoupangSendPage({ onGoShip, view = 'waiting' }: { onGoSh
                 );
               })}
             </div>
+            </div>
+            ))}
           </div>
         )}
       </main>

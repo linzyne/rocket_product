@@ -2,7 +2,7 @@
 // (KimchiDetailSections)이 같은 값을 봐야 한 상세페이지 안에서 여백과 색이 어긋나지 않는다.
 
 export const CANVAS_WIDTH = 860;
-export const PADDING_X = 65;
+export const PADDING_X = 40;
 export const RULE_COLOR = '#d9d9d9';
 export const CARD_COLOR = '#f2f2f2';
 export const PRODUCT_INFO_LABEL_COLUMN = 180;

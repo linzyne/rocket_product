@@ -63,7 +63,12 @@ export const EditableText: React.FC<EditableTextProps> = ({ value, onChange, pla
           setFocused(false);
           commit(true);
         }}
-        style={{ ...style, outline: 'none', whiteSpace: 'pre-wrap', cursor: 'text', minHeight: '1.2em' }}
+        // 가운데 정렬 문구는 단어 중간에서 끊지 않고(keep-all) 줄 길이를 고르게 나눈다(balance) —
+        // 안 그러면 "…제대 / 로!"처럼 마지막 한두 글자만 다음 줄로 떨어져 양옆이 텅 비어 보인다.
+        style={{
+          ...(style.textAlign === 'center' ? { wordBreak: 'keep-all', textWrap: 'balance' } as React.CSSProperties : null),
+          ...style, outline: 'none', whiteSpace: 'pre-wrap', cursor: 'text', minHeight: '1.2em',
+        }}
       />
       {!focused && isRichTextBlank(value) && (
         <div data-html2canvas-ignore="true" style={{ ...style, position: 'absolute', inset: 0, color: '#94a3b8', pointerEvents: 'none' }}>

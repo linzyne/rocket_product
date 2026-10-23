@@ -22,7 +22,7 @@ interface GreenPreviewProps {
   accentColor: string;
 }
 
-const SIDE = 70;
+const SIDE = 35;
 const GRAY_TEXT = '#6b6b6b';
 const COMPARE_GRAY = '#707070';
 const TABLE_LINE = '#dcdcdc';

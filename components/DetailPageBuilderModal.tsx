@@ -130,6 +130,8 @@ interface PhotoBubble {
   yPct: number;
   tail: BubbleTail;
   tone: BubbleTone;
+  // 사진 폭 대비 %. 없으면 글 길이에 맞춘다(최대 75%).
+  widthPct?: number;
 }
 
 interface PhotoItem {
@@ -2225,33 +2227,52 @@ const DetailPageBuilderModal: React.FC<DetailPageBuilderModalProps> = ({ isOpen,
   const patchBubble = (photoId: string, bubbleId: string, patch: Partial<PhotoBubble>) => {
     updateBubbles(photoId, list => list.map(b => (b.id === bubbleId ? { ...b, ...patch } : b)));
   };
-  // 손잡이(✥)를 끌어서 옮긴다. 사진 영역 밖으로는 못 나가게 0~100%로 묶는다.
-  const startBubbleDrag = (photoId: string, bubble: PhotoBubble) => (e: React.PointerEvent) => {
+  // 누른 지점에서 움직인 거리(px)와 사진 크기를 넘겨 준다. 옮기기·크기 조절이 같이 쓴다.
+  const trackBubblePointer = (e: React.PointerEvent, onMove: (dx: number, dy: number, photoRect: DOMRect) => void) => {
     e.preventDefault();
     e.stopPropagation();
-    const wrap = (e.currentTarget as HTMLElement).closest('[data-photo-wrap]') as HTMLElement | null;
+    const target = e.currentTarget as HTMLElement;
+    const wrap = target.closest('[data-photo-wrap]') as HTMLElement | null;
     if (!wrap) return;
-    const handle = e.currentTarget as HTMLElement;
-    handle.setPointerCapture(e.pointerId);
-    // 누른 지점에서 움직인 만큼만 옮긴다(손잡이가 풍선 위에 있어서 커서로 순간이동하면 튄다).
+    target.setPointerCapture(e.pointerId);
     const startX = e.clientX;
     const startY = e.clientY;
-    const move = (ev: PointerEvent) => {
-      const r = wrap.getBoundingClientRect();
-      const clamp = (v: number) => Math.min(100, Math.max(0, Math.round(v * 10) / 10));
-      patchBubble(photoId, bubble.id, {
-        xPct: clamp(bubble.xPct + ((ev.clientX - startX) / r.width) * 100),
-        yPct: clamp(bubble.yPct + ((ev.clientY - startY) / r.height) * 100),
-      });
-    };
+    const move = (ev: PointerEvent) => onMove(ev.clientX - startX, ev.clientY - startY, wrap.getBoundingClientRect());
     const up = () => {
-      handle.removeEventListener('pointermove', move);
-      handle.removeEventListener('pointerup', up);
-      handle.removeEventListener('pointercancel', up);
+      target.removeEventListener('pointermove', move);
+      target.removeEventListener('pointerup', up);
+      target.removeEventListener('pointercancel', up);
     };
-    handle.addEventListener('pointermove', move);
-    handle.addEventListener('pointerup', up);
-    handle.addEventListener('pointercancel', up);
+    target.addEventListener('pointermove', move);
+    target.addEventListener('pointerup', up);
+    target.addEventListener('pointercancel', up);
+  };
+
+  // ✥ 손잡이나 말풍선 테두리(글자 칸 바깥)를 끌어서 옮긴다. 사진 밖으로는 못 나가게 0~100%로 묶는다.
+  const startBubbleDrag = (photoId: string, bubble: PhotoBubble) => (e: React.PointerEvent) => {
+    const t = e.target as HTMLElement;
+    if (t !== e.currentTarget && t.closest('[contenteditable="true"], button:not([data-bubble-move])')) return;
+    // 말풍선이 사진 밖으로 삐져나가지 않게 가운데 점을 반 폭·반 높이만큼 안쪽에 묶는다.
+    const box = (e.currentTarget as HTMLElement).closest('[data-photo-wrap]')?.querySelector<HTMLElement>(`[data-bubble-box="${bubble.id}"]`);
+    const clamp = (v: number, halfPct: number) => {
+      const lo = Math.min(50, halfPct);
+      return Math.min(100 - lo, Math.max(lo, Math.round(v * 10) / 10));
+    };
+    trackBubblePointer(e, (dx, dy, r) => patchBubble(photoId, bubble.id, {
+      xPct: clamp(bubble.xPct + (dx / r.width) * 100, box ? (box.getBoundingClientRect().width / 2 / r.width) * 100 : 0),
+      yPct: clamp(bubble.yPct + (dy / r.height) * 100, box ? (box.getBoundingClientRect().height / 2 / r.height) * 100 : 0),
+    }));
+  };
+
+  // 오른쪽 아래 모서리를 끌어 폭을 바꾼다. 말풍선은 가운데 기준이라 폭은 끈 거리의 두 배로 늘어난다.
+  const startBubbleResize = (photoId: string, bubble: PhotoBubble) => (e: React.PointerEvent) => {
+    const box = (e.currentTarget as HTMLElement).closest('[data-bubble-box]') as HTMLElement | null;
+    const wrap = (e.currentTarget as HTMLElement).closest('[data-photo-wrap]') as HTMLElement | null;
+    if (!box || !wrap) return;
+    const startPct = bubble.widthPct ?? (box.offsetWidth / wrap.offsetWidth) * 100;
+    trackBubblePointer(e, (dx, _dy, r) => patchBubble(photoId, bubble.id, {
+      widthPct: Math.min(100, Math.max(12, Math.round((startPct + ((dx * 2) / r.width) * 100) * 10) / 10)),
+    }));
   };
 
   const renderBubble = (photo: PhotoItem, b: PhotoBubble) => {
@@ -2262,15 +2283,21 @@ const DetailPageBuilderModal: React.FC<DetailPageBuilderModalProps> = ({ isOpen,
       <div
         key={b.id}
         className="group/bubble"
+        data-bubble-box={b.id}
         style={{
           position: 'absolute', left: `${b.xPct}%`, top: `${b.yPct}%`, transform: 'translate(-50%, -50%)',
-          maxWidth: '75%', zIndex: 2,
+          // 폭을 정하지 않으면 사진 오른쪽 끝까지 남은 자리만큼만 넓어져서, 오른쪽에 둘수록 글자가
+          // 한 글자씩 세로로 쌓이고 끌 때마다 모양이 바뀐다. 글 길이만큼(최대 75%) 또는 정한 폭으로 고정한다.
+          ...(b.widthPct ? { width: `${b.widthPct}%` } : { width: 'max-content', maxWidth: '75%' }),
+          zIndex: 2,
         }}
       >
         <div
+          onPointerDown={!brushMode && !drawMode ? startBubbleDrag(photo.id, b) : undefined}
           style={{
             position: 'relative', background: tone.bg, borderRadius: 36, padding: '22px 40px',
-            boxShadow: '0 6px 18px rgba(0,0,0,0.18)', minWidth: 120,
+            boxShadow: '0 6px 18px rgba(0,0,0,0.18)', minWidth: 120, boxSizing: 'border-box',
+            cursor: brushMode || drawMode ? undefined : 'move', touchAction: 'none',
           }}
         >
           <EditableText
@@ -2282,6 +2309,15 @@ const DetailPageBuilderModal: React.FC<DetailPageBuilderModalProps> = ({ isOpen,
               lineHeight: 1.35, textAlign: 'center',
             }}
           />
+          {!brushMode && !drawMode && (
+            <div
+              data-html2canvas-ignore="true"
+              onPointerDown={startBubbleResize(photo.id, b)}
+              title="끌어서 폭 조절"
+              className="absolute -right-2 -bottom-2 w-5 h-5 rounded-sm bg-blue-500 border-2 border-white opacity-0 group-hover/bubble:opacity-100 transition-opacity"
+              style={{ cursor: 'ew-resize', touchAction: 'none' }}
+            />
+          )}
           {b.tail !== 'none' && (
             <div
               style={{
@@ -2296,7 +2332,7 @@ const DetailPageBuilderModal: React.FC<DetailPageBuilderModalProps> = ({ isOpen,
             data-html2canvas-ignore="true"
             className="absolute left-1/2 -translate-x-1/2 bottom-full mb-2 flex items-center gap-1 opacity-0 group-hover/bubble:opacity-100 focus-within:opacity-100 transition-opacity"
           >
-            <button onPointerDown={startBubbleDrag(photo.id, b)} className={`${ctrl} cursor-move`} style={{ touchAction: 'none' }} title="끌어서 옮기기">✥</button>
+            <button data-bubble-move onPointerDown={startBubbleDrag(photo.id, b)} className={`${ctrl} cursor-move`} style={{ touchAction: 'none' }} title="끌어서 옮기기">✥</button>
             <button
               onClick={() => patchBubble(photo.id, b.id, { tail: BUBBLE_TAILS[(BUBBLE_TAILS.indexOf(b.tail) + 1) % BUBBLE_TAILS.length] })}
               className={ctrl}

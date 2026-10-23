@@ -1205,6 +1205,39 @@ const DetailPageBuilderModal: React.FC<DetailPageBuilderModalProps> = ({ isOpen,
     return () => document.removeEventListener('selectionchange', handleSelectionChange);
   }, []);
 
+  // 막대 자리는 글자를 고를 때 한 번 정해지므로, 스크롤하면 글자와 어긋난 채 떠 있게 된다.
+  // 스크롤·Esc·막대와 글자 칸 바깥 클릭이면 닫는다. 색 고르기 창을 그냥 닫아 onBlur가 안 온
+  // 경우에도 바깥을 누르면 "색 고르는 중" 표시를 풀어서 막대가 다시 닫히게 한다.
+  const formatBarRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!formatBar) return;
+    const close = () => {
+      colorPickingRef.current = false;
+      setFormatBar(null);
+    };
+    const onScroll = (e: Event) => {
+      if (formatBarRef.current?.contains(e.target as Node)) return;
+      close();
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') close();
+    };
+    const onDown = (e: MouseEvent) => {
+      const t = e.target as HTMLElement | null;
+      if (!t || formatBarRef.current?.contains(t)) return;
+      colorPickingRef.current = false;
+      if (!t.closest('[contenteditable="true"]')) setFormatBar(null);
+    };
+    window.addEventListener('scroll', onScroll, true);
+    window.addEventListener('keydown', onKey);
+    window.addEventListener('mousedown', onDown, true);
+    return () => {
+      window.removeEventListener('scroll', onScroll, true);
+      window.removeEventListener('keydown', onKey);
+      window.removeEventListener('mousedown', onDown, true);
+    };
+  }, [formatBar]);
+
   // 상세페이지의 제품명은 AI가 지어낸 이름이 아니라 상품에 입력된 상품명을 따른다.
   // 확장에서 값을 채우는 데 시간이 걸려 에디터가 먼저 열리는 경우가 있어, 상품명이 뒤늦게
   // 들어와도 반영되게 상품명이 바뀔 때마다 맞춰 준다.
@@ -4429,6 +4462,7 @@ const DetailPageBuilderModal: React.FC<DetailPageBuilderModalProps> = ({ isOpen,
           순간 선택이 풀리지 않는다. data-html2canvas-ignore로 저장 이미지에는 안 찍힌다. */}
       {formatBar && (
         <div
+          ref={formatBarRef}
           data-html2canvas-ignore="true"
           // 기본 동작을 막아야 툴바를 누르는 순간 선택이 풀리지 않고, 클릭 전파를 막아야 바깥
           // 배경의 onClick(=모달 닫기)까지 올라가지 않는다.

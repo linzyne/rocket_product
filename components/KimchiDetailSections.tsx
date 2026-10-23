@@ -1153,9 +1153,26 @@ export const KimchiSectionPanel: React.FC<KimchiSectionPanelProps> = ({
     setDropTarget(null);
   };
 
+  // 탐색기·바탕화면에서 사진 파일을 끌어 온 경우. 섹션 카드 아무 데나 놓으면 그 섹션에 올린다.
+  const [fileDropSection, setFileDropSection] = React.useState<string | null>(null);
+  const isFileDrag = (e: React.DragEvent) => Array.from(e.dataTransfer.types).includes('Files');
+  const addDroppedFiles = (e: React.DragEvent, sectionId: string) => {
+    setFileDropSection(null);
+    const section = sections.find(s => s.id === sectionId);
+    const files = Array.from(e.dataTransfer.files as FileList).filter((f: File) => f.type.startsWith('image/'));
+    if (!section || !files.length) return;
+    // 사진 한 장짜리 섹션은 이미 차 있으면 안 받고, 비어 있으면 첫 장만 넣는다("+" 칸과 같게).
+    if (!section.multiplePhotos && (photosBySection[sectionId]?.length ?? 0) >= 1) return;
+    onAddFiles(sectionId, section.multiplePhotos ? files : files.slice(0, 1));
+  };
+
   const handleDrop = (sectionId: string, beforePhotoId?: string) => (e: React.DragEvent) => {
     e.preventDefault();
     e.stopPropagation();
+    if (!draggingPhotoId && e.dataTransfer.files.length) {
+      addDroppedFiles(e, sectionId);
+      return;
+    }
     const photoId = draggingPhotoId || e.dataTransfer.getData('text/plain');
     if (photoId) movePhoto(photoId, sectionId, beforePhotoId);
     endDrag();
@@ -1210,7 +1227,29 @@ export const KimchiSectionPanel: React.FC<KimchiSectionPanelProps> = ({
         const photos = photosBySection[section.id] || [];
         const full = !section.multiplePhotos && photos.length >= 1;
         return (
-          <div key={section.id} data-panel-section-id={section.id} className="rounded-lg border border-slate-700 bg-slate-800/40 p-2.5 space-y-2">
+          <div
+            key={section.id}
+            data-panel-section-id={section.id}
+            onDragOver={e => {
+              if (full || !isFileDrag(e)) return;
+              e.preventDefault();
+              e.dataTransfer.dropEffect = 'copy';
+              setFileDropSection(section.id);
+            }}
+            onDragLeave={e => {
+              if (!e.currentTarget.contains(e.relatedTarget as Node | null)) {
+                setFileDropSection(prev => (prev === section.id ? null : prev));
+              }
+            }}
+            onDrop={e => {
+              if (!isFileDrag(e)) return;
+              e.preventDefault();
+              addDroppedFiles(e, section.id);
+            }}
+            className={`rounded-lg border bg-slate-800/40 p-2.5 space-y-2 transition-colors ${
+              fileDropSection === section.id ? 'border-blue-500 ring-2 ring-blue-500/60' : 'border-slate-700'
+            }`}
+          >
             <div className="flex items-center gap-1.5">
               <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-700 text-slate-300 flex-shrink-0">
                 {section.boxOnly ? '박스' : KIND_BADGE[section.kind]}

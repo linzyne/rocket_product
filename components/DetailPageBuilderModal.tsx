@@ -272,7 +272,7 @@ const CLOUD_TEXT_SAVE_DELAY_MS = 3000;
 // Numbered feature blocks (01~0N) that share the uploaded photos left over after the fixed
 // hero/closing slots — see distributePhotos below. Count is user-adjustable (see featureBlockCount).
 
-// Fonts already loaded in index.html (Pretendard/Paperlogy/NanumSquareRound via jsdelivr, the rest via Google Fonts).
+// Fonts already loaded in index.html (Pretendard/Paperlogy/NanumSquareRound and the 꼬미~아네모네 group via jsdelivr fonts-archive, the rest via Google Fonts).
 const FONT_OPTIONS = [
   { label: 'Paperlogy', value: 'Paperlogy' },
   { label: '나눔스퀘어라운드', value: 'Nanum Square Round' },
@@ -280,6 +280,11 @@ const FONT_OPTIONS = [
   { label: 'Noto Sans KR', value: 'Noto Sans KR' },
   { label: 'Black Han Sans', value: 'Black Han Sans' },
   { label: 'Jua', value: 'Jua' },
+  { label: '국립공원 꼬미체', value: 'KNPS Kkomi' },
+  { label: '경기천년바탕', value: 'Gyeonggi Batang' },
+  { label: '나눔손글씨 장미체', value: 'NanumJangMiCe' },
+  { label: '메이플스토리', value: 'Maplestory' },
+  { label: '카페24 아네모네', value: 'Cafe24 Ohsquare' },
 ];
 
 interface TemplateStyleSettings {

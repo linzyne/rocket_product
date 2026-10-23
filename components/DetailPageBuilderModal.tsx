@@ -477,6 +477,8 @@ const DetailPageBuilderModal: React.FC<DetailPageBuilderModalProps> = ({ isOpen,
   // savedRangeRef: 색상 선택기처럼 포커스를 가져가는 UI를 거치면 선택이 풀리므로, 툴바가 뜬
   // 시점의 범위를 들고 있다가 적용 직전에 되살린다.
   const [formatBar, setFormatBar] = useState<{ left: number; top: number } | null>(null);
+  const [fontMenuOpen, setFontMenuOpen] = useState(false);
+  useEffect(() => { if (!formatBar) setFontMenuOpen(false); }, [formatBar]);
   // 미리보기에서 마우스를 올린 섹션(↑↓ 버튼 자리). handlePreviewHover 참고.
   const [hoverSection, setHoverSection] = useState<{ id: string; top: number } | null>(null);
   const savedRangeRef = useRef<Range | null>(null);
@@ -1765,7 +1767,12 @@ const DetailPageBuilderModal: React.FC<DetailPageBuilderModalProps> = ({ isOpen,
         document.fonts.load(`700 89px "${templateStyle.fontFamily}"`).catch(() => undefined),
         document.fonts.load(`400 46px "${templateStyle.fontFamily}"`).catch(() => undefined),
         // Fonts picked per free text box may differ from the template font.
-        ...Array.from(new Set(textBoxes.map(b => b.fontFamily))).flatMap(f => [
+        // 서식 막대로 일부 글자에만 바꾼 폰트도(span style="font-family") 미리 받아 둔다.
+        ...Array.from(new Set([
+          ...textBoxes.map(b => b.fontFamily),
+          ...Array.from(previewRef.current.querySelectorAll<HTMLElement>('[contenteditable] [style*="font-family"]'))
+            .map((el: HTMLElement) => el.style.fontFamily.replace(/["']/g, '').trim()).filter(Boolean),
+        ])).flatMap(f => [
           document.fonts.load(`700 50px "${f}"`).catch(() => undefined),
           document.fonts.load(`400 50px "${f}"`).catch(() => undefined),
         ]),
@@ -4498,6 +4505,30 @@ const DetailPageBuilderModal: React.FC<DetailPageBuilderModalProps> = ({ isOpen,
             />
           </label>
           <span className="w-px h-5 bg-slate-600 mx-0.5" />
+          {/* 막대가 mousedown 기본 동작을 막아서 <select>는 안 열린다 — 직접 만든 목록으로 고른다. */}
+          <div className="relative">
+            <button
+              onClick={() => setFontMenuOpen(v => !v)}
+              title="고른 글자 폰트 바꾸기"
+              className={`px-1.5 h-6 rounded text-slate-200 transition-colors text-xs ${fontMenuOpen ? 'bg-blue-600' : 'bg-slate-700 hover:bg-slate-600'}`}
+            >
+              폰트 ▾
+            </button>
+            {fontMenuOpen && (
+              <div className="absolute left-0 top-full mt-1 w-44 max-h-72 overflow-y-auto rounded-md bg-slate-900 border border-slate-600 shadow-xl py-1">
+                {FONT_OPTIONS.map(opt => (
+                  <button
+                    key={opt.value}
+                    onClick={() => { applyFormatToSelection({ fontFamily: `"${opt.value}"` }); setFontMenuOpen(false); }}
+                    className="block w-full text-left px-2.5 py-1.5 text-sm text-slate-200 hover:bg-slate-700"
+                    style={{ fontFamily: `"${opt.value}"` }}
+                  >
+                    {opt.label}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
           <button
             onClick={() => scaleSelectionFontSize(0.87)}
             title="글자 작게"

@@ -119,10 +119,30 @@ interface DetailPageBuilderModalProps {
 // 창을 열 때의 미리보기 배율.
 const DEFAULT_ZOOM = 0.5;
 
+// 사진 위에 얹는 말풍선. 위치는 사진 크기 대비 %(가운데 기준)라 사진을 잘라도·폭이 바뀌어도
+// 대략 같은 자리에 남는다. 글은 다른 문구 칸처럼 간단한 HTML(서식 툴바로 색·크기 바꾸기 가능).
+type BubbleTail = 'bl' | 'bc' | 'br' | 'none';
+type BubbleTone = 'light' | 'dark';
+interface PhotoBubble {
+  id: string;
+  text: string;
+  xPct: number;
+  yPct: number;
+  tail: BubbleTail;
+  tone: BubbleTone;
+}
+
 interface PhotoItem {
   id: string;
   dataUrl: string;
+  bubbles?: PhotoBubble[];
 }
+
+const BUBBLE_TAILS: BubbleTail[] = ['bl', 'bc', 'br', 'none'];
+const BUBBLE_TONES: Record<BubbleTone, { bg: string; color: string }> = {
+  light: { bg: '#ffffff', color: '#1a1a1a' },
+  dark: { bg: '#1f1f1f', color: '#ffffff' },
+};
 
 // Free-draw layer: brush strokes are freehand point paths, the rest are drag-defined shapes
 // (from → to, in the same drawCanvas coordinate space as points). All persist as vector data (not
@@ -2135,8 +2155,116 @@ const DetailPageBuilderModal: React.FC<DetailPageBuilderModalProps> = ({ isOpen,
     setPhotoInsertTarget(null);
   };
 
+  const updateBubbles = (photoId: string, fn: (list: PhotoBubble[]) => PhotoBubble[]) => {
+    setPhotos(prev => prev.map(p => (p.id === photoId ? { ...p, bubbles: fn(p.bubbles || []) } : p)));
+  };
+  const addBubble = (photoId: string) => {
+    updateBubbles(photoId, list => [...list, { id: generateId(), text: '', xPct: 50, yPct: 25, tail: 'bl', tone: 'light' }]);
+  };
+  const patchBubble = (photoId: string, bubbleId: string, patch: Partial<PhotoBubble>) => {
+    updateBubbles(photoId, list => list.map(b => (b.id === bubbleId ? { ...b, ...patch } : b)));
+  };
+  // 손잡이(✥)를 끌어서 옮긴다. 사진 영역 밖으로는 못 나가게 0~100%로 묶는다.
+  const startBubbleDrag = (photoId: string, bubble: PhotoBubble) => (e: React.PointerEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const wrap = (e.currentTarget as HTMLElement).closest('[data-photo-wrap]') as HTMLElement | null;
+    if (!wrap) return;
+    const handle = e.currentTarget as HTMLElement;
+    handle.setPointerCapture(e.pointerId);
+    // 누른 지점에서 움직인 만큼만 옮긴다(손잡이가 풍선 위에 있어서 커서로 순간이동하면 튄다).
+    const startX = e.clientX;
+    const startY = e.clientY;
+    const move = (ev: PointerEvent) => {
+      const r = wrap.getBoundingClientRect();
+      const clamp = (v: number) => Math.min(100, Math.max(0, Math.round(v * 10) / 10));
+      patchBubble(photoId, bubble.id, {
+        xPct: clamp(bubble.xPct + ((ev.clientX - startX) / r.width) * 100),
+        yPct: clamp(bubble.yPct + ((ev.clientY - startY) / r.height) * 100),
+      });
+    };
+    const up = () => {
+      handle.removeEventListener('pointermove', move);
+      handle.removeEventListener('pointerup', up);
+      handle.removeEventListener('pointercancel', up);
+    };
+    handle.addEventListener('pointermove', move);
+    handle.addEventListener('pointerup', up);
+    handle.addEventListener('pointercancel', up);
+  };
+
+  const renderBubble = (photo: PhotoItem, b: PhotoBubble) => {
+    const tone = BUBBLE_TONES[b.tone] || BUBBLE_TONES.light;
+    const tailLeft = b.tail === 'bl' ? '22%' : b.tail === 'br' ? '78%' : '50%';
+    const ctrl = 'w-7 h-7 flex items-center justify-center rounded-full bg-slate-900/80 text-white text-xs hover:bg-slate-700';
+    return (
+      <div
+        key={b.id}
+        className="group/bubble"
+        style={{
+          position: 'absolute', left: `${b.xPct}%`, top: `${b.yPct}%`, transform: 'translate(-50%, -50%)',
+          maxWidth: '75%', zIndex: 2,
+        }}
+      >
+        <div
+          style={{
+            position: 'relative', background: tone.bg, borderRadius: 36, padding: '22px 40px',
+            boxShadow: '0 6px 18px rgba(0,0,0,0.18)', minWidth: 120,
+          }}
+        >
+          <EditableText
+            value={b.text}
+            onChange={v => patchBubble(photo.id, b.id, { text: v })}
+            placeholder="말풍선 문구"
+            style={{
+              fontFamily: templateStyle.fontFamily, color: tone.color, fontSize: 44, fontWeight: 700,
+              lineHeight: 1.35, textAlign: 'center',
+            }}
+          />
+          {b.tail !== 'none' && (
+            <div
+              style={{
+                position: 'absolute', top: '100%', left: tailLeft, transform: 'translateX(-50%)', width: 0, height: 0,
+                borderLeft: '18px solid transparent', borderRight: '18px solid transparent', borderTop: `28px solid ${tone.bg}`,
+              }}
+            />
+          )}
+        </div>
+        {!brushMode && !drawMode && (
+          <div
+            data-html2canvas-ignore="true"
+            className="absolute left-1/2 -translate-x-1/2 bottom-full mb-2 flex items-center gap-1 opacity-0 group-hover/bubble:opacity-100 focus-within:opacity-100 transition-opacity"
+          >
+            <button onPointerDown={startBubbleDrag(photo.id, b)} className={`${ctrl} cursor-move`} style={{ touchAction: 'none' }} title="끌어서 옮기기">✥</button>
+            <button
+              onClick={() => patchBubble(photo.id, b.id, { tail: BUBBLE_TAILS[(BUBBLE_TAILS.indexOf(b.tail) + 1) % BUBBLE_TAILS.length] })}
+              className={ctrl}
+              title="꼬리 위치 바꾸기(왼쪽→가운데→오른쪽→없음)"
+            >
+              ▾
+            </button>
+            <button
+              onClick={() => patchBubble(photo.id, b.id, { tone: b.tone === 'dark' ? 'light' : 'dark' })}
+              className={ctrl}
+              title="흰색/검은색 바꾸기"
+            >
+              ◐
+            </button>
+            <button
+              onClick={() => updateBubbles(photo.id, list => list.filter(x => x.id !== b.id))}
+              className={`${ctrl} hover:bg-red-500/90`}
+              title="말풍선 삭제"
+            >
+              ✕
+            </button>
+          </div>
+        )}
+      </div>
+    );
+  };
+
   const renderPhoto = (photo: PhotoItem, marginBottom: number) => (
-    <div key={photo.id} style={{ position: 'relative', marginBottom }}>
+    <div key={photo.id} data-photo-wrap style={{ position: 'relative', marginBottom }}>
       <img
         data-photo-id={photo.id}
         src={photo.dataUrl}
@@ -2163,6 +2291,7 @@ const DetailPageBuilderModal: React.FC<DetailPageBuilderModalProps> = ({ isOpen,
         }}
         alt=""
       />
+      {(photo.bubbles || []).map(b => renderBubble(photo, b))}
       {!brushMode && !drawMode && (
         <button
           data-html2canvas-ignore="true"
@@ -2179,6 +2308,13 @@ const DetailPageBuilderModal: React.FC<DetailPageBuilderModalProps> = ({ isOpen,
       )}
       {!brushMode && !drawMode && (
         <div data-html2canvas-ignore="true" className="absolute top-2.5 right-2.5 flex items-center gap-1.5">
+          <button
+            onClick={() => addBubble(photo.id)}
+            className="w-8 h-8 flex items-center justify-center rounded-full bg-slate-900/75 text-white hover:bg-blue-500/90 transition-colors text-sm"
+            title="말풍선 넣기"
+          >
+            💬
+          </button>
           <button
             onClick={() => startCropQueue([photo])}
             className="w-8 h-8 flex items-center justify-center rounded-full bg-slate-900/75 text-white hover:bg-purple-500/90 transition-colors [&_svg]:h-4 [&_svg]:w-4"

@@ -1215,6 +1215,8 @@ const DetailPageBuilderModal: React.FC<DetailPageBuilderModalProps> = ({ isOpen,
   // 막대 자리는 글자를 고를 때 한 번 정해지므로, 스크롤하면 글자와 어긋난 채 떠 있게 된다.
   // 스크롤·Esc·막대와 글자 칸 바깥 클릭이면 닫는다. 색 고르기 창을 그냥 닫아 onBlur가 안 온
   // 경우에도 바깥을 누르면 "색 고르는 중" 표시를 풀어서 막대가 다시 닫히게 한다.
+  // 저장할 때 섹션별로 자르려고 잰 경계(measureSectionCuts). 훅이라 아래 조기 return보다 위에 둔다.
+  const sectionCutsRef = useRef<{ cuts: number[]; scale: number } | null>(null);
   const formatBarRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (!formatBar) return;
@@ -1755,6 +1757,17 @@ const DetailPageBuilderModal: React.FC<DetailPageBuilderModalProps> = ({ isOpen,
   // 금방) 2배로 찍은 캔버스의 세로가 브라우저 한계를 넘는다. 한계를 넘으면 예외가 나는 게 아니라
   // 픽셀 할당만 조용히 실패해서 **전부 흰 이미지**가 저장된다. 그래서 처음부터 안전한 높이로
   // 잘라 여러 번 찍는다. 짧은 페이지는 예전처럼 딱 한 번만 찍는다.
+  // 저장 이미지를 섹션마다 따로 자르려고 섹션 경계(CSS px, 위에서부터)를 잰다. 화면이 아니라
+  // html2canvas가 찍는 사본에서 재야 한다 — 사본에서는 빈 섹션(stripEmptySections)과 저장 때 빠지는
+  // 요소(data-html2canvas-ignore)가 없어서 높이가 화면과 다르다.
+  const measureSectionCuts = (root: HTMLElement): number[] => {
+    const rootTop = root.getBoundingClientRect().top;
+    const height = root.scrollHeight;
+    const tops = Array.from(root.querySelectorAll<HTMLElement>('[data-section-id], [data-capture-section]'))
+      .map(el => Math.round(el.getBoundingClientRect().top - rootTop));
+    return Array.from(new Set([0, ...tops, height])).filter(y => y >= 0 && y <= height).sort((a, b) => a - b);
+  };
+
   const captureBands = async (): Promise<HTMLCanvasElement[] | null> => {
     if (!previewRef.current || !hasRenderableContent) return null;
     const previousZoom = zoom;
@@ -1783,6 +1796,7 @@ const DetailPageBuilderModal: React.FC<DetailPageBuilderModalProps> = ({ isOpen,
       const fullHeight = previewRef.current.scrollHeight;
       const scale = captureScaleFor(fullWidth);
       const bandHeight = captureBandHeight(fullWidth, scale);
+      sectionCutsRef.current = null;
 
       // html2canvas의 x/y는 "찍을 요소의 왼쪽 위"에서 잰 값이라, y만 옮기면 그 아래 띠가 나온다.
       // width/height를 준 만큼만 캔버스로 나오므로 띠 하나가 곧 캔버스 하나다.
@@ -1806,6 +1820,8 @@ const DetailPageBuilderModal: React.FC<DetailPageBuilderModalProps> = ({ isOpen,
             onclone: (clonedDoc: Document) => {
               stripClonedScripts(clonedDoc);
               stripEmptySections(clonedDoc);
+              const clonedRoot = top === 0 ? clonedDoc.querySelector<HTMLElement>('[data-capture-root]') : null;
+              if (clonedRoot) sectionCutsRef.current = { cuts: measureSectionCuts(clonedRoot), scale };
             },
           }),
           20000,
@@ -2901,6 +2917,44 @@ const DetailPageBuilderModal: React.FC<DetailPageBuilderModalProps> = ({ isOpen,
     return target;
   };
 
+  // 위아래로 이어 찍은 띠들에서 [y0, y1) 픽셀 구간만 한 장으로 떼어 낸다(구간이 띠 경계를 걸쳐도 된다).
+  const extractBandRegion = (bands: HTMLCanvasElement[], y0: number, y1: number): HTMLCanvasElement => {
+    const target = document.createElement('canvas');
+    target.width = bands[0].width;
+    target.height = y1 - y0;
+    const ctx = target.getContext('2d');
+    if (!ctx) return target;
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, target.width, target.height);
+    let bandTop = 0;
+    for (const band of bands) {
+      const from = Math.max(y0, bandTop);
+      const to = Math.min(y1, bandTop + band.height);
+      if (to > from) ctx.drawImage(band, 0, from - bandTop, band.width, to - from, 0, from - y0, band.width, to - from);
+      bandTop += band.height;
+    }
+    return target;
+  };
+
+  // 섹션 하나가 한 장이 되게 자른다. MAX_SLICE_HEIGHT보다 긴 섹션만 그 이하 길이로 다시 나눈다.
+  const sliceBandsBySection = (bands: HTMLCanvasElement[], cuts: number[], scale: number): HTMLCanvasElement[] => {
+    const total = bands.reduce((sum, b) => sum + b.height, 0);
+    const px = Array.from(new Set(cuts.map(y => Math.min(total, Math.round(y * scale))))).sort((a, b) => a - b);
+    const out: HTMLCanvasElement[] = [];
+    for (let i = 0; i < px.length - 1; i++) {
+      // 2px도 안 되는 틈(섹션 사이 여백 계산 오차)은 따로 파일로 내지 않는다.
+      if (px[i + 1] - px[i] < 2) continue;
+      // 긴 섹션은 같은 길이로 나눈다 — 3000씩 자르면 3086px 섹션에서 86px짜리 자투리가 나온다.
+      const parts = Math.ceil((px[i + 1] - px[i]) / MAX_SLICE_HEIGHT);
+      for (let k = 0; k < parts; k++) {
+        const y0 = px[i] + Math.round(((px[i + 1] - px[i]) * k) / parts);
+        const y1 = px[i] + Math.round(((px[i + 1] - px[i]) * (k + 1)) / parts);
+        out.push(extractBandRegion(bands, y0, y1));
+      }
+    }
+    return out;
+  };
+
   // 완성된 페이지를 저장용 이미지로 만든다. 페이지가 MAX_SLICE_HEIGHT보다 길면 여러 장으로
   // 잘려 나오고, 짧으면 한 장짜리 배열이 나온다.
   const captureSlices = async (): Promise<string[] | null> => {
@@ -2914,8 +2968,12 @@ const DetailPageBuilderModal: React.FC<DetailPageBuilderModalProps> = ({ isOpen,
       }
       // 자르는 건 헤더 "상페작업"으로 여는 독립 상세페이지(김치)뿐이다. 상품등록에서 여는 쪽은
       // 제안서·통합다운이 상세이미지 한 장을 전제로 돌아가므로 예전처럼 한 장으로 낸다.
+      // 김치는 섹션마다 한 장씩, 긴 섹션만 MAX_SLICE_HEIGHT로 더 나눈다. 경계를 못 쟀으면 예전처럼 일정 높이로.
+      const cutInfo = sectionCutsRef.current;
+      const bySection = isKimchi && cutInfo && cutInfo.cuts.length > 2
+        ? sliceBandsBySection(bands, cutInfo.cuts, cutInfo.scale) : [];
       const slices = isKimchi
-        ? bands.flatMap(band => sliceCanvasVertically(band, MAX_SLICE_HEIGHT))
+        ? (bySection.length > 0 ? bySection : bands.flatMap(band => sliceCanvasVertically(band, MAX_SLICE_HEIGHT)))
         : [mergeBands(bands)];
       // 1x 아래로는 내리지 않는다 — 화면에 보이는 해상도보다 흐려지는 일은 없게.
       const minScale = Math.min(1, CANVAS_WIDTH / slices[0].width);
@@ -3437,6 +3495,7 @@ const DetailPageBuilderModal: React.FC<DetailPageBuilderModalProps> = ({ isOpen,
               })()}
               <div
                 ref={previewRef}
+                data-capture-root
                 onContextMenu={handlePreviewContextMenu}
                 style={{ width: CANVAS_WIDTH, backgroundColor: '#ffffff', position: 'relative' }}
               >
@@ -3474,7 +3533,11 @@ const DetailPageBuilderModal: React.FC<DetailPageBuilderModalProps> = ({ isOpen,
                   for (const item of items) {
                     if (item === 'deadline') {
                       flush();
-                      out.push(<CommonDeadline key="deadline" info={commonInfo} update={updateCommonInfo} design={commonDeadlineDesign === 'own' ? commonInfo.design : commonDeadlineDesign} {...look} />);
+                      out.push(
+                        <div key="deadline" data-capture-section>
+                          <CommonDeadline info={commonInfo} update={updateCommonInfo} design={commonDeadlineDesign === 'own' ? commonInfo.design : commonDeadlineDesign} {...look} />
+                        </div>
+                      );
                     } else if (item.kind === 'guide') {
                       flush();
                       out.push(

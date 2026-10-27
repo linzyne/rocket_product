@@ -121,16 +121,77 @@
       document.body.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true, view: window, clientX: 5, clientY: 5 }));
     }
   };
+  // 달력(Ant Design 기간 달력)에서 날짜 칸 찾기. 칸마다 title에 2026-07-29 모양 날짜가 있다.
+  const dayCell = (day) => Array.from(document.querySelectorAll(`td[title="${day}"]`)).find(visible) || null;
+  // 이전 달은 왼쪽 달력의 단추, 다음 달은 오른쪽 달력의 단추를 쓴다.
+  const navBtn = (dir) => {
+    const list = Array.from(document.querySelectorAll(`[class*="header-${dir}-btn"]`)).filter(visible);
+    return (dir === 'prev' ? list[0] : list[list.length - 1]) || null;
+  };
+  // 달력에서 그 날짜가 보일 때까지 앞/뒤 달로 넘기고 누른다.
+  const pickDay = async (day, dir) => {
+    for (let i = 0; i < 14; i++) {
+      const cell = dayCell(day);
+      if (cell) {
+        clickEl(cell);
+        return true;
+      }
+      const btn = navBtn(dir);
+      if (!btn) return false;
+      clickEl(btn);
+      await sleep(250);
+    }
+    return false;
+  };
+  // 시작 칸을 눌러 달력을 열고 → 시작 날짜 누르고 → 끝 날짜(그대로) 누른다. 사람이 달력에서 고르는 것과 같다.
+  const pickRangeOnCalendar = async (from, want, endDay) => {
+    try { from.focus(); } catch (err) {}
+    clickEl(from);
+    if (!(await waitFor(() => document.querySelector('td[title]') && visible(document.querySelector('td[title]')), 3000))) return false;
+    await sleep(200);
+    if (!(await pickDay(want, 'prev'))) return false;
+    await sleep(300);
+    if (endDay && !(await pickDay(endDay, 'next'))) return false;
+    await sleep(300);
+    return true;
+  };
   const widenStartDate = async () => {
     if (!(await waitFor(() => inboundDateInputs().length >= 1, 5000))) return false;
     const start = new Date();
     start.setDate(start.getDate() - START_BACK_DAYS);
     const want = ymd(start);
-    const [from] = inboundDateInputs();
+    const [from, to] = inboundDateInputs();
     if (from.value && from.value <= want) return true; // 이미 넉넉하다
-    typeDate(from, want);
+    const endDay = (to && to.value) || '';
+    const okNow = () => (inboundDateInputs()[0] || {}).value === want;
+
+    // 1) 달력에서 누르기
+    await pickRangeOnCalendar(from, want, endDay);
+    if (await waitFor(okNow, 1500)) {
+      closePopups();
+      return true;
+    }
+    // 2) 안 되면 시작·끝 칸 둘 다 적고 Enter(시작만 적으면 끝을 안 골라 원래대로 돌아간다)
     closePopups();
-    return waitFor(() => (inboundDateInputs()[0] || {}).value === want, 3000);
+    await sleep(300);
+    const [f2, t2] = inboundDateInputs();
+    if (f2) typeDate(f2, want);
+    await sleep(200);
+    if (t2 && endDay) typeDate(t2, endDay);
+    closePopups();
+    if (await waitFor(okNow, 2000)) return true;
+    try {
+      chrome.storage.local.set({
+        poDateDebug: {
+          at: new Date().toISOString(),
+          want,
+          now: dateInputs().map((el) => el.value),
+          cells: document.querySelectorAll('td[title]').length,
+          navs: document.querySelectorAll('[class*="header-prev-btn"]').length,
+        },
+      });
+    } catch (err) {}
+    return false;
   };
 
   // ---- 화면이 서버에서 받은 목록(JSON)에서 발주번호 읽기 ----
@@ -293,8 +354,9 @@
     if (!(await waitFor(() => searchButton(), 30000))) return fail('서허 발주서 목록을 열지 못했어요. 로그인돼 있는지 확인해 주세요.');
     await sleep(1000);
     await patch({ status: '입고예정일 기간 넓히는 중…' });
-    await widenStartDate();
+    const widened = await widenStartDate();
     await sleep(300);
+    if (!widened) await patch({ status: '입고예정일 시작 날짜를 못 바꿔서 원래 기간으로 검색해요…' });
     await patch({ status: '발주서 검색하는 중…' });
     const askedAt = Date.now();
     clickEl(searchButton());

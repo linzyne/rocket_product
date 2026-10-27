@@ -86,6 +86,53 @@
     );
   };
 
+  // ---- 기간검색 입고예정일 시작 날짜를 넉넉하게 ----
+  // 기본 기간은 입고예정일이 너무 최근부터라 지난번 받은 발주서(기준번호)가 목록에 안 나온다.
+  // 시작 날짜를 앞으로 당겨 두면 그 발주서까지 다 나온다.
+  const START_BACK_DAYS = 90;
+  const ymd = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  const dateInputs = () =>
+    Array.from(document.querySelectorAll('input')).filter((el) => /^\d{4}-\d{2}-\d{2}$/.test(el.value || '') && visible(el));
+  // "입고예정일" 글자 뒤에 오는 날짜 칸 두 개(없으면 처음 두 개).
+  const inboundDateInputs = () => {
+    const inputs = dateInputs();
+    const label = Array.from(document.querySelectorAll('label, span, div, th, td, p, strong'))
+      .find((el) => el.children.length === 0 && /입고\s*예정\s*일/.test(el.textContent || '') && visible(el));
+    if (label) {
+      const after = inputs.filter((el) => label.compareDocumentPosition(el) & Node.DOCUMENT_POSITION_FOLLOWING);
+      if (after.length >= 2) return after.slice(0, 2);
+    }
+    return inputs.slice(0, 2);
+  };
+  // 달력이 딸린 칸이라 적은 뒤 Enter·포커스 해제까지 해 줘야 화면이 알아챈다.
+  const typeDate = (el, value) => {
+    try { el.focus(); } catch (err) {}
+    setInput(el, value);
+    for (const type of ['keydown', 'keypress', 'keyup']) {
+      el.dispatchEvent(new KeyboardEvent(type, { key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true }));
+    }
+    try { el.blur(); } catch (err) {}
+    el.dispatchEvent(new Event('blur', { bubbles: true }));
+  };
+  // 날짜 칸을 누르면 달력이 떠서 "검색" 클릭을 가로챈다. Esc와 빈 곳 클릭으로 닫는다.
+  const closePopups = () => {
+    document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', code: 'Escape', keyCode: 27, which: 27, bubbles: true }));
+    for (const type of ['pointerdown', 'mousedown', 'mouseup', 'click']) {
+      document.body.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true, view: window, clientX: 5, clientY: 5 }));
+    }
+  };
+  const widenStartDate = async () => {
+    if (!(await waitFor(() => inboundDateInputs().length >= 1, 5000))) return false;
+    const start = new Date();
+    start.setDate(start.getDate() - START_BACK_DAYS);
+    const want = ymd(start);
+    const [from] = inboundDateInputs();
+    if (from.value && from.value <= want) return true; // 이미 넉넉하다
+    typeDate(from, want);
+    closePopups();
+    return waitFor(() => (inboundDateInputs()[0] || {}).value === want, 3000);
+  };
+
   // ---- 화면이 서버에서 받은 목록(JSON)에서 발주번호 읽기 ----
   // hook.js가 페이지의 모든 JSON 응답을 복사해 보내준다. 그중 발주 목록으로 보이는 것만 쓴다.
   const HOOK_SOURCE = 'rocket-hub-hook';
@@ -242,9 +289,12 @@
   const run = async (pending) => {
     await patch({ step: 'page', status: '발주서 목록 여는 중…' });
 
-    // 화면이 뜨기를 기다렸다가, 기본 조회 조건 그대로 한 번 검색한다.
+    // 화면이 뜨기를 기다렸다가, 입고예정일 시작 날짜를 넉넉히 당기고 검색한다.
     if (!(await waitFor(() => searchButton(), 30000))) return fail('서허 발주서 목록을 열지 못했어요. 로그인돼 있는지 확인해 주세요.');
     await sleep(1000);
+    await patch({ status: '입고예정일 기간 넓히는 중…' });
+    await widenStartDate();
+    await sleep(300);
     await patch({ status: '발주서 검색하는 중…' });
     const askedAt = Date.now();
     clickEl(searchButton());

@@ -89,7 +89,7 @@
   // ---- 기간검색 입고예정일 시작 날짜를 넉넉하게 ----
   // 기본 기간은 입고예정일이 너무 최근부터라 지난번 받은 발주서(기준번호)가 목록에 안 나온다.
   // 시작 날짜를 앞으로 당겨 두면 그 발주서까지 다 나온다.
-  const START_BACK_DAYS = 90;
+  const START_BACK_DAYS = 20;
   const ymd = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
   const dateInputs = () =>
     Array.from(document.querySelectorAll('input')).filter((el) => /^\d{4}-\d{2}-\d{2}$/.test(el.value || '') && visible(el));

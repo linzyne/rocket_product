@@ -619,12 +619,27 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
     const left = dueN - 1 - todayN;
     const inWaiting = o.stage === 4 && !deadlineByNo.has(no);
     const d = deadlineByNo.get(no);
-    const label = inWaiting ? `✓ 발송대기 마감 ${dlText}` : d ? `⏰ 발송대기 ${deadlineText(d)}` : `⏰ 발송대기 마감 ${dlText} (D-${left})`;
-    const bg = inWaiting ? '#16a34a' : left <= 0 ? RED : left === 1 ? '#f59e0b' : '#9ca3af';
+    // 남은 날(D-n)은 카드 오른쪽 위 큰 글씨(dDay)로 보이니 여기선 마감 지킴·임박만.
+    if (!inWaiting && !d) return null;
+    const label = inWaiting ? `✓ 발송대기 마감 ${dlText}` : `⏰ 발송대기 ${deadlineText(d!)}`;
+    const bg = inWaiting ? '#16a34a' : left <= 0 ? RED : '#f59e0b';
     return (
       <span title={`입고예정일 ${o.date} · 발송대기 마감 ${dlText}(입고예정일 하루 전). 마감까지 발송대기에 안 올리면 쿠팡이 발주를 취소해요.`}
         style={{ marginLeft: 6, display: 'inline-block', padding: '1px 7px', borderRadius: 999, background: bg, color: '#fff', fontWeight: 800, fontSize: 11 }}>
         {label}
+      </span>
+    );
+  };
+  // 발송대기 마감까지 남은 날: 카드 오른쪽 위에 입고예정일 날짜와 같은 글씨로. 이미 발송대기에 있으면 안 보인다.
+  const dDay = (list: FlowOrder[], size: number, style?: React.CSSProperties) => {
+    const o = list.find(x => [1, 2, 4].includes(x.stage) && !(x.stage === 4 && !deadlineByNo.has(x.no)));
+    const m = o && /^(\d{4})-(\d{2})-(\d{2})/.exec(o.date || '');
+    if (!m) return null;
+    const left = Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3])) / 86400000 - 1 - todayN;
+    return (
+      <span title={`발송대기 마감(입고예정일 하루 전)까지 남은 날. 마감까지 발송대기에 안 올리면 쿠팡이 발주를 취소해요.`}
+        style={{ fontSize: size, fontWeight: 900, color: '#111', whiteSpace: 'nowrap', ...style }}>
+        {left > 0 ? `D-${left}` : left === 0 ? 'D-day' : `D+${-left}`}
       </span>
     );
   };
@@ -706,6 +721,7 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
         )}
         <span style={{ fontSize: size, fontWeight: 900, color: '#111' }}>{dayText(o.date)}</span>
         <span style={{ fontSize: size, fontWeight: 900, color: ORANGE }}>{o.center || '센터 없음'}</span>
+        {dDay([o], size, { marginLeft: 'auto' })}
       </div>
       {subLine(o)}
     </div>
@@ -1967,10 +1983,12 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
                     background: printedAll ? '#ececec' : doneAll ? '#f0faf3' : '#fff', borderRadius: 10, padding: '10px 12px 10px 14px', boxShadow: '0 2px 6px rgba(0,0,0,0.10)',
                     border: pickedAny ? `2px solid ${ORANGE}` : doneAll ? `2px solid ${GREEN}` : `1px solid ${errAny ? '#f87171' : '#b8b2ab'}`,
                     borderLeft: `5px solid ${pickedAny ? ORANGE : errAny ? RED : doneAll ? GREEN : '#a8a29e'}`,
-                    display: 'flex', flexDirection: 'column', gap: 6,
+                    display: 'flex', flexDirection: 'column', gap: 6, position: 'relative',
                   }}>
+                    {/* 발송대기 마감 D-n: 상자 오른쪽 위 모서리 */}
+                    {dDay(g.list, 17, { position: 'absolute', top: 10, right: 16, lineHeight: 1.2 })}
                     {/* 날짜·센터 글씨는 쉽먼트·발송대기 카드 머리와 같게 */}
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', lineHeight: 1.2, padding: '0 4px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', lineHeight: 1.2, padding: '0 56px 0 4px' }}>
                       {/* 덩어리 전체 고르기: 안의 발주서를 한꺼번에 고르거나 풀기 */}
                       {PICKABLE.includes(i as Stage) && (() => {
                         const all = g.list.every(o => picked.has(o.no));

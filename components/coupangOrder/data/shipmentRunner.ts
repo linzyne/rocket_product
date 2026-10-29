@@ -443,6 +443,10 @@ export function startShipmentRunner() {
       const o = d.batchId ? owned.get(d.batchId)
         : Array.from(owned.values()).find(x => x.batch.run?.step === 'lotte' && x.batch.run.state === 'running');
       if (!o) return;
+      // 롯데 창의 "닫기"처럼 롯데 기록만 다시 저장돼도 같은 송장번호가 또 온다. 이미 서허 단계로 넘어갔으면 무시한다
+      // (다시 받으면 서허 양식부터 또 밟아서, 등록 뒤엔 "이미 등록됨"으로 멈추고 등록 전엔 두 번 올라간다).
+      const at = o.batch.run?.step;
+      if (at && at !== 'lotte' && at !== 'waybill') return;
       if (!o.lotteSavedAt) o.lotteSavedAt = d.savedAt;
       if (d.savedAt !== o.lotteSavedAt) return;
       if (d.waybills && d.waybills.length) onWaybills(o, d.waybills);

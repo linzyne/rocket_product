@@ -520,7 +520,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true;
   }
 
-  // 앱이 채운 쉽먼트 양식을 서허 쉽먼트 일괄등록에 올린다. 창은 결과 확인용으로 열어 둔다.
+  // 앱이 채운 쉽먼트 양식을 서허 쉽먼트 일괄등록에 올린다. 창은 다 끝나면 닫고, 멈추면 확인용으로 열어 둔다.
   if (message.type === 'SHUB_UPLOAD') {
     (async () => {
       try {
@@ -674,6 +674,15 @@ chrome.storage.onChanged.addListener((changes, area) => {
   const before = changes[LOTTE_KEY].oldValue;
   if (!now || !now.windowId || (before && before.step === now.step)) return;
   if (now.step === 'waybills') setTimeout(() => chrome.windows.remove(now.windowId).catch(() => {}), 1500);
+});
+
+// 쉽먼트 일괄등록이 끝나면(발주서별 쉽먼트 번호까지 다 찾음) 서허 창을 닫는다. 멈추면(error) 확인할 수 있게 열어 둔다.
+chrome.storage.onChanged.addListener((changes, area) => {
+  if (area !== 'local' || !changes[SHUB_UPLOAD_KEY]) return;
+  const now = changes[SHUB_UPLOAD_KEY].newValue;
+  const before = changes[SHUB_UPLOAD_KEY].oldValue;
+  if (!now || !now.windowId || (before && before.step === now.step)) return;
+  if (now.step === 'done') setTimeout(() => chrome.windows.remove(now.windowId).catch(() => {}), 1500);
 });
 
 // 양식 파일을 받아도 서허 창은 닫지 않는다. 앱이 양식을 채워 보내면 같은 창(로그인된 그대로)에서

@@ -83,6 +83,7 @@ type Stage = 0 | 1 | 2 | 3 | 4 | 5;
 const ORANGE = '#e67e22';
 const GREEN = '#27ae60';
 const RED = '#dc2626';
+const BLUE = '#2563eb';
 const GRAY = '#b8b8b8';
 
 // 발송완료는 최근 2주만 본다(오래된 건은 발주서 검색에서 찾는다).
@@ -1079,13 +1080,15 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
   const card = (o: FlowOrder) => {
     // 발주확정·쉽먼트·발송대기에서 상품이 다 준비된 발주서는 초록 테두리·띠 + 연한 초록 바탕으로 확 구분한다.
     const done = (o.stage === 1 || o.stage === 2 || o.stage === 4) && allReady(o);
-    const err = run(o)?.state === 'error';
+    // 쉽먼트 생성까지 끝난 발주서(쉽먼트 번호가 있음)는 파랑.
+    const shipped = o.stage >= 2 && !!o.item?.shipmentNos?.[o.no];
+    const err = !shipped && run(o)?.state === 'error';
     return (
-    // 카드끼리 잘 구분되게: 테두리 + 그림자 + 왼쪽 색 띠(고른 건 주황, 멈춘 건 빨강, 다 준비된 건 초록).
+    // 카드끼리 잘 구분되게: 테두리 + 그림자 + 왼쪽 색 띠(고른 건 주황, 쉽먼트 끝난 건 파랑, 멈춘 건 빨강, 다 준비된 건 초록).
     <div key={o.no} style={{
-      background: done ? '#f0faf3' : '#fff', borderRadius: 10, padding: '10px 12px 10px 14px', boxShadow: '0 2px 6px rgba(0,0,0,0.10)',
-      border: picked.has(o.no) ? `2px solid ${ORANGE}` : done ? `2px solid ${GREEN}` : `1px solid ${err ? '#f87171' : '#b8b2ab'}`,
-      borderLeft: `5px solid ${picked.has(o.no) ? ORANGE : err ? RED : done ? GREEN : '#a8a29e'}`,
+      background: shipped ? '#eff6ff' : done ? '#f0faf3' : '#fff', borderRadius: 10, padding: '10px 12px 10px 14px', boxShadow: '0 2px 6px rgba(0,0,0,0.10)',
+      border: picked.has(o.no) ? `2px solid ${ORANGE}` : shipped ? `2px solid ${BLUE}` : done ? `2px solid ${GREEN}` : `1px solid ${err ? '#f87171' : '#b8b2ab'}`,
+      borderLeft: `5px solid ${picked.has(o.no) ? ORANGE : shipped ? BLUE : err ? RED : done ? GREEN : '#a8a29e'}`,
       display: 'flex', flexDirection: 'column', gap: 6,
     }}>
       {headInfo(o, 17)}
@@ -1974,15 +1977,17 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
                     // 발주확정·쉽먼트·발송대기: 상품이 다 준비된 덩어리는 초록, 멈춘 건 빨강(카드와 같은 색 규칙).
                     const pickedAny = g.list.some(o => picked.has(o.no));
                     const doneAll = (i === 1 || i === 2 || i === 4) && g.list.every(allReady);
-                    const errAny = g.list.some(o => run(o)?.state === 'error');
+                    // 쉽먼트·발송대기: 상자 안 발주서가 다 쉽먼트 생성까지 끝났으면(쉽먼트 번호가 있음) 파랑.
+                    const shippedAll = i >= 2 && g.list.every(o => !!o.item?.shipmentNos?.[o.no]);
+                    const errAny = !shippedAll && g.list.some(o => run(o)?.state === 'error');
                     // 상자 안 발주서를 다 인쇄했으면(출력완료) 옅은 회색 바탕.
                     // 출력완료 체크칸(인쇄 옆)을 켰거나 인쇄 기록이 있으면 출력완료로 본다.
                     const printedAll = (i === 2 || i === 4) && g.list.every(o => marks.has(o.no) || (o.item?.printedOrders || []).includes(o.no));
                     return (
                   <div key={g.key} style={{
-                    background: printedAll ? '#ececec' : doneAll ? '#f0faf3' : '#fff', borderRadius: 10, padding: '10px 12px 10px 14px', boxShadow: '0 2px 6px rgba(0,0,0,0.10)',
-                    border: pickedAny ? `2px solid ${ORANGE}` : doneAll ? `2px solid ${GREEN}` : `1px solid ${errAny ? '#f87171' : '#b8b2ab'}`,
-                    borderLeft: `5px solid ${pickedAny ? ORANGE : errAny ? RED : doneAll ? GREEN : '#a8a29e'}`,
+                    background: printedAll ? '#ececec' : shippedAll ? '#eff6ff' : doneAll ? '#f0faf3' : '#fff', borderRadius: 10, padding: '10px 12px 10px 14px', boxShadow: '0 2px 6px rgba(0,0,0,0.10)',
+                    border: pickedAny ? `2px solid ${ORANGE}` : shippedAll ? `2px solid ${BLUE}` : doneAll ? `2px solid ${GREEN}` : `1px solid ${errAny ? '#f87171' : '#b8b2ab'}`,
+                    borderLeft: `5px solid ${pickedAny ? ORANGE : shippedAll ? BLUE : errAny ? RED : doneAll ? GREEN : '#a8a29e'}`,
                     display: 'flex', flexDirection: 'column', gap: 6, position: 'relative',
                   }}>
                     {/* 발송대기 마감 D-n: 상자 오른쪽 위 모서리 */}

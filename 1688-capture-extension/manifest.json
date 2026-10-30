@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "1688 상품 캡처 → 로켓",
-  "version": "1.53.4",
+  "version": "1.53.5",
   "description": "1688 상품 페이지의 URL/제조사/재질/사이즈/중량과, 옵션(색상 등)별 이름/가격, 그리고 수익 계산기로 계산한 원가/공급가/판매가를 클립보드로 복사해 로켓 앱에 붙여넣을 수 있게 합니다. 통합다운으로 만든 견적서·이미지·라벨을 쿠팡 서플라이어허브 대량 상품 등록 화면에 자동으로 채워 넣기도 합니다. 1688 주문목록에서 주문(운송장 포함)을 담아 8282한중무역 신청서와 로켓 앱 한중발주 장바구니에 채웁니다.",
   "permissions": [
     "clipboardWrite",
@@ -91,6 +91,21 @@
       ],
       "run_at": "document_idle",
       "world": "MAIN"
+    },
+    {
+      "matches": [
+        "*://*.1688.com/*",
+        "http://localhost/*",
+        "http://127.0.0.1/*",
+        "https://localhost/*",
+        "https://rocket-product.vercel.app/*",
+        "*://supplier.coupang.com/*",
+        "*://*.8282kc.com/*"
+      ],
+      "js": [
+        "auto-reload-page.js"
+      ],
+      "run_at": "document_idle"
     }
   ],
   "host_permissions": [

@@ -1,3 +1,5 @@
+self.AUTO_RELOAD_FILES = ["options.html", "options.js"];
+importScripts('auto-reload.js'); // 파일이 바뀌면 일하는 화면을 열 때 스스로 다시 불러옴
 // 앱의 "확장에서 가져오기" → app-bridge.js → 여기.
 // 자동 수집 요청(hubAutoRun)을 남기고 쿠팡 광고 상품 화면을 엽니다. 실제 수집은 그 화면의 panel.js가 합니다.
 // 수집은 언제나 새 창을 열어서 하고, 끝나면 그 창을 닫습니다(실패하면 확인할 수 있게 열어 둡니다).

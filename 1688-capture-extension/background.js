@@ -1,3 +1,5 @@
+self.AUTO_RELOAD_FILES = ["popup.html", "popup.js"];
+importScripts('auto-reload.js'); // 파일이 바뀌면 일하는 화면을 열 때 스스로 다시 불러옴
 // 앱 탭 <-> 서플라이어허브 탭 사이의 중계.
 //
 //  (1) 통합다운 제안: 앱이 파일을 chrome.storage에 넣고 -> 등록 화면을 새 탭으로 연다.

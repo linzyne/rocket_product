@@ -6,7 +6,8 @@
 //  · 준비됨 ✓(lineReady): 켜져 있었으면 새 열쇠로 켜고 옛 열쇠는 끈다.
 //  · 한중발주 배정·1688 주문하기(장바구니): 새 수량 안에서 앞에서부터 맡긴 수량을 줄여 옮긴다.
 //    1688에 산 수량은 그대로 둔다(줄인 만큼 여유로 돌아간다).
-import { allLines, commit, keyOfLine, lineKey, Line } from './lineStore';
+//  · 0개(재고가 없어 서허에서 0으로 고침): 수집 때 0개 줄을 빼듯 줄을 지움(휴지통)으로 보내고, 준비됨·배정·장바구니도 뺀다.
+import { allLines, commit, keyOfLine, lineKey, Line, markIntentional, trashed } from './lineStore';
 import { setReady } from './readyStore';
 import { HanjungQueueItem, addToHanjungQueue, removeFromHanjungQueue, hanjungQueueKey, queueAlloc, queueItemToRow } from './hanjungQueueStore';
 import { HanjungOrder, saveHanjungOrder, freezeOrderQty } from '../../../data/hanjungStore';
@@ -28,11 +29,16 @@ export async function changeLineQty(
     ? same.find(l => l.place === 'ship' && l.shipOutId === opts.shipOutId)
     : same.find(l => l.place === 'work' || l.place === 'reserve');
   if (!line) throw new Error('고칠 줄을 찾지 못했어요. 화면을 새로고침해 주세요.');
-  commit([{ ...line, 확정수량: newQty }]);
+  if (newQty === 0) {
+    markIntentional([target]);
+    commit([trashed(line)]);
+  } else {
+    commit([{ ...line, 확정수량: newQty }]);
+  }
 
   // 2) 준비됨 표시.
   if (opts.wasReady) {
-    await setReady([next], true);
+    if (newQty > 0) await setReady([next], true);
     await setReady([target], false);
   }
 

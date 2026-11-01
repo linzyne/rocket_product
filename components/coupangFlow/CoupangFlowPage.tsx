@@ -688,11 +688,12 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
   // 발주확정·쉽먼트 줄의 확정수량 고치기. 준비됨 ✓·한중발주 배정·장바구니도 새 수량으로 같이 옮긴다.
   const editQty = async (o: FlowOrder, l: FlowLine) => {
     const cur = Number(l.확정수량) || 0;
-    const input = prompt(`${l.상품이름}\n확정수량을 몇 개로 바꿀까요? (지금 ${cur}개)`, String(cur));
+    const input = prompt(`${l.상품이름}\n확정수량을 몇 개로 바꿀까요? (지금 ${cur}개, 재고가 없으면 0)`, String(cur));
     if (input == null) return;
     const n = Math.floor(Number(input.trim()));
-    if (!Number.isFinite(n) || n < 1 || String(n) !== input.trim()) { alert('1 이상의 숫자로 적어 주세요.'); return; }
+    if (!Number.isFinite(n) || n < 0 || String(n) !== input.trim()) { alert('0 이상의 숫자로 적어 주세요.'); return; }
     if (n === cur) return;
+    if (n === 0 && !confirm(`${l.상품이름}\n0개로 하면 이 줄을 발주 진행에서 지워요(준비됨·한중발주 배정·장바구니도 빠짐). 지울까요?`)) return;
     const key = { 발주번호: o.no, 상품이름: l.상품이름, 확정수량: l.확정수량 };
     try {
       await changeLineQty(key, n, {
@@ -700,7 +701,7 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
         wasReady: ready.isReady(key, o.item?.readyKeys),
         hjOrders, hjQueue,
       });
-      setDateNote({ tone: 'ok', text: `${o.no} · ${l.상품이름} 확정수량 ${cur}개 → ${n}개로 바꿨어요` });
+      setDateNote({ tone: 'ok', text: n === 0 ? `${o.no} · ${l.상품이름} 0개라서 줄을 지웠어요` : `${o.no} · ${l.상품이름} 확정수량 ${cur}개 → ${n}개로 바꿨어요` });
     } catch (err) {
       alert(`수량을 바꾸지 못했어요: ${err instanceof Error ? err.message : String(err)}`);
     }

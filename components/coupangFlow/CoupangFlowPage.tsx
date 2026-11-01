@@ -26,7 +26,7 @@ import { linesAt, isLinesReady, subscribeLines } from '../coupangOrder/data/line
 import { isShipOutsReady } from '../coupangOrder/data/shipOutStore';
 import { useShipDeadline, deadlineText } from '../coupangOrder/data/useShipDeadline';
 import { boxLabel, buildDisplayRows, expandBoxSplit, totalBoxCount, parseBoxNo, isBoxSplit, parseBoxSplit, joinBoxSplit } from '../coupangOrder/utils/dataProcessor';
-import { LineCheckMenu, BoxPicker } from '../coupangOrder/components/OrderTable';
+import { LineCheckMenu, BoxPicker, boxColor } from '../coupangOrder/components/OrderTable';
 import { HanjungOrder, subscribeHanjung, productSummary, nameKey, makeHanjungOfficeLookup, sameName, saveHanjungOrder, assignRemaining } from '../../data/hanjungStore';
 import { returnToHanjungQueue } from '../coupangOrder/data/hanjungQueueStore';
 import { reservationKey } from '../coupangOrder/data/reservationStore';
@@ -801,7 +801,8 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
   };
   // 상품. 새발주서 단계에서는 확정수량을 바로 고친다(줄이면 사유, 기본 시장 단종). 다른 단계에 가 있는 줄은 어디 있는지 빨갛게.
   // only: 이 줄들만 그린다(박스별 보기에서 한 박스에 든 줄만).
-  const products = (o: FlowOrder, only?: FlowLine[]) => {
+  // boxNo: 박스별 보기의 그 박스. 나눠 담은 줄은 이 박스 몫 수량과 박스 네모를 보인다.
+  const products = (o: FlowOrder, only?: FlowLine[], boxNo?: number) => {
     const qty = o.lines.reduce((sum, l) => sum + (Number(l.확정수량) || 0), 0);
     return (
       <>
@@ -810,6 +811,9 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
           const draft = readDraft(o.no);
           const full = Number(l.확정수량) || 0;
           const now = draft.qty[l.상품이름] ?? full;
+          // 박스별 보기에서 나눠 담은 줄: 이 박스에 든 몫만.
+          const sv = l.ship?.쉼먼트 || '';
+          const boxQty = boxNo && isBoxSplit(sv) ? parseBoxSplit(sv).filter(p => p.no === boxNo).reduce((n, p) => n + p.qty, 0) : null;
           return (
             <div key={i} style={{ padding: '2px 0', borderTop: i ? '1px dashed #f0f0f0' : 'none' }}>
               {/* 한 줄 표: [체크] [상품 이름(넘치면 …)] [사무실] [수량]. 줄바꿈하지 않고 칸 너비를 맞춘다. */}
@@ -817,7 +821,7 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
                 {/* 발송대기: 쉽먼트 때 담은 박스 번호를 보기만(고치지 않음) */}
                 {o.stage === 4 && l.ship && (() => {
                   const v = l.ship.쉼먼트 || '';
-                  const text = isBoxSplit(v) ? parseBoxSplit(v).map(p => `${p.no}번×${p.qty}`).join(' ') : parseBoxNo(v) ? `박스 ${parseBoxNo(v)}` : '';
+                  const text = boxQty != null ? `박스 ${boxNo}` : isBoxSplit(v) ? parseBoxSplit(v).map(p => `${p.no}번×${p.qty}`).join(' ') : parseBoxNo(v) ? `박스 ${parseBoxNo(v)}` : '';
                   return text ? <span style={{ flexShrink: 0, fontSize: 11, color: '#6b7280', whiteSpace: 'nowrap' }}>{text}</span> : null;
                 })()}
                 {o.stage === 2 && l.stage === 2 && l.ship && o.item && (() => {
@@ -832,6 +836,15 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
                     const nextNo = Math.min(9, Math.max(maxNo, ...now.map(p => p.no)) + 1);
                     setSplitting({ itemId: item.id, line: l.ship!, total, boxMax: maxNo, pieces: [...now.map(p => ({ no: p.no, qty: String(p.qty) })), ...(isBoxSplit(v) ? [] : [{ no: nextNo, qty: '' }])] });
                   };
+                  if (splitText && boxQty != null) {
+                    return (
+                      <button onClick={openSplit} title={`나눠 담음: ${splitText} — 눌러서 박스 나누기 고치기`}
+                        style={{
+                          flexShrink: 0, padding: '1px 5px', fontSize: 11.5, fontWeight: 800, borderRadius: 6, cursor: 'pointer', whiteSpace: 'nowrap',
+                          border: `1.5px solid ${boxColor(boxNo!)}`, background: '#fff', color: boxColor(boxNo!),
+                        }}>박스{boxNo}</button>
+                    );
+                  }
                   if (splitText) {
                     return (
                       <span onClick={openSplit} title="눌러서 박스 나누기 고치기"
@@ -942,9 +955,9 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
                     return (
                       <span style={{ flexShrink: 0, display: 'inline-flex', alignItems: 'baseline', gap: 3, whiteSpace: 'nowrap', letterSpacing: '-0.3px' }}>
                         {(o.stage === 1 || o.stage === 2) && l.stage === o.stage
-                          ? <b onClick={() => editQty(o, l)} title="눌러서 확정수량 고치기(서허 요청등록에서 수량을 바꿨을 때)"
-                              style={{ cursor: 'pointer', textDecoration: 'underline dotted', textUnderlineOffset: 2 }}>{l.확정수량}개</b>
-                          : <b>{l.확정수량}개</b>}
+                          ? <b onClick={() => editQty(o, l)} title={`${boxQty != null ? `이 박스 ${boxQty}개 / 전체 ${l.확정수량}개\n` : ""}눌러서 확정수량 고치기(서허 요청등록에서 수량을 바꿨을 때)`}
+                              style={{ cursor: 'pointer', textDecoration: 'underline dotted', textUnderlineOffset: 2 }}>{boxQty ?? l.확정수량}개</b>
+                          : <b title={boxQty != null ? `이 박스 ${boxQty}개 / 전체 ${l.확정수량}개` : undefined}>{boxQty ?? l.확정수량}개</b>}
                         {/* 배정 수량을 한중발주마다 나눠: 아직 오는 중 = ✈(먼저), 사무실에 다 들어옴 = 🏢 사무실 입고완료. 두 자리는 늘 있고 숫자만 옮겨 간다.
                             입고중은 몇 번 한중발주인지 비행기 몸통에 번호를 넣고, 사무실에 오면 번호 없이 합계만. */}
                         {(() => {
@@ -2196,7 +2209,7 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
                           {boxNos.map(n => (
                             <div key={n} style={{ borderTop: '1px solid #f3f3f3', paddingTop: 6, marginTop: 14, display: 'flex', flexDirection: 'column', gap: 4 }}>
                               <div style={{ fontSize: 12, fontWeight: 800, color: '#e67e22' }}>{n ? `박스${n}` : '박스 없음'}</div>
-                              <div style={{ fontSize: 13.5 }}>{byBox.get(n)!.map(({ o, lines }) => <React.Fragment key={o.no}>{products(o, lines)}</React.Fragment>)}</div>
+                              <div style={{ fontSize: 13.5 }}>{byBox.get(n)!.map(({ o, lines }) => <React.Fragment key={o.no}>{products(o, lines, n || undefined)}</React.Fragment>)}</div>
                             </div>
                           ))}
                         </>

@@ -294,17 +294,13 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
           checkingRef.current = null;
           applyCurrent(nos, d.checked).then(res => {
             // 센터·날짜가 바뀐 출고 건은 쉽먼트 기록(박스·운송장)도 같이 옮긴다.
-            for (const m of res.moved) {
-              for (const next of retargetBatches(batchesRef.current, m.before, m.to, shipOutBatch(m.before, batchesRef.current))) {
-                saveShipmentBatch(next).catch(err => console.error('쉽먼트 기록 옮기기 실패:', err));
-              }
-            }
+            const bundled = afterApply(res.moved);
             const parts = [
               res.changed.length ? `✅ ${res.changed.length}건 바꿨어요: ${res.changed.map(c => `${c.no} → ${c.to}`).join(', ')}` : '',
               res.same.length ? `아직 그대로(승인 전?) ${res.same.length}건: ${res.same.join(', ')}` : '',
               res.missing.length ? `서허 목록에서 못 찾음 ${res.missing.length}건: ${res.missing.join(', ')}` : '',
             ].filter(Boolean);
-            setDateNote({ tone: res.changed.length && !res.same.length && !res.missing.length ? 'ok' : res.changed.length ? 'info' : 'error', text: parts.join(' · ') });
+            setDateNote({ tone: res.changed.length && !res.same.length && !res.missing.length ? 'ok' : res.changed.length ? 'info' : 'error', text: [...parts, bundled].filter(Boolean).join(' · ') });
             setPicked(new Set());
           }).catch(err => setDateNote({ tone: 'error', text: `적용하지 못했어요: ${err instanceof Error ? err.message : String(err)}` }));
           return;
@@ -317,6 +313,44 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
     window.postMessage({ source: 'rocket-app-hub', type: 'PO_DATE_REQUESTED_GET' }, window.location.origin);
     return () => window.removeEventListener('message', onMsg);
   }, []);
+  // 센터·날짜를 바꾼 뒤(적용·직접 고치기): 쉽먼트 기록(박스·운송장)을 새 센터·날짜로 옮기고, 같은 센터·날짜의
+  // 쉽먼트 칸 출고 건이 있으면 한 건으로 묶는다. 택배예약·서허 등록을 한 건은 송장·쉽먼트를 다시 해야 하므로 묶지 않고 알려만 준다.
+  // 알릴 말을 돌려준다.
+  const afterApply = (moved: { before: ShipOut; to: { center: string; date: string } }[]): string => {
+    for (const m of moved) {
+      for (const next of retargetBatches(batchesRef.current, m.before, m.to, shipOutBatch(m.before, batchesRef.current))) {
+        saveShipmentBatch(next).catch(err => console.error('쉽먼트 기록 옮기기 실패:', err));
+      }
+    }
+    const batchList = batchesRef.current;
+    const reserved = (it: ShipOut) => {
+      if (it.uploadedAt || Object.keys(it.shipmentNos || {}).length) return true;
+      const b = shipOutBatch(it, batchList);
+      const mine = new Set(it.lines.map(l => String(l.발주번호 || '').trim()));
+      return !!b && allBoxes(b).some(box => box.lines.some(l => mine.has(String(l.발주번호 || '').trim())));
+    };
+    const merged: string[] = [];
+    const skipped: string[] = [];
+    for (const m of moved) {
+      // 바뀐 건이 앞서 다른 건에 묶여 없어졌으면 건너뛴다.
+      const list = readShipOuts();
+      const me = list.find(it => it.id === m.before.id);
+      if (!me || shipOutStage(me, batchList) !== 'ship') continue;
+      const key = `${me.center.trim()}|${me.date}`;
+      const same = list.filter(it => `${it.center.trim()}|${it.date}` === key && shipOutStage(it, batchList) === 'ship');
+      if (same.length < 2) continue;
+      if (reserved(me)) { skipped.push(me.bundle); continue; }
+      const free = same.filter(it => !reserved(it));
+      same.filter(reserved).forEach(it => skipped.push(it.bundle));
+      if (free.length < 2) continue;
+      const t = mergeShipOuts(free.map(it => it.id));
+      if (t) merged.push(`${t.center} ${t.date} ${t.bundle}`);
+    }
+    return [
+      merged.length ? `📦 같은 센터·날짜라 한 건으로 묶었어요: ${merged.join(', ')}` : '',
+      skipped.length ? `택배예약·서허 등록을 해서 안 묶은 건: ${Array.from(new Set(skipped)).join(', ')}(묶으려면 쉽먼트·예약 취소 뒤 묶기)` : '',
+    ].filter(Boolean).join(' · ');
+  };
   // 날짜 바꾸기: 서허 입고일 변경 요청 화면을 새 창으로 열어 고른 발주서를 하나씩 검색해 "+추가"까지 해 둔다(날짜는 사람이 고른다).
   const changeDate = () => {
     const nos: string[] = Array.from(picked);
@@ -341,15 +375,11 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
       const list = known.map(no => `· ${no} → ${values[no].date || '날짜 그대로'} ${values[no].center || '센터 그대로'}`);
       if (!window.confirm(`서허 요청 때 적은 값으로 바꿀까요?(승인을 확인했을 때만)\n\n${list.join('\n')}`)) return;
       applyCurrent(known, values).then(res => {
-        for (const m of res.moved) {
-          for (const next of retargetBatches(batchesRef.current, m.before, m.to, shipOutBatch(m.before, batchesRef.current))) {
-            saveShipmentBatch(next).catch(err => console.error('쉽먼트 기록 옮기기 실패:', err));
-          }
-        }
+        const bundled = afterApply(res.moved);
         const rest = picks.filter(no => !known.includes(no));
         setDateNote({
           tone: rest.length ? 'info' : 'ok',
-          text: `✅ ${res.changed.length}건 바꿨어요.` + (res.same.length ? ` 이미 같은 값 ${res.same.length}건.` : '') + (rest.length ? ` 요청 내용을 모르는 발주서 ${rest.length}건(${rest.join(', ')})은 서허 요청 등록 때 확장이 기억하지 못했어요.` : ''),
+          text: `✅ ${res.changed.length}건 바꿨어요.` + (res.same.length ? ` 이미 같은 값 ${res.same.length}건.` : '') + (rest.length ? ` 요청 내용을 모르는 발주서 ${rest.length}건(${rest.join(', ')})은 서허 요청 등록 때 확장이 기억하지 못했어요.` : '') + (bundled ? ` ${bundled}` : ''),
         });
         setPicked(new Set());
       }).catch(err => setDateNote({ tone: 'error', text: `적용하지 못했어요: ${err instanceof Error ? err.message : String(err)}` }));
@@ -1414,13 +1444,9 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
     const nos = list.map(o => o.no);
     const values = Object.fromEntries(nos.map(no => [no, { center: center.trim(), date: date.trim() }]));
     applyCurrent(nos, values).then(res => {
-      for (const m of res.moved) {
-        for (const next of retargetBatches(batchesRef.current, m.before, m.to, shipOutBatch(m.before, batchesRef.current))) {
-          saveShipmentBatch(next).catch(err => console.error('쉽먼트 기록 옮기기 실패:', err));
-        }
-      }
+      const bundled = afterApply(res.moved);
       setPicked(new Set());
-      setDateNote({ tone: 'ok', text: `✅ ${res.changed.length}건을 ${date.trim()} ${center.trim()}(으)로 바꿨어요.` + (res.same.length ? ` 이미 같은 값 ${res.same.length}건.` : '') });
+      setDateNote({ tone: 'ok', text: `✅ ${res.changed.length}건을 ${date.trim()} ${center.trim()}(으)로 바꿨어요.` + (res.same.length ? ` 이미 같은 값 ${res.same.length}건.` : '') + (bundled ? ` ${bundled}` : '') });
     }).catch(err => setDateNote({ tone: 'error', text: `바꾸지 못했어요: ${err instanceof Error ? err.message : String(err)}` }));
   };
   // 쉽먼트 번호 직접 넣기(서허에서 직접 등록했을 때). 넣으면 인쇄할 수 있고 서허 등록 끝난 건으로 본다.

@@ -10,6 +10,10 @@ import { allLines, commit, linesReady } from './lineStore';
 import type { Line } from './lineStore';
 import { retargetOrders } from './shipOutStore';
 import { normalizeCenter } from '../utils/centerName';
+import { reservationKey } from './reservationStore';
+import { normalizeDateValue } from '../utils/dateUtils';
+import type { OrderRow } from '../types';
+import { retargetHanjungLines } from '../../../data/hanjungStore';
 import type { ShipOut } from './shipOutStore';
 
 const COLLECTION = 'coupangPoDateReq';
@@ -121,6 +125,7 @@ export async function applyCurrent(nos: string[], current: Record<string, { cent
   await linesReady();
   const res: ApplyResult = { changed: [], same: [], missing: [], moved: [] };
   const byOrder: Record<string, { center: string; date: string }> = {};
+  const hanjungTo: Record<string, { center: string; date: string }> = {};
   const out: Line[] = [];
   for (const no of nos) {
     const got = current[no];
@@ -133,6 +138,8 @@ export async function applyCurrent(nos: string[], current: Record<string, { cent
     const to = `${now.date || first?.입고예정일 || ''} ${now.center || first?.물류센터 || ''}`;
     if (!lines.some(l => (now.center && l.물류센터 !== now.center) || (now.date && l.입고예정일 !== now.date))) {
       res.same.push(no);
+      // 앱 발주서는 이미 같아도 한중발주 줄은 예전 값일 수 있어 맞춘다.
+      hanjungTo[no] = { center: now.center || first?.물류센터 || '', date: now.date || first?.입고예정일 || '' };
       continue;
     }
     res.changed.push({ no, from, to });
@@ -142,6 +149,9 @@ export async function applyCurrent(nos: string[], current: Record<string, { cent
   }
   commit(out);
   if (Object.keys(byOrder).length) res.moved = retargetOrders(byOrder);
+  // 한중발주 발주서 목록에 예전 센터·날짜가 남지 않게 같이 바꾼다.
+  await retargetHanjungLines({ ...hanjungTo, ...byOrder }, l => reservationKey({ 발주번호: l.발주번호, 상품이름: l.상품이름, 확정수량: l.확정수량, 입고예정일: normalizeDateValue(l.입고예정일) } as OrderRow))
+    .catch(err => console.error('한중발주 센터·날짜 바꾸기 실패:', err));
   // 바뀐 발주서는 요청이 끝난 것이다(날짜변경완료로 남긴다).
   markDateDone(res.changed);
   return res;

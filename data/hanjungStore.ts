@@ -5,7 +5,7 @@
 //    receipts : 수입입고 기록. 나눠서 도착하면 여러 번 쌓인다. 상품별 수량·단가와 관세사비·배송비·작업비.
 //
 // Firebase 설정이 없으면 이 기기의 localStorage에만 저장한다.
-import { collection, doc, setDoc, deleteDoc, deleteField } from 'firebase/firestore';
+import { collection, doc, setDoc, deleteDoc, deleteField, getDocs } from 'firebase/firestore';
 import { db, ensureSignedIn, onSnapshot } from '../utils/firebase';
 import { productMatchKey } from './inventoryStore';
 import type { OfficeMatch } from './inventoryStore';
@@ -345,6 +345,35 @@ export const saveHanjungOrder = async (order: HanjungOrder) => {
   }
   await ensureSignedIn();
   await setDoc(doc(db, COLLECTION, docId(order.code)), order);
+};
+
+// 발주 진행에서 발주서의 센터·입고예정일을 바꾸면(적용·직접 고치기) 한중발주에 붙은 같은 발주번호 줄도 같이 바꾼다.
+// byOrder: 발주번호 → { center, date: 'YYYY-MM-DD' }. keyOf: 줄 열쇠(예약 줄 열쇠와 같은 모양)를 새 값으로 다시 만든다.
+export const retargetHanjungLines = async (
+  byOrder: Record<string, { center: string; date: string }>,
+  keyOf: (l: HanjungLine) => string,
+) => {
+  if (!Object.keys(byOrder).length) return;
+  let orders: HanjungOrder[];
+  if (!db) orders = Object.values(readLocal());
+  else {
+    await ensureSignedIn();
+    orders = (await getDocs(collection(db, COLLECTION))).docs.map(d => d.data() as HanjungOrder);
+  }
+  for (const o of orders) {
+    let changed = false;
+    const lines = o.lines.map(l => {
+      const to = byOrder[String(l.발주번호 || '').trim()];
+      if (!to) return l;
+      const 물류센터 = to.center || l.물류센터;
+      const 입고예정일 = to.date ? to.date.replace(/-/g, '') : l.입고예정일;
+      if (물류센터 === l.물류센터 && 입고예정일 === l.입고예정일) return l;
+      changed = true;
+      const next = { ...l, 물류센터, 입고예정일 };
+      return { ...next, key: keyOf(next) };
+    });
+    if (changed) await saveHanjungOrder({ ...o, lines });
+  }
 };
 
 export const deleteHanjungOrder = async (code: string) => {

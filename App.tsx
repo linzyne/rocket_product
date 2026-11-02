@@ -9,6 +9,7 @@ import ReceiveHistoryPage from './components/ReceiveHistoryPage';
 import CollectHubPage from './components/CollectHubPage';
 import HanjungOrderPage from './components/hanjung/HanjungOrderPage';
 import LedgerPage from './components/ledger/LedgerPage';
+import TaxPage from './components/ledger/TaxPage';
 import OfficeStockPage from './components/OfficeStockPage';
 import WarehouseInPage from './components/hanjung/WarehouseInPage';
 import CoupangOrderPage from './components/coupangOrder/CoupangOrderPage';
@@ -3454,8 +3455,9 @@ const App: React.FC = () => {
       {activeMenu === 'warehouse-in' && <WarehouseInPage />}
       {activeMenu === 'product-keywords' && <ProductKeywordPage />}
       {activeMenu === 'ledger' && <LedgerPage />}
+      {activeMenu === 'tax' && <TaxPage />}
       {/* 화면이 있는 메뉴는 여기 빠짐없이 적는다(빠지면 그 화면 아래에 "준비중인 메뉴"가 같이 떴다). */}
-      {!['collect', 'proposal', 'detail', 'product-manage', 'product-keywords', 'rocket-stock', 'rocket-sales', 'rocket-in', 'order-search', 'coupang-flow', 'coupang-flow-list', 'coupang-order', 'coupang-ship', 'coupang-send', 'coupang-sent', 'cn-order', 'import-in', 'warehouse-in', 'ledger'].includes(activeMenu) && <MenuPlaceholder id={activeMenu} />}
+      {!['collect', 'proposal', 'detail', 'product-manage', 'product-keywords', 'rocket-stock', 'rocket-sales', 'rocket-in', 'order-search', 'coupang-flow', 'coupang-flow-list', 'coupang-order', 'coupang-ship', 'coupang-send', 'coupang-sent', 'cn-order', 'import-in', 'warehouse-in', 'ledger', 'tax'].includes(activeMenu) && <MenuPlaceholder id={activeMenu} />}
       {/* 상세페이지 에디터는 상품 행에서 연 것과 카테고리 탭에서 연 것을 따로 둔다. 둘 다 계속
           떠 있게 두고 숨겨만 둬서, 메뉴·탭을 오가도 작업 중인 내용이 날아가지 않는다.
           카테고리 탭 쪽은 탭마다 key를 달리 줘서 탭을 바꾸면 그 탭의 저장본으로 새로 뜬다. */}

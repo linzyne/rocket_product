@@ -3,6 +3,7 @@
 //
 //  ledgerEntries   : 문서 id = 기록 id
 //  ledgerUnitCosts : 문서 id = SKU번호. 한중발주와 짝이 안 맞는 입고 줄의 개당 원가(직접 적음)
+//  taxImportVat    : 문서 id = 한중발주 고유번호|도착 기록 id. 그 도착 때 세관에 낸 수입 부가세(직접 적음)
 //
 // Firebase 설정이 없으면 이 기기의 localStorage에만 저장한다.
 import { collection, doc, setDoc, deleteDoc } from 'firebase/firestore';
@@ -22,6 +23,7 @@ export interface LedgerEntry {
   amount: number; // 원
   memo: string;
   createdAt: number;
+  vatOk?: boolean; // 세금계산서·카드 영수증을 받은 출금(부가세 매입세액으로 뺄 수 있음). 세금 페이지에서 체크한다.
 }
 
 const COLLECTION = 'ledgerEntries';
@@ -147,4 +149,57 @@ export const saveUnitCost = async (sku: string, name: string, unit: number) => {
   await ensureSignedIn();
   if (unit > 0) await setDoc(doc(db, UC_COLLECTION, id), { sku, name, unit, updatedAt: Date.now() });
   else await deleteDoc(doc(db, UC_COLLECTION, id));
+};
+
+// ---- 수입 부가세(한중발주 도착 기록마다) ----
+const IV_COLLECTION = 'taxImportVat';
+const IV_LOCAL_KEY = 'taxImportVat';
+type IvListener = (map: Record<string, number>) => void;
+const ivLocalListeners = new Set<IvListener>();
+const readIvLocal = (): Record<string, number> => {
+  try {
+    return JSON.parse(localStorage.getItem(IV_LOCAL_KEY) || '') || {};
+  } catch {
+    return {};
+  }
+};
+const ivDocId = (key: string) => key.replace(/\//g, '_');
+
+export const subscribeImportVat = (listener: IvListener): (() => void) => {
+  if (!db) {
+    listener(readIvLocal());
+    ivLocalListeners.add(listener);
+    return () => ivLocalListeners.delete(listener);
+  }
+  const firestore = db;
+  let cancelled = false;
+  let unsubscribe: (() => void) | undefined;
+  (async () => {
+    await ensureSignedIn();
+    if (cancelled) return;
+    unsubscribe = onSnapshot(
+      collection(firestore, IV_COLLECTION),
+      snap => listener(Object.fromEntries(snap.docs.map(d => [(d.data() as { key: string }).key, (d.data() as { amount: number }).amount]))),
+      error => console.error('수입 부가세 동기화 실패:', error)
+    );
+  })();
+  return () => {
+    cancelled = true;
+    unsubscribe?.();
+  };
+};
+
+// amount가 0이면 지운다.
+export const saveImportVat = async (key: string, amount: number) => {
+  if (!db) {
+    const s = readIvLocal();
+    if (amount > 0) s[key] = amount;
+    else delete s[key];
+    localStorage.setItem(IV_LOCAL_KEY, JSON.stringify(s));
+    ivLocalListeners.forEach(l => l(s));
+    return;
+  }
+  await ensureSignedIn();
+  if (amount > 0) await setDoc(doc(db, IV_COLLECTION, ivDocId(key)), { key, amount, updatedAt: Date.now() });
+  else await deleteDoc(doc(db, IV_COLLECTION, ivDocId(key)));
 };

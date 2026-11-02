@@ -1,10 +1,11 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
   LedgerEntry, LedgerKind, OUT_CATEGORIES, IN_CATEGORIES, AD_CATEGORY, UnitCost,
-  subscribeLedger, saveLedgerEntry, deleteLedgerEntry, subscribeUnitCosts, saveUnitCost,
+  subscribeLedger, saveLedgerEntry, deleteLedgerEntry, subscribeUnitCosts, saveUnitCost, subscribeImportVat,
 } from '../../data/ledgerStore';
-import { HanjungOrder, subscribeHanjung, orderTotals, receiptTotalCost, inventoryOf, isHoldingOrder, unitLandedCost } from '../../data/hanjungStore';
-import { ReceiveRow, subscribeReceives, settlementOf, sign, matchLine } from '../../data/receiveStore';
+import { HanjungOrder, subscribeHanjung, orderTotals, receiptTotalCost, inventoryOf, isHoldingOrder } from '../../data/hanjungStore';
+import { ReceiveRow, subscribeReceives, settlementOf, sign } from '../../data/receiveStore';
+import { costOf as costOfRow, ucId, vatOf, halfOf, vatDeadline } from '../../data/ledgerCalc';
 
 // 장부. 같은 데이터를 두 날짜로 본다.
 //  · 입고일로 보기(이익): 그 달에 쿠팡에 입고된 줄의 정산(공급가) − 그 수량의 원가 − 직접 적은 비용 = 순익.
@@ -30,7 +31,6 @@ const prevMonth = (ym: string) => {
   const [y, mo] = ym.split('-').map(Number);
   return ymOf(new Date(y, mo - 2, 1));
 };
-const ucId = (sku: string) => sku.replace(/\//g, '_');
 
 const Card: React.FC<{ title: string; value: string; sub?: string; tone?: 'in' | 'out' | 'net' }> = ({ title, value, sub, tone }) => (
   <div className="bg-white border border-gray-200 rounded-xl p-4">
@@ -73,6 +73,8 @@ const LedgerPage: React.FC = () => {
   useEffect(() => subscribeHanjung(setOrders), []);
   useEffect(() => subscribeReceives(setReceives), []);
   useEffect(() => subscribeUnitCosts(setUnitCosts), []);
+  const [importVat, setImportVat] = useState<Record<string, number>>({});
+  useEffect(() => subscribeImportVat(setImportVat), []);
 
   // 직접 적는 칸
   const [form, setForm] = useState<{ date: string; kind: LedgerKind; category: string; amount: string; memo: string }>({
@@ -93,19 +95,7 @@ const LedgerPage: React.FC = () => {
     deleteLedgerEntry(e.id).catch(err => alert(`삭제 실패: ${err?.message || err}`));
   };
 
-  // 입고 줄 하나의 원가: 한중발주와 짝이 맞으면 그 건의 개당 원가, 아니면 직접 적은 개당 원가.
-  const costOf = (r: ReceiveRow) => {
-    for (const o of orders) {
-      const line = matchLine(o, r);
-      if (!line) continue;
-      const unit = unitLandedCost(o, line.상품이름);
-      if (unit > 0) return { code: o.code, unit, manual: false };
-      const m = unitCosts[ucId(r.sku)];
-      return { code: o.code, unit: m?.unit || 0, manual: !!m };
-    }
-    const m = unitCosts[ucId(r.sku)];
-    return { code: null as string | null, unit: m?.unit || 0, manual: !!m };
-  };
+  const costOf = (r: ReceiveRow) => costOfRow(orders, unitCosts, r);
 
   const m = useMemo(() => {
     const mine = entries.filter(e => e.date.startsWith(month));
@@ -180,6 +170,10 @@ const LedgerPage: React.FC = () => {
   // 재고는 달과 상관없이 지금 남아 있는 것 전부.
   const stock = useMemo(() => orders.flatMap(inventoryOf), [orders]);
   const stockValue = stock.reduce((s, x) => s + x.value, 0);
+
+  // 이 달이 속한 부가세 반기
+  const vh = halfOf(month);
+  const vat = useMemo(() => vatOf(vh.year, vh.half, receives, orders, entries, importVat), [vh.year, vh.half, receives, orders, entries, importVat]);
 
   const cats = form.kind === 'out' ? OUT_CATEGORIES : IN_CATEGORIES;
   const profitView = view === 'profit';
@@ -260,6 +254,12 @@ const LedgerPage: React.FC = () => {
           <Card title="앞으로 받을 돈" value={won(m.upcomingTotal)} sub="지급일이 오늘 뒤인 정산금" />
         </div>
       )}
+
+      <a href="#/tax" className="flex flex-wrap items-center gap-x-3 gap-y-1 bg-white border border-gray-200 rounded-xl px-4 py-2.5 text-sm hover:bg-gray-50">
+        <span className="text-gray-500">세금</span>
+        <span>부가세 {vh.year}년 {vh.half}기 {vat.due >= 0 ? '낼 돈' : '돌려받을 돈'} <b className="font-mono">{won(Math.abs(vat.due))}</b> <span className="text-[11px] text-gray-400">{vatDeadline(vh.year, vh.half)}까지</span></span>
+        <span className="ml-auto text-blue-600 text-xs">세금 보기 →</span>
+      </a>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 items-start">
         {profitView ? (

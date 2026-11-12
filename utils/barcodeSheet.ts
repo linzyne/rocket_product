@@ -116,7 +116,7 @@ export const writeBarcodeSheet = (win: Window, title: string, items: SheetItem[]
     var lab = document.createElement('label');
     var nm = document.createElement('span'); nm.className = 'pname'; nm.textContent = pr.name; nm.title = pr.name;
     var inp = document.createElement('input'); inp.type = 'number'; inp.min = '0'; inp.step = '1'; inp.value = '40'; inp.id = 'cnt' + k;
-    var hint = document.createElement('small'); hint.textContent = '장 (발주 ' + pr.qty + '개)';
+    var hint = document.createElement('small'); hint.textContent = pr.qty ? '장 (발주 ' + pr.qty + '개)' : '장';
     lab.appendChild(nm); lab.appendChild(inp); lab.appendChild(hint);
     $('counts').appendChild(lab);
     inp.addEventListener('input', draw);

@@ -1,16 +1,15 @@
 import React, { useMemo, useState } from 'react';
 import { ArchivedProduct } from '../types';
-import { ChevronLeftIcon, SearchIcon } from './Icons';
+import { SearchIcon } from './Icons';
 import { writeBarcodeSheet } from '../utils/barcodeSheet';
 
 // 상품목록에 저장된 상품을 썸네일로 늘어놓고, 누르면 그 상품 바코드 라벨(폼텍 40칸)을 새 탭에 연다.
 // 장수·용지·위치는 새 탭 도구줄에서 고르고 인쇄한다.
 interface BarcodeGalleryPageProps {
   entries: ArchivedProduct[];
-  onBack: () => void;
 }
 
-const BarcodeGalleryPage: React.FC<BarcodeGalleryPageProps> = ({ entries, onBack }) => {
+const BarcodeGalleryPage: React.FC<BarcodeGalleryPageProps> = ({ entries }) => {
   const [query, setQuery] = useState('');
 
   // 바코드 있는 것만, 같은 바코드는 최근 저장한 것 하나만.
@@ -39,13 +38,6 @@ const BarcodeGalleryPage: React.FC<BarcodeGalleryPageProps> = ({ entries, onBack
   return (
     <div className="w-full max-w-screen-2xl text-gray-900">
       <header className="flex items-center gap-2 mb-5">
-        <button
-          onClick={onBack}
-          className="inline-flex items-center gap-1 px-2.5 py-1.5 bg-white border border-gray-300 text-gray-700 text-sm font-medium rounded-md hover:bg-gray-50"
-        >
-          <ChevronLeftIcon />
-          <span>돌아가기</span>
-        </button>
         <h1 className="text-lg font-bold">바코드</h1>
         <span className="text-sm text-gray-500">{items.length}개</span>
         <div className="relative ml-auto w-56">

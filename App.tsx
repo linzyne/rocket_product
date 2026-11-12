@@ -19,7 +19,7 @@ import OrderGuardBanner from './components/coupangOrder/OrderGuardBanner';
 import CoupangFlowPage from './components/coupangFlow/CoupangFlowPage';
 import OrderSearchPage from './components/coupangOrder/OrderSearchPage';
 import { installOrderNoCopy } from './utils/copyOrderNo';
-import { PlusIcon, DownloadIcon, CloseIcon, BroomIcon, SearchIcon, DocumentAddIcon, SaveIcon, CameraIcon, SettingsIcon, TagIcon, CheckIcon, ArchiveIcon, BarcodeIcon } from './components/Icons';
+import { PlusIcon, DownloadIcon, CloseIcon, BroomIcon, SearchIcon, DocumentAddIcon, SaveIcon, CameraIcon, SettingsIcon, TagIcon, CheckIcon, ArchiveIcon } from './components/Icons';
 import ProductLabel from './components/ProductLabel';
 import BarcodeLabel from './components/BarcodeLabel';
 import BarcodeGalleryPage from './components/BarcodeGalleryPage';
@@ -463,7 +463,7 @@ const App: React.FC = () => {
   const [isExporting, setIsExporting] = useState(false);
   const [isSampleExporting, setIsSampleExporting] = useState(false);
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved'>('idle');
-  const [currentView, setCurrentView] = useState<'products' | 'renamer' | 'productList' | 'barcode'>('products');
+  const [currentView, setCurrentView] = useState<'products' | 'renamer' | 'productList'>('products');
   const [activeMenu, setActiveMenu] = useState<AppMenuId>(() => (OPENED_FOR_DETAIL ? 'detail' : readMenuFromHash()));
   // 발송대기 마감(입고예정일 하루 전)이 다가왔는데 아직 발송대기에 없는 발주. 어느 화면에 있든 메뉴 숫자와 컴퓨터 알림으로 알린다.
   const shipDeadline = useShipDeadline();
@@ -3205,8 +3205,6 @@ const App: React.FC = () => {
       <div className="w-full min-w-0 relative z-10">
       {currentView === 'renamer' ? (
         <ImageRenamer onBack={() => setCurrentView('products')} />
-      ) : currentView === 'barcode' ? (
-        <BarcodeGalleryPage entries={archivedProducts} onBack={() => setCurrentView('products')} />
       ) : currentView === 'productList' ? (
         <ProductListPage
           entries={archivedProducts}
@@ -3268,14 +3266,6 @@ const App: React.FC = () => {
                 >
                     <ArchiveIcon />
                     <span className="hidden sm:inline">상품목록{archivedProducts.length > 0 ? ` (${archivedProducts.length})` : ''}</span>
-                </button>
-                <button
-                    onClick={() => setCurrentView('barcode')}
-                    className="inline-flex items-center justify-center gap-1 px-2.5 py-1.5 bg-white border border-gray-300 text-gray-700 text-sm font-medium rounded-md hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-400 transition-colors"
-                    title="상품 썸네일을 눌러 바코드 라벨 인쇄"
-                >
-                    <BarcodeIcon />
-                    <span className="hidden sm:inline">바코드</span>
                 </button>
                 <button
                     onClick={handleRemoveAllProducts}
@@ -3449,6 +3439,11 @@ const App: React.FC = () => {
       </div>
       )}
       {activeMenu === 'collect' && <CollectHubPage />}
+      {activeMenu === 'barcode' && (
+        <div className="p-4 sm:p-6 lg:p-8">
+          <BarcodeGalleryPage entries={archivedProducts} />
+        </div>
+      )}
       {/* 사무실재고: 한중발주 여유에서 자동 계산(예전 손으로 적던 화면 대신). */}
       {activeMenu === 'product-manage' && <OfficeStockPage />}
       {activeMenu === 'rocket-stock' && <StockHistoryPage mode="rocket" />}

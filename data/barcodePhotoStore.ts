@@ -1,11 +1,12 @@
 // 바코드 메뉴에서 사람이 적은 것. 바코드로 찾는다.
 //  - 사진 없는 상품에 올린 썸네일(thumb)
 //  - 상품목록·쿠팡 장부에 없는 상품을 바코드 메뉴에서 직접 만든 것(name이 있으면 그 상품도 목록에 보임)
-//  barcodePhotos/{바코드} : { barcode, name?, thumb?(작은 JPEG data URL), at }
+//  - 바코드 메뉴에서 고친 상품명(title, 어느 상품이든 이게 있으면 이 이름으로 보이고 찍힘)
+//  barcodePhotos/{바코드} : { barcode, name?, title?, thumb?(작은 JPEG data URL), at }
 import { collection, doc, setDoc } from 'firebase/firestore';
 import { db, ensureSignedIn, onSnapshot } from '../utils/firebase';
 
-export type BarcodeExtra = { barcode: string; name?: string; thumb?: string; at?: number };
+export type BarcodeExtra = { barcode: string; name?: string; title?: string; thumb?: string; at?: number };
 
 const COLLECTION = 'barcodePhotos';
 const LOCAL_KEY = 'barcodePhotos';
@@ -43,7 +44,7 @@ export function subscribeBarcodeExtras(cb: (p: Record<string, BarcodeExtra>) => 
       snap.docs.forEach(d => {
         const v = d.data();
         const bc = String(v.barcode || d.id);
-        next[bc] = { barcode: bc, name: v.name ? String(v.name) : undefined, thumb: v.thumb ? String(v.thumb) : undefined, at: v.at };
+        next[bc] = { barcode: bc, name: v.name ? String(v.name) : undefined, title: v.title ? String(v.title) : undefined, thumb: v.thumb ? String(v.thumb) : undefined, at: v.at };
       });
       extras = next;
       notify();
@@ -69,3 +70,6 @@ export const setBarcodePhoto = (barcode: string, thumb: string) => save(barcode,
 
 // 바코드 메뉴에서 직접 만든 상품.
 export const addBarcodeItem = (barcode: string, name: string) => save(barcode, { name: name.trim() });
+
+// 바코드 메뉴에서 상품명 고치기.
+export const setBarcodeTitle = (barcode: string, title: string) => save(barcode, { title: title.trim() });

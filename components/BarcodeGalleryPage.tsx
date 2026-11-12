@@ -3,7 +3,7 @@ import { ArchivedProduct } from '../types';
 import { SearchIcon } from './Icons';
 import { writeBarcodeSheet } from '../utils/barcodeSheet';
 import { loadBarcodeBook } from '../data/coupangBarcodeStore';
-import { subscribeBarcodeExtras, setBarcodePhoto, addBarcodeItem, BarcodeExtra } from '../data/barcodePhotoStore';
+import { subscribeBarcodeExtras, setBarcodePhoto, addBarcodeItem, setBarcodeTitle, BarcodeExtra } from '../data/barcodePhotoStore';
 import { generateBarcodeNumber } from '../utils/barcode';
 import { resizeImageDataUrl } from '../utils/imageResize';
 
@@ -25,6 +25,9 @@ const BarcodeGalleryPage: React.FC<BarcodeGalleryPageProps> = ({ entries }) => {
   const [extras, setExtras] = useState<Record<string, BarcodeExtra>>({});
   const [newName, setNewName] = useState('');
   const [newCode, setNewCode] = useState('');
+  // 상품명 고치는 중인 칸(바코드)과 적는 중인 이름.
+  const [editing, setEditing] = useState('');
+  const [editText, setEditText] = useState('');
 
   useEffect(() => {
     loadBarcodeBook().then(book => setBookByName(book.byName));
@@ -39,7 +42,7 @@ const BarcodeGalleryPage: React.FC<BarcodeGalleryPageProps> = ({ entries }) => {
       const bc = it.barcode.trim();
       if (!bc || seen.has(bc)) return;
       seen.add(bc);
-      all.push({ ...it, barcode: bc, thumb: it.thumb || extras[bc]?.thumb });
+      all.push({ ...it, barcode: bc, name: extras[bc]?.title || it.name, thumb: it.thumb || extras[bc]?.thumb });
     };
     // 직접 만든 것(최근 것 먼저)을 맨 앞에.
     (Object.values(extras) as BarcodeExtra[])
@@ -63,6 +66,12 @@ const BarcodeGalleryPage: React.FC<BarcodeGalleryPageProps> = ({ entries }) => {
     addBarcodeItem(code, name);
     setNewName('');
     setNewCode('');
+  };
+
+  const saveTitle = (e: Item) => {
+    const t = editText.trim();
+    if (t && t !== e.name) setBarcodeTitle(e.barcode, t);
+    setEditing('');
   };
 
   const uploadPhoto = (e: Item, file: File | undefined) => {
@@ -145,10 +154,37 @@ const BarcodeGalleryPage: React.FC<BarcodeGalleryPageProps> = ({ entries }) => {
                   <input type="file" accept="image/*" className="hidden" onChange={ev => { uploadPhoto(e, ev.target.files?.[0]); ev.target.value = ''; }} />
                 </label>
               )}
-              <button onClick={() => print(e)} title={`${e.name}\n${e.barcode} — 눌러서 바코드 인쇄`} className="block w-full text-left p-1.5">
-                <p className="text-xs font-medium leading-tight line-clamp-2 group-hover:text-blue-600">{e.name || '-'}</p>
-                <p className="text-[10px] text-gray-400 mt-0.5 tabular-nums">{e.barcode}</p>
-              </button>
+              {editing === e.barcode ? (
+                <div className="p-1.5">
+                  <textarea
+                    autoFocus
+                    value={editText}
+                    onChange={ev => setEditText(ev.target.value)}
+                    onBlur={() => saveTitle(e)}
+                    onKeyDown={ev => {
+                      if (ev.key === 'Enter' && !ev.nativeEvent.isComposing) { ev.preventDefault(); saveTitle(e); }
+                      if (ev.key === 'Escape') setEditing('');
+                    }}
+                    rows={2}
+                    className="w-full px-1 py-0.5 text-xs border border-blue-400 rounded resize-none focus:outline-none"
+                  />
+                  <p className="text-[10px] text-gray-400 tabular-nums">{e.barcode}</p>
+                </div>
+              ) : (
+                <div className="relative">
+                  <button onClick={() => print(e)} title={`${e.name}\n${e.barcode} — 눌러서 바코드 인쇄`} className="block w-full text-left p-1.5 pr-6">
+                    <p className="text-xs font-medium leading-tight line-clamp-2 group-hover:text-blue-600">{e.name || '-'}</p>
+                    <p className="text-[10px] text-gray-400 mt-0.5 tabular-nums">{e.barcode}</p>
+                  </button>
+                  <button
+                    onClick={() => { setEditing(e.barcode); setEditText(e.name); }}
+                    title="상품명 고치기"
+                    className="absolute top-1 right-1 px-1 text-xs text-gray-300 hover:text-blue-600"
+                  >
+                    ✎
+                  </button>
+                </div>
+              )}
             </div>
           ))}
         </div>

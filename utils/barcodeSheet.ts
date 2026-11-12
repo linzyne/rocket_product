@@ -1,7 +1,8 @@
 import JsBarcode from 'jsbarcode';
 
 // 상품 바코드 라벨을 폼텍 40칸(A4, 4열×10줄) 용지에 맞춰 새 탭에 그린다. 상품마다 수량만큼 칸을 채운다.
-// 칸 모양: 위에 상품이름(쿠팡 발주서 그대로, 굵게) → 표시 문구 첫 줄(칸 너비) → 나머지 문구는 왼쪽, 바코드는 오른쪽.
+// 칸 모양: 위에 상품이름(쿠팡 발주서 그대로, 굵게) → 표시 문구(작게, 이어서) → 바코드는 칸 너비 가득.
+// 바코드를 문구 옆에 두면 막대가 0.2mm쯤으로 가늘어져 스캐너가 못 읽었다(EAN-13 최소 약 0.26mm). 그래서 칸 너비를 다 쓴다.
 // 표시 문구(수입자·제조국·사용연령·주의사항)는 도구줄에서 고칠 수 있고 이 컴퓨터에 기억한다.
 // 새 탭 위쪽 도구줄에서 용지 크기(기본 폼텍 LS-3102 47×26.9 / 48.5×25.4 / 꽉 찬 52.5×29.7)·시작 칸·위치 미세조정을 바꿀 수 있고,
 // 바꾼 값은 이 컴퓨터에 기억한다. 도구줄은 인쇄되지 않는다.
@@ -19,9 +20,11 @@ const validEan13 = (v: string) => {
 
 const barcodeSvg = (value: string) => {
   const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  const ean = validEan13(value);
   JsBarcode(svg, value, {
-    format: validEan13(value) ? 'EAN13' : 'CODE128',
-    height: 60, width: 2, margin: 0, marginLeft: 14, marginRight: 14, displayValue: false,
+    format: ean ? 'EAN13' : 'CODE128',
+    // 양옆 빈칸(조용한 구역): EAN-13은 왼쪽 11·오른쪽 7막대, CODE128은 10막대 이상 있어야 읽힌다(막대 1개 = 2).
+    height: 60, width: 2, margin: 0, marginLeft: ean ? 22 : 20, marginRight: ean ? 14 : 20, displayValue: false,
   });
   const w = svg.getAttribute('width')?.replace('px', '') || '200';
   const h = svg.getAttribute('height')?.replace('px', '') || '80';
@@ -52,11 +55,8 @@ export const writeBarcodeSheet = (win: Window, title: string, items: SheetItem[]
   .cell.used { outline: 1px dashed #e5e7eb; }
   body.guide .cell.used { outline: 0.2mm solid #000; }
   .name { width: 100%; font-size: 8pt; line-height: 1.15; font-weight: 800; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; word-break: keep-all; flex-shrink: 0; }
-  .info1, .info div { font-size: 5.6pt; line-height: 1.3; white-space: nowrap; overflow: hidden; }
-  .info1 { margin-top: 0.7mm; flex-shrink: 0; }
-  .row { flex: 1; min-height: 0; display: flex; align-items: stretch; gap: 0.8mm; }
-  .info { flex-shrink: 0; display: flex; flex-direction: column; justify-content: space-evenly; }
-  .code { flex: 1; min-width: 0; padding-top: 0.4mm; display: flex; flex-direction: column; }
+  .info { margin-top: 0.4mm; font-size: 5.2pt; line-height: 1.25; flex-shrink: 0; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; word-break: keep-all; }
+  .code { flex: 1; min-height: 0; padding-top: 0.5mm; display: flex; flex-direction: column; }
   .code svg { flex: 1; min-height: 0; width: 100%; display: block; }
   .num { font-size: 7.5pt; line-height: 1; text-align: center; letter-spacing: 0.3pt; margin-top: 0.3mm; }
   .counts { flex-basis: 100%; display: flex; flex-direction: column; gap: 4px; }
@@ -145,7 +145,7 @@ export const writeBarcodeSheet = (win: Window, title: string, items: SheetItem[]
         var x = p.left + dx + col * (p.w + p.gx), y = p.top + dy + row * (p.h + p.gy);
         var l = LABELS[i];
         out += '<div class="cell used" style="left:' + x + 'mm;top:' + y + 'mm;width:' + p.w + 'mm;height:' + p.h + 'mm">'
-          + '<div class="name"></div><div class="info1"></div><div class="row"><div class="info"></div><div class="code">' + l.svg + '<div class="num"></div></div></div></div>';
+          + '<div class="name"></div><div class="info"></div><div class="code">' + l.svg + '<div class="num"></div></div></div>';
       }
       out += '</div>';
     }
@@ -154,13 +154,10 @@ export const writeBarcodeSheet = (win: Window, title: string, items: SheetItem[]
     var names = document.querySelectorAll('.cell .name');
     var nums = document.querySelectorAll('.cell .num');
     for (var j = 0; j < names.length; j++) { names[j].textContent = LABELS[j].name; nums[j].textContent = LABELS[j].code; }
-    // 표시 문구: 첫 줄은 칸 너비로, 나머지는 바코드 왼쪽에 한 줄씩.
+    // 표시 문구: 줄들을 · 로 이어서 바코드 위에 작게.
     var lines = $('info').value.split('\\n').map(function (t) { return t.trim(); }).filter(Boolean);
     try { localStorage.setItem(INFO_KEY, $('info').value); } catch (e) {}
-    document.querySelectorAll('.cell .info1').forEach(function (el) { el.textContent = lines[0] || ''; });
-    document.querySelectorAll('.cell .info').forEach(function (el) {
-      lines.slice(1).forEach(function (t) { var d = document.createElement('div'); d.textContent = t; el.appendChild(d); });
-    });
+    document.querySelectorAll('.cell .info').forEach(function (el) { el.textContent = lines.join(' · '); });
   }
   $('guide').addEventListener('change', function () { document.body.classList.toggle('guide', $('guide').checked); });
   ['preset', 'start', 'dx', 'dy', 'info'].forEach(function (id) { $(id).addEventListener('input', draw); });

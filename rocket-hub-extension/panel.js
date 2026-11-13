@@ -684,11 +684,12 @@
     return next && Number(next.getAttribute('data-lp')) > page ? next.querySelector('a') : null;
   };
   // 서허가 주소에 적어 두는 검색 결과 전체 줄 수(totalCount). 다 모았는지 맞춰 보는 데 쓴다.
+  // 검색 직후 1페이지 주소에는 이전 검색의 값이 남아 있어서(43줄인데 5줄로 적힘) 2페이지부터만 믿는다.
   const totalCountNow = () => {
     try {
       const q = new URLSearchParams(location.search);
       const n = Number(q.get('totalCount'));
-      return Number.isFinite(n) && q.get('startDate') ? n : null;
+      return Number.isFinite(n) && q.get('startDate') && Number(q.get('page')) >= 2 ? n : null;
     } catch (err) {
       return null;
     }

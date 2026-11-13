@@ -7,6 +7,7 @@ import { useHanjungBadge } from '../coupangOrder/data/useHanjungBadge';
 import { useShipmentNoSync } from '../coupangOrder/data/useShipmentNoSync';
 import { useReady } from '../coupangOrder/data/readyStore';
 import { HanjungOrder, subscribeHanjung, makeHanjungOfficeLookup } from '../../data/hanjungStore';
+import ReturnCheck from '../ReturnCheck';
 import { expandBoxSplit, parseBoxNo } from '../coupangOrder/utils/dataProcessor';
 import { ymdSortKey } from '../coupangOrder/utils/dateUtils';
 import { openBarcodes as openBarcodesShared, printShipment as printShipmentShared, setPrinted } from './printShipment';
@@ -167,6 +168,8 @@ export default function CoupangSendPage({ onGoShip, view = 'waiting' }: { onGoSh
       </header>
 
       <main style={{ maxWidth: 1200, margin: '0 auto', padding: '20px clamp(10px, 4vw, 24px) 70px' }}>
+        {/* 발송완료한 것 중 아직 쿠팡 입고로 안 잡힌 것(입고 기다리는 중 / 5일 지나도 입고 안 됨 → 회송·분실). */}
+        {view === 'sent' && <ReturnCheck orders={hanjungOrders} sent={sent} />}
         {view === 'waiting' && <ProductQtySummary lines={waiting.flatMap(i => i.lines.map(l => ({ ...l, ready: isLineReady(i, l) })))} />}
         {view !== 'waiting' ? null : waiting.length === 0 ? (
           <div style={{ border: '1px dashed #e0e0e0', borderRadius: 10, padding: '60px 0', textAlign: 'center', color: '#bbb', fontSize: 13 }}>

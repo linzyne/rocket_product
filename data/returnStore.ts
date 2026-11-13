@@ -1,16 +1,20 @@
-// 회송. 쉽먼트로 쿠팡에 보낸 수량보다 쿠팡 입고(물류창고입고)가 적은 줄을 찾아, 회송으로 처리하면 사무실 재고로 되돌린다.
+// 입고 대기·회송. 발송완료한 것 중 아직 쿠팡 입고(물류창고입고)로 안 잡힌 수량을 모두 보여준다.
+//  · 입고되면 저절로 빠진다(보낸 수량 − 입고 수량 − 처리한 수량으로 계산하니까).
+//  · 입고예정일에서 OVERDUE_DAYS일이 지나도 남은 것은 "입고 안 됨"으로 따로 모아, 회송(사무실 재고로 되돌림)인지
+//    분실(재고는 두고 목록에서만 뺌)인지 사람이 고른다.
 //
-//  coupangReturns : 문서 id = 발주번호|상품 열쇠  { 발주번호, 상품이름, qty, kind, at }
-//    kind 'returned' = 회송 처리함(그 수량을 한중발주 줄의 회송 칸에 더했다) / 'ignored' = 회송 아님(숨기기)
+//  coupangReturns : 문서 id = 발주번호|상품 열쇠  { marks: [{ 발주번호, 상품이름, qty, kind, at }] }
+//    kind 'returned' = 회송 처리함(그 수량을 한중발주 줄의 회송 칸에 더했다) / 'ignored' = 분실(목록에서만 뺌)
 //
-// 보낸 수량 = 쉽먼트 기록의 박스 줄 합(같은 발주를 여러 번 예약했으면 가장 큰 기록 하나).
-// 입고 수량 = 그 발주번호의 입고상세내역(반출 제외). 입고 내역이 하나도 없는 발주는 아직 안 들어간 것이라 보지 않는다.
+// 보낸 수량 = 발송완료(sentDate 있는 출고 건) 줄의 확정수량 합. 쉽먼트(롯데 예약) 기록은 예약만 하고 안 보낸 것·
+// 같은 건을 여러 번 예약한 것이 섞여 있어서 쓰지 않는다.
+// 입고 수량 = 그 발주번호의 입고상세내역(반출 제외).
 // 정산은 입고 내역으로 계산하므로 이미 빠져 있다. 여기서는 재고만 되돌린다.
 import { collection, doc, setDoc } from 'firebase/firestore';
 import { db, ensureSignedIn, onSnapshot } from '../utils/firebase';
 import { HanjungOrder, saveHanjungOrder, sameName, nameKey, lineAlloc, addHoldingStock } from './hanjungStore';
 import { ReceiveRow, norm } from './receiveStore';
-import { ShipmentBatch, allBoxes } from './shipmentStore';
+import type { ShipOut } from '../components/coupangOrder/data/shipOutStore';
 
 export interface ReturnMark {
   id: string;
@@ -31,8 +35,15 @@ export interface ReturnCandidate {
   done: number; // 이미 회송 처리·숨긴 수량
   left: number; // 아직 확인 안 한 차이
   lastIn: string; // 마지막 입고일
-  batchId: string;
+  shipOutId: string; // 출고 번호
+  sentDate: string; // 보낸 날
+  noReceive: boolean; // 그 발주서에 입고 기록이 하나도 없음
+  dueDate: string; // 입고예정일 YYYY-MM-DD(없으면 쉽먼트 만든 날)
+  overdue: boolean; // 입고예정일에서 OVERDUE_DAYS일이 지났는데 아직 남음
 }
+
+export const OVERDUE_DAYS = 5;
+const ymdOf = (s: string) => { const d = String(s || '').replace(/\D/g, ''); return d.length >= 8 ? `${d.slice(0, 4)}-${d.slice(4, 6)}-${d.slice(6, 8)}` : ''; };
 
 const COLLECTION = 'coupangReturns';
 const LOCAL_KEY = 'coupangReturns';
@@ -91,28 +102,23 @@ const rowIsFor = (r: ReceiveRow, name: string, single: boolean) => {
 };
 
 export const findReturnCandidates = (
-  batches: ShipmentBatch[],
+  sent: ShipOut[],
   receives: ReceiveRow[],
   marks: Record<string, ReturnMark[]>,
 ): ReturnCandidate[] => {
-  // 보낸 수량: 기록마다 발주·상품별로 합치고, 기록끼리는 큰 쪽을 쓴다(다시 예약한 기록이 겹칠 수 있어서).
-  const shipped = new Map<string, { 발주번호: string; 상품이름: string; center: string; qty: number; batchId: string }>();
-  for (const b of batches) {
-    const mine = new Map<string, { 발주번호: string; 상품이름: string; center: string; qty: number }>();
-    for (const box of allBoxes(b)) {
-      for (const l of box.lines) {
-        const no = String(l.발주번호 || '').trim();
-        if (!no) continue;
-        const k = returnId(no, l.상품이름);
-        const e = mine.get(k) || { 발주번호: no, 상품이름: l.상품이름, center: box.center, qty: 0 };
-        e.qty += Number(l.확정수량) || 0;
-        mine.set(k, e);
-      }
+  // 보낸 수량: 발송완료 건의 줄을 발주·상품별로 합친다(줄 하나는 한 출고 건에만 있다).
+  const shipped = new Map<string, { 발주번호: string; 상품이름: string; center: string; qty: number; due: string; shipOutId: string; sentDate: string }>();
+  for (const item of sent) {
+    if (!item.sentDate) continue;
+    for (const l of item.lines) {
+      const no = String(l.발주번호 || '').trim();
+      const n = Number(l.확정수량) || 0;
+      if (!no || n <= 0) continue;
+      const k = returnId(no, l.상품이름);
+      const e = shipped.get(k) || { 발주번호: no, 상품이름: l.상품이름, center: item.center || l.물류센터, qty: 0, due: ymdOf(l.입고예정일 || item.date || item.sentDate), shipOutId: item.id, sentDate: item.sentDate };
+      e.qty += n;
+      shipped.set(k, e);
     }
-    mine.forEach((e, k) => {
-      const prev = shipped.get(k);
-      if (!prev || e.qty > prev.qty) shipped.set(k, { ...e, batchId: b.id });
-    });
   }
 
   const byOrder = new Map<string, ReceiveRow[]>();
@@ -125,18 +131,21 @@ export const findReturnCandidates = (
   shipped.forEach(e => productsPerOrder.set(e.발주번호, (productsPerOrder.get(e.발주번호) || 0) + 1));
 
   const out: ReturnCandidate[] = [];
+  const cut = new Date();
+  cut.setDate(cut.getDate() - OVERDUE_DAYS);
+  const cutYmd = `${cut.getFullYear()}-${String(cut.getMonth() + 1).padStart(2, '0')}-${String(cut.getDate()).padStart(2, '0')}`;
   shipped.forEach((e, id) => {
-    const rows = byOrder.get(e.발주번호);
-    if (!rows?.length) return;
+    const rows = byOrder.get(e.발주번호) || [];
+    const noReceive = !rows.length;
     const mine = rows.filter(r => rowIsFor(r, e.상품이름, productsPerOrder.get(e.발주번호) === 1));
     const received = mine.reduce((s, r) => s + (Number(r.qty) || 0), 0);
     const done = (marks[id] || []).reduce((s, m) => s + m.qty, 0);
     const left = e.qty - received - done;
     if (left <= 0) return;
     const lastIn = (mine.length ? mine : rows).map(r => r.date).sort().pop() || '';
-    out.push({ id, 발주번호: e.발주번호, 상품이름: e.상품이름, center: e.center, shipped: e.qty, received, done, left, lastIn, batchId: e.batchId });
+    out.push({ id, 발주번호: e.발주번호, 상품이름: e.상품이름, center: e.center, shipped: e.qty, received, done, left, lastIn, shipOutId: e.shipOutId, sentDate: e.sentDate, noReceive, dueDate: e.due, overdue: !!e.due && e.due < cutYmd });
   });
-  return out.sort((a, b) => b.lastIn.localeCompare(a.lastIn) || a.발주번호.localeCompare(b.발주번호));
+  return out.sort((a, b) => b.dueDate.localeCompare(a.dueDate) || a.발주번호.localeCompare(b.발주번호));
 };
 
 // 회송 처리: 이 발주·상품을 맡은 한중발주 줄의 회송 칸에 수량을 더한다(배정한 만큼까지, 오래된 건부터).
@@ -175,6 +184,6 @@ export const markReturned = async (orders: HanjungOrder[], c: ReturnCandidate, q
   return { codes, holding };
 };
 
-// 회송 아님(입고가 늦게 잡히는 것 말고, 분실 등으로 재고에 안 돌아온 것): 재고는 두고 목록에서만 뺀다.
+// 분실(재고에 안 돌아온 것): 재고는 두고 목록에서만 뺀다.
 export const markIgnored = (c: ReturnCandidate, marks: ReturnMark[]) =>
   saveMarks(c.id, [...marks, { id: c.id, 발주번호: c.발주번호, 상품이름: c.상품이름, qty: c.left, kind: 'ignored', at: Date.now() }]);

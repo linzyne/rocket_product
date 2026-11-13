@@ -97,9 +97,14 @@ export default function CoupangSendPage({ onGoShip, view = 'waiting' }: { onGoSh
   }, [sent]);
   const [month, setMonth] = useState('');
   const curMonth = months.some(([k]) => k === month) ? month : (months[0]?.[0] || '');
-  const sentShown = sent.filter(i => (i.sentDate || '').startsWith(curMonth));
   const receiveStatus = useMemo(() => receiveStatusOf(sent, receives, returnMarks), [sent, receives, returnMarks]);
   const statusOfLine = (l: ShipOutLine) => receiveStatus.get(returnId(String(l.발주번호 || '').trim(), l.상품이름));
+  // ✕만 보기: 달과 상관없이 처리할 줄(✕)이 있는 카드만. 스크롤하며 찾지 않게.
+  const [onlyLate, setOnlyLate] = useState(false);
+  const pickMonth = (k: string) => { setMonth(k); setOnlyLate(false); };
+  const sentShown = onlyLate
+    ? sent.filter(i => i.lines.some(l => statusOfLine(l)?.overdue))
+    : sent.filter(i => (i.sentDate || '').startsWith(curMonth));
   // 처리할 것(5일 지나도 입고 안 됨)을 보낸 달별로 센다. 달 단추에 붙여서 그 달로 바로 가게.
   const lateList = useMemo(() => (Array.from(receiveStatus.values()) as ReturnCandidate[]).filter(c => c.overdue), [receiveStatus]);
   const waitCount = useMemo(() => (Array.from(receiveStatus.values()) as ReturnCandidate[]).filter(c => c.left > 0 && !c.overdue).length, [receiveStatus]);
@@ -235,9 +240,13 @@ export default function CoupangSendPage({ onGoShip, view = 'waiting' }: { onGoSh
         {/* 입고 요약: 처리할 것(✕)이 있는 달과 개수, 입고 기다리는 것. 달을 누르면 그 달로. */}
         {view === 'sent' && (lateList.length > 0 || waitCount > 0) && (
           <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 6, marginBottom: 14, fontSize: 12.5 }}>
-            {lateList.length > 0 && <b style={{ color: '#dc2626' }}>✕ 처리할 것 {lateList.length}줄</b>}
-            {Array.from(lateByMonth.entries()).sort((a, b) => b[0].localeCompare(a[0])).map(([k, n]) => (
-              <button key={k} onClick={() => setMonth(k)} style={{ ...btn('#dc2626', k === curMonth), height: 24, padding: '0 9px' }}>{Number(k.slice(5, 7))}월 {n}</button>
+            {lateList.length > 0 && (
+              <button onClick={() => setOnlyLate(!onlyLate)} style={{ ...btn('#dc2626', onlyLate), height: 26 }}>
+                {onlyLate ? '✕ 처리할 것만 보는 중 · 전체 보기' : `✕ 처리할 것 ${lateList.length}줄만 보기`}
+              </button>
+            )}
+            {!onlyLate && Array.from(lateByMonth.entries()).sort((a, b) => b[0].localeCompare(a[0])).map(([k, n]) => (
+              <button key={k} onClick={() => pickMonth(k)} style={{ ...btn('#dc2626', k === curMonth), height: 24, padding: '0 9px' }}>{Number(k.slice(5, 7))}월 {n}</button>
             ))}
             {waitCount > 0 && <span style={{ color: '#b45309', marginLeft: 6 }}>⏳ 입고 대기 {waitCount}줄</span>}
             <span style={{ color: '#aaa' }}>· 입고예정일에서 {OVERDUE_DAYS}일 지나도 안 들어오면 ✕</span>
@@ -402,11 +411,11 @@ export default function CoupangSendPage({ onGoShip, view = 'waiting' }: { onGoSh
               {months.map(([k, n]) => (
                 <button
                   key={k}
-                  onClick={() => setMonth(k)}
+                  onClick={() => pickMonth(k)}
                   style={{
                     padding: '5px 12px', fontSize: 13, fontWeight: 700, borderRadius: 999, cursor: 'pointer',
-                    border: `1.5px solid ${k === curMonth ? GREEN : '#e5e5e5'}`,
-                    background: k === curMonth ? GREEN : '#fff', color: k === curMonth ? '#fff' : '#555',
+                    border: `1.5px solid ${!onlyLate && k === curMonth ? GREEN : '#e5e5e5'}`,
+                    background: !onlyLate && k === curMonth ? GREEN : '#fff', color: !onlyLate && k === curMonth ? '#fff' : '#555',
                   }}
                 >
                   {Number(k.slice(0, 4))}년 {Number(k.slice(5, 7))}월 <span style={{ opacity: 0.8 }}>{n}</span>
@@ -450,7 +459,9 @@ export default function CoupangSendPage({ onGoShip, view = 'waiting' }: { onGoSh
                     {/* 발주서마다: 발주번호 · 쉽먼트 번호, 그 아래 상품 */}
                     {orders.map(no => {
                       const ship = item.shipmentNos?.[no];
-                      const lines = item.lines.filter(l => String(l.발주번호 || '') === no);
+                      // ✕만 볼 때는 처리할 줄만 남긴다(✓ 줄 때문에 카드가 길어지지 않게).
+                      const lines = item.lines.filter(l => String(l.발주번호 || '') === no && (!onlyLate || statusOfLine(l)?.overdue));
+                      if (!lines.length) return null;
                       return (
                         <div key={no} style={{ borderTop: '1px solid #f3f3f3', paddingTop: 6, display: 'flex', flexDirection: 'column', gap: 3 }}>
                           <div style={{ fontSize: 11.5, color: '#888' }}>

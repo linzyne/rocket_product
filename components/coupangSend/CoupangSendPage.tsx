@@ -109,7 +109,7 @@ export default function CoupangSendPage({ onGoShip, view = 'waiting' }: { onGoSh
     return m;
   }, [lateList]);
 
-  // 회송: 그 수량이 사무실 재고로 돌아온다(원래 한중발주 원가 그대로). 분실: 재고는 두고 표시만 바꾼다.
+  // 회송: 그 수량이 사무실 재고로 돌아온다(원래 한중발주 원가 그대로). 분실·미입고: 재고는 두고 표시만 바꾼다.
   const doReturn = async (c: ReturnCandidate) => {
     const v = prompt(`${c.상품이름}\n회송 온 수량을 적어 주세요(최대 ${c.left}개). 사무실 재고로 돌아와요.`, String(c.left));
     if (v == null) return;
@@ -125,20 +125,21 @@ export default function CoupangSendPage({ onGoShip, view = 'waiting' }: { onGoSh
       setReturnBusy('');
     }
   };
-  const doLost = async (c: ReturnCandidate) => {
-    if (!confirm(`${c.상품이름} ${c.left}개를 분실로 처리할까요? 재고는 그대로예요.`)) return;
+  const doMark = async (c: ReturnCandidate, kind: 'ignored' | 'missing') => {
+    const label = kind === 'missing' ? '미입고' : '분실';
+    if (!confirm(`${c.상품이름} ${c.left}개를 ${label}로 처리할까요? 재고는 그대로예요.`)) return;
     setReturnBusy(c.id);
-    try { await markIgnored(c, returnMarks[c.id] || []); } finally { setReturnBusy(''); }
+    try { await markIgnored(c, returnMarks[c.id] || [], kind); } finally { setReturnBusy(''); }
   };
 
-  // 줄 옆 입고 표시: ✓ 입고완료 / ⏳ 입고 대기 / ✕ 안 들어옴(회송·분실 버튼) / 회송·분실 처리함.
+  // 줄 옆 입고 표시: ✓ 입고완료 / ⏳ 입고 대기 / ✕ 안 들어옴(회송·분실·미입고 버튼) / 처리한 수량.
   const receiveBadge = (l: ShipOutLine) => {
     const c = statusOfLine(l);
     if (!c) return null;
     const chip = (text: string, color: string, bg: string, title?: string) => (
       <span title={title} style={{ fontSize: 11, fontWeight: 800, color, background: bg, borderRadius: 5, padding: '1px 6px', whiteSpace: 'nowrap' }}>{text}</span>
     );
-    const handled = [c.returned ? `회송 ${c.returned}` : '', c.lost ? `분실 ${c.lost}` : ''].filter(Boolean).join(' · ');
+    const handled = [c.returned ? `회송 ${c.returned}` : '', c.lost ? `분실 ${c.lost}` : '', c.missing ? `미입고 ${c.missing}` : ''].filter(Boolean).join(' · ');
     if (c.left <= 0) {
       return c.done
         ? chip(`✓ 입고 ${c.received} · ${handled}`, '#475569', '#f1f5f9')
@@ -149,7 +150,8 @@ export default function CoupangSendPage({ onGoShip, view = 'waiting' }: { onGoSh
       <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
         {chip(`✕ ${c.left}개 안 들어옴`, '#dc2626', '#fef2f2', `보냄 ${c.shipped} · 입고 ${c.received}${handled ? ` · ${handled}` : ''} · 입고예정 ${c.dueDate}`)}
         <button disabled={returnBusy === c.id} onClick={() => doReturn(c)} style={{ ...btn('#111', true), height: 20, padding: '0 7px', fontSize: 11 }}>회송</button>
-        <button disabled={returnBusy === c.id} onClick={() => doLost(c)} style={{ ...btn('#888'), height: 20, padding: '0 7px', fontSize: 11 }}>분실</button>
+        <button disabled={returnBusy === c.id} onClick={() => doMark(c, 'ignored')} style={{ ...btn('#888'), height: 20, padding: '0 7px', fontSize: 11 }}>분실</button>
+        <button disabled={returnBusy === c.id} onClick={() => doMark(c, 'missing')} style={{ ...btn('#888'), height: 20, padding: '0 7px', fontSize: 11 }}>미입고</button>
       </span>
     );
   };

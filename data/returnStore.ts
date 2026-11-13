@@ -4,7 +4,8 @@
 //    분실(재고는 두고 목록에서만 뺌)인지 사람이 고른다.
 //
 //  coupangReturns : 문서 id = 발주번호|상품 열쇠  { marks: [{ 발주번호, 상품이름, qty, kind, at }] }
-//    kind 'returned' = 회송 처리함(그 수량을 한중발주 줄의 회송 칸에 더했다) / 'ignored' = 분실(목록에서만 뺌)
+//    kind 'returned' = 회송 처리함(그 수량을 한중발주 줄의 회송 칸에 더했다) / 'ignored' = 분실 / 'missing' = 미입고
+//    (분실·미입고는 재고를 건드리지 않고 표시만 한다)
 //
 // 보낸 수량 = 발송완료(sentDate 있는 출고 건) 줄의 확정수량 합. 쉽먼트(롯데 예약) 기록은 예약만 하고 안 보낸 것·
 // 같은 건을 여러 번 예약한 것이 섞여 있어서 쓰지 않는다.
@@ -21,7 +22,7 @@ export interface ReturnMark {
   발주번호: string;
   상품이름: string;
   qty: number;
-  kind: 'returned' | 'ignored';
+  kind: 'returned' | 'ignored' | 'missing';
   at: number;
 }
 
@@ -35,6 +36,7 @@ export interface ReturnCandidate {
   done: number; // 이미 회송·분실로 처리한 수량
   returned: number; // 그중 회송
   lost: number; // 그중 분실
+  missing: number; // 그중 미입고
   left: number; // 아직 확인 안 한 차이
   lastIn: string; // 마지막 입고일
   shipOutId: string; // 출고 번호
@@ -144,10 +146,11 @@ export const receiveStatusOf = (
     const received = mine.reduce((s, r) => s + (Number(r.qty) || 0), 0);
     const returned = (marks[id] || []).filter(m => m.kind === 'returned').reduce((s, m) => s + m.qty, 0);
     const lost = (marks[id] || []).filter(m => m.kind === 'ignored').reduce((s, m) => s + m.qty, 0);
-    const done = returned + lost;
+    const missing = (marks[id] || []).filter(m => m.kind === 'missing').reduce((s, m) => s + m.qty, 0);
+    const done = returned + lost + missing;
     const left = Math.max(0, e.qty - received - done);
     const lastIn = (mine.length ? mine : rows).map(r => r.date).sort().pop() || '';
-    out.set(id, { id, 발주번호: e.발주번호, 상품이름: e.상품이름, center: e.center, shipped: e.qty, received, done, returned, lost, left, lastIn, shipOutId: e.shipOutId, sentDate: e.sentDate, noReceive, dueDate: e.due, overdue: left > 0 && !!e.due && e.due < cutYmd });
+    out.set(id, { id, 발주번호: e.발주번호, 상품이름: e.상품이름, center: e.center, shipped: e.qty, received, done, returned, lost, missing, left, lastIn, shipOutId: e.shipOutId, sentDate: e.sentDate, noReceive, dueDate: e.due, overdue: left > 0 && !!e.due && e.due < cutYmd });
   });
   return out;
 };
@@ -194,6 +197,6 @@ export const markReturned = async (orders: HanjungOrder[], c: ReturnCandidate, q
   return { codes, holding };
 };
 
-// 분실(재고에 안 돌아온 것): 재고는 두고 목록에서만 뺀다.
-export const markIgnored = (c: ReturnCandidate, marks: ReturnMark[]) =>
-  saveMarks(c.id, [...marks, { id: c.id, 발주번호: c.발주번호, 상품이름: c.상품이름, qty: c.left, kind: 'ignored', at: Date.now() }]);
+// 분실·미입고: 재고는 두고 그 수량을 처리한 것으로 표시만 한다.
+export const markIgnored = (c: ReturnCandidate, marks: ReturnMark[], kind: 'ignored' | 'missing' = 'ignored') =>
+  saveMarks(c.id, [...marks, { id: c.id, 발주번호: c.발주번호, 상품이름: c.상품이름, qty: c.left, kind, at: Date.now() }]);

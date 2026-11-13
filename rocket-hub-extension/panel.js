@@ -668,6 +668,32 @@
       .filter((el) => !(panel && panel.contains(el)) && (el.textContent || '').trim() === String(page) && visible(el))
       .pop() || null;
 
+  // 서허 입고상세내역 아래 페이지 줄(bootpag). 화면이 새로 열린 뒤 표보다 늦게 그려져서, 그려질 때까지 기다린 뒤 본다.
+  // 안 기다리면 다음 페이지가 있는데도 "없음"으로 보고 2페이지에서 끝났다(11/01~11/13 43줄 중 20줄만 모음).
+  const pager = () => Array.from(document.querySelectorAll('ul.pagination')).find((ul) => !(panel && panel.contains(ul)) && ul.querySelector('li.next')) || null;
+  const nextPageEl = async (page) => {
+    await waitFor(() => !!pager(), 8000);
+    const ul = pager();
+    if (!ul) return pageEl(page + 1);
+    // 마지막 페이지에서도 "다음"이 disabled가 아닐 때가 있어서(5페이지 뒤로 50페이지까지 돌았다), "다음"이 가리키는
+    // 페이지(data-lp)가 지금보다 뒤일 때만 넘어간다.
+    const next = ul.querySelector('li.next');
+    if (next && /disabled/.test(next.className)) return null;
+    const num = Array.from(ul.querySelectorAll(`li[data-lp="${page + 1}"]:not(.next) a`)).find((a) => (a.textContent || '').trim() === String(page + 1));
+    if (num) return num;
+    return next && Number(next.getAttribute('data-lp')) > page ? next.querySelector('a') : null;
+  };
+  // 서허가 주소에 적어 두는 검색 결과 전체 줄 수(totalCount). 다 모았는지 맞춰 보는 데 쓴다.
+  const totalCountNow = () => {
+    try {
+      const q = new URLSearchParams(location.search);
+      const n = Number(q.get('totalCount'));
+      return Number.isFinite(n) && q.get('startDate') ? n : null;
+    } catch (err) {
+      return null;
+    }
+  };
+
   const receiveStatus = (text) => {
     autoStatus = text;
     render();
@@ -849,8 +875,11 @@
       // 페이지마다 몇 줄이었는지 남긴다(다음 페이지를 못 찾고 끝났는지 로그로 알아보려고).
       run.rowsByPage[page] = receiveItems().length;
       logLine(`${page}페이지 ${run.rowsByPage[page]}줄`);
-      const next = pageEl(page + 1);
+      const next = await nextPageEl(page);
       if (!next) break;
+      // 서허 전체 줄 수만큼 다 모았으면 더 넘기지 않는다.
+      const want = totalCountNow();
+      if (want != null && Object.values(run.rowsByPage).reduce((n, v) => n + v, 0) >= want) break;
       page += 1;
       run.page = page;
       await runSet(RECEIVE_KEY, run);
@@ -869,10 +898,14 @@
     run.pages = page;
     run.finishedAt = Date.now();
     const total = Object.values(run.rowsByPage).reduce((n, v) => n + v, 0);
-    logLine(`✅ ${page}페이지까지 끝 · 모두 ${total}줄 · 페이지별 ${JSON.stringify(run.rowsByPage)}`);
+    const expected = totalCountNow();
+    run.expected = expected;
+    run.got = total;
+    logLine(`✅ ${page}페이지까지 끝 · 모두 ${total}줄${expected != null ? ` (서허 전체 ${expected}줄)` : ''} · 페이지별 ${JSON.stringify(run.rowsByPage)}`);
+    if (expected != null && total < expected) logLine(`⚠️ 서허는 ${expected}줄인데 ${total}줄만 모았어요`);
     await saveLogNow();
     await runSet(RECEIVE_KEY, run);
-    receiveStatus('✅ 자동 수집 완료 · 앱에 반영했어요');
+    receiveStatus(expected != null && total < expected ? `⚠️ ${expected}줄 중 ${total}줄만 모았어요 · 다시 눌러 주세요` : '✅ 자동 수집 완료 · 앱에 반영했어요');
     try {
       chrome.runtime.sendMessage({ type: 'HUB_RECEIVE_DONE' });
     } catch (err) {}

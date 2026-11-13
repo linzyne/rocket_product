@@ -98,6 +98,9 @@ const CollectReceives: React.FC<Props> = ({ onBucket, onExtReady, children, runT
             doneRef.current(ok, message);
           };
           const guard = setTimeout(() => settle(false, '저장이 끝나지 않았어요(인터넷 확인)', ''), 2 * 60 * 1000);
+          // 서허 검색 결과 전체 줄 수보다 적게 모았으면(페이지를 다 못 넘김) 저장은 하되 알린다.
+          const short = typeof run.expected === 'number' && typeof run.got === 'number' && run.got < run.expected;
+          if (short) alert(`서허에는 ${run.expected}줄이 있는데 ${run.got}줄만 모았어요. 모은 것은 저장하니 한 번 더 가져오기를 눌러 주세요.`);
           saveReceives(items)
             .then(n => {
               const text = n

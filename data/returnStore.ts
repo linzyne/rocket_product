@@ -32,7 +32,9 @@ export interface ReturnCandidate {
   center: string;
   shipped: number;
   received: number;
-  done: number; // 이미 회송 처리·숨긴 수량
+  done: number; // 이미 회송·분실로 처리한 수량
+  returned: number; // 그중 회송
+  lost: number; // 그중 분실
   left: number; // 아직 확인 안 한 차이
   lastIn: string; // 마지막 입고일
   shipOutId: string; // 출고 번호
@@ -101,11 +103,12 @@ const rowIsFor = (r: ReceiveRow, name: string, single: boolean) => {
   return a === b || (!!a && !!b && (a.includes(b) || b.includes(a)));
 };
 
-export const findReturnCandidates = (
+// 발송완료한 발주·상품마다 입고 상태. 다 입고·처리된 것도 들어 있다(left = 0). 발송완료 카드의 줄 표시에 쓴다.
+export const receiveStatusOf = (
   sent: ShipOut[],
   receives: ReceiveRow[],
   marks: Record<string, ReturnMark[]>,
-): ReturnCandidate[] => {
+): Map<string, ReturnCandidate> => {
   // 보낸 수량: 발송완료 건의 줄을 발주·상품별로 합친다(줄 하나는 한 출고 건에만 있다).
   const shipped = new Map<string, { 발주번호: string; 상품이름: string; center: string; qty: number; due: string; shipOutId: string; sentDate: string }>();
   for (const item of sent) {
@@ -130,7 +133,7 @@ export const findReturnCandidates = (
   const productsPerOrder = new Map<string, number>();
   shipped.forEach(e => productsPerOrder.set(e.발주번호, (productsPerOrder.get(e.발주번호) || 0) + 1));
 
-  const out: ReturnCandidate[] = [];
+  const out = new Map<string, ReturnCandidate>();
   const cut = new Date();
   cut.setDate(cut.getDate() - OVERDUE_DAYS);
   const cutYmd = `${cut.getFullYear()}-${String(cut.getMonth() + 1).padStart(2, '0')}-${String(cut.getDate()).padStart(2, '0')}`;
@@ -139,14 +142,21 @@ export const findReturnCandidates = (
     const noReceive = !rows.length;
     const mine = rows.filter(r => rowIsFor(r, e.상품이름, productsPerOrder.get(e.발주번호) === 1));
     const received = mine.reduce((s, r) => s + (Number(r.qty) || 0), 0);
-    const done = (marks[id] || []).reduce((s, m) => s + m.qty, 0);
-    const left = e.qty - received - done;
-    if (left <= 0) return;
+    const returned = (marks[id] || []).filter(m => m.kind === 'returned').reduce((s, m) => s + m.qty, 0);
+    const lost = (marks[id] || []).filter(m => m.kind === 'ignored').reduce((s, m) => s + m.qty, 0);
+    const done = returned + lost;
+    const left = Math.max(0, e.qty - received - done);
     const lastIn = (mine.length ? mine : rows).map(r => r.date).sort().pop() || '';
-    out.push({ id, 발주번호: e.발주번호, 상품이름: e.상품이름, center: e.center, shipped: e.qty, received, done, left, lastIn, shipOutId: e.shipOutId, sentDate: e.sentDate, noReceive, dueDate: e.due, overdue: !!e.due && e.due < cutYmd });
+    out.set(id, { id, 발주번호: e.발주번호, 상품이름: e.상품이름, center: e.center, shipped: e.qty, received, done, returned, lost, left, lastIn, shipOutId: e.shipOutId, sentDate: e.sentDate, noReceive, dueDate: e.due, overdue: left > 0 && !!e.due && e.due < cutYmd });
   });
-  return out.sort((a, b) => b.dueDate.localeCompare(a.dueDate) || a.발주번호.localeCompare(b.발주번호));
+  return out;
 };
+
+// 아직 남은 것만(입고 기다리는 중 + 입고 안 됨).
+export const findReturnCandidates = (sent: ShipOut[], receives: ReceiveRow[], marks: Record<string, ReturnMark[]>): ReturnCandidate[] =>
+  Array.from(receiveStatusOf(sent, receives, marks).values())
+    .filter(c => c.left > 0)
+    .sort((a, b) => b.dueDate.localeCompare(a.dueDate) || a.발주번호.localeCompare(b.발주번호));
 
 // 회송 처리: 이 발주·상품을 맡은 한중발주 줄의 회송 칸에 수량을 더한다(배정한 만큼까지, 오래된 건부터).
 // 맡은 한중발주 줄이 없거나 모자라면 남은 만큼은 "0) 보유재고"에 원가 0으로 넣는다.

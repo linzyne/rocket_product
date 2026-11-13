@@ -7,7 +7,8 @@ import { useHanjungBadge } from '../coupangOrder/data/useHanjungBadge';
 import { useShipmentNoSync } from '../coupangOrder/data/useShipmentNoSync';
 import { useReady } from '../coupangOrder/data/readyStore';
 import { HanjungOrder, subscribeHanjung, makeHanjungOfficeLookup } from '../../data/hanjungStore';
-import ReturnCheck from '../ReturnCheck';
+import { ReceiveRow, subscribeReceives } from '../../data/receiveStore';
+import { OVERDUE_DAYS, ReturnCandidate, ReturnMark, markIgnored, markReturned, receiveStatusOf, returnId, subscribeReturns } from '../../data/returnStore';
 import { expandBoxSplit, parseBoxNo } from '../coupangOrder/utils/dataProcessor';
 import { ymdSortKey } from '../coupangOrder/utils/dateUtils';
 import { openBarcodes as openBarcodesShared, printShipment as printShipmentShared, setPrinted } from './printShipment';
@@ -67,6 +68,12 @@ export default function CoupangSendPage({ onGoShip, view = 'waiting' }: { onGoSh
   useEffect(() => subscribeShipOuts(setList), []);
   useEffect(() => subscribeShipments(setBatches), []);
   useEffect(() => subscribeHanjung(setHanjungOrders), []);
+  // 입고 여부: 발송완료한 줄마다 쿠팡 입고(물류창고입고)와 맞춰 본다. 회송·분실 처리 기록도 같이.
+  const [receives, setReceives] = useState<ReceiveRow[]>([]);
+  const [returnMarks, setReturnMarks] = useState<Record<string, ReturnMark[]>>({});
+  const [returnBusy, setReturnBusy] = useState('');
+  useEffect(() => (view === 'sent' ? subscribeReceives(setReceives) : undefined), [view]);
+  useEffect(() => (view === 'sent' ? subscribeReturns(setReturnMarks) : undefined), [view]);
   const officeQtyOf = useMemo(() => makeHanjungOfficeLookup(hanjungOrders), [hanjungOrders]);
 
   // 발송대기: 쉽먼트 완료했고 아직 안 보낸 건. 입고예정일 빠른 순.
@@ -91,6 +98,61 @@ export default function CoupangSendPage({ onGoShip, view = 'waiting' }: { onGoSh
   const [month, setMonth] = useState('');
   const curMonth = months.some(([k]) => k === month) ? month : (months[0]?.[0] || '');
   const sentShown = sent.filter(i => (i.sentDate || '').startsWith(curMonth));
+  const receiveStatus = useMemo(() => receiveStatusOf(sent, receives, returnMarks), [sent, receives, returnMarks]);
+  const statusOfLine = (l: ShipOutLine) => receiveStatus.get(returnId(String(l.발주번호 || '').trim(), l.상품이름));
+  // 처리할 것(5일 지나도 입고 안 됨)을 보낸 달별로 센다. 달 단추에 붙여서 그 달로 바로 가게.
+  const lateList = useMemo(() => (Array.from(receiveStatus.values()) as ReturnCandidate[]).filter(c => c.overdue), [receiveStatus]);
+  const waitCount = useMemo(() => (Array.from(receiveStatus.values()) as ReturnCandidate[]).filter(c => c.left > 0 && !c.overdue).length, [receiveStatus]);
+  const lateByMonth = useMemo(() => {
+    const m = new Map<string, number>();
+    lateList.forEach(c => { const k = c.sentDate.slice(0, 7); m.set(k, (m.get(k) || 0) + 1); });
+    return m;
+  }, [lateList]);
+
+  // 회송: 그 수량이 사무실 재고로 돌아온다(원래 한중발주 원가 그대로). 분실: 재고는 두고 표시만 바꾼다.
+  const doReturn = async (c: ReturnCandidate) => {
+    const v = prompt(`${c.상품이름}\n회송 온 수량을 적어 주세요(최대 ${c.left}개). 사무실 재고로 돌아와요.`, String(c.left));
+    if (v == null) return;
+    const n = Math.floor(Number(v));
+    if (!Number.isFinite(n) || n <= 0 || n > c.left) { alert(`1 ~ ${c.left} 사이로 적어 주세요.`); return; }
+    setReturnBusy(c.id);
+    try {
+      const r = await markReturned(hanjungOrders, c, n, returnMarks[c.id] || []);
+      if (r.holding) alert(`${r.holding}개는 연결된 한중발주가 없어 "0) 보유재고"에 원가 0원으로 넣었어요. 원가가 필요하면 한중발주에서 고쳐 주세요.`);
+    } catch (err) {
+      alert(`회송 처리 실패: ${err instanceof Error ? err.message : String(err)}`);
+    } finally {
+      setReturnBusy('');
+    }
+  };
+  const doLost = async (c: ReturnCandidate) => {
+    if (!confirm(`${c.상품이름} ${c.left}개를 분실로 처리할까요? 재고는 그대로예요.`)) return;
+    setReturnBusy(c.id);
+    try { await markIgnored(c, returnMarks[c.id] || []); } finally { setReturnBusy(''); }
+  };
+
+  // 줄 옆 입고 표시: ✓ 입고완료 / ⏳ 입고 대기 / ✕ 안 들어옴(회송·분실 버튼) / 회송·분실 처리함.
+  const receiveBadge = (l: ShipOutLine) => {
+    const c = statusOfLine(l);
+    if (!c) return null;
+    const chip = (text: string, color: string, bg: string, title?: string) => (
+      <span title={title} style={{ fontSize: 11, fontWeight: 800, color, background: bg, borderRadius: 5, padding: '1px 6px', whiteSpace: 'nowrap' }}>{text}</span>
+    );
+    const handled = [c.returned ? `회송 ${c.returned}` : '', c.lost ? `분실 ${c.lost}` : ''].filter(Boolean).join(' · ');
+    if (c.left <= 0) {
+      return c.done
+        ? chip(`✓ 입고 ${c.received} · ${handled}`, '#475569', '#f1f5f9')
+        : chip('✓ 입고완료', GREEN, '#eafaf1', `${c.received}개 입고${c.lastIn ? ` · 마지막 ${c.lastIn.slice(0, 10)}` : ''}`);
+    }
+    if (!c.overdue) return chip(`⏳ ${c.shipped}개 중 ${c.received} 입고`, '#b45309', '#fff7ed', `입고예정 ${c.dueDate} · ${OVERDUE_DAYS}일 지나도 안 들어오면 ✕로 바뀌어요`);
+    return (
+      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+        {chip(`✕ ${c.left}개 안 들어옴`, '#dc2626', '#fef2f2', `보냄 ${c.shipped} · 입고 ${c.received}${handled ? ` · ${handled}` : ''} · 입고예정 ${c.dueDate}`)}
+        <button disabled={returnBusy === c.id} onClick={() => doReturn(c)} style={{ ...btn('#111', true), height: 20, padding: '0 7px', fontSize: 11 }}>회송</button>
+        <button disabled={returnBusy === c.id} onClick={() => doLost(c)} style={{ ...btn('#888'), height: 20, padding: '0 7px', fontSize: 11 }}>분실</button>
+      </span>
+    );
+  };
   // 보낸 날짜별로 묶는다(최근 날짜가 위). 날짜 안에서는 입고예정일·센터 순.
   const sentByDay = useMemo(() => {
     const m = new Map<string, ShipOut[]>();
@@ -168,8 +230,17 @@ export default function CoupangSendPage({ onGoShip, view = 'waiting' }: { onGoSh
       </header>
 
       <main style={{ maxWidth: 1200, margin: '0 auto', padding: '20px clamp(10px, 4vw, 24px) 70px' }}>
-        {/* 발송완료한 것 중 아직 쿠팡 입고로 안 잡힌 것(입고 기다리는 중 / 5일 지나도 입고 안 됨 → 회송·분실). */}
-        {view === 'sent' && <ReturnCheck orders={hanjungOrders} sent={sent} />}
+        {/* 입고 요약: 처리할 것(✕)이 있는 달과 개수, 입고 기다리는 것. 달을 누르면 그 달로. */}
+        {view === 'sent' && (lateList.length > 0 || waitCount > 0) && (
+          <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 6, marginBottom: 14, fontSize: 12.5 }}>
+            {lateList.length > 0 && <b style={{ color: '#dc2626' }}>✕ 처리할 것 {lateList.length}줄</b>}
+            {Array.from(lateByMonth.entries()).sort((a, b) => b[0].localeCompare(a[0])).map(([k, n]) => (
+              <button key={k} onClick={() => setMonth(k)} style={{ ...btn('#dc2626', k === curMonth), height: 24, padding: '0 9px' }}>{Number(k.slice(5, 7))}월 {n}</button>
+            ))}
+            {waitCount > 0 && <span style={{ color: '#b45309', marginLeft: 6 }}>⏳ 입고 대기 {waitCount}줄</span>}
+            <span style={{ color: '#aaa' }}>· 입고예정일에서 {OVERDUE_DAYS}일 지나도 안 들어오면 ✕</span>
+          </div>
+        )}
         {view === 'waiting' && <ProductQtySummary lines={waiting.flatMap(i => i.lines.map(l => ({ ...l, ready: isLineReady(i, l) })))} />}
         {view !== 'waiting' ? null : waiting.length === 0 ? (
           <div style={{ border: '1px dashed #e0e0e0', borderRadius: 10, padding: '60px 0', textAlign: 'center', color: '#bbb', fontSize: 13 }}>
@@ -352,6 +423,9 @@ export default function CoupangSendPage({ onGoShip, view = 'waiting' }: { onGoSh
               {dayItems.map(item => {
                 const nos = boxesOf(item).map(([no]) => no).filter(Boolean);
                 const orders = Array.from(new Set<string>(item.lines.map(l => String(l.발주번호 || '')))).filter(Boolean);
+                const sts = item.lines.map(statusOfLine).filter((c): c is ReturnCandidate => !!c);
+                const allIn = sts.length > 0 && sts.every(c => c.left <= 0);
+                const anyLate = sts.some(c => c.overdue);
                 return (
                   <div key={item.id} style={{
                     background: '#fff', borderRadius: 10, padding: '10px 12px 10px 14px', boxShadow: '0 2px 6px rgba(0,0,0,0.10)',
@@ -361,6 +435,8 @@ export default function CoupangSendPage({ onGoShip, view = 'waiting' }: { onGoSh
                       <span style={{ fontSize: 17, fontWeight: 900, color: '#111' }}>{dayText(item.date)}</span>
                       <span style={{ fontSize: 17, fontWeight: 900, color: ORANGE }}>{item.center}</span>
                       <span style={{ fontSize: 15, fontWeight: 900, color: '#111' }}>📦 {nos.length}</span>
+                      {allIn && <span style={{ marginLeft: 'auto', fontSize: 12, fontWeight: 800, color: GREEN }}>✓ 입고완료</span>}
+                      {anyLate && <span style={{ marginLeft: 'auto', fontSize: 12, fontWeight: 800, color: '#dc2626' }}>✕ 확인 필요</span>}
 
                     </div>
                     {/* 송장: 박스마다 한 줄 */}
@@ -380,9 +456,12 @@ export default function CoupangSendPage({ onGoShip, view = 'waiting' }: { onGoSh
                             {ship ? <span style={{ color: '#0369a1', fontWeight: 700 }}> · 쉽먼트 {ship}</span> : <span style={{ color: '#ccc' }}> · 쉽먼트 없음</span>}
                           </div>
                           {lines.map((l, k) => (
-                            <div key={k} style={{ display: 'flex', gap: 8, alignItems: 'baseline', fontSize: 13 }}>
-                              <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: '#333' }} title={l.상품이름}>{l.상품이름}</span>
-                              <b style={{ whiteSpace: 'nowrap' }}>{l.확정수량}개</b>
+                            <div key={k} style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                              <div style={{ display: 'flex', gap: 8, alignItems: 'baseline', fontSize: 13 }}>
+                                <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: '#333' }} title={l.상품이름}>{l.상품이름}</span>
+                                <b style={{ whiteSpace: 'nowrap' }}>{l.확정수량}개</b>
+                              </div>
+                              <div>{receiveBadge(l)}</div>
                             </div>
                           ))}
                         </div>

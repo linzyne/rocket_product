@@ -22,6 +22,8 @@ export interface HanjungLine {
   // 이 한중발주가 맡은 수량(쿠팡 줄 일부만 맡을 때). 없으면 확정수량 전부. 나머지는 다른 한중발주나 발주 대기가 맡는다.
   // 확정수량은 쿠팡 줄을 찾는 열쇠라 그대로 둔다.
   배정?: number;
+  // 쉽먼트로 보냈다가 쿠팡에서 회송된 수량. 배정은 그대로 두고(다시 보낼 줄로 잡히지 않게), 이만큼은 사무실 재고로 돌아온 것으로 본다.
+  회송?: number;
 }
 
 // 이 한중발주가 그 쿠팡 줄에서 맡은 수량.
@@ -195,7 +197,7 @@ export const productSummary = (order: HanjungOrder) => {
     }
     return e;
   };
-  for (const l of order.lines) entry(l.상품이름).allocated += lineAlloc(l);
+  for (const l of order.lines) entry(l.상품이름).allocated += lineAlloc(l) - (l.회송 || 0);
   Object.keys(order.orderQty || {}).forEach(name => entry(name));
   for (const r of order.receipts) {
     for (const it of r.items) {

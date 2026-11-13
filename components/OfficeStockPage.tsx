@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { HanjungOrder, subscribeHanjung, inventoryOf, nameKey, setOfficeStock } from '../data/hanjungStore';
 import { useProductNames } from './hanjung/OrderItemsEditor';
 import ProductThumb, { useProductImage } from './hanjung/ProductThumb';
+import ReturnCheck from './ReturnCheck';
 
 // 사무실 > 사무실재고. 손으로 적지 않고 한중발주에서 자동으로 계산한다.
 //   사무실 재고 = 한중발주 여유 중 도착했고(도착 기록) 아직 어느 쿠팡 발주에도 배정 안 된 수량
@@ -74,6 +75,8 @@ const OfficeStockPage: React.FC = () => {
           className="w-full sm:w-64 px-3 py-1.5 border border-gray-200 rounded-lg text-sm bg-white focus:outline-none focus:ring-1 focus:ring-blue-400"
         />
       </div>
+
+      <ReturnCheck orders={orders} />
 
       <div className="grid grid-cols-3 gap-3 mb-4">
         <div className="bg-white border border-gray-200 rounded-xl p-4"><div className="text-xs text-gray-500">사무실 재고</div><div className="text-xl font-bold text-gray-900 mt-1">{totalArrived.toLocaleString()}개</div></div>

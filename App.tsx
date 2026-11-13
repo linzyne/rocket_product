@@ -11,6 +11,7 @@ import HanjungOrderPage from './components/hanjung/HanjungOrderPage';
 import LedgerPage from './components/ledger/LedgerPage';
 import TaxPage from './components/ledger/TaxPage';
 import OfficeStockPage from './components/OfficeStockPage';
+import { useReturnAlertCount } from './components/coupangSend/useReturnAlertCount';
 import WarehouseInPage from './components/hanjung/WarehouseInPage';
 import CoupangOrderPage from './components/coupangOrder/CoupangOrderPage';
 import CoupangShipPage from './components/coupangShip/CoupangShipPage';
@@ -470,6 +471,8 @@ const App: React.FC = () => {
   useEffect(() => { notifyShipDeadline(shipDeadline); }, [shipDeadline]);
   // 키워드를 안 정한 상품 수(새 상품이 생기면 메뉴 옆 숫자로 알려 준다).
   const unkeyed = useUnkeyedCount();
+  // 발송완료 중 입고 안 된 줄(✕) 수. 메뉴 발송완료에 배지로.
+  const returnAlerts = useReturnAlertCount();
   // 카톡 연결(서버 /api/kakao/callback)에서 돌아왔을 때 결과를 알려 주고 주소에서 지운다.
   useEffect(() => {
     const kakao = new URLSearchParams(window.location.search).get('kakao');
@@ -3196,7 +3199,7 @@ const App: React.FC = () => {
         onSelect={setActiveMenu}
         collapsed={sidebarCollapsed}
         onToggleCollapsed={toggleSidebarCollapsed}
-        badges={{ 'coupang-flow': shipDeadline.length, 'product-keywords': unkeyed }}
+        badges={{ 'coupang-flow': shipDeadline.length, 'product-keywords': unkeyed, 'coupang-sent': returnAlerts }}
       />
       <div className="flex-1 min-w-0">
       <OrderGuardBanner onGoOrder={() => setActiveMenu('coupang-order')} />

@@ -629,9 +629,10 @@
     el.dispatchEvent(new Event('change', { bubbles: true }));
   };
 
-  const dateRangeIs = (day) => {
+  // 기간 칸이 from ~ to로 맞춰졌는지(첫 칸 = 시작, 둘째 칸 = 끝).
+  const dateRangeIs = (from, to) => {
     const inputs = dateInputs();
-    return inputs.length >= 2 && inputs.every((el) => el.value === day);
+    return inputs.length >= 2 && inputs[0].value === from && inputs[1].value === to;
   };
 
   // 지금 표에 보이는 줄들. 어느 날짜가 나왔는지 확인하는 데도 쓴다.
@@ -650,13 +651,14 @@
     return items.length ? `${items.length}|${items[0].key}|${items[items.length - 1].key}` : '';
   };
 
-  // 표에 그 날짜 줄만 있는지. 검색이 실제로 반영됐는지 이걸로 본다.
-  const rowsAreDay = (day) => {
+  // 표에 그 기간 줄만 있는지. 검색이 실제로 반영됐는지 이걸로 본다.
+  const inRange = (d, from, to) => d >= from && d <= to;
+  const rowsAreDay = (from, to) => {
     const items = receiveItems();
-    return items.length > 0 && items.every((it) => String(it.date || '').startsWith(day));
+    return items.length > 0 && items.every((it) => inRange(String(it.date || '').slice(0, 10), from, to));
   };
-  const otherDays = (day) => {
-    const set = new Set(receiveItems().map((it) => String(it.date || '').slice(0, 10)).filter((d) => d && d !== day));
+  const otherDays = (from, to) => {
+    const set = new Set(receiveItems().map((it) => String(it.date || '').slice(0, 10)).filter((d) => d && !inRange(d, from, to)));
     return Array.from(set);
   };
 
@@ -720,22 +722,22 @@
     );
   };
 
-  // 기간을 그 날짜로 맞춘다. 어제면 "어제" 버튼을 먼저 눌러 보고, 그래도 안 바뀌면 날짜 칸에 직접 적는다.
-  const setDay = async (day, label) => {
-    if (dateRangeIs(day)) return true;
+  // 기간을 from ~ to로 맞춘다. 하루짜리 어제면 "어제" 버튼을 먼저 눌러 보고, 그래도 안 바뀌면 날짜 칸에 직접 적는다.
+  const setDay = async (from, to, label) => {
+    if (dateRangeIs(from, to)) return true;
     const btn = label ? findByText(label) : null;
     if (btn) {
       clickEl(btn);
-      if (await waitFor(() => dateRangeIs(day), 5000)) return true;
+      if (await waitFor(() => dateRangeIs(from, to), 5000)) return true;
     }
     const inputs = dateInputs();
     if (inputs.length >= 2) {
-      typeDate(inputs[0], day);
-      typeDate(inputs[1], day);
+      typeDate(inputs[0], from);
+      typeDate(inputs[1], to);
       closePopups();
-      if (await waitFor(() => dateRangeIs(day), 3000)) return true;
+      if (await waitFor(() => dateRangeIs(from, to), 3000)) return true;
     }
-    return dateRangeIs(day);
+    return dateRangeIs(from, to);
   };
 
   // 화면이 새로 열리는 중인지. 검색·페이지 버튼이 화면을 새로 열면, 넘어가기 전의 옛 표를 읽고
@@ -750,9 +752,12 @@
   const runReceiveAuto = async (run) => {
     const c = collectors.find((x) => x.id === 'receiveDetail');
     if (!c || !c.match()) return;
-    const day = run.day || '';
+    // 기간: run.from ~ run.day. 예전 요청(from 없음)은 그 하루만.
+    const to = run.day || '';
+    const from = run.from || to;
+    const day = from === to ? to : `${from} ~ ${to}`;
     await startLog('receive', run);
-    logLine(`물류창고입고 수집 시작 · 찾을 날짜 ${day}`);
+    logLine(`물류창고입고 수집 시작 · 찾을 기간 ${day}`);
     // 지난번에 모은 값은 비우고 시작한다(앱은 새 줄만 골라 저장한다).
     if (!run.cleared) {
       await clearBucket(c);
@@ -770,12 +775,12 @@
     let ok = false;
     if (run.searched) {
       receiveStatus(`자동 수집 중 · ${page}페이지 이어서`);
-      ok = await waitFor(() => rowsAreDay(day), 8000);
+      ok = await waitFor(() => rowsAreDay(from, to), 8000);
       logLine(`화면 새로 열림 · 검색은 끝나 있음 · ${page}페이지 · 표 ${receiveItems().length}줄 · ${ok ? '그 날짜 맞음' : '그 날짜 아님'}`);
     }
 
     // 아직 검색 전이거나, 새로 열린 화면에 다른 날 줄이 보이면(날짜가 풀림) 검색한다. 끝없이 돌지 않게 3번까지만.
-    if (!ok && (!run.searched || otherDays(day).length)) {
+    if (!ok && (!run.searched || otherDays(from, to).length)) {
       if ((run.searchTries || 0) >= 3) {
         const now = dateInputs().map((el) => el.value).join(' ~ ');
         return failReceive(run, `${day}로 검색해도 화면이 그 날짜로 바뀌지 않아요(날짜 칸은 ${now}).`);
@@ -784,7 +789,7 @@
       if (!(await waitFor(() => dateInputs().length >= 2, 30000))) {
         return failReceive(run, '기간검색 날짜 칸을 찾지 못했어요. 서허 로그인을 확인해 주세요.');
       }
-      if (!(await setDay(day, run.range))) {
+      if (!(await setDay(from, to, run.range))) {
         const now = dateInputs().map((el) => el.value).join(' ~ ');
         return failReceive(run, `기간을 ${day}로 못 맞췄어요. 지금 화면은 ${now} 입니다.`);
       }
@@ -805,20 +810,20 @@
 
       // 표가 그 날짜 것으로 바뀔 때까지 기다린다. 그날 입고가 없으면 빈 표 그대로다.
       // 한 번에 안 되면 달력을 닫고 날짜를 다시 적은 뒤 진짜 클릭으로 한 번 더 눌러 본다.
-      ok = await waitFor(() => rowsAreDay(day), 12000);
+      ok = await waitFor(() => rowsAreDay(from, to), 12000);
       logLine(`검색 결과 ${ok ? '나옴' : '안 나옴'} · 표 ${receiveItems().length}줄`);
       if (!ok) {
         closePopups();
-        await setDay(day, run.range);
+        await setDay(from, to, run.range);
         receiveStatus(`자동 수집 중 · ${day} 입고 내역 다시 검색하는 중`);
         const again = searchButton() || searchBtn;
         clickEl(again);
         if (await settleAfterClick()) return;
-        ok = await waitFor(() => rowsAreDay(day), 12000);
+        ok = await waitFor(() => rowsAreDay(from, to), 12000);
       }
     }
     if (!ok) {
-      const others = otherDays(day);
+      const others = otherDays(from, to);
       if (others.length) {
         const now = dateInputs().map((el) => el.value).join(' ~ ');
         return failReceive(run, `검색이 ${day}로 바뀌지 않았어요(날짜 칸은 ${now}). 표에 ${others.join(', ')} 줄이 보여요.`);
@@ -837,9 +842,13 @@
     }
 
     // 페이지를 끝까지 넘기며 모은다. 넘기기 전에 페이지 번호를 적어 둬서, 화면이 새로 열려도 그 쪽부터 잇는다.
+    run.rowsByPage = run.rowsByPage || {};
     while (page < 50) {
       await collectNow();
       const sign = receiveSign();
+      // 페이지마다 몇 줄이었는지 남긴다(다음 페이지를 못 찾고 끝났는지 로그로 알아보려고).
+      run.rowsByPage[page] = receiveItems().length;
+      logLine(`${page}페이지 ${run.rowsByPage[page]}줄`);
       const next = pageEl(page + 1);
       if (!next) break;
       page += 1;
@@ -850,15 +859,17 @@
       if (await settleAfterClick()) return;
       await waitFor(() => receiveSign() && receiveSign() !== sign, 15000);
       await sleep(500);
-      if (!rowsAreDay(day)) return failReceive(run, `${page}페이지에 ${day}가 아닌 줄이 보여요. 다시 눌러 주세요.`);
+      if (!rowsAreDay(from, to)) return failReceive(run, `${page}페이지에 ${day}가 아닌 줄이 보여요. 다시 눌러 주세요.`);
     }
     await collectNow();
+    run.rowsByPage[page] = receiveItems().length;
     await queue(() => sleep(200)); // 저장이 다 끝난 뒤 알린다
 
     run.done = true;
     run.pages = page;
     run.finishedAt = Date.now();
-    logLine(`✅ ${page}페이지까지 끝`);
+    const total = Object.values(run.rowsByPage).reduce((n, v) => n + v, 0);
+    logLine(`✅ ${page}페이지까지 끝 · 모두 ${total}줄 · 페이지별 ${JSON.stringify(run.rowsByPage)}`);
     await saveLogNow();
     await runSet(RECEIVE_KEY, run);
     receiveStatus('✅ 자동 수집 완료 · 앱에 반영했어요');

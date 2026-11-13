@@ -292,14 +292,17 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
 
   // 앱의 물류 > 물류창고입고에서 "자동으로 가져오기" → 새 창으로 서허 입고상세내역을 열고 panel.js가
-  // 앱이 고른 날짜(message.day, 없으면 어제)로 검색해 표를 모은다. 열려 있는 서허 탭은 건드리지 않는다.
+  // 앱이 고른 기간(message.from ~ message.day, 없으면 어제 하루)으로 검색해 표를 모은다. 열려 있는 서허 탭은 건드리지 않는다.
   if (message.type === 'RECEIVE_COLLECT') {
     (async () => {
       try {
         const asked = /^\d{4}-\d{2}-\d{2}$/.test(String(message.day || '')) ? message.day : '';
         const day = asked || yesterdayYMD();
-        // 어제면 화면의 "어제" 버튼을 눌러 맞추고, 다른 날이면 날짜 칸에 직접 적는다.
-        const run = { requestedAt: Date.now(), step: 'search', done: false, error: null, createdTabId: null, createdWindowId: null, range: day === yesterdayYMD() ? '어제' : '', day };
+        // 기간 시작(message.from). 쿠팡이 입고 줄을 늦게 올리거나 수집을 건너뛴 날도 채우려고 앱은 최근 7일을 보낸다.
+        const askedFrom = /^\d{4}-\d{2}-\d{2}$/.test(String(message.from || '')) && message.from <= day ? message.from : '';
+        const from = askedFrom || day;
+        // 하루짜리 어제면 화면의 "어제" 버튼을 눌러 맞추고, 아니면 날짜 칸에 직접 적는다.
+        const run = { requestedAt: Date.now(), step: 'search', done: false, error: null, createdTabId: null, createdWindowId: null, range: from === day && day === yesterdayYMD() ? '어제' : '', from, day };
         const win = await openCollectWindow(RECEIVE_URL);
         run.createdTabId = win.tabId;
         run.createdWindowId = win.windowId;

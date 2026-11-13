@@ -8,7 +8,7 @@
 //  확장 -> 앱 : { type: 'HUB_LOG', log }  앱이 파일로 저장해 개발에게 넘길 수 있게
 //  앱 -> 확장 : { type: 'HUB_COLLECT' }  자동 수집 시작(background.js가 광고 화면을 열어 모음)
 //  확장 -> 앱 : { type: 'HUB_COLLECT_ACK', ok, requestedAt, error }
-//  앱 -> 확장 : { type: 'RECEIVE_COLLECT', day }  물류창고입고 자동 수집(서허 입고상세내역을 그 날짜로 검색, 없으면 어제)
+//  앱 -> 확장 : { type: 'RECEIVE_COLLECT', day, from }  물류창고입고 자동 수집(서허 입고상세내역을 from ~ day로 검색, 없으면 어제 하루)
 //  확장 -> 앱 : { type: 'RECEIVE_COLLECT_ACK', ok, requestedAt, error }
 //               { type: 'RECEIVE_AUTO', run, data }  진행/완료/실패. 완료면 data에 모은 값이 같이 옵니다.
 //  앱 -> 확장 : { type: 'PO_COLLECT', lastOrderNo }  발주서 수집(서허 발주서 목록에서 그 번호 위쪽만 받기)
@@ -222,7 +222,7 @@
     }
     if (d.type === 'RECEIVE_COLLECT') {
       try {
-        chrome.runtime.sendMessage({ type: 'RECEIVE_COLLECT', day: d.day || '' }, (res) => {
+        chrome.runtime.sendMessage({ type: 'RECEIVE_COLLECT', day: d.day || '', from: d.from || '' }, (res) => {
           const lastError = chrome.runtime.lastError;
           if (lastError || !res) reply({ type: 'RECEIVE_COLLECT_ACK', ok: false, error: (lastError && lastError.message) || '확장이 응답하지 않았습니다.' });
           else reply({ type: 'RECEIVE_COLLECT_ACK', ...res });

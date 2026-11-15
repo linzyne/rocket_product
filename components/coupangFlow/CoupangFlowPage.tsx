@@ -598,6 +598,9 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
   // (박스가 없어 기록에서 빠진 발주서는 예약 안 한 것으로 보고 다시 예약할 수 있게)
   const reservedOrder = (o: FlowOrder) => !!o.item && (!!o.item.shipmentNos?.[o.no] || (!!o.item.batchId && !!o.batch && o.batch.id === o.item.batchId
     && allBoxes(o.batch).some(b => b.lines.some(l => String(l.발주번호 || '').trim() === o.no))));
+  // 이 발주서가 든 박스의 송장번호들. 출고 건에 쉽먼트 기록 번호가 안 붙어 있어도, 찾은 쉽먼트 기록의 박스에서 읽는다.
+  const waybillsOf = (o: FlowOrder) => (o.batch ? Array.from(new Set(allBoxes(o.batch)
+    .filter(b => b.lines.some(l => String(l.발주번호 || '').trim() === o.no)).map(b => (b.waybill || '').trim()).filter(Boolean))) : []).sort();
 
   // 상자마다 다음에 할 일 버튼.
   const action = (o: FlowOrder) => {
@@ -1376,20 +1379,19 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
   };
 
   // 묶기: 고른 쉽먼트 칸 발주서들의 출고 건을 하나로(= 같은 출고 건 안에서 박스를 나눈다). 센터·날짜가 같아야 하고,
-  // 택배예약·서허 등록을 한 발주서는 송장번호·쉽먼트 번호가 모두 같을 때만 묶는다(쉽먼트·발송대기 어디서든).
+  // 택배예약·서허 등록을 한 발주서는 같은 택배예약·같은 쉽먼트 번호일 때만 묶는다(쉽먼트·발송대기 어디서든).
+  // 송장은 발주서마다 달라도 된다(한 발주서가 박스 여럿을 쓰면 송장도 여럿).
   const bundleShip = () => {
     const pickedBundle = pickedUnbundle;
     const done = pickedBundle.filter(o => reservedOrder(o) || o.stage === 4);
     if (done.length) {
-      // 출고 건에 쉽먼트 기록 번호가 안 붙어 있어도, 찾은 쉽먼트 기록의 박스에서 송장번호를 읽는다.
-      const waybillsOf = (o: FlowOrder) => (o.batch ? Array.from(new Set(allBoxes(o.batch)
-        .filter(b => b.lines.some(l => String(l.발주번호 || '').trim() === o.no)).map(b => (b.waybill || '').trim()).filter(Boolean))) : []).sort().join(',');
       const shipOf = (o: FlowOrder) => o.item?.shipmentNos?.[o.no] || '';
+      const batchOf = (o: FlowOrder) => o.batch?.id || '';
       const same = done.length === pickedBundle.length
-        && new Set(pickedBundle.map(waybillsOf)).size === 1 && !!waybillsOf(pickedBundle[0])
+        && new Set(pickedBundle.map(batchOf)).size === 1 && !!batchOf(pickedBundle[0])
         && new Set(pickedBundle.map(shipOf)).size === 1 && !!shipOf(pickedBundle[0]);
       if (!same) {
-        alert(`이미 택배예약·서허 등록한 발주서는 송장번호·쉽먼트 번호가 모두 같을 때만 묶을 수 있어요.\n\n${pickedBundle.map(o => `${o.no} · 송장 ${waybillsOf(o) || '없음'} · 쉽먼트 ${shipOf(o) || '없음'}`).join('\n')}`);
+        alert(`이미 택배예약·서허 등록한 발주서는 같은 택배예약·같은 쉽먼트 번호일 때만 묶을 수 있어요.\n\n${pickedBundle.map(o => `${o.no} · 송장 ${waybillsOf(o).join(',') || '없음'} · 쉽먼트 ${shipOf(o) || '없음'}`).join('\n')}`);
         return;
       }
     }
@@ -1419,6 +1421,20 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
     });
     const jobs = Array.from(byItem.values()).filter(e => new Set(e.item.lines.map(l => l.발주번호)).size > 1);
     if (!jobs.length) { alert('고른 발주서는 묶여 있지 않아요.'); return; }
+    // 택배예약한 박스(송장)를 다른 발주서와 같이 쓰는 발주서는 풀면 카드마다 그 박스가 생겨 박스가 겹쳐 보인다.
+    const shared: string[] = [];
+    for (const { item, nos } of jobs) {
+      const mates = orders.filter(x => x.item?.id === item.id);
+      for (const no of nos) {
+        const mine = waybillsOf(mates.find(x => x.no === no)!);
+        const with_ = mates.filter(x => x.no !== no && waybillsOf(x).some(w => mine.includes(w))).map(x => x.no);
+        if (with_.length) shared.push(`${no} ↔ ${with_.join(', ')}`);
+      }
+    }
+    if (shared.length) {
+      alert(`택배예약한 박스를 다른 발주서와 같이 쓰고 있어서 풀 수 없어요(풀면 박스가 겹쳐요).\n\n${shared.join('\n')}`);
+      return;
+    }
     if (!window.confirm(`고른 발주서를 묶음에서 풀어 발주서마다 따로 둘까요?`)) return;
     for (const { item, nos } of jobs) {
       const all = Array.from(new Set(item.lines.map(l => l.발주번호)));

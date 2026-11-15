@@ -2195,7 +2195,8 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
                             {sorted.map(o => (
                               <React.Fragment key={`st-${o.no}`}>
                                 <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexWrap: 'wrap', fontSize: 11.5, color: '#888' }}>
-                                  발주 <span title="눌러서 발주번호 복사" style={{ cursor: 'copy', textDecoration: 'underline dotted', textUnderlineOffset: 2 }}>{o.no}</span>
+                                  {/* 발주서가 하나뿐이면 번호는 상자 머리에 이미 있으니 딱지만 */}
+                                  {sorted.length > 1 && <>발주 <span title="눌러서 발주번호 복사" style={{ cursor: 'copy', textDecoration: 'underline dotted', textUnderlineOffset: 2 }}>{o.no}</span></>}
                                   {deadlineBadge(o.no)}
                                   {statusPills(o)}
                                 </div>

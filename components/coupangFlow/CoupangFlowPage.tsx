@@ -17,10 +17,10 @@ import { appendOrderFile } from '../coupangOrder/data/orderWorkStore';
 import { changeLineQty } from '../coupangOrder/data/changeLineQty';
 import { printShipment, setPrinted, openBarcodes } from '../coupangSend/printShipment';
 import ProductQtySummary from '../coupangOrder/components/ProductQtySummary';
-import { useReady } from '../coupangOrder/data/readyStore';
+import { useReady, setReady } from '../coupangOrder/data/readyStore';
 import { subscribeMarks, setMark } from '../coupangOrder/data/poMarkStore';
 import { useLineHanjung } from '../coupangOrder/data/useLineHanjung';
-import { addShipOut, markShipOuts, splitShipOut, updateShipOutLine, mergeShipOuts, restoreOrders, readShipOuts, renameShipOutOrder } from '../coupangOrder/data/shipOutStore';
+import { addShipOut, markShipOuts, splitShipOut, splitShipOutBoxes, updateShipOutLine, mergeShipOuts, restoreOrders, readShipOuts, renameShipOutOrder } from '../coupangOrder/data/shipOutStore';
 import type { ShipOutLine } from '../coupangOrder/data/shipOutStore';
 import { linesAt, isLinesReady, subscribeLines } from '../coupangOrder/data/lineStore';
 import { isShipOutsReady } from '../coupangOrder/data/shipOutStore';
@@ -255,6 +255,8 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
   // ── 발주서 고르기(발주확정·쉽먼트 칸) → 아래쪽 메뉴 ──
   const PICKABLE: Stage[] = [1, 2, 4];
   const [picked, setPicked] = useState<Set<string>>(new Set());
+  // 발송대기 상자에서 고른 택배박스(출고 건 id|박스 번호). 고른 박스만 발송완료로 넘긴다.
+  const [pickedBoxes, setPickedBoxes] = useState<Set<string>>(new Set());
   const togglePick = (no: string) => setPicked(prev => {
     const next = new Set(prev);
     if (next.has(no)) next.delete(no); else next.add(no);
@@ -1562,6 +1564,33 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
     setDateNote({ tone: 'ok', text: `발주 ${pickedWaiting.length + others.length}건을 발송완료(${date.trim()})로 넘겼어요. 발송완료 메뉴에서 볼 수 있어요.` });
   };
 
+  // 고른 택배박스만 발송완료로. 출고 건에서 그 박스에 든 줄만 떼어 내 보낸 날을 붙인다(나머지 박스는 발송대기에 남는다).
+  const sendBoxes = () => {
+    const byItem = new Map<string, number[]>();
+    pickedBoxes.forEach(k => {
+      const i = k.lastIndexOf('|');
+      const id = k.slice(0, i);
+      byItem.set(id, [...(byItem.get(id) || []), Number(k.slice(i + 1))]);
+    });
+    const items = Array.from(byItem.keys()).map(id => orders.find(o => o.item?.id === id)?.item).filter((it): it is ShipOut => !!it);
+    const boxes = new Set(items.flatMap(it => byItem.get(it.id)!.map(n => `${it.center}|${it.date}|${n}`)));
+    const today = new Date().toLocaleDateString('sv-SE');
+    const date = window.prompt(`고른 택배박스 ${boxes.size}개를 발송완료로 넘겨요. 보낸 날을 적어 주세요(YYYY-MM-DD).`, today);
+    if (date == null) return;
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date.trim())) { alert('날짜는 2026-10-09처럼 적어 주세요.'); return; }
+    // 여러 박스에 나눠 담은 상품은 수량이 나뉘어 줄 열쇠가 바뀌므로, 준비됨이던 줄은 나뉜 줄에도 준비됨을 다시 붙인다.
+    const wasReady = new Set(items.flatMap(it => it.lines.filter(l => isBoxSplit(l.쉼먼트 || '') && ready.isReady(l, it.readyKeys))
+      .map(l => `${l.발주번호}│${l.상품이름}`)));
+    const made = new Set(items.map(it => splitShipOutBoxes(it.id, byItem.get(it.id)!, { sentDate: date.trim() })?.id).filter(Boolean));
+    if (wasReady.size) {
+      const again = readShipOuts().filter(it => byItem.has(it.id) || made.has(it.id))
+        .flatMap(it => it.lines.filter(l => wasReady.has(`${l.발주번호}│${l.상품이름}`)));
+      if (again.length) setReady(again as unknown as Parameters<typeof setReady>[0], true);
+    }
+    setPickedBoxes(new Set());
+    setDateNote({ tone: 'ok', text: `택배박스 ${boxes.size}개를 발송완료(${date.trim()})로 넘겼어요. 남은 박스는 발송대기에 있어요.` });
+  };
+
   // 발송대기 → 쉽먼트로 되돌리기(쉽먼트생성 화면의 "완료 풀기"와 같다). 출고 건 단위로 돌아간다.
   const backToShipping = () => {
     const items = new Map<string, ShipOut>();
@@ -1631,13 +1660,24 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6 9 17l-5-5" /></svg>
   );
   const noteColor = dateNote?.tone === 'error' ? '#b91c1c' : dateNote?.tone === 'ok' ? '#047857' : '#1d4ed8';
-  const layer = (picked.size > 0 || dateNote || live) && (
+  const layer = (picked.size > 0 || pickedBoxes.size > 0 || dateNote || live) && (
     <div style={{
       position: 'fixed', left: '50%', bottom: 20, transform: 'translateX(-50%)', zIndex: 50,
       background: 'rgba(255,255,255,0.97)', backdropFilter: 'blur(8px)', color: '#111827',
       border: '1px solid #e5e7eb', borderRadius: 14, boxShadow: '0 12px 32px rgba(15,23,42,0.16), 0 2px 6px rgba(15,23,42,0.06)',
       padding: 8, display: 'flex', flexDirection: 'column', gap: 6, maxWidth: 'calc(100vw - 32px)',
     }}>
+      {pickedBoxes.size > 0 && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          <button onClick={sendBoxes} style={pill('primary')} title="고른 택배박스만 발송완료로 넘겨요(보낸 날을 물어요). 남은 박스는 발송대기에 남아요">
+            📦 고른 박스 발송완료 <span style={{ opacity: 0.8, fontWeight: 500 }}>{new Set(Array.from(pickedBoxes).map((k: string) => k.slice(k.lastIndexOf('|') + 1))).size}박스</span><span style={{ opacity: 0.7 }}>→</span>
+          </button>
+          <button onClick={() => setPickedBoxes(new Set())} title="고른 박스를 모두 해제해요"
+            style={{ ...pill('ghost'), border: 'none', color: '#6b7280', padding: '0 10px' }}>
+            취소
+          </button>
+        </div>
+      )}
       {picked.size > 0 && (
         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
           {/* 날짜 변경·적용·묶기·해제는 쉽먼트 칸 발주서만 골랐을 때 */}
@@ -2225,7 +2265,22 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
                           {lead && actionRow(lead)}
                           {boxNos.map(n => (
                             <div key={n} style={{ borderTop: '1px solid #f3f3f3', paddingTop: 6, marginTop: 14, display: 'flex', flexDirection: 'column', gap: 4 }}>
-                              <div style={{ fontSize: 12, fontWeight: 800, color: '#e67e22' }}>{n ? `박스${n}` : '박스 없음'}</div>
+                              {(() => {
+                                // 발송대기 상자는 택배박스마다 골라서 그 박스만 발송완료로 보낼 수 있다.
+                                const keys = Array.from(new Set(byBox.get(n)!.map(({ o }) => `${o.item?.id}|${n}`)));
+                                const canPick = !!n && byBox.get(n)!.every(({ o }) => o.stage === 4 && !!o.item);
+                                const on = canPick && keys.every(k => pickedBoxes.has(k));
+                                return (
+                                  <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, fontWeight: 800, color: '#e67e22', cursor: canPick ? 'pointer' : 'default' }}>
+                                    {canPick && (
+                                      <input type="checkbox" checked={on} title="이 택배박스만 골라 발송완료로 보내요"
+                                        onChange={() => setPickedBoxes(prev => { const next = new Set(prev); keys.forEach(k => (on ? next.delete(k) : next.add(k))); return next; })}
+                                        style={{ width: 14, height: 14, accentColor: ORANGE, cursor: 'pointer' }} />
+                                    )}
+                                    {n ? `박스${n}` : '박스 없음'}
+                                  </label>
+                                );
+                              })()}
                               <div style={{ fontSize: 13.5 }}>{byBox.get(n)!.map(({ o, lines }) => <React.Fragment key={o.no}>{products(o, lines, n || undefined)}</React.Fragment>)}</div>
                             </div>
                           ))}

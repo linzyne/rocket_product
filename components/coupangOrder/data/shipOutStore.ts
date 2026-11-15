@@ -10,7 +10,7 @@ import { collection, deleteDoc, doc, setDoc } from 'firebase/firestore';
 import { db, ensureSignedIn, onSnapshot } from '../../../utils/firebase';
 import type { OrderRow } from '../types';
 import { dateKeyYMD, ymdSortKey } from '../utils/dateUtils';
-import { isBoxSplit, parseBoxSplit, boxLabel } from '../utils/dataProcessor';
+import { isBoxSplit, parseBoxSplit, boxLabel, parseBoxNo, joinBoxSplit } from '../utils/dataProcessor';
 import { allBoxes } from '../../../data/shipmentStore';
 import type { ShipmentBatch } from '../../../data/shipmentStore';
 import { readWork, writeWork, workLineKey as lineKey, stableStringify } from './orderWorkCloud';
@@ -485,6 +485,49 @@ export function splitShipOut(id: string, orderNos: string[], patch: Partial<Pick
   item.lines = rest;
   item.readyKeys = item.readyKeys?.filter(k => !want.has(k.split('│')[0]));
   item.printedOrders = item.printedOrders?.filter(no => !want.has(no));
+  write([made, ...list]);
+  return made;
+}
+
+// 출고 건에서 고른 박스에 든 줄만 새 출고 건으로 떼어 낸다(택배박스별 발송완료). 떼어 낸 건을 돌려준다.
+// 여러 박스에 나눠 담은 상품은 고른 박스 몫만큼 수량을 나눠 양쪽에 둔다. 고른 박스가 출고 건 전부면 떼지 않고 그 건에 patch만 붙인다.
+export function splitShipOutBoxes(id: string, boxNos: number[], patch: Partial<Pick<ShipOut, 'sentDate'>> = {}): ShipOut | null {
+  const want = new Set(boxNos);
+  const list = read();
+  const item = list.find(s => s.id === id);
+  if (!item) return null;
+  const take: ShipOutLine[] = [];
+  const rest: ShipOutLine[] = [];
+  for (const l of item.lines) {
+    const v = l.쉼먼트 || '';
+    if (!isBoxSplit(v)) { (want.has(parseBoxNo(v) || 0) ? take : rest).push(l); continue; }
+    const pieces = parseBoxSplit(v);
+    const mine = pieces.filter(p => want.has(p.no));
+    const others = pieces.filter(p => !want.has(p.no));
+    if (!mine.length) { rest.push(l); continue; }
+    if (!others.length) { take.push(l); continue; }
+    const sum = (ps: typeof pieces) => ps.reduce((n, p) => n + p.qty, 0);
+    take.push({ ...l, 확정수량: sum(mine), 쉼먼트: joinBoxSplit(mine) });
+    rest.push({ ...l, 확정수량: sum(others), 쉼먼트: joinBoxSplit(others) });
+  }
+  if (!take.length) return null;
+  if (!rest.length) { Object.assign(item, patch); write(list); return item; }
+  const takeNos = new Set(take.map(l => l.발주번호));
+  const restNos = new Set(rest.map(l => l.발주번호));
+  const ships = item.shipmentNos && Object.fromEntries(Object.entries(item.shipmentNos).filter(([no]) => takeNos.has(no)));
+  const made: ShipOut = {
+    ...item,
+    id: nextId(list),
+    bundle: takeNos.size === 1 ? take[0].발주번호 : `발주 ${takeNos.size}건`,
+    createdAt: Date.now(),
+    readyKeys: item.readyKeys?.filter(k => takeNos.has(k.split('│')[0])),
+    printedOrders: item.printedOrders?.filter(no => takeNos.has(no)),
+    shipmentNos: ships && Object.keys(ships).length ? ships : undefined,
+    ...patch,
+    lines: take,
+  };
+  item.lines = rest;
+  if (item.shipmentNos) item.shipmentNos = Object.fromEntries(Object.entries(item.shipmentNos).filter(([no]) => restNos.has(no)));
   write([made, ...list]);
   return made;
 }

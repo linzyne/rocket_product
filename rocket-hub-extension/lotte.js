@@ -795,6 +795,8 @@
       try {
         const rows = pickRows(JSON.parse(d.text));
         if (rows.length) gridRows = rows;
+        // 송장 다시 출력: 조회 결과 뒤에 다른 데이터가 와서 gridRows를 덮어도 우리 송장이 든 목록은 따로 잡아 둔다.
+        if (rpTarget && rows.some((r) => Object.values(r.raw || {}).some((v) => String(v == null ? '' : v).replace(/\D/g, '') === rpTarget))) rpHitRows = rows;
         // 목록 줄(주문번호 S260930-02-1 이 적힌 줄)은 따로 모아 둔다. 화면에는 "다음에 발급할 운송장번호"
         // 칸 같은 다른 데이터도 오는데, 그게 gridRows를 덮어써도 주문번호별 번호는 여기서 정확히 읽는다.
         const at = Date.now();
@@ -831,6 +833,8 @@
     if (d.type === 'PRINT_DIAG_RESULT') printDiag = d;
   });
   let checkResult = null;
+  let rpTarget = '';
+  let rpHitRows = null;
   // 표 객체 후보 목록(확인용). 화면 구조 저장 파일에 같이 담아 어떤 객체가 표를 그리는지 파악한다.
   let lastDiag = null;
   // 이 화면이 서버로 보낸 요청들(출력 요청 모양 파악용).
@@ -1776,6 +1780,7 @@
       <div style="font-weight:700;margin-bottom:4px">🖨 송장 다시 출력</div>
       <div style="color:#64748b;font-size:12px;margin-bottom:6px">${rp.waybill || ''}${rp.edd ? ` · 입고예정 ${rp.edd}` : ''}</div>
       <div style="color:${color};font-size:13px;margin-bottom:8px">${rp.status || '진행 중…'}</div>
+      ${rp.diag && RP_DONE.includes(rp.step) ? `<div style="color:#64748b;font-size:11px;margin-bottom:8px">${rp.diag}</div>` : ''}
       <div style="display:flex;gap:6px">
         <button data-act="dump" style="${btn}" title="자동 진행이 안 될 때 화면 구조를 파일로 저장해 보내주세요">화면 구조 저장</button>
         ${RP_DONE.includes(rp.step) ? `<button data-act="hide" style="${btn};border-color:#bbf7d0;background:#f0fdf4;color:#047857">닫기</button>` : `<button data-act="close" style="${btn};border-color:#fecaca;background:#fff1f2;color:#b91c1c">멈춤</button>`}
@@ -1845,13 +1850,13 @@
     const digitsOf = (v) => String(v == null ? '' : v).replace(/\D/g, '');
     const target = digitsOf(rp.waybill);
     const { from, to } = rpRange(rp.edd);
-    await patchRp({ step: 'search', searchStartedAt: Date.now(), status: `집하일자를 ${from} ~ ${to}로 맞추는 중…` });
+    await patchRp({ step: 'search', searchStartedAt: Date.now(), beatAt: Date.now(), status: `집하일자를 ${from} ~ ${to}로 맞추는 중…` });
     const dateWhy = await setPickupDates(from, to);
     if (dateWhy) {
       await patchRp({ step: 'manual', status: `집하일자를 못 맞췄어요(${dateWhy}). ${from} ~ ${to}로 고르고 검색조건 "운송장번호"에 ${rp.waybill}를 넣어 조회·출력해 주세요.` });
       return;
     }
-    await patchRp({ status: '검색조건을 운송장번호로 바꾸는 중…' });
+    await patchRp({ status: '검색조건을 운송장번호로 바꾸는 중…', beatAt: Date.now() });
     if (!(await pickCombo(TEXT.condLabel, /^운송장\s*번호$/))) {
       await patchRp({ step: 'manual', status: `검색조건을 "운송장번호"로 바꾸지 못했어요(${condWhy}). 직접 바꿔 ${rp.waybill}로 조회·출력해 주세요.` });
       return;
@@ -1862,20 +1867,24 @@
       return;
     }
     setVal(box, target);
-    const hasOurs = () => gridRows.some((r) => Object.values(r.raw || {}).some((v) => digitsOf(v) === target));
+    const hasOurs = () => !!rpHitRows;
     const total = () => {
       const el = document.getElementById('spTotCnt');
       const n = el ? Number(String(el.textContent || '').replace(/[^0-9]/g, '')) : NaN;
       return Number.isFinite(n) ? n : -1;
     };
     gridRows = [];
-    await patchRp({ status: `${rp.waybill} 조회 중…` });
+    rpHitRows = null;
+    rpTarget = target;
+    await patchRp({ status: `${rp.waybill} 조회 중…`, beatAt: Date.now() });
     const searchedAt = Date.now();
     for (let round = 0; round < 4 && !hasOurs(); round++) {
       const search = find(TEXT.search);
       if (search) realClick(search);
       for (let t = 0; t < 20 && !hasOurs(); t++) {
         await sleep(500);
+        // 멈춘 것처럼 안 보이게 지난 시간을 보여 주고, 이 화면이 살아 있다는 표시(beatAt)도 남긴다.
+        if (t % 4 === 3) await patchRp({ status: `${rp.waybill} 조회 중… ${Math.round((Date.now() - searchedAt) / 1000)}초 (${round + 1}/4)`, beatAt: Date.now() });
         if (closeNotice(/거래처\s*코드/)) {
           await patchRp({ status: `거래처코드가 아직 안 들어와서 기다렸다 다시 조회해요… (${round + 1})` });
           await sleep(2500);
@@ -1892,14 +1901,19 @@
         }
       }
     }
+    rpTarget = '';
     if (!hasOurs()) {
-      await patchRp({ step: 'manual', status: `${from} ~ ${to} 사이에서 ${rp.waybill}를 찾지 못했어요. 집하일자를 넓혀 직접 조회해 주세요.` });
+      await patchRp({
+        step: 'manual',
+        status: `${from} ~ ${to} 사이에서 ${rp.waybill}를 찾지 못했어요. 집하일자를 넓혀 직접 조회해 주세요.`,
+        diag: `화면 ${total()}건 · 받은 줄 ${gridRows.length} · 앞 번호 ${gridRows.slice(0, 5).map((r) => r.waybill || '?').join(', ')}`,
+      });
       return;
     }
     // 첫 줄을 눌러 체크하므로 목록에 이 송장 한 줄만 있어야 한다(남의 송장을 출력하지 않게).
     const n = total();
-    if (n !== 1 && !(n === -1 && gridRows.length === 1)) {
-      await patchRp({ step: 'manual', status: `${rp.waybill}로 조회했는데 ${n >= 0 ? n : gridRows.length}건이 보여서 체크·출력하지 않았어요. 직접 체크하고 출력해 주세요.` });
+    if (n !== 1 && !(n === -1 && rpHitRows.length === 1)) {
+      await patchRp({ step: 'manual', status: `${rp.waybill}로 조회했는데 ${n >= 0 ? n : rpHitRows.length}건이 보여서 체크·출력하지 않았어요. 직접 체크하고 출력해 주세요.` });
       return;
     }
     for (let t = 0; t < RP_TRIES.length; t++) {
@@ -1977,8 +1991,20 @@
         return;
       }
       if (rp.step === 'search') {
-        // 조회하던 화면이 새로 떠서 끊겼으면 사람에게 넘긴다.
-        if (!canvasBusy && Date.now() - (rp.searchStartedAt || 0) > 120000) {
+        if (canvasBusy) return;
+        // 조회하던 화면이 새로 떠서 끊겼으면(살아 있다는 표시가 8초 넘게 없음) 이 화면에서 다시 조회한다. 두 번까지.
+        const stale = Date.now() - (rp.beatAt || rp.searchStartedAt || 0) > 8000;
+        if (stale && (rp.searchRuns || 0) < 2 && find(TEXT.condLabel) && isWaybillScreen()) {
+          canvasBusy = true;
+          try {
+            await patchRp({ searchRuns: (rp.searchRuns || 0) + 1, status: '조회 화면이 새로 떠서 다시 조회해요…' });
+            await runReprintSearch(rp);
+          } finally {
+            canvasBusy = false;
+          }
+          return;
+        }
+        if (Date.now() - (rp.beatAt || rp.searchStartedAt || 0) > 60000) {
           await patchRp({ step: 'manual', status: `조회가 멈췄어요. 직접 ${rp.waybill}로 조회·출력해 주세요.` });
         }
         return;

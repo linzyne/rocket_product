@@ -37,7 +37,7 @@ function findAddressEntry(
 }
 
 // 롯데택배 업로드 엑셀을 내려받고, 같은 파일을 돌려준다(확장이 택배사 사이트에 올릴 때 씀). 만들 게 없으면 null.
-// batchId를 주면 주문번호를 "S260923-01-1"처럼 붙여, 나중에 롯데 목록에서 이번에 올린 건만 골라낼 수 있다.
+// batchId를 주면 주문번호를 "S260923-01-001"처럼 붙여, 나중에 롯데 목록에서 이번에 올린 건만 골라낼 수 있다.
 export function exportLotteExcel(
   displayRows: DisplayRow[],
   addresses: AddressEntry[],
@@ -56,7 +56,8 @@ export function exportLotteExcel(
     const fullAddr = info.addr2 ? `${info.addr1} ${info.addr2}` : info.addr1;
     for (let i = 0; i < boxes; i++) {
       toWrite.push({
-        주문번호: batchId ? `${batchId}-${nextNo++}` : nextNo++,
+        // 롯데 주문번호 검색은 앞부분 일치라 -1로 찾으면 -10~-19도 나온다. 3자리(-001)로 맞춰 겹치지 않게 한다.
+        주문번호: batchId ? `${batchId}-${String(nextNo++).padStart(3, '0')}` : nextNo++,
         받는사람: center,
         전화번호1: info.phone,
         우편번호: info.zip,

@@ -85,7 +85,7 @@ export const withOrdNos = (batch: ShipmentBatch): ShipmentBatch => {
       ...c,
       boxes: c.boxes.map(b => {
         no += 1;
-        return b.ordNo ? b : { ...b, ordNo: `${batch.id}-${no}` };
+        return b.ordNo ? b : { ...b, ordNo: `${batch.id}-${String(no).padStart(3, '0')}` };
       }),
     })),
   };

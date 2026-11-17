@@ -1114,9 +1114,14 @@ const HanjungOrderPage: React.FC = () => {
                   return (
                     <div className="self-stretch flex items-center whitespace-nowrap">
                       {bar}
-                      {/* 사진: 한 줄에 6개, 넘치면 두 줄 */}
-                      <div className="w-[13.5rem] flex-shrink-0 flex flex-wrap items-center gap-1">
-                        {products.map(p => <ProductThumb key={p.상품이름} url={imageOf(p.상품이름)} size={32} title={`${p.상품이름} · 주문 ${p.ordered}개`} />)}
+                      {/* 사진: 한 줄에 4개, 두 줄까지(8개). 더 있으면 옆에 화살표로 남은 개수 */}
+                      <div className="w-[11rem] flex-shrink-0 flex items-center gap-1.5">
+                        <div className="grid grid-cols-4 gap-1">
+                          {products.slice(0, 8).map(p => <ProductThumb key={p.상품이름} url={imageOf(p.상품이름)} size={32} title={`${p.상품이름} · 주문 ${p.ordered}개`} />)}
+                        </div>
+                        {products.length > 8 && (
+                          <span className="text-xs text-gray-400 whitespace-nowrap" title={products.slice(8).map(p => p.상품이름).join('\n')}>+{products.length - 8} ›</span>
+                        )}
                       </div>
                       {bar}
                       <div className="flex items-end">

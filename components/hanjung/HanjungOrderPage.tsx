@@ -1108,17 +1108,17 @@ const HanjungOrderPage: React.FC = () => {
                     남은 것 정리
                   </button>
                 )}
-                {/* 총수익 = 총판매가 − 총매입가(산 것 전부, 통장 기준). 현재 = 총판매가 − 팔린 수량의 매입가(총매입가 − 재고 매입가). */}
+                {/* 회수 차액 = 총판매가 − 총매입가(산 것 전부, 통장 기준). 판매 마진 = 총판매가 − 팔린 수량의 매입가(총매입가 − 재고 매입가). */}
                 {(() => {
                   const sale = rev.total;
                   const now = sale - (buy - cost.spareCost);
                   const tone = (n: number) => (n >= 0 ? 'text-emerald-600' : 'text-red-500');
                   return (
                     <span className="ml-auto text-sm text-right whitespace-nowrap"
-                      title={`총수익 = 총판매가 ${won(sale)} − 총매입가 ${won(buy)} (쓴 돈 − 받은 돈, 통장 기준)\n현재 = 총판매가 ${won(sale)} − 팔린 것의 매입가 ${won(buy - cost.spareCost)} (팔린 것만 본 이익)\n매입가에는 통관비·작업비 등 부대비용이 녹아 있어요. 총판매가는 부가세 포함${rev.missing ? `\n금액 모르는 ${rev.missing}개 빠짐` : ''}`}>
+                      title={`회수 차액 = 총판매가 ${won(sale)} − 총매입가 ${won(buy)} (받은 돈 − 쓴 돈 전부, 재고 포함)\n판매 마진 = 총판매가 ${won(sale)} − 판매한 것의 매입가 ${won(buy - cost.spareCost)} (판 물건만 본 이익)\n매입가에는 통관비·작업비 등 부대비용이 녹아 있어요. 총판매가는 부가세 포함${rev.missing ? `\n금액 모르는 ${rev.missing}개 빠짐` : ''}`}>
                       {sale && buy
-                        ? <>총수익 <b className={tone(profit)}>{won(profit)}</b> <span className="text-gray-300">/</span> 현재 <b className={tone(now)}>{won(now)}</b></>
-                        : <span className="text-gray-400">총수익 -</span>}
+                        ? <>회수 차액 <b className={tone(profit)}>{won(profit)}</b> <span className="text-gray-300">/</span> 판매 마진 <b className={tone(now)}>{won(now)}</b></>
+                        : <span className="text-gray-400">회수 차액 -</span>}
                     </span>
                   );
                 })()}

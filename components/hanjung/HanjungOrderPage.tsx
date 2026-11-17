@@ -731,6 +731,7 @@ const HanjungOrderPage: React.FC = () => {
     let total = 0;
     let spareQty = 0;
     let spareCost = 0;
+    const spareItems: { name: string; qty: number; cost: number }[] = [];
     ps.forEach((p, i) => {
       const units = Math.max(p.ordered, p.received);
       if (!units) return;
@@ -739,8 +740,9 @@ const HanjungOrderPage: React.FC = () => {
       const left = Math.max(0, units - p.allocated);
       spareQty += left;
       spareCost += withFee * (left / units);
+      if (left > 0) spareItems.push({ name: p.상품이름, qty: left, cost: Math.round(withFee * (left / units)) });
     });
-    return { total: Math.round(total), spareQty, spareCost: Math.round(spareCost) };
+    return { total: Math.round(total), spareQty, spareCost: Math.round(spareCost), spareItems };
   };
   const handleCloseShort = async (o: HanjungOrder) => {
     const { order: closed, releases } = closeShortOrder(o);
@@ -1132,10 +1134,29 @@ const HanjungOrderPage: React.FC = () => {
                         <tr className="border-t border-gray-100">
                           <td className="text-gray-500 font-sans pr-2">재고</td>
                           <td className="text-right pl-8" title="아직 어느 쿠팡 발주서에도 배정 안 된 수량">{cost.spareQty.toLocaleString()}개</td>
-                          <td className={`text-right pl-8 font-bold ${profit >= 0 ? 'text-emerald-600' : 'text-red-500'}`} title="받은 돈(판매) − 쓴 돈(매입). 재고가 팔리면 줄어들어요">{won(profit)}{cost.spareQty > 0 && <span className="ml-1.5 text-xs font-normal text-gray-400" title="남은 재고를 살 때 든 돈(매입가 + 부대비용 몫). 이 아래로 팔면 손해">(재고 매입가 {won(cost.spareCost)})</span>}</td>
+                          <td className={`text-right pl-8 font-bold ${profit >= 0 ? 'text-emerald-600' : 'text-red-500'}`} title="받은 돈(판매) − 쓴 돈(매입). 재고가 팔리면 줄어들어요">{won(profit)}</td>
                         </tr>
                       </tbody>
                     </table>
+                  )}
+                  {/* 표 밖: 아직 안 팔린 재고의 매입가(상품별)와 공식. 표 넓이에 영향 주지 않게 따로. */}
+                  {cost.spareItems.length > 0 && (
+                    <div className="text-xs text-gray-500 space-y-1">
+                      <div>재고 매입가 <b className="font-mono text-gray-800">{won(cost.spareCost)}</b> <span className="text-gray-400">· 이 아래로 팔면 손해</span></div>
+                      <table>
+                        <tbody className="font-mono">
+                          {cost.spareItems.map(it => (
+                            <tr key={it.name}>
+                              <td className="font-sans text-gray-600 pr-4 truncate max-w-[20rem]" title={it.name}>{it.name.replace(/^주노엘\s*/, '')}</td>
+                              <td className="text-right pr-4">{it.qty.toLocaleString()}개</td>
+                              <td className="text-right pr-4 text-gray-400">개당 {won(it.cost / it.qty)}</td>
+                              <td className="text-right text-gray-700">{won(it.cost)}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                      <div className="text-[11px] text-gray-400">공식: 상품마다 (그 상품 매입가 + 부대비용 몫) × 남은 수량 ÷ 산 수량 · 부대비용 몫 = 부대비용 합계 × 그 상품 매입가 ÷ 전체 상품 매입가</div>
+                    </div>
                   )}
                   {/* 위에서부터 일의 순서대로: 사무실 도착 → 쿠팡 발주서 → 물류창고입고, 그 아래 상품 표. */}
                   {/* 주문한 개수 중 도착한 개수 */}

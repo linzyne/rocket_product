@@ -1081,18 +1081,13 @@ const HanjungOrderPage: React.FC = () => {
                   {products.slice(0, 5).map(p => <ProductThumb key={p.상품이름} url={imageOf(p.상품이름)} size={30} title={`${p.상품이름} · 주문 ${p.ordered}개`} />)}
                   {products.length > 5 && <span className="text-xs text-gray-400">+{products.length - 5}</span>}
                 </span>
-                {/* 매입 수량 − 매출 수량 = 남은 수량 (배정 · 발송완료 · 재고) */}
+                {/* 매입 수량 − 매출 수량 = 남은 수량 */}
                 {(() => {
                   const buyQty = products.reduce((n, p) => n + Math.max(p.ordered, p.received), 0);
-                  const alloc = products.reduce((n, p) => n + p.allocated, 0);
-                  const sentQty = o.lines
-                    .filter(l => lineAlloc(l) > 0 && sentNos.has(String(l.발주번호 || '').trim()))
-                    .reduce((n, l) => n + Math.max(0, lineAlloc(l) - (l.회송 || 0)), 0);
-                  const stock = products.reduce((n, p) => n + Math.max(0, p.received - p.allocated), 0);
                   const f = (n: number) => n.toLocaleString();
                   // 글씨는 위, 숫자는 아래(오른쪽 차액 식과 같은 모양)
-                  const cell = (label: string, n: number, cls = 'text-gray-900') => (
-                    <span className="flex flex-col items-end"><span className="text-xs text-gray-500">{label}</span><b className={`font-mono text-sm ${cls}`}>{f(n)}</b></span>
+                  const cell = (label: string, n: number) => (
+                    <span className="flex flex-col items-end"><span className="text-xs text-gray-500">{label}</span><b className="font-mono text-sm text-gray-900">{f(n)}</b></span>
                   );
                   const op = (t: string) => <span className="text-gray-400 text-sm">{t}</span>;
                   return (
@@ -1102,11 +1097,6 @@ const HanjungOrderPage: React.FC = () => {
                       {cell('매출', rev.sold)}
                       {op('=')}
                       {cell('남은', buyQty - rev.sold)}
-                      <span className="inline-flex items-end gap-2.5 ml-1 px-2.5 py-0.5 rounded-lg bg-gray-50">
-                        {cell('배정', alloc, 'text-gray-700')}
-                        {cell('발송완료', sentQty, 'text-emerald-600')}
-                        {cell('재고', stock, 'text-gray-700')}
-                      </span>
                     </span>
                   );
                 })()}

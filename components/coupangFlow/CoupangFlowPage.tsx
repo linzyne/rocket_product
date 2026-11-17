@@ -17,7 +17,7 @@ import { appendOrderFile } from '../coupangOrder/data/orderWorkStore';
 import { changeLineQty } from '../coupangOrder/data/changeLineQty';
 import { printShipment, setPrinted, openBarcodes } from '../coupangSend/printShipment';
 import ProductQtySummary from '../coupangOrder/components/ProductQtySummary';
-import { useReady, setReady } from '../coupangOrder/data/readyStore';
+import { useReady } from '../coupangOrder/data/readyStore';
 import { subscribeMarks, setMark } from '../coupangOrder/data/poMarkStore';
 import { useLineHanjung } from '../coupangOrder/data/useLineHanjung';
 import { addShipOut, markShipOuts, splitShipOut, splitShipOutBoxes, updateShipOutLine, mergeShipOuts, restoreOrders, readShipOuts, renameShipOutOrder } from '../coupangOrder/data/shipOutStore';
@@ -95,6 +95,8 @@ interface FlowLine {
   stage: Stage;
   where: string;
   ship?: ShipOutLine; // 쉽먼트 이후 단계 줄의 원래 출고 줄(박스 고르기에 쓴다)
+  // 준비됨·한중 배정을 찾는 수량. 택배박스별 발송완료로 한 상품이 여러 출고 건에 나뉘었으면 나누기 전 수량(그 표시들이 그 수량으로 적혀 있다).
+  keyQty?: number | '';
 }
 
 interface FlowOrder {
@@ -472,6 +474,15 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
         { 상품이름: r.상품이름, 확정수량: r.확정수량, stage: 1, where: hold },
         { hold });
     }
+    const split = new Map<string, number[]>();
+    for (const item of shipOuts) for (const l of item.lines) {
+      const k = `${String(l.발주번호 || '').trim()}│${l.상품이름}`;
+      split.set(k, [...(split.get(k) || []), Number(l.확정수량) || 0]);
+    }
+    const keyQtyOf = (no: string, l: ShipOutLine) => {
+      const qs = split.get(`${no}│${l.상품이름}`) || [];
+      return qs.length > 1 ? qs.reduce((a, b) => a + b, 0) : l.확정수량;
+    };
     for (const item of shipOuts) {
       const st = shipOutStage(item, batches);
       if (st === 'sent' && daysAgo(item.sentDate || '') > SENT_DAYS) continue;
@@ -481,7 +492,7 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
         // 쉽먼트 끝 + 출력완료면 발송대기. 사람이 "발송대기로"를 눌렀으면(doneAt) 출력 전이어도 발송대기.
         const stage: Stage = st === 'sent' ? 5 : st === 'waiting' && ((item.printedOrders || []).includes(no) || !!item.doneAt) ? 4 : 2;
         add(no, item.center, item.date,
-          { 상품이름: l.상품이름, 확정수량: l.확정수량, stage, where: `${item.bundle} (${item.id})`, ship: l },
+          { 상품이름: l.상품이름, 확정수량: l.확정수량, keyQty: keyQtyOf(no, l), stage, where: `${item.bundle} (${item.id})`, ship: l },
           { item, batch });
       }
     }
@@ -506,7 +517,7 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
   // 상자마다 담을 발주서. 발송완료는 최근 보낸 것이 위로.
   // 상품 줄이 준비됐는지(카드에서 줄 긋는 것과 같은 기준): 준비 체크했거나, 맡긴 한중발주에 그 상품이 다 도착.
   const lineIsReady = (o: FlowOrder, l: FlowLine) => {
-    const key = { 발주번호: o.no, 상품이름: l.상품이름, 확정수량: l.확정수량 };
+    const key = { 발주번호: o.no, 상품이름: l.상품이름, 확정수량: l.keyQty ?? l.확정수량 };
     if (ready.isReady(key, o.item?.readyKeys)) return true;
     const places = placesOf(key);
     // 맡긴 수량이 줄 수량에 못 미치면(일부만 배정) 준비된 게 아니다.
@@ -522,7 +533,7 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
     let coming = 0;
     let unassigned = 0;
     for (const l of o.lines) {
-      const key = { 발주번호: o.no, 상품이름: l.상품이름, 확정수량: l.확정수량 };
+      const key = { 발주번호: o.no, 상품이름: l.상품이름, 확정수량: l.keyQty ?? l.확정수량 };
       const places = placesOf(key);
       for (const p of places) {
         if (!p.code) continue;
@@ -869,7 +880,7 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
                 })()}
                 {(() => {
                   // 준비 상태: 준비됨(체크 또는 한중으로 다 도착) → 흐린 글씨, 한중발주로 오는 중 → 흐린 글씨 + 동그라미 안에 한중발주 번호.
-                  const key = { 발주번호: o.no, 상품이름: l.상품이름, 확정수량: l.확정수량 };
+                  const key = { 발주번호: o.no, 상품이름: l.상품이름, 확정수량: l.keyQty ?? l.확정수량 };
                   const places = placesOf(key);
                   const coming = places.filter(p => {
                     if (!p.code) return false;
@@ -910,7 +921,7 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
                     </span>
                   );
                   if (o.stage === 0) return nameEl;
-                  const hl = { 발주번호: o.no, 물류센터: o.center, 상품이름: l.상품이름, 확정수량: l.확정수량, 입고예정일: o.date, 메모: '', 쉼먼트: '' };
+                  const hl = { 발주번호: o.no, 물류센터: o.center, 상품이름: l.상품이름, 확정수량: l.keyQty ?? l.확정수량, 입고예정일: o.date, 메모: '', 쉼먼트: '' };
                   return (
                     <LineCheckMenu
                       ready={ready.isReady(key, o.item?.readyKeys)}
@@ -938,7 +949,7 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
                 ) : (
                   (() => {
                     // 오른쪽: 주문수량 · ✈한중발주로 오는 중 · 장바구니 · 미배정 · [사무실 도착 ✈오는 중] 버튼 모양.
-                    const key = { 발주번호: o.no, 상품이름: l.상품이름, 확정수량: l.확정수량 };
+                    const key = { 발주번호: o.no, 상품이름: l.상품이름, 확정수량: l.keyQty ?? l.확정수량 };
                     const places = placesOf(key);
                     const assigned = places.filter(p => p.code).reduce((n, p) => n + p.qty, 0);
                     const queued = places.filter(p => !p.code).reduce((n, p) => n + p.qty, 0);
@@ -1578,15 +1589,8 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
     const date = window.prompt(`고른 택배박스 ${boxes.size}개를 발송완료로 넘겨요. 보낸 날을 적어 주세요(YYYY-MM-DD).`, today);
     if (date == null) return;
     if (!/^\d{4}-\d{2}-\d{2}$/.test(date.trim())) { alert('날짜는 2026-10-09처럼 적어 주세요.'); return; }
-    // 여러 박스에 나눠 담은 상품은 수량이 나뉘어 줄 열쇠가 바뀌므로, 준비됨이던 줄은 나뉜 줄에도 준비됨을 다시 붙인다.
-    const wasReady = new Set(items.flatMap(it => it.lines.filter(l => isBoxSplit(l.쉼먼트 || '') && ready.isReady(l, it.readyKeys))
-      .map(l => `${l.발주번호}│${l.상품이름}`)));
-    const made = new Set(items.map(it => splitShipOutBoxes(it.id, byItem.get(it.id)!, { sentDate: date.trim() })?.id).filter(Boolean));
-    if (wasReady.size) {
-      const again = readShipOuts().filter(it => byItem.has(it.id) || made.has(it.id))
-        .flatMap(it => it.lines.filter(l => wasReady.has(`${l.발주번호}│${l.상품이름}`)));
-      if (again.length) setReady(again as unknown as Parameters<typeof setReady>[0], true);
-    }
+    // 여러 박스에 나눠 담은 상품은 줄이 나뉘어도 준비됨·한중 배정은 나누기 전 수량으로 찾는다(keyQty).
+    items.forEach(it => splitShipOutBoxes(it.id, byItem.get(it.id)!, { sentDate: date.trim() }));
     setPickedBoxes(new Set());
     setDateNote({ tone: 'ok', text: `택배박스 ${boxes.size}개를 발송완료(${date.trim()})로 넘겼어요. 남은 박스는 발송대기에 있어요.` });
   };

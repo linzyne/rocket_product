@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
-  HanjungOrder, HanjungLine, subscribeHanjung, deleteHanjungOrder, saveHanjungOrder, productSummary, orderTotals, productOrderQty, productUnitCost, lineAlloc, sameName, nameKey, ordersNeedingAliasRename, FEE_KEYS, remainingFee,
+  HanjungOrder, HanjungLine, subscribeHanjung, deleteHanjungOrder, saveHanjungOrder, productSummary, orderTotals, productOrderQty, productUnitCost, lineAlloc, sameName, nameKey, ordersNeedingAliasRename, FEE_KEYS, remainingFee, receiptGoodsCost,
 } from '../../data/hanjungStore';
 import { ReceiveRow, subscribeReceives, settlementOf } from '../../data/receiveStore';
 import { nextHanjungCode, closeShortOrder, planShortFill, planFill, FillPlan, FillLine } from '../../data/hanjungStore';
@@ -575,7 +575,7 @@ const HanjungOrderPage: React.FC = () => {
       <span className="text-gray-500 w-3 text-sm">{foldOpen(k) ? '▾' : '▸'}</span>
       <span className="w-28 flex-shrink-0 text-base font-bold text-gray-900">{title}</span>
       {stats.map(st => (
-        <span key={st.label} className="w-32 flex-shrink-0 leading-tight">
+        <span key={st.label} className="w-28 flex-shrink-0 leading-tight">
           <span className="block text-[11px] text-gray-400">{st.label}</span>
           <b className={`font-mono text-sm ${st.tone ? STAT_TONE[st.tone] : 'text-gray-800'}`}>{st.value}</b>
         </span>
@@ -1123,8 +1123,11 @@ const HanjungOrderPage: React.FC = () => {
               </div>
 
               {isOpen && (
-                <div className="border-t-2 border-sky-50 px-5 py-4 space-y-2 bg-gradient-to-b from-sky-50/30 to-white">
+                <div className="border-t-2 border-sky-50 px-5 py-4 space-y-3 bg-gradient-to-b from-sky-50/30 to-white">
                   {receiving === o.code && <ReceiptForm order={o} onDone={() => setReceiving(null)} />}
+                  {/* 섹션 셋: 돈(쓴 돈·받은 돈·차액) → 진행(사무실 도착·쿠팡 발주서) → 상품별. */}
+                  <section className="bg-white border border-gray-200 rounded-2xl px-4 py-3">
+                    <h3 className="text-sm font-bold text-sky-700 mb-2">돈</h3>
                   {/* 쓴 돈 · 받은 돈 · 차액. 수량은 수량끼리, 금액은 금액끼리 위아래로. */}
                   {(t.received > 0 || rev.sold > 0) && (
                     <table className="text-sm">
@@ -1147,12 +1150,23 @@ const HanjungOrderPage: React.FC = () => {
                       </tbody>
                     </table>
                   )}
+                  </section>
+                  <section className="bg-white border border-gray-200 rounded-2xl px-4 py-3">
+                    <h3 className="text-sm font-bold text-sky-700 mb-2">진행</h3>
                   {/* 위에서부터 일의 순서대로: 사무실 도착 → 쿠팡 발주서 → 물류창고입고, 그 아래 상품 표. */}
                   {/* 주문한 개수 중 도착한 개수 */}
                   {o.receipts.length > 0 && foldHead(`${o.code}|receipts`, '사무실 도착', [
                     { label: '주문', value: `${t.ordered.toLocaleString()}개` },
                     { label: '도착', value: `${t.received.toLocaleString()}개`, tone: t.received >= t.ordered ? 'green' : 'amber' },
-                    { label: '총매입가', value: won(t.totalCost) },
+                    ...(() => {
+                      // 총매입가 = 제품비(도착 기록 상품 금액) + 부대비용(통관비·작업비 등)
+                      const goods = o.receipts.reduce((n, r) => n + receiptGoodsCost(r), 0);
+                      return [
+                        { label: '제품비', value: won(goods) },
+                        { label: '부대비용', value: won(t.totalCost - goods) },
+                        { label: '총매입가', value: won(t.totalCost) },
+                      ];
+                    })(),
                   ])}
                   {foldOpen(`${o.code}|receipts`) && <div className="pl-7"><ReceiptHistory order={o} /></div>}
 
@@ -1259,6 +1273,9 @@ const HanjungOrderPage: React.FC = () => {
                     )}
                   </div>
 
+                  </section>
+                  <section className="bg-white border border-gray-200 rounded-2xl px-4 py-3">
+                    <h3 className="text-sm font-bold text-sky-700 mb-2">상품별</h3>
                   <div className="overflow-x-auto">
                   {/* 상품마다 일의 단계대로 세 칸: 주문(쿠팡 몫·여유) → 사무실 도착 → 쿠팡 입고(정산). 숫자는 "한 것 / 할 것"과 막대로. */}
                   <table className="text-[15px]">
@@ -1313,6 +1330,7 @@ const HanjungOrderPage: React.FC = () => {
                   </table>
                   </div>
 
+                  </section>
                   {/* 수정 중에는 숨긴다(품목 빼기 ✕와 헷갈려 한중발주 전체를 지우는 일이 없게). */}
                   {edit?.code !== o.code && (
                     <div className="flex gap-2 justify-end">

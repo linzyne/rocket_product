@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import {
   HanjungOrder, HanjungLine, subscribeHanjung, deleteHanjungOrder, saveHanjungOrder, productSummary, orderTotals, productOrderQty, productUnitCost, lineAlloc, sameName, nameKey, ordersNeedingAliasRename, FEE_KEYS, remainingFee,
 } from '../../data/hanjungStore';
-import { ReceiveRow, subscribeReceives, settlementOf, sign } from '../../data/receiveStore';
+import { ReceiveRow, subscribeReceives, settlementOf } from '../../data/receiveStore';
 import { nextHanjungCode, closeShortOrder, planShortFill, planFill, FillPlan, FillLine } from '../../data/hanjungStore';
 import { useReady } from '../coupangOrder/data/readyStore';
 import { isLinesReady, startLines } from '../coupangOrder/data/lineStore';
@@ -1168,7 +1168,7 @@ const HanjungOrderPage: React.FC = () => {
                   {foldOpen(`${o.code}|receipts`) && <div className="pl-7"><ReceiptHistory order={o} /></div>}
 
                   <div className="border-t border-gray-100 pt-1 space-y-0.5">
-                    {edit?.code !== o.code && foldHead(`${o.code}|lines`, `쿠팡 발주서 · ${won(linesTotal(o.lines))}`, `${Array.from(new Set(o.lines.map(l => l.물류센터))).slice(0, 4).join(' · ')}${o.lines.some(l => lineAlloc(l) > 0 && lineAmount(l) === undefined) ? ' · 발주금액 모르는 줄 있음' : ''}`)}
+                    {edit?.code !== o.code && foldHead(`${o.code}|lines`, `쿠팡 발주금액 ${won(linesTotal(o.lines))} / 입고완료 ${won(settle.total)}`, o.lines.some(l => lineAlloc(l) > 0 && lineAmount(l) === undefined) ? '발주금액 모르는 줄 있음' : '')}
                     {edit?.code === o.code ? (
                       <div className="border border-blue-200 bg-blue-50/40 rounded-lg p-2 space-y-1">
                         {/* 번호는 머리줄의 번호(✎)를 눌러 바꾼다. */}
@@ -1257,84 +1257,6 @@ const HanjungOrderPage: React.FC = () => {
                         </table>
                       </div>
                     )}
-                  </div>
-
-                  {settle.rows.length > 0 && foldHead(`${o.code}|settle`, `물류창고입고 · 정산 ${won(settle.total)}`, '이 건이 맡은 수량만큼')}
-                  {settle.rows.length > 0 && foldOpen(`${o.code}|settle`) && (
-                    <div className="pl-7 overflow-x-auto">
-                      {/* 쿠팡 입고(정산) 줄: 입고일 · 발주번호 · 상품 · 수량 · 정산 금액 · 지급일 */}
-                      <table className="w-full text-xs">
-                        <thead className="text-gray-400">
-                          <tr><th className="text-left font-medium py-1 w-24">입고일</th><th className="text-left font-medium w-24">발주번호</th><th className="text-left font-medium">상품</th><th className="text-right font-medium w-14">수량</th><th className="text-right font-medium w-24">정산</th><th className="text-right font-medium w-24">지급일</th></tr>
-                        </thead>
-                        <tbody>
-                          {settle.rows.map(r => (
-                            <tr key={r.key} className="border-t border-gray-50">
-                              <td className="py-1 font-mono text-gray-500">{r.date.slice(0, 10)}</td>
-                              <td className="font-mono text-gray-500">{r.발주번호}</td>
-                              <td className="text-gray-700 truncate max-w-[22rem]" title={r.skuName}>{r.skuName}</td>
-                              <td className="text-right font-mono">{sign(r) * r.qty}</td>
-                              <td className="text-right font-mono">{won(sign(r) * r.total)}</td>
-                              <td className="text-right font-mono text-gray-500">{String(r.payDate || '').slice(0, 10) || '-'}</td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  )}
-
-                  <div className="overflow-x-auto">
-                  {/* 상품마다 일의 단계대로 세 칸: 주문(쿠팡 몫·여유) → 사무실 도착 → 쿠팡 입고(정산). 숫자는 "한 것 / 할 것"과 막대로. */}
-                  <table className="text-[15px]">
-                    <thead className="text-sm text-gray-500">
-                      <tr>
-                        <th className="text-left font-medium py-1 pr-3">상품</th>
-                        <th className="w-28 text-left font-medium pl-3" title="1688에 주문한 수량. 배정 = 쿠팡 발주에 연결한 수량, 여유 = 남는 것(다음 발주에 씀)">주문</th>
-                        <th className="w-28 text-left font-medium pl-3" title="사무실에 도착한 수량 / 주문 수량">사무실 도착</th>
-                        <th className="w-32 text-left font-medium pl-3" title="이 상품을 맡은 쿠팡 발주 중 발송완료된 수량 / 배정 수량. 남은 건 발송대기">발송</th>
-                        <th className="w-28 text-right font-medium pl-3" title="연결된 쿠팡 발주금액(쿠팡 발주단가 × 배정 수량) 합">쿠팡 발주금액</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {products.map(p => {
-                        const bar = (done: number, total: number) => {
-                          const pct = total > 0 ? Math.min(100, Math.round((done / total) * 100)) : 0;
-                          const color = total > 0 && done >= total ? 'bg-emerald-500' : done > 0 ? 'bg-amber-400' : 'bg-gray-200';
-                          return (
-                            <div className="pl-3">
-                              <div className="font-mono text-sm"><b className={total > 0 && done >= total ? 'text-emerald-600' : done > 0 ? 'text-amber-600' : 'text-gray-400'}>{done}</b><span className="text-gray-400"> / {total}</span></div>
-                              <div className="h-1 mt-0.5 rounded-full bg-gray-100 overflow-hidden w-16"><div className={`h-full ${color}`} style={{ width: `${pct}%` }} /></div>
-                            </div>
-                          );
-                        };
-                        return (
-                          <tr key={p.상품이름} className="border-t border-gray-100">
-                            <td className="py-1.5 pr-3"><span className="inline-flex items-center gap-2 max-w-[22rem]"><ProductThumb url={imageOf(p.상품이름)} size={26} /><span className="truncate" title={p.상품이름}>{p.상품이름.replace(/^주노엘\s*/, '')}</span></span></td>
-                            <td className="pl-3">
-                              <div className="font-mono font-bold text-gray-900 text-sm whitespace-nowrap">{p.ordered}{productUnitCost(o, p.상품이름) > 0 && <span className="ml-1.5 text-[11px] font-normal text-gray-400">· {Math.round(productUnitCost(o, p.상품이름) * p.ordered).toLocaleString()}원</span>}</div>
-                              <div className="text-xs text-gray-400 whitespace-nowrap">배정 {p.allocated}{p.spare > 0 && <> · <span className="text-emerald-600 font-semibold">여유 {p.spare}</span></>}</div>
-                            </td>
-                            <td>{bar(p.received, p.ordered)}</td>
-                            <td>{p.allocated > 0 ? (() => {
-                              // 상품마다 발송 상태: 이 상품을 맡은 발주 줄 중 발주서가 발송완료된 수량.
-                              const mine = o.lines.filter(l => lineAlloc(l) > 0 && sameName(l.상품이름, p.상품이름));
-                              const sent = mine.filter(l => sentNos.has(String(l.발주번호 || '').trim())).reduce((n, l) => n + lineAlloc(l), 0);
-                              const wait = Math.max(0, p.allocated - sent);
-                              return (
-                                <div>
-                                  {bar(sent, p.allocated)}
-                                  <div className="pl-3 text-xs whitespace-nowrap">
-                                    {wait > 0 ? <span className="text-violet-700 font-semibold">🏠 발송대기 {wait}</span> : <span className="text-emerald-600 font-semibold">🎉 발송완료</span>}
-                                  </div>
-                                </div>
-                              );
-                            })() : <span className="pl-3 text-xs text-gray-300">배정 없음</span>}</td>
-                            <td className="pl-3 text-right font-mono text-sm text-gray-700 whitespace-nowrap">{(() => { const n = linesTotal(o.lines.filter(l => sameName(l.상품이름, p.상품이름))); return n ? won(n) : <span className="text-gray-300">-</span>; })()}</td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
                   </div>
 
                   {/* 수정 중에는 숨긴다(품목 빼기 ✕와 헷갈려 한중발주 전체를 지우는 일이 없게). */}

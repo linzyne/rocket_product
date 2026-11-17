@@ -1126,11 +1126,11 @@ const HanjungOrderPage: React.FC = () => {
                       {bar}
                       <div className="flex items-end">
                         {/* 수량: 매입 − 매출 = 남은 */}
-                        {cell('매입', <b className="text-gray-900">{buyQty.toLocaleString()}</b>, q)}
+                        {cell('매입', <span className="text-gray-700">{buyQty.toLocaleString()}</span>, q)}
                         {op('−')}
-                        {cell('매출', <b className="text-gray-900">{rev.sold.toLocaleString()}</b>, q)}
+                        {cell('매출', <span className="text-gray-700">{rev.sold.toLocaleString()}</span>, q)}
                         {op('=')}
-                        {cell('남은', <b className="text-gray-900">{(buyQty - rev.sold).toLocaleString()}</b>, q)}
+                        {cell('남은', <span className="text-gray-700">{(buyQty - rev.sold).toLocaleString()}</span>, q)}
                       </div>
                       {bar}
                       <div className="flex items-end">

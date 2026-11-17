@@ -1105,11 +1105,12 @@ const HanjungOrderPage: React.FC = () => {
                   const sold = buy - cost.spareCost;
                   const has = !!(sale && buy);
                   // 글씨는 위, 숫자는 아래. w = 칸 폭(고정)
-                  const cell = (label: string, value: React.ReactNode, w: string) => (
-                    <span className={`${w} flex flex-col items-end flex-shrink-0`}><span className="text-[11px] text-gray-500">{label}</span><span className="font-mono text-sm">{value}</span></span>
-                  );
-                  const op = (t: string) => <span className="w-3 text-center text-xs text-gray-400 flex-shrink-0">{t}</span>;
                   const q = 'w-10', m = 'w-[6.5rem]';
+                  // 수량은 가운데 맞춤(짧은 숫자도 사이가 고르게), 금액은 오른쪽 맞춤
+                  const cell = (label: string, value: React.ReactNode, w: string) => (
+                    <span className={`${w} flex flex-col ${w === q ? 'items-center' : 'items-end'} flex-shrink-0`}><span className="text-[11px] text-gray-500">{label}</span><span className="font-mono text-sm">{value}</span></span>
+                  );
+                  const op = (t: string) => <span className="w-3 text-center text-sm leading-5 text-gray-400 flex-shrink-0">{t}</span>;
                   const bar = <span className="self-stretch mx-2 border-l-2 border-gray-200 flex-shrink-0" />;
                   return (
                     <div className="self-stretch flex items-center whitespace-nowrap">

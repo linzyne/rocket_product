@@ -1109,8 +1109,8 @@ const HanjungOrderPage: React.FC = () => {
                     <span className={`${w} flex flex-col items-end flex-shrink-0`}><span className="text-[11px] text-gray-500">{label}</span><span className="font-mono text-sm">{value}</span></span>
                   );
                   const op = (t: string) => <span className="w-3 text-center text-xs text-gray-400 flex-shrink-0">{t}</span>;
-                  const q = 'w-11', m = 'w-[6.5rem]';
-                  const bar = <span className="self-stretch mx-3 border-l-2 border-gray-200 flex-shrink-0" />;
+                  const q = 'w-10', m = 'w-[6.5rem]';
+                  const bar = <span className="self-stretch mx-2 border-l-2 border-gray-200 flex-shrink-0" />;
                   return (
                     <div className="self-stretch flex items-center whitespace-nowrap">
                       {bar}

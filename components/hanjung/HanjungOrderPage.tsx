@@ -1271,8 +1271,8 @@ const HanjungOrderPage: React.FC = () => {
                       <tr>
                         <th className="text-left font-medium py-1 pr-3">상품</th>
                         <th className="w-28 text-left font-medium pl-3" title="1688에 주문한 수량. 배정 = 쿠팡 발주에 연결한 수량, 여유 = 남는 것(다음 발주에 씀)">주문</th>
-                        <th className="w-28 text-left font-medium pl-3" title="사무실에 도착한 수량 / 주문 수량">사무실 도착</th>
-                        <th className="w-32 text-left font-medium pl-3" title="이 상품을 맡은 쿠팡 발주 중 발송완료된 수량 / 배정 수량. 남은 건 발송대기">발송</th>
+                        <th className="w-28 text-left font-medium pl-3" title="사무실에 도착한 수량 / 주문 수량">사무실 도착<span className="block text-[11px] font-normal text-gray-400">도착 / 주문</span></th>
+                        <th className="w-32 text-left font-medium pl-3" title="이 상품을 맡은 쿠팡 발주 중 발송완료된 수량 / 배정 수량. 남은 건 발송대기">발송<span className="block text-[11px] font-normal text-gray-400">발송완료 / 배정</span></th>
                         <th className="w-28 text-right font-medium pl-3" title="연결된 쿠팡 발주금액(쿠팡 발주단가 × 배정 수량) 합">쿠팡 발주금액</th>
                       </tr>
                     </thead>

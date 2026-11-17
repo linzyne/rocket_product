@@ -1115,7 +1115,7 @@ const HanjungOrderPage: React.FC = () => {
               {isOpen && (
                 <div className="border-t-2 border-sky-50 px-5 py-4 space-y-4 bg-gradient-to-b from-sky-50/30 to-white">
                   {receiving === o.code && <ReceiptForm order={o} onDone={() => setReceiving(null)} />}
-                  {/* 수량은 수량끼리, 금액은 금액끼리 위아래로 비교: 매입(사무실 도착·총매입가) → 판매(쿠팡 배정·총판매가) → 재고(남은 수량·그 매입가). 순이익은 머리줄에. */}
+                  {/* 수량은 수량끼리, 금액은 금액끼리 위아래로 비교: 매입(사무실 도착·총매입가) → 판매(쿠팡 배정·총판매가) → 재고(남은 수량 · 판매 − 매입 차액). */}
                   {(t.received > 0 || rev.sold > 0) && (
                     <table className="text-sm">
                       <tbody className="font-mono">
@@ -1132,7 +1132,7 @@ const HanjungOrderPage: React.FC = () => {
                         <tr className="border-t border-gray-100">
                           <td className="text-gray-500 font-sans pr-2">재고</td>
                           <td className="text-right pl-8" title="아직 어느 쿠팡 발주서에도 배정 안 된 수량">{cost.spareQty.toLocaleString()}개</td>
-                          <td className="text-right pl-8" title="남은 재고의 매입가(+부대비용 몫)">{won(cost.spareCost)}</td>
+                          <td className={`text-right pl-8 font-bold ${profit >= 0 ? 'text-emerald-600' : 'text-red-500'}`} title="받은 돈(판매) − 쓴 돈(매입). 재고가 팔리면 줄어들어요">{won(profit)}</td>
                         </tr>
                       </tbody>
                     </table>

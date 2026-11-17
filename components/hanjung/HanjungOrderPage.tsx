@@ -1143,7 +1143,7 @@ const HanjungOrderPage: React.FC = () => {
                   )}
                   {/* 표 밖: 아직 안 팔린 재고의 매입가(상품별)와 공식. 표 넓이에 영향 주지 않게 따로. */}
                   {cost.spareItems.length > 0 && (
-                    <div className="text-xs text-gray-500 space-y-1">
+                    <div className="inline-block text-xs text-gray-600 space-y-1 border-2 border-slate-300 rounded-xl bg-slate-100 px-3 py-2">
                       <div>재고 매입가 <b className="font-mono text-gray-800">{won(cost.spareCost)}</b> <span className="text-gray-400">· 이 아래로 팔면 손해</span></div>
                       <table>
                         <tbody className="font-mono">

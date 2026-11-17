@@ -198,40 +198,63 @@ export function applyShipOuts(before: ShipOut[], after: ShipOut[]) {
   const A = group(after);
   const taken = new Set<string>();
   const out: Line[] = [];
+  const hereOf = (k: string) => linesAt('ship').filter(l => lineKey(l) === k).sort((x, y) => x.id.localeCompare(y.id));
+  const leftBy = new Map<string, Entry[]>();
+  const waiting: { k: string; e: Entry }[] = [];
   for (const k of new Set([...B.keys(), ...A.keys()])) {
-    const bs = B.get(k) || [];
-    const as = A.get(k) || [];
-    const here = linesAt('ship').filter(l => lineKey(l) === k).sort((x, y) => x.id.localeCompare(y.id));
-    const leftB = [...bs];
-    const unmatchedA: Entry[] = [];
+    const here = hereOf(k);
+    const leftB = [...(B.get(k) || [])];
     // 1) 같은 출고 건에 있는 줄끼리 짝
-    for (const e of as) {
+    for (const e of A.get(k) || []) {
       const l = here.find(x => !taken.has(x.id) && (x.shipOutId || '') === e.ship);
-      if (!l) { unmatchedA.push(e); continue; }
+      if (!l) { waiting.push({ k, e }); continue; }
       taken.add(l.id);
       const bi = leftB.findIndex(x => x.ship === e.ship);
       const was = bi >= 0 ? leftB.splice(bi, 1)[0].f : null;
       const p = was ? patched(l, was, e.f) : { ...l, ...e.f };
       if (p) out.push(p);
     }
-    // 2) 화면에서 빠진 줄(전에는 있었는데 후에는 짝이 없는 줄)
-    const gone = here.filter(x => !taken.has(x.id) && leftB.some(e => e.ship === (x.shipOutId || '')));
-    // 3) 새로 들어온 줄: 빠진 줄(다른 출고 건에서 옮겨 온 것) → 발주확인 → 휴지통 → 예약 순으로 데려온다.
-    for (const e of unmatchedA) {
-      const from = gone.shift();
-      if (from) {
-        taken.add(from.id);
-        const bi = leftB.findIndex(x => x.ship === (from.shipOutId || ''));
-        if (bi >= 0) leftB.splice(bi, 1);
-        out.push({ ...from, ...e.f, shipOutId: e.ship });
-        continue;
-      }
-      const pick = pickLine(k, ['work', 'trash', 'reserve'], taken);
-      const l = pick ? moved(pick, 'ship', e.f, { shipOutId: e.ship }) : newLine(e.f, 'ship', taken, { shipOutId: e.ship });
-      taken.add(l.id);
-      out.push(l);
+    leftBy.set(k, leftB);
+  }
+  // 2) 화면에서 빠진 줄(전에는 있었는데 후에는 짝이 없는 줄)
+  const goneOf = (k: string) => hereOf(k).filter(x => !taken.has(x.id) && (leftBy.get(k) || []).some(e => e.ship === (x.shipOutId || '')));
+  const takeGone = (from: Line, k: string) => {
+    taken.add(from.id);
+    const lb = leftBy.get(k) || [];
+    const bi = lb.findIndex(x => x.ship === (from.shipOutId || ''));
+    if (bi >= 0) lb.splice(bi, 1);
+  };
+  // 3) 새로 들어온 줄: 빠진 줄(다른 출고 건에서 옮겨 온 것) → 발주확인 → 휴지통 → 예약 순으로 데려온다.
+  const rest: { k: string; e: Entry }[] = [];
+  for (const w of waiting) {
+    const from = goneOf(w.k)[0];
+    if (!from) { rest.push(w); continue; }
+    takeGone(from, w.k);
+    out.push({ ...from, ...w.e.f, shipOutId: w.e.ship });
+  }
+  // 수량만 바뀐 줄(택배박스별 발송완료로 한 줄이 두 출고 건에 나뉨)은 같은 발주번호·상품의 빠진 줄을 그대로 이어 쓴다.
+  // 안 그러면 원래 줄이 휴지통('drop')에 갔다가 20초 뒤 발주확인으로 되살아난다. 같은 출고 건에 남는 쪽이 먼저 가져간다.
+  const nameOf = (k: string) => k.slice(0, k.lastIndexOf('│'));
+  const goneByName = (w: { k: string; e: Entry }) => {
+    const cands = Array.from(leftBy.keys()).filter(k2 => k2 !== w.k && nameOf(k2) === nameOf(w.k))
+      .flatMap(k2 => goneOf(k2).map(l => ({ l, k2 })));
+    return cands.find(c => (c.l.shipOutId || '') === w.e.ship) || cands[0];
+  };
+  for (const w of [...rest.filter(w => goneByName(w)?.l.shipOutId === w.e.ship), ...rest.filter(w => goneByName(w)?.l.shipOutId !== w.e.ship)]) {
+    const g = goneByName(w);
+    if (g) {
+      takeGone(g.l, g.k2);
+      out.push({ ...g.l, ...w.e.f, shipOutId: w.e.ship });
+      continue;
     }
-    // 4) 남은 빠진 줄은 휴지통으로(전에 있던 개수만큼만. 그사이 다른 컴퓨터가 넣은 줄은 건드리지 않는다).
+    const pick = pickLine(w.k, ['work', 'trash', 'reserve'], taken);
+    const l = pick ? moved(pick, 'ship', w.e.f, { shipOutId: w.e.ship }) : newLine(w.e.f, 'ship', taken, { shipOutId: w.e.ship });
+    taken.add(l.id);
+    out.push(l);
+  }
+  // 4) 남은 빠진 줄은 휴지통으로(전에 있던 개수만큼만. 그사이 다른 컴퓨터가 넣은 줄은 건드리지 않는다).
+  for (const [k, leftB] of leftBy) {
+    const here = hereOf(k);
     for (const e of leftB) {
       const l = here.find(x => !taken.has(x.id) && (x.shipOutId || '') === e.ship);
       if (!l) continue;

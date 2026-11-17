@@ -740,7 +740,6 @@ const HanjungOrderPage: React.FC = () => {
     let total = 0;
     let spareQty = 0;
     let spareCost = 0;
-    const spareItems: { name: string; qty: number; cost: number }[] = [];
     ps.forEach((p, i) => {
       const units = Math.max(p.ordered, p.received);
       if (!units) return;
@@ -749,9 +748,8 @@ const HanjungOrderPage: React.FC = () => {
       const left = Math.max(0, units - p.allocated);
       spareQty += left;
       spareCost += withFee * (left / units);
-      if (left > 0) spareItems.push({ name: p.상품이름, qty: left, cost: Math.round(withFee * (left / units)) });
     });
-    return { total: Math.round(total), spareQty, spareCost: Math.round(spareCost), spareItems };
+    return { total: Math.round(total), spareQty, spareCost: Math.round(spareCost) };
   };
   const handleCloseShort = async (o: HanjungOrder) => {
     const { order: closed, releases } = closeShortOrder(o);
@@ -1108,17 +1106,16 @@ const HanjungOrderPage: React.FC = () => {
                     남은 것 정리
                   </button>
                 )}
-                {/* 회수 차액 = 총판매가 − 총매입가(산 것 전부, 통장 기준). 판매 마진 = 총판매가 − 팔린 수량의 매입가(총매입가 − 재고 매입가). */}
+                {/* 차액 = 받은 돈(총판매가) − 쓴 돈(총매입가 전부). 재고가 팔릴수록 올라가고, 다 팔리면 마진이 된다. */}
                 {(() => {
                   const sale = rev.total;
-                  const now = sale - (buy - cost.spareCost);
-                  const tone = (n: number) => (n >= 0 ? 'text-emerald-600' : 'text-red-500');
+                  const sold = buy - cost.spareCost;
                   return (
                     <span className="ml-auto text-sm text-right whitespace-nowrap"
-                      title={`회수 차액 = 총판매가 ${won(sale)} − 총매입가 ${won(buy)} (받은 돈 − 쓴 돈 전부, 재고 포함)\n판매 마진 = 총판매가 ${won(sale)} − 판매한 것의 매입가 ${won(buy - cost.spareCost)} (판 물건만 본 이익)\n매입가에는 통관비·작업비 등 부대비용이 녹아 있어요. 총판매가는 부가세 포함${rev.missing ? `\n금액 모르는 ${rev.missing}개 빠짐` : ''}`}>
+                      title={`차액 = 받은 돈 ${won(sale)} − 쓴 돈 ${won(buy)}\n남은 재고가 팔리면 받은 돈이 늘어 차액이 올라가요. 다 팔리면 차액 = 마진\n참고: 판 것만 보면 마진 ${won(sale - sold)} (판 것의 매입가 ${won(sold)}) · 남은 재고 매입가 ${won(cost.spareCost)}${rev.missing ? `\n금액 모르는 ${rev.missing}개 빠짐` : ''}`}>
                       {sale && buy
-                        ? <>회수 차액 <b className={tone(profit)}>{won(profit)}</b> <span className="text-gray-300">/</span> 판매 마진 <b className={tone(now)}>{won(now)}</b></>
-                        : <span className="text-gray-400">회수 차액 -</span>}
+                        ? <>차액 <b className={profit >= 0 ? 'text-emerald-600' : 'text-red-500'}>{won(profit)}</b></>
+                        : <span className="text-gray-400">차액 -</span>}
                     </span>
                   );
                 })()}
@@ -1128,51 +1125,27 @@ const HanjungOrderPage: React.FC = () => {
               {isOpen && (
                 <div className="border-t-2 border-sky-50 px-5 py-4 space-y-2 bg-gradient-to-b from-sky-50/30 to-white">
                   {receiving === o.code && <ReceiptForm order={o} onDone={() => setReceiving(null)} />}
-                  {/* 수량은 수량끼리, 금액은 금액끼리 위아래로 비교: 매입(사무실 도착·총매입가) → 판매(쿠팡 배정·총판매가) → 재고(남은 수량 · 판매 − 매입 차액). */}
+                  {/* 쓴 돈 · 받은 돈 · 차액. 수량은 수량끼리, 금액은 금액끼리 위아래로. */}
                   {(t.received > 0 || rev.sold > 0) && (
                     <table className="text-sm">
                       <tbody className="font-mono">
                         <tr>
-                          <td className="text-gray-500 font-sans pr-2">매입</td>
-                          <td className="text-right pl-8" title="1688에서 사무실에 도착한 수량">{t.received.toLocaleString()}개</td>
-                          <td className="text-right pl-8" title="총매입가: 1688 매입가 전부(여유분 포함) + 부대비용">{won(buy)}</td>
+                          <td className="text-gray-500 font-sans pr-3">쓴 돈</td>
+                          <td className="text-right pl-6" title="1688에서 사무실에 도착한 수량">{t.received.toLocaleString()}개</td>
+                          <td className="text-right pl-8" title="1688 매입가 전부(여유분 포함) + 통관비·작업비 등">{won(buy)}</td>
                         </tr>
                         <tr className="border-t border-gray-100">
-                          <td className="text-gray-500 font-sans pr-2">판매</td>
-                          <td className="text-right pl-8" title="이 건 물건 중 쿠팡 발주서에 배정된 수량(회송 뺌)">{rev.sold.toLocaleString()}개</td>
-                          <td className="text-right pl-8" title={`총판매가: 쿠팡 정산금액, 정산 전인 수량은 발주금액 (부가세 포함)${payDays.length ? `\n정산예정일: ${payDays.join(', ')}` : ''}${rev.missing ? `\n금액 모르는 ${rev.missing}개 빠짐` : ''}`}>{won(rev.total)}</td>
+                          <td className="text-gray-500 font-sans pr-3">받은 돈</td>
+                          <td className="text-right pl-6" title="쿠팡에 판 수량(배정, 회송 뺌)">{rev.sold.toLocaleString()}개</td>
+                          <td className="text-right pl-8" title={`쿠팡 정산금액, 정산 전인 수량은 발주금액 (부가세 포함)${payDays.length ? `\n정산예정일: ${payDays.join(', ')}` : ''}${rev.missing ? `\n금액 모르는 ${rev.missing}개 빠짐` : ''}`}>{won(rev.total)}</td>
                         </tr>
-                        <tr className="border-t border-gray-100">
-                          <td className="text-gray-500 font-sans pr-2">재고</td>
-                          <td className="text-right pl-8" title="아직 어느 쿠팡 발주서에도 배정 안 된 수량">{cost.spareQty.toLocaleString()}개</td>
-                          <td className={`text-right pl-8 font-bold ${profit >= 0 ? 'text-emerald-600' : 'text-red-500'}`} title="받은 돈(판매) − 쓴 돈(매입). 재고가 팔리면 줄어들어요">{won(profit)}</td>
+                        <tr className="border-t-2 border-gray-300">
+                          <td className="text-gray-900 font-sans font-semibold pr-3 pt-1">차액</td>
+                          <td className="text-right pl-6 pt-1 text-gray-500" title="아직 안 팔린 수량">남은 재고 {cost.spareQty.toLocaleString()}개</td>
+                          <td className={`text-right pl-8 pt-1 font-bold ${profit >= 0 ? 'text-emerald-600' : 'text-red-500'}`} title="받은 돈 − 쓴 돈. 재고가 팔리면 올라가고, 다 팔리면 마진이 돼요">{won(profit)}</td>
                         </tr>
                       </tbody>
                     </table>
-                  )}
-                  {/* 표 밖: 아직 안 팔린 재고의 매입가. 누르면 상품별 금액과 공식이 펼쳐진다(처음엔 접힘). */}
-                  {cost.spareItems.length > 0 && (
-                    <div className="inline-block text-xs text-gray-600 space-y-1 border-2 border-slate-300 rounded-xl bg-slate-100 px-3 py-2">
-                      <button onClick={() => toggleFold(`${o.code}|spare`)} className="flex items-center gap-1.5 text-left">
-                        <span className="text-gray-400 w-3">{foldOpen(`${o.code}|spare`) ? '▾' : '▸'}</span>
-                        재고 매입가 <b className="font-mono text-gray-800">{won(cost.spareCost)}</b> <span className="text-gray-400">· 이 아래로 팔면 손해</span>
-                      </button>
-                      {foldOpen(`${o.code}|spare`) && <>
-                      <table>
-                        <tbody className="font-mono">
-                          {cost.spareItems.map(it => (
-                            <tr key={it.name}>
-                              <td className="font-sans text-gray-600 pr-4 truncate max-w-[20rem]" title={it.name}>{it.name.replace(/^주노엘\s*/, '')}</td>
-                              <td className="text-right pr-4">{it.qty.toLocaleString()}개</td>
-                              <td className="text-right pr-4 text-gray-400">개당 {won(it.cost / it.qty)}</td>
-                              <td className="text-right text-gray-700">{won(it.cost)}</td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                      <div className="text-[11px] text-gray-400">공식: 상품마다 (그 상품 매입가 + 부대비용 몫) × 남은 수량 ÷ 산 수량 · 부대비용 몫 = 부대비용 합계 × 그 상품 매입가 ÷ 전체 상품 매입가</div>
-                      </>}
-                    </div>
                   )}
                   {/* 위에서부터 일의 순서대로: 사무실 도착 → 쿠팡 발주서 → 물류창고입고, 그 아래 상품 표. */}
                   {/* 주문한 개수 중 도착한 개수 */}

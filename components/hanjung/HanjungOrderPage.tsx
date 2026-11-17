@@ -706,22 +706,27 @@ const HanjungOrderPage: React.FC = () => {
     }
     return { total: Math.round(total), missing };
   };
-  // 매입: 이 건이 맡은 수량만큼만(여유는 재고라 빼고, 나중에 그 여유를 쓰는 발주에서 계산된다).
+  // 매입: 이 건에 쓴 돈 전부(여유분 포함). 순익 = 받은 돈 − 쓴 돈이라, 안 팔린 여유는 손해로 남고 나중에 배정되면 매출이 늘어 메워진다.
   //  상품마다 원가 = 도착한 만큼은 도착 기록 원가, 아직 안 온 만큼은 주문 때 적은 단가. 부대비용은 상품 원가 비율로 나눈다.
-  //  그 상품 원가(+부대비용 몫) × 맡은 수량 ÷ 산 수량.
+  //  spareQty·spareCost = 아직 배정 안 된 여유 수량과 그 원가(+부대비용 몫).
   const buyOf = (o: HanjungOrder) => {
     const ps = productSummary(o);
     const full = ps.map(p => p.cost + Math.max(0, p.ordered - p.received) * productUnitCost(o, p.상품이름));
     const goods = full.reduce((n, v) => n + v, 0);
     const fees = Math.max(0, orderTotals(o).totalCost - ps.reduce((n, p) => n + p.cost, 0)) + FEE_KEYS.reduce((n, k) => n + remainingFee(o, k), 0);
     let total = 0;
+    let spareQty = 0;
+    let spareCost = 0;
     ps.forEach((p, i) => {
       const units = Math.max(p.ordered, p.received);
-      if (!units || !p.allocated) return;
+      if (!units) return;
       const withFee = full[i] + (goods > 0 ? fees * (full[i] / goods) : 0);
-      total += withFee * Math.min(1, p.allocated / units);
+      total += withFee;
+      const left = Math.max(0, units - p.allocated);
+      spareQty += left;
+      spareCost += withFee * (left / units);
     });
-    return Math.round(total);
+    return { total: Math.round(total), spareQty, spareCost: Math.round(spareCost) };
   };
   const handleCloseShort = async (o: HanjungOrder) => {
     const { order: closed, releases } = closeShortOrder(o);
@@ -1017,7 +1022,8 @@ const HanjungOrderPage: React.FC = () => {
           const allocated = products.reduce((sum, p) => sum + p.allocated, 0);
           const rate = t.received > 0 ? Math.round((settle.qty / t.received) * 100) : null;
           const rev = revenueOf(o);
-          const buy = buyOf(o);
+          const cost = buyOf(o);
+          const buy = cost.total;
           const profit = rev.total - buy;
           // 입고상세내역의 지급일 = 정산예정일.
           const payDays = Array.from(new Set(settle.rows.map(r => String(r.payDate || '').slice(0, 10)).filter(Boolean))).sort();
@@ -1069,15 +1075,16 @@ const HanjungOrderPage: React.FC = () => {
                     남은 것 정리
                   </button>
                 )}
-                {/* 순이익 = 매출(이 건이 맡은 수량만큼의 정산 공급가, 정산 전이면 쿠팡 발주금액) − 매입(상품 + 부대비용). 모두 부가세 제외. */}
+                {/* 순이익 = 받은 돈(이 건이 맡은 수량만큼의 정산 공급가, 정산 전이면 쿠팡 발주금액) − 쓴 돈(산 것 전부 + 부대비용). 모두 부가세 제외. */}
                 {(() => {
                   const sale = rev.total;
                   const net = profit;
                   return (
                     <span className="ml-auto text-right whitespace-nowrap leading-tight"
-                      title={'순이익 = 매출 − 매입 (부가세 제외)\n매출: 이 한중발주가 맡은 수량만큼의 물류창고입고 정산 공급가, 정산 전인 수량은 쿠팡 발주금액(매입가)\n매입: 이 건이 맡은 수량만큼의 상품 원가 + 부대비용 몫(여유분은 재고라 빼요)'}>
+                      title={'순이익 = 매출 − 매입 (부가세 제외)\n매출: 이 한중발주가 맡은 수량만큼의 물류창고입고 정산 공급가, 정산 전인 수량은 쿠팡 발주금액(매입가)\n매입: 이 건에 쓴 돈 전부(여유분 포함) + 부대비용\n남은 재고가 다른 쿠팡 발주에 배정되면 매출이 늘어 메워져요'}>
                       <span className="block text-sm">순이익 <b className={!sale || !buy ? 'text-gray-400' : net >= 0 ? 'text-emerald-600' : 'text-red-500'}>{sale && buy ? won(net) : '-'}</b></span>
-                      <span className="block text-[11px] text-gray-400">매출 {sale ? won(sale) : '-'} − 매입 {buy ? won(buy) : '-'}{rev.missing ? ` · 금액 모르는 ${rev.missing}개 빠짐` : ''}{products.some(p => p.spare > 0) ? ' · 여유는 재고라 뺌' : ''}</span>
+                      <span className="block text-[11px] text-gray-400">매출 {sale ? won(sale) : '-'} − 매입 {buy ? won(buy) : '-'}{rev.missing ? ` · 금액 모르는 ${rev.missing}개 빠짐` : ''}</span>
+                      {cost.spareQty > 0 && <span className="block text-[11px] text-gray-400">남은 재고 {cost.spareQty}개 · 원가 {won(cost.spareCost)}</span>}
                     </span>
                   );
                 })()}
@@ -1094,7 +1101,7 @@ const HanjungOrderPage: React.FC = () => {
                       {settle.qty > 0 && <span>쿠팡입고 <b>{settle.qty}</b>개 · 정산 <b>{won(settle.total)}</b></span>}
                       {payDays.length > 0 && <span title={`정산예정일(입고상세내역의 지급일): ${payDays.join(', ')}`}>정산예정 <b>{payDays.slice(0, 2).map(d => d.slice(5).replace('-', '/')).join(', ')}{payDays.length > 2 ? ' 외' : ''}</b></span>}
                       {rate != null && <span>정산률 <b className={rate >= 100 ? 'text-emerald-600' : 'text-amber-600'}>{rate}%</b></span>}
-                      {rev.total > 0 && buy > 0 && <span>순이익 <b className={profit >= 0 ? 'text-emerald-600' : 'text-red-500'} title="이 건이 맡은 수량만큼의 매출(정산 공급가·정산 전은 발주금액) − 매입(원가+부대비용), 부가세 제외">{won(profit)}</b></span>}
+                      {rev.total > 0 && buy > 0 && <span>순이익 <b className={profit >= 0 ? 'text-emerald-600' : 'text-red-500'} title="이 건이 맡은 수량만큼의 매출(정산 공급가·정산 전은 발주금액) − 이 건에 쓴 돈 전부(원가+부대비용, 여유분 포함), 부가세 제외">{won(profit)}</b></span>}
                     </div>
                   )}
                   <div className="overflow-x-auto">

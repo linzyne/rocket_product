@@ -190,9 +190,27 @@ export const ReceiptHistory: React.FC<{ order: HanjungOrder }> = ({ order }) => 
       .catch(err => alert(`삭제 실패: ${err?.message || err}`));
   };
   if (!order.receipts.length) return null;
-  // 도착 한 번마다 작은 표: 상품 · 수량 · 금액, 아래에 부대비용과 합계.
+  // 맨 위: 상품마다 총 주문 / 총 도착. 그 아래 도착 한 번마다 작은 표: 상품 · 수량 · 금액, 부대비용과 합계.
+  const sum = productSummary(order).filter(p => p.ordered > 0 || p.received > 0);
   return (
     <div className="space-y-3">
+      <table className="w-full text-xs">
+        <thead className="text-gray-400">
+          <tr><th className="text-left font-medium py-1">상품</th><th className="text-right font-medium w-24">총 주문</th><th className="text-right font-medium w-24">총 도착</th></tr>
+        </thead>
+        <tbody>
+          {sum.map(p => (
+            <tr key={p.상품이름} className="border-t border-gray-50">
+              <td className="py-0.5 text-gray-700 truncate max-w-[24rem]" title={p.상품이름}>{p.상품이름}</td>
+              <td className="text-right font-mono">{p.ordered}개</td>
+              <td className={`text-right font-mono ${p.received >= p.ordered ? 'text-emerald-600' : 'text-amber-600'}`}>{p.received}개</td>
+            </tr>
+          ))}
+        </tbody>
+        <tfoot>
+          <tr className="border-t border-gray-100 font-semibold"><td className="py-0.5 text-right text-gray-400">합계</td><td className="text-right font-mono">{sum.reduce((n, p) => n + p.ordered, 0)}개</td><td className="text-right font-mono">{sum.reduce((n, p) => n + p.received, 0)}개</td></tr>
+        </tfoot>
+      </table>
       {order.receipts.slice().reverse().map(r => (
         <div key={r.id} className="text-xs">
           <div className="flex items-center gap-3 mb-1">

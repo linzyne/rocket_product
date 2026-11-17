@@ -171,7 +171,7 @@ export const ReceiptForm: React.FC<{ order: HanjungOrder; onDone?: () => void }>
       </div>
       <div className="flex items-center justify-end gap-4">
         <div className="text-sm text-gray-600">
-          상품원가 {won(receiptGoodsCost(draft))} + 비용 {won(FEE_KEYS.reduce((sum, k) => sum + receiptFee(draft, k), 0))} = <b className="text-gray-900">{won(receiptTotalCost(draft))}</b>
+          상품매입가 {won(receiptGoodsCost(draft))} + 비용 {won(FEE_KEYS.reduce((sum, k) => sum + receiptFee(draft, k), 0))} = <b className="text-gray-900">{won(receiptTotalCost(draft))}</b>
         </div>
         <button onClick={save} disabled={saving} className="px-4 py-2 rounded-lg bg-blue-600 text-white text-sm font-semibold hover:bg-blue-700 disabled:bg-gray-300">
           {saving ? '저장 중…' : '도착 저장'}

@@ -671,9 +671,9 @@ const HanjungOrderPage: React.FC = () => {
   const ready = useReady();
   const shipBatches = useShipLock();
   useEffect(() => { startLines(); }, []);
-  // 쿠팡 발주 매입가(발주서 파일을 올릴 때 기억해 둔 것). 발주금액 = 매입가 × 배정 수량.
+  // 쿠팡 발주단가(발주서 파일의 "매입가" 칸, 올릴 때 기억해 둔 것). 발주금액 = 발주단가 × 배정 수량.
   const [prices, setPrices] = useState<PriceBook>({ byPo: {}, byName: {} });
-  // 매입가 장부만 읽는다(발주확정 양식 파일은 크니까 여기서 받지 않는다).
+  // 발주단가 장부만 읽는다(발주확정 양식 파일은 크니까 여기서 받지 않는다).
   useEffect(() => { loadPriceBook().then(setPrices); }, []);
   // 이 한중발주에 배정한 만큼만(나머지가 나중에 배정되면 그때 늘어난다).
   const lineAmount = (l: HanjungLine) => {
@@ -687,7 +687,7 @@ const HanjungOrderPage: React.FC = () => {
   const linesTotal = (ls: HanjungLine[]) => ls.reduce((n, l) => n + (lineAmount(l) || 0), 0);
   // 이 한중발주가 맡은 몫의 매출(부가세 제외). 줄마다:
   //  · 물류창고입고(쿠팡 정산 자료)가 있으면 개당 공급가 × 맡은 수량까지(발주 줄 전체가 정산돼도 이 건 몫만)
-  //  · 정산 자료가 아직 없는 수량은 쿠팡 발주금액(매입가) 개당 값으로
+  //  · 정산 자료가 아직 없는 수량은 쿠팡 발주금액 개당 값으로
   //  · 둘 다 없으면 0원(빠진 수량으로 따로 센다)
   const revenueOf = (o: HanjungOrder) => {
     let total = 0;
@@ -1090,10 +1090,10 @@ const HanjungOrderPage: React.FC = () => {
                   const net = profit;
                   return (
                     <span className="ml-auto text-right whitespace-nowrap leading-tight"
-                      title={'순이익 = 매출 − 매입 (부가세 제외)\n매출: 이 한중발주가 맡은 수량만큼의 물류창고입고 정산 공급가, 정산 전인 수량은 쿠팡 발주금액(매입가)\n매입: 이 건에 쓴 돈 전부(여유분 포함) + 부대비용\n남은 재고가 다른 쿠팡 발주에 배정되면 매출이 늘어 메워져요'}>
+                      title={'순이익 = 매출 − 매입 (부가세 제외)\n매출: 이 한중발주가 맡은 수량만큼의 물류창고입고 정산 공급가, 정산 전인 수량은 쿠팡 발주금액\n매입: 이 건의 1688 매입가 전부(여유분 포함) + 부대비용\n남은 재고가 다른 쿠팡 발주에 배정되면 매출이 늘어 메워져요'}>
                       <span className="block text-sm">순이익 <b className={!sale || !buy ? 'text-gray-400' : net >= 0 ? 'text-emerald-600' : 'text-red-500'}>{sale && buy ? won(net) : '-'}</b></span>
                       <span className="block text-[11px] text-gray-400">매출 {sale ? won(sale) : '-'} − 매입 {buy ? won(buy) : '-'}{rev.missing ? ` · 금액 모르는 ${rev.missing}개 빠짐` : ''}</span>
-                      {cost.spareQty > 0 && <span className="block text-[11px] text-gray-400">남은 재고 {cost.spareQty}개 · 원가 {won(cost.spareCost)}</span>}
+                      {cost.spareQty > 0 && <span className="block text-[11px] text-gray-400">남은 재고 {cost.spareQty}개 · 매입가 {won(cost.spareCost)}</span>}
                     </span>
                   );
                 })()}
@@ -1103,25 +1103,25 @@ const HanjungOrderPage: React.FC = () => {
               {isOpen && (
                 <div className="border-t-2 border-sky-50 px-5 py-4 space-y-4 bg-gradient-to-b from-sky-50/30 to-white">
                   {receiving === o.code && <ReceiptForm order={o} onDone={() => setReceiving(null)} />}
-                  {/* 이 건의 돈: 원가 → 정산 → 차익 */}
+                  {/* 이 건의 돈: 매입가 → 정산 → 차익 */}
                   {(t.totalCost > 0 || settle.qty > 0) && (
                     <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm text-gray-600">
-                      {t.totalCost > 0 && <span>총원가 <b>{won(t.totalCost)}</b></span>}
+                      {t.totalCost > 0 && <span>총매입가 <b>{won(t.totalCost)}</b></span>}
                       {settle.qty > 0 && <span title="이 건이 맡은 수량만큼, 부가세 포함(쿠팡 발주금액과 같은 기준)">쿠팡입고 <b>{settle.qty}</b>개 · 정산 <b>{won(settle.total)}</b></span>}
                       {payDays.length > 0 && <span title={`정산예정일(입고상세내역의 지급일): ${payDays.join(', ')}`}>정산예정 <b>{payDays.slice(0, 2).map(d => d.slice(5).replace('-', '/')).join(', ')}{payDays.length > 2 ? ' 외' : ''}</b></span>}
                       {rate != null && <span>정산률 <b className={rate >= 100 ? 'text-emerald-600' : 'text-amber-600'}>{rate}%</b></span>}
-                      {rev.total > 0 && buy > 0 && <span>순이익 <b className={profit >= 0 ? 'text-emerald-600' : 'text-red-500'} title="이 건이 맡은 수량만큼의 매출(정산 공급가·정산 전은 발주금액) − 이 건에 쓴 돈 전부(원가+부대비용, 여유분 포함), 부가세 제외">{won(profit)}</b></span>}
+                      {rev.total > 0 && buy > 0 && <span>순이익 <b className={profit >= 0 ? 'text-emerald-600' : 'text-red-500'} title="이 건이 맡은 수량만큼의 매출(정산 공급가·정산 전은 발주금액) − 이 건의 1688 매입가 전부(+부대비용, 여유분 포함), 부가세 제외">{won(profit)}</b></span>}
                     </div>
                   )}
                   {/* 위에서부터 일의 순서대로: 사무실 도착 → 쿠팡 발주서 → 물류창고입고, 그 아래 상품 표. */}
                   {/* 주문한 개수 중 도착한 개수 */}
                   {o.receipts.length > 0 && foldHead(`${o.code}|receipts`,
                     `사무실 도착 · 총 ${t.ordered}개 주문 중 ${o.receipts.reduce((n, r) => n + r.items.reduce((m, it) => m + (Number(it.qty) || 0), 0), 0)}개`,
-                    `총원가 ${won(t.totalCost)}`)}
+                    `총매입가 ${won(t.totalCost)}`)}
                   {foldOpen(`${o.code}|receipts`) && <div className="pl-7"><ReceiptHistory order={o} /></div>}
 
                   <div className="border-t border-gray-100 pt-1 space-y-0.5">
-                    {edit?.code !== o.code && foldHead(`${o.code}|lines`, `쿠팡 발주서 · ${won(linesTotal(o.lines))}`, `${Array.from(new Set(o.lines.map(l => l.물류센터))).slice(0, 4).join(' · ')}${o.lines.some(l => lineAlloc(l) > 0 && lineAmount(l) === undefined) ? ' · 매입가 모르는 줄 있음' : ''}`)}
+                    {edit?.code !== o.code && foldHead(`${o.code}|lines`, `쿠팡 발주서 · ${won(linesTotal(o.lines))}`, `${Array.from(new Set(o.lines.map(l => l.물류센터))).slice(0, 4).join(' · ')}${o.lines.some(l => lineAlloc(l) > 0 && lineAmount(l) === undefined) ? ' · 발주금액 모르는 줄 있음' : ''}`)}
                     {edit?.code === o.code ? (
                       <div className="border border-blue-200 bg-blue-50/40 rounded-lg p-2 space-y-1">
                         {/* 번호는 머리줄의 번호(✎)를 눌러 바꾼다. */}
@@ -1142,7 +1142,7 @@ const HanjungOrderPage: React.FC = () => {
                               <span className="font-mono text-gray-400">{l.발주번호}</span> · {l.물류센터} · {ymdText(l.입고예정일)} · {l.상품이름}
                             </span>
                             <span className="font-mono">{lineAlloc(l)}개{lineAlloc(l) !== l.확정수량 && <span className="text-gray-400"> /{l.확정수량}</span>}</span>
-                            <span className="font-mono w-24 text-right text-gray-500" title="발주금액 = 매입가 × 배정 수량">{amountText(l)}</span>
+                            <span className="font-mono w-24 text-right text-gray-500" title="쿠팡 발주금액 = 쿠팡 발주단가 × 배정 수량">{amountText(l)}</span>
                             <button
                               onClick={() => setEdit(cur => cur && { ...cur, lines: cur.lines.filter((_, j) => j !== i) })}
                               title="이 줄을 빼요(저장하면 1688 주문하기로 돌아가요)"
@@ -1165,7 +1165,7 @@ const HanjungOrderPage: React.FC = () => {
                         {/* 쿠팡 발주 줄: 발주번호 · 센터 · 입고예정일 · 상품 · 배정 수량을 칸 맞춰서. 같은 발주번호끼리 붙여 둔다. */}
                         <table className="w-full text-xs">
                           <thead className="text-gray-400">
-                            <tr><th className="text-left font-medium py-1 w-24">발주번호</th><th className="text-left font-medium w-24">센터</th><th className="text-left font-medium w-20">입고예정</th><th className="text-left font-medium">상품</th><th className="text-right font-medium w-20">배정</th><th className="text-right font-medium w-24" title="매입가 × 배정 수량">발주금액</th><th className="text-right font-medium w-24" title="물류창고입고에서 이 줄(발주번호·상품)로 들어온 수량 / 배정. 다 들어오면 발주금액과 같아요">쿠팡입고</th></tr>
+                            <tr><th className="text-left font-medium py-1 w-24">발주번호</th><th className="text-left font-medium w-24">센터</th><th className="text-left font-medium w-20">입고예정</th><th className="text-left font-medium">상품</th><th className="text-right font-medium w-20">배정</th><th className="text-right font-medium w-24" title="쿠팡 발주단가 × 배정 수량">발주금액</th><th className="text-right font-medium w-24" title="물류창고입고에서 이 줄(발주번호·상품)로 들어온 수량 / 배정. 다 들어오면 발주금액과 같아요">쿠팡입고</th></tr>
                           </thead>
                           <tbody>
                             {[...o.lines].sort((a, b) => a.발주번호.localeCompare(b.발주번호)).map(l => (
@@ -1225,7 +1225,7 @@ const HanjungOrderPage: React.FC = () => {
                         <th className="w-28 text-left font-medium pl-3" title="1688에 주문한 수량. 배정 = 쿠팡 발주에 연결한 수량, 여유 = 남는 것(다음 발주에 씀)">주문</th>
                         <th className="w-28 text-left font-medium pl-3" title="사무실에 도착한 수량 / 주문 수량">사무실 도착</th>
                         <th className="w-32 text-left font-medium pl-3" title="이 상품을 맡은 쿠팡 발주 중 발송완료된 수량 / 배정 수량. 남은 건 발송대기">발송</th>
-                        <th className="w-28 text-right font-medium pl-3" title="연결된 쿠팡 발주금액(매입가 × 배정 수량) 합">쿠팡 발주금액</th>
+                        <th className="w-28 text-right font-medium pl-3" title="연결된 쿠팡 발주금액(쿠팡 발주단가 × 배정 수량) 합">쿠팡 발주금액</th>
                       </tr>
                     </thead>
                     <tbody>

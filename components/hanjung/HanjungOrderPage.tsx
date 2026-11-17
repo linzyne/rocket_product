@@ -1177,8 +1177,8 @@ const HanjungOrderPage: React.FC = () => {
                       // 입고대기 = 판매(회송 뺌) 중 아직 물류창고입고가 안 된 금액. 회송 = 쿠팡이 돌려보낸 수량의 발주금액.
                       const returned = o.lines.reduce((n, l) => n + (lineAlloc(l) > 0 ? (lineAmount(l) || 0) / lineAlloc(l) * (l.회송 || 0) : 0), 0);
                       const waiting = Math.max(0, rev.total - settle.total);
-                      const notes = [returned > 0 ? `회송 −${won(returned)}` : '', o.lines.some(l => lineAlloc(l) > 0 && lineAmount(l) === undefined) ? '발주금액 모르는 줄 있음' : ''].filter(Boolean).join(' · ');
-                      return foldHead(`${o.code}|lines`, `쿠팡 발주금액 ${won(linesTotal(o.lines))} / 입고완료 ${won(settle.total)} / 입고대기 ${won(waiting)}`, notes);
+                      const note = o.lines.some(l => lineAlloc(l) > 0 && lineAmount(l) === undefined) ? '발주금액 모르는 줄 있음' : '';
+                      return foldHead(`${o.code}|lines`, `쿠팡 발주금액 ${won(linesTotal(o.lines))}${returned > 0 ? ` / 회송 −${won(returned)}` : ''} / 입고완료 ${won(settle.total)} / 입고대기 ${won(waiting)}`, note);
                     })()}
                     {edit?.code === o.code ? (
                       <div className="border border-blue-200 bg-blue-50/40 rounded-lg p-2 space-y-1">

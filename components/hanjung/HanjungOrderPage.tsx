@@ -1115,7 +1115,22 @@ const HanjungOrderPage: React.FC = () => {
                     <span className="ml-auto text-sm text-right whitespace-nowrap"
                       title={`차액 = 매출 ${won(sale)} − 매입 ${won(buy)}\n남은 재고가 팔리면 매출이 늘어 차액이 올라가요. 다 팔리면 차액 = 마진\n참고: 판 것만 보면 마진 ${won(sale - sold)} (판 것의 매입가 ${won(sold)}) · 남은 재고 매입가 ${won(cost.spareCost)}${rev.missing ? `\n금액 모르는 ${rev.missing}개 빠짐` : ''}`}>
                       {sale && buy
-                        ? <><span className="text-gray-500">매출가 <span className="font-mono text-gray-700">{won(sale)}</span> − 매입가 <span className="font-mono text-gray-700">{won(buy)}</span> = </span>차액 <b className={profit >= 0 ? 'text-emerald-600' : 'text-red-500'}>{won(profit)}</b></>
+                        ? (() => {
+                          // 글씨는 위, 숫자는 아래: 매출가 − 매입가 = 차액
+                          const cell = (label: string, value: React.ReactNode) => (
+                            <span className="flex flex-col items-end"><span className="text-xs text-gray-500">{label}</span><span className="font-mono">{value}</span></span>
+                          );
+                          const op = (t: string) => <span className="text-gray-400 pb-0.5">{t}</span>;
+                          return (
+                            <span className="inline-flex items-end gap-2">
+                              {cell('매출가', <span className="text-gray-700">{won(sale)}</span>)}
+                              {op('−')}
+                              {cell('매입가', <span className="text-gray-700">{won(buy)}</span>)}
+                              {op('=')}
+                              {cell('차액', <b className={profit >= 0 ? 'text-emerald-600' : 'text-red-500'}>{won(profit)}</b>)}
+                            </span>
+                          );
+                        })()
                         : <span className="text-gray-400">차액 -</span>}
                     </span>
                   );

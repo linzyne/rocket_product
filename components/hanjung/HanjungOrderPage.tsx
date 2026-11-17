@@ -1132,7 +1132,7 @@ const HanjungOrderPage: React.FC = () => {
                         <tr className="border-t border-gray-100">
                           <td className="text-gray-500 font-sans pr-2">재고</td>
                           <td className="text-right pl-8" title="아직 어느 쿠팡 발주서에도 배정 안 된 수량">{cost.spareQty.toLocaleString()}개</td>
-                          <td className={`text-right pl-8 font-bold ${profit >= 0 ? 'text-emerald-600' : 'text-red-500'}`} title="받은 돈(판매) − 쓴 돈(매입). 재고가 팔리면 줄어들어요">{won(profit)}</td>
+                          <td className={`text-right pl-8 font-bold ${profit >= 0 ? 'text-emerald-600' : 'text-red-500'}`} title="받은 돈(판매) − 쓴 돈(매입). 재고가 팔리면 줄어들어요">{won(profit)}{cost.spareQty > 0 && <span className="ml-1.5 text-xs font-normal text-gray-400" title="남은 재고를 살 때 든 돈(매입가 + 부대비용 몫). 이 아래로 팔면 손해">(재고 매입가 {won(cost.spareCost)})</span>}</td>
                         </tr>
                       </tbody>
                     </table>

@@ -4,6 +4,8 @@ import {
   productSummary, orderTotals, receiptGoodsCost, receiptTotalCost, productUnitCost, FEE_KEYS, FeeKey, receiptFee, remainingFee, lineAlloc, sameName,
 } from '../../data/hanjungStore';
 import { setReady, readyKey } from '../coupangOrder/data/readyStore';
+import { subscribeImportVat, saveImportVat } from '../../data/ledgerStore';
+import { importVatKey } from '../../data/ledgerCalc';
 
 // 도착하면 그 한중발주에 배정된 쿠팡 발주 줄을 준비됨으로 자동 체크한다(발송대기에서는 줄이 그어진다).
 // 상품마다 도착한 수량 안에서, 입고예정일이 빠른 줄부터 다 채워지는 줄만 체크한다.
@@ -66,6 +68,8 @@ export const ReceiptForm: React.FC<{ order: HanjungOrder; onDone?: () => void }>
   const emptyFees = (): Record<FeeKey, string> => ({ 관세사비: '', 통관비: '', 배송비: '', 작업비: '' });
   const [fees, setFees] = useState<Record<FeeKey, string>>(emptyFees());
   const [memo, setMemo] = useState('');
+  // 통관비 중 세관에 낸 수입 부가세(수입신고필증·관세사 정산서의 부가가치세). 세금 화면의 수입 부가세와 같은 곳에 저장한다.
+  const [vat, setVat] = useState('');
   const [saving, setSaving] = useState(false);
 
   // 다른 한중발주를 고르면 남은 수량과 지난 단가로 다시 채운다.
@@ -85,6 +89,7 @@ export const ReceiptForm: React.FC<{ order: HanjungOrder; onDone?: () => void }>
     const f = emptyFees();
     FEE_KEYS.forEach(k => { const left = remainingFee(order, k); if (left) f[k] = String(left); });
     setFees(f);
+    setVat('');
     setMemo('');
     setDate(today());
   }, [order.code, order.receipts.length]);
@@ -114,6 +119,7 @@ export const ReceiptForm: React.FC<{ order: HanjungOrder; onDone?: () => void }>
     try {
       const receipt = { ...draft, id: `r${Date.now()}`, createdAt: Date.now() };
       await addReceipt({ ...order, autoReadyAt: Date.now() }, receipt);
+      if (num(vat) > 0) await saveImportVat(importVatKey(order.code, receipt.id), num(vat));
       // 도착한 만큼 배정된 쿠팡 발주 줄을 준비됨으로 체크한다.
       const n = await markArrivedLinesReady({ ...order, receipts: [...order.receipts, receipt] }).catch(() => 0);
       if (n) alert(`도착 기록을 저장했어요. 배정된 쿠팡 발주 ${n}줄을 준비됨으로 체크했어요.`);
@@ -162,10 +168,18 @@ export const ReceiptForm: React.FC<{ order: HanjungOrder; onDone?: () => void }>
       </table>
       <div className="flex flex-wrap items-center gap-3 mb-3 text-sm">
         {FEE_KEYS.map(k => (
-          <label key={k} className="flex items-center gap-1.5 text-gray-600">
-            {k}
-            <input value={fees[k]} onChange={e => setFees({ ...fees, [k]: e.target.value })} onFocus={e => e.target.select()} placeholder="0" className={`${input} w-24`} />
-          </label>
+          <React.Fragment key={k}>
+            <label className="flex items-center gap-1.5 text-gray-600">
+              {k}
+              <input value={fees[k]} onChange={e => setFees({ ...fees, [k]: e.target.value })} onFocus={e => e.target.select()} placeholder="0" className={`${input} w-24`} />
+            </label>
+            {k === '통관비' && (
+              <label className="flex items-center gap-1.5 text-gray-500" title="통관비 안에 든 수입 부가세(수입신고필증·관세사 정산서의 부가가치세). 매입가는 그대로고, 낼 부가세에서 이만큼 빠져요">
+                <span className="text-xs">그중 부가세</span>
+                <input value={vat} onChange={e => setVat(e.target.value)} onFocus={e => e.target.select()} placeholder="0" className={`${input} w-24`} />
+              </label>
+            )}
+          </React.Fragment>
         ))}
         <input value={memo} onChange={e => setMemo(e.target.value)} placeholder="메모" className="flex-1 min-w-[8rem] px-2 py-1 border border-gray-200 rounded text-sm" />
       </div>
@@ -182,7 +196,24 @@ export const ReceiptForm: React.FC<{ order: HanjungOrder; onDone?: () => void }>
 };
 
 // 이 한중발주의 도착(수입입고) 기록 목록. 잘못 적은 건 지울 수 있다.
+// 지난 도착 기록의 수입 부가세 칸. 칸을 벗어나면 저장한다(세금 화면과 같은 곳).
+const VatInput: React.FC<{ k: string; value: number }> = ({ k, value }) => {
+  const [v, setV] = useState(value ? String(value) : '');
+  useEffect(() => setV(value ? String(value) : ''), [value]);
+  const save = () => {
+    const amount = Math.round(Number(v.replace(/[^\d.]/g, '')) || 0);
+    if (amount === value) return;
+    saveImportVat(k, amount).catch(err => alert(`저장 실패: ${err?.message || err}`));
+  };
+  return (
+    <input value={v} onChange={e => setV(e.target.value)} onBlur={save} onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }}
+      onClick={e => e.stopPropagation()} placeholder="적어 주세요" className="w-24 px-1.5 py-0.5 border border-gray-200 rounded text-right font-mono text-xs bg-white" />
+  );
+};
+
 export const ReceiptHistory: React.FC<{ order: HanjungOrder }> = ({ order }) => {
+  const [importVat, setImportVat] = useState<Record<string, number>>({});
+  useEffect(() => subscribeImportVat(setImportVat), []);
   const handleRemove = (r: HanjungReceipt) => {
     if (!confirm(`${r.date} 도착 기록을 삭제할까요?\n(적어 둔 금액·부대비용은 주문 금액으로 남겨 두고, 이 도착으로 준비됨이 된 줄은 체크를 풀어요)`)) return;
     removeReceipt(order, r.id)
@@ -226,6 +257,12 @@ export const ReceiptHistory: React.FC<{ order: HanjungOrder }> = ({ order }) => 
                   <td className="text-right font-mono">{won(receiptFee(r, k))}</td>
                 </tr>
               ))}
+              {/* 부대비용 안에 든 수입 부가세(통관비·관세사비에 들어 있다). 낼 부가세에서 빠진다. */}
+              <tr className="text-gray-400" title="통관비(또는 관세사비) 안에 든 수입 부가세. 매입가는 그대로고, 낼 부가세에서 이만큼 빠져요">
+                <td className="py-0.5 pl-3">└ 그중 수입 부가세</td>
+                <td />
+                <td className="text-right"><VatInput k={importVatKey(order.code, r.id)} value={importVat[importVatKey(order.code, r.id)] || 0} /></td>
+              </tr>
             </tbody>
           </table>
         </div>

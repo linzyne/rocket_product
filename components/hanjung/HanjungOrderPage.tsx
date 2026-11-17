@@ -1106,13 +1106,13 @@ const HanjungOrderPage: React.FC = () => {
                     남은 것 정리
                   </button>
                 )}
-                {/* 차액 = 받은 돈(총판매가) − 쓴 돈(총매입가 전부). 재고가 팔릴수록 올라가고, 다 팔리면 마진이 된다. */}
+                {/* 차액 = 매출(총판매가) − 매입(총매입가 전부). 재고가 팔릴수록 올라가고, 다 팔리면 마진이 된다. */}
                 {(() => {
                   const sale = rev.total;
                   const sold = buy - cost.spareCost;
                   return (
                     <span className="ml-auto text-sm text-right whitespace-nowrap"
-                      title={`차액 = 받은 돈 ${won(sale)} − 쓴 돈 ${won(buy)}\n남은 재고가 팔리면 받은 돈이 늘어 차액이 올라가요. 다 팔리면 차액 = 마진\n참고: 판 것만 보면 마진 ${won(sale - sold)} (판 것의 매입가 ${won(sold)}) · 남은 재고 매입가 ${won(cost.spareCost)}${rev.missing ? `\n금액 모르는 ${rev.missing}개 빠짐` : ''}`}>
+                      title={`차액 = 매출 ${won(sale)} − 매입 ${won(buy)}\n남은 재고가 팔리면 매출이 늘어 차액이 올라가요. 다 팔리면 차액 = 마진\n참고: 판 것만 보면 마진 ${won(sale - sold)} (판 것의 매입가 ${won(sold)}) · 남은 재고 매입가 ${won(cost.spareCost)}${rev.missing ? `\n금액 모르는 ${rev.missing}개 빠짐` : ''}`}>
                       {sale && buy
                         ? <>차액 <b className={profit >= 0 ? 'text-emerald-600' : 'text-red-500'}>{won(profit)}</b></>
                         : <span className="text-gray-400">차액 -</span>}
@@ -1125,33 +1125,32 @@ const HanjungOrderPage: React.FC = () => {
               {isOpen && (
                 <div className="border-t-2 border-sky-50 px-5 py-4 space-y-3 bg-gradient-to-b from-sky-50/30 to-white">
                   {receiving === o.code && <ReceiptForm order={o} onDone={() => setReceiving(null)} />}
-                  {/* 섹션 셋: 돈(쓴 돈·받은 돈·차액) → 진행(사무실 도착·쿠팡 발주서) → 상품별. */}
-                  <section className="bg-white border border-gray-200 rounded-2xl px-4 py-3">
-                    <h3 className="text-sm font-bold text-sky-700 mb-2">돈</h3>
-                  {/* 쓴 돈 · 받은 돈 · 차액. 수량은 수량끼리, 금액은 금액끼리 위아래로. */}
+                  {/* 섹션 셋: 손익(매입·매출·차액, 제목 없음) → 진행(사무실 도착·쿠팡 발주서) → 상품별. */}
+                  <section className="bg-white border-2 border-slate-300 rounded-2xl px-4 py-3">
+                                      {/* 매입 · 매출 · 차액. 수량은 수량끼리, 금액은 금액끼리 위아래로. */}
                   {(t.received > 0 || rev.sold > 0) && (
                     <table className="text-sm">
                       <tbody className="font-mono">
                         <tr>
-                          <td className="text-gray-500 font-sans pr-3">쓴 돈</td>
+                          <td className="text-gray-500 font-sans pr-3">매입</td>
                           <td className="text-right pl-6" title="1688에서 사무실에 도착한 수량">{t.received.toLocaleString()}개</td>
                           <td className="text-right pl-8" title="1688 매입가 전부(여유분 포함) + 통관비·작업비 등">{won(buy)}</td>
                         </tr>
                         <tr className="border-t border-gray-100">
-                          <td className="text-gray-500 font-sans pr-3">받은 돈</td>
+                          <td className="text-gray-500 font-sans pr-3">매출</td>
                           <td className="text-right pl-6" title="쿠팡에 판 수량(배정, 회송 뺌)">{rev.sold.toLocaleString()}개</td>
                           <td className="text-right pl-8" title={`쿠팡 정산금액, 정산 전인 수량은 발주금액 (부가세 포함)${payDays.length ? `\n정산예정일: ${payDays.join(', ')}` : ''}${rev.missing ? `\n금액 모르는 ${rev.missing}개 빠짐` : ''}`}>{won(rev.total)}</td>
                         </tr>
                         <tr className="border-t-2 border-gray-300">
                           <td className="text-gray-900 font-sans font-semibold pr-3 pt-1">차액</td>
                           <td className="text-right pl-6 pt-1 text-gray-500" title="아직 안 팔린 수량">남은 재고 {cost.spareQty.toLocaleString()}개</td>
-                          <td className={`text-right pl-8 pt-1 font-bold ${profit >= 0 ? 'text-emerald-600' : 'text-red-500'}`} title="받은 돈 − 쓴 돈. 재고가 팔리면 올라가고, 다 팔리면 마진이 돼요">{won(profit)}</td>
+                          <td className={`text-right pl-8 pt-1 font-bold ${profit >= 0 ? 'text-emerald-600' : 'text-red-500'}`} title="매출 − 매입. 재고가 팔리면 올라가고, 다 팔리면 마진이 돼요">{won(profit)}</td>
                         </tr>
                       </tbody>
                     </table>
                   )}
                   </section>
-                  <section className="bg-white border border-gray-200 rounded-2xl px-4 py-3">
+                  <section className="bg-white border-2 border-slate-300 rounded-2xl px-4 py-3">
                     <h3 className="text-sm font-bold text-sky-700 mb-2">진행</h3>
                   {/* 위에서부터 일의 순서대로: 사무실 도착 → 쿠팡 발주서 → 물류창고입고, 그 아래 상품 표. */}
                   {/* 주문한 개수 중 도착한 개수 */}
@@ -1274,7 +1273,7 @@ const HanjungOrderPage: React.FC = () => {
                   </div>
 
                   </section>
-                  <section className="bg-white border border-gray-200 rounded-2xl px-4 py-3">
+                  <section className="bg-white border-2 border-slate-300 rounded-2xl px-4 py-3">
                     <h3 className="text-sm font-bold text-sky-700 mb-2">상품별</h3>
                   <div className="overflow-x-auto">
                   {/* 상품마다 일의 단계대로 세 칸: 주문(쿠팡 몫·여유) → 사무실 도착 → 쿠팡 입고(정산). 숫자는 "한 것 / 할 것"과 막대로. */}

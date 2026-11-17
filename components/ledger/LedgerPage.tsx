@@ -138,7 +138,6 @@ const LedgerPage: React.FC = () => {
       });
   }, [receives, entries, orders, ships]);
 
-  const cats = form.kind === 'out' ? OUT_CATEGORIES : IN_CATEGORIES;
   const num = 'px-3 text-right font-mono whitespace-nowrap';
 
   return (
@@ -180,46 +179,10 @@ const LedgerPage: React.FC = () => {
                 <td className={num}>+{won(total.otherIn)}</td>
               </tr>
             )}
-            <tr className="text-gray-700 cursor-pointer hover:bg-white/60" onClick={() => toggle('sell')}>
-              <td className="py-1"><span className="text-gray-500 w-3 inline-block">{open.has('sell') ? '▾' : '▸'}</span> 판매비용 <span className="text-xs text-gray-500">택배비 {total.boxes}박스 × {BOX_FEE.toLocaleString()}원 · 광고비 · 직접 적은 비용</span></td><td /><td />
+            <tr className="text-gray-700">
+              <td className="py-1">판매비용 <span className="text-xs text-gray-500">{total.outByCat.filter(x => x.v).map(x => `${x.c} ${won(x.v)}`).join(' · ') || '아래에서 적어요'}</span></td><td /><td />
               <td className={num}>−{won(total.sellCost)}</td>
             </tr>
-            {open.has('sell') && (
-              <tr><td colSpan={4} className="pb-2">
-                <div className="ml-4 mt-1 bg-white rounded-xl px-3 py-2 space-y-2">
-                  <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs">
-                    {total.outByCat.filter(x => x.v).map(x => <span key={x.c} className="text-gray-600">{x.c} <b className="font-mono">{won(x.v)}</b></span>)}
-                    {!total.outByCat.some(x => x.v) && <span className="text-gray-400">아직 없어요</span>}
-                  </div>
-                  {/* 직접 적기 */}
-                  <div className="flex flex-wrap items-center gap-1.5 text-xs pt-2 border-t border-gray-100">
-                    <input type="date" value={form.date} onChange={e => setForm(f => ({ ...f, date: e.target.value }))} className="px-1.5 py-1 border border-gray-200 rounded" />
-                    <select value={form.kind} onChange={e => { const kind = e.target.value as LedgerKind; setForm(f => ({ ...f, kind, category: (kind === 'out' ? OUT_CATEGORIES : IN_CATEGORIES)[0] })); }} className="px-1.5 py-1 border border-gray-200 rounded">
-                      <option value="out">출금</option>
-                      <option value="in">입금</option>
-                    </select>
-                    <select value={form.category} onChange={e => setForm(f => ({ ...f, category: e.target.value }))} className="px-1.5 py-1 border border-gray-200 rounded">
-                      {cats.map(c => <option key={c} value={c}>{c}</option>)}
-                    </select>
-                    <input value={form.amount} onChange={e => setForm(f => ({ ...f, amount: e.target.value }))} placeholder="금액(원)" className="w-24 px-1.5 py-1 border border-gray-200 rounded text-right font-mono" />
-                    <input value={form.memo} onChange={e => setForm(f => ({ ...f, memo: e.target.value }))} onKeyDown={e => { if (e.key === 'Enter') add(); }} placeholder="메모" className="flex-1 min-w-[6rem] px-1.5 py-1 border border-gray-200 rounded" />
-                    <button onClick={add} className="px-2.5 py-1 rounded-lg bg-blue-600 text-white font-semibold hover:bg-blue-700">적기</button>
-                  </div>
-                  <div className="text-[11px] text-gray-400">쿠팡 광고비는 쓴 날로 적어 주세요. 통장에선 다음 달 정산금에서 빠져요.</div>
-                  <div className="max-h-56 overflow-y-auto">
-                    {[...entries].sort((a, b) => b.date.localeCompare(a.date)).map(e => (
-                      <div key={e.id} className="flex items-center gap-3 border-t border-gray-50 py-1 text-xs">
-                        <span className="font-mono text-gray-500">{e.date}</span>
-                        <span className={e.kind === 'in' ? 'text-emerald-700' : 'text-gray-700'}>{e.category}</span>
-                        <span className="text-gray-400 truncate flex-1">{e.memo}</span>
-                        <b className="font-mono">{e.kind === 'in' ? '+' : '−'}{won(e.amount)}</b>
-                        <button onClick={() => remove(e)} title="지우기" className="w-5 h-5 text-red-500 border border-red-200 rounded hover:bg-red-50">×</button>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              </td></tr>
-            )}
             <tr className="text-gray-700">
               <td className="py-1">부가세 <span className="text-xs text-gray-500" title={total.vatList.map(x => `${x.h.replace('-', '년 ')}기 ${won(x.due)}`).join('\n')}>매출 부가세 − 매입 부가세 · <a href="#/tax" className="text-blue-600 hover:underline">세금 보기</a></span></td><td /><td />
               <td className={num}>{total.vat >= 0 ? '−' : '+'}{won(Math.abs(total.vat))}</td>
@@ -230,6 +193,43 @@ const LedgerPage: React.FC = () => {
             </tr>
           </tfoot>
         </table>
+      </Section>
+
+      {/* 판매비용 적기: 늘 펼쳐 둔다. 항목 버튼 하나 누르고 금액 적고 엔터. 날짜는 오늘이 기본. */}
+      <Section title="판매비용 적기" note="항목 누르고 → 금액 → 엔터">
+        <div className="flex flex-wrap gap-1.5 mb-2">
+          {[...OUT_CATEGORIES, ...IN_CATEGORIES].map(c => {
+            const on = form.category === c;
+            const isIn = (IN_CATEGORIES as readonly string[]).includes(c);
+            return (
+              <button key={c} onClick={() => setForm(f => ({ ...f, category: c, kind: isIn ? 'in' : 'out' }))}
+                className={`px-2.5 py-1 rounded-full text-xs border ${on ? (isIn ? 'bg-emerald-600 border-emerald-600 text-white' : 'bg-sky-600 border-sky-600 text-white') : 'bg-white border-gray-200 text-gray-700 hover:bg-gray-50'}`}>
+                {c}
+              </button>
+            );
+          })}
+        </div>
+        <div className="flex flex-wrap items-center gap-1.5 text-sm">
+          <input value={form.amount} onChange={e => setForm(f => ({ ...f, amount: e.target.value }))} onKeyDown={e => { if (e.key === 'Enter') add(); }}
+            placeholder={`${form.category} 금액(원)`} className="w-36 px-2 py-1.5 border border-gray-300 rounded-lg text-right font-mono bg-white" />
+          <input value={form.memo} onChange={e => setForm(f => ({ ...f, memo: e.target.value }))} onKeyDown={e => { if (e.key === 'Enter') add(); }} placeholder="메모(없어도 돼요)" className="flex-1 min-w-[8rem] px-2 py-1.5 border border-gray-300 rounded-lg bg-white" />
+          <input type="date" value={form.date} onChange={e => setForm(f => ({ ...f, date: e.target.value }))} className="px-2 py-1.5 border border-gray-300 rounded-lg bg-white text-gray-600" />
+          <button onClick={add} className="px-3 py-1.5 rounded-lg bg-blue-600 text-white font-semibold hover:bg-blue-700">적기</button>
+        </div>
+        <div className="text-[11px] text-gray-500 mt-1">택배비는 발송완료 박스 수로 자동으로 들어가요(박스당 {BOX_FEE.toLocaleString()}원). 쿠팡 광고비는 쓴 날로 적으면 통장에선 다음 달 정산금에서 빠져요.</div>
+        {entries.length > 0 && (
+          <div className="mt-2 bg-white rounded-xl px-3 py-1 max-h-56 overflow-y-auto">
+            {[...entries].sort((a, b) => b.date.localeCompare(a.date) || b.createdAt - a.createdAt).map(e => (
+              <div key={e.id} className="flex items-center gap-3 border-t border-gray-50 first:border-t-0 py-1 text-xs">
+                <span className="font-mono text-gray-500">{e.date}</span>
+                <span className={e.kind === 'in' ? 'text-emerald-700' : 'text-gray-700'}>{e.category}</span>
+                <span className="text-gray-400 truncate flex-1">{e.memo}</span>
+                <b className="font-mono">{e.kind === 'in' ? '+' : '−'}{won(e.amount)}</b>
+                <button onClick={() => remove(e)} title="지우기" className="w-5 h-5 text-red-500 border border-red-200 rounded hover:bg-red-50">×</button>
+              </div>
+            ))}
+          </div>
+        )}
       </Section>
 
       {/* ② 월별 현금 흐름 */}

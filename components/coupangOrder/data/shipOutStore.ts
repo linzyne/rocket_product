@@ -60,6 +60,8 @@ export interface ShipOut {
   printedOrders?: string[];
   // 서허 쉽먼트 일괄등록으로 생긴 쉽먼트 번호(발주번호 → 쉽먼트 번호). 확장이 내역 조회·택배 쉽먼트 화면에서 찾아 준다.
   shipmentNos?: Record<string, string>;
+  // 택배박스별 발송완료로 이 건을 떼어 낸 원래 출고 건 번호. 발송완료를 되돌리면 그 건에 도로 합친다.
+  splitFrom?: string;
   lines: ShipOutLine[];
 }
 
@@ -240,10 +242,12 @@ export function applyShipOuts(before: ShipOut[], after: ShipOut[]) {
       .flatMap(k2 => goneOf(k2).map(l => ({ l, k2 })));
     return cands.find(c => (c.l.shipOutId || '') === w.e.ship) || cands[0];
   };
+  const joined = new Set<string>();
   for (const w of [...rest.filter(w => goneByName(w)?.l.shipOutId === w.e.ship), ...rest.filter(w => goneByName(w)?.l.shipOutId !== w.e.ship)]) {
     const g = goneByName(w);
     if (g) {
       takeGone(g.l, g.k2);
+      joined.add(nameOf(w.k));
       out.push({ ...g.l, ...w.e.f, shipOutId: w.e.ship });
       continue;
     }
@@ -253,13 +257,14 @@ export function applyShipOuts(before: ShipOut[], after: ShipOut[]) {
     out.push(l);
   }
   // 4) 남은 빠진 줄은 휴지통으로(전에 있던 개수만큼만. 그사이 다른 컴퓨터가 넣은 줄은 건드리지 않는다).
+  //    나뉜 줄을 다시 한 줄로 합쳐서 남은 쪽은 되살리지 않는다(사람이 지운 것으로).
   for (const [k, leftB] of leftBy) {
     const here = hereOf(k);
     for (const e of leftB) {
       const l = here.find(x => !taken.has(x.id) && (x.shipOutId || '') === e.ship);
       if (!l) continue;
       taken.add(l.id);
-      out.push(trashed(l));
+      out.push(joined.has(nameOf(k)) ? { ...trashed(l), trashedWhy: 'delete' } : trashed(l));
     }
   }
   commit(out);
@@ -546,6 +551,7 @@ export function splitShipOutBoxes(id: string, boxNos: number[], patch: Partial<P
     readyKeys: item.readyKeys?.filter(k => takeNos.has(k.split('│')[0])),
     printedOrders: item.printedOrders?.filter(no => takeNos.has(no)),
     shipmentNos: ships && Object.keys(ships).length ? ships : undefined,
+    splitFrom: item.id,
     ...patch,
     lines: take,
   };
@@ -553,6 +559,35 @@ export function splitShipOutBoxes(id: string, boxNos: number[], patch: Partial<P
   if (item.shipmentNos) item.shipmentNos = Object.fromEntries(Object.entries(item.shipmentNos).filter(([no]) => restNos.has(no)));
   write([made, ...list]);
   return made;
+}
+
+// 떼어 낸 출고 건을 원래 건에 도로 합친다(택배박스별 발송완료 되돌리기). 나눠졌던 상품은 다시 한 줄로(수량 더하고 박스 조각 합침).
+export function mergeShipOutInto(fromId: string, intoId: string): boolean {
+  const list = read();
+  const from = list.find(s => s.id === fromId);
+  const into = list.find(s => s.id === intoId);
+  if (!from || !into || from === into) return false;
+  const piecesOf = (l: ShipOutLine) => {
+    const v = l.쉼먼트 || '';
+    return isBoxSplit(v) ? parseBoxSplit(v) : [{ no: parseBoxNo(v) || 0, qty: Number(l.확정수량) || 0 }];
+  };
+  for (const l of from.lines) {
+    const i = into.lines.findIndex(x => x.발주번호 === l.발주번호 && x.상품이름 === l.상품이름);
+    if (i < 0) { into.lines.push(l); continue; }
+    const x = into.lines[i];
+    const pieces = [...piecesOf(x), ...piecesOf(l)].sort((a, b) => a.no - b.no);
+    into.lines[i] = {
+      ...x,
+      확정수량: (Number(x.확정수량) || 0) + (Number(l.확정수량) || 0),
+      쉼먼트: pieces.every(p => p.no) ? joinBoxSplit(pieces) : x.쉼먼트,
+    };
+  }
+  const union = (a?: string[], b?: string[]) => (a || b ? Array.from(new Set([...(a || []), ...(b || [])])) : undefined);
+  into.readyKeys = union(into.readyKeys, from.readyKeys);
+  into.printedOrders = union(into.printedOrders, from.printedOrders);
+  if (from.shipmentNos) into.shipmentNos = { ...from.shipmentNos, ...into.shipmentNos };
+  write(list.filter(s => s.id !== fromId));
+  return true;
 }
 
 // 출고 건들에 진행 표시를 붙인다(쉽먼트 번호·양식 저장 시각).

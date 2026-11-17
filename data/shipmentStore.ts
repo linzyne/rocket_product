@@ -69,7 +69,7 @@ export const batchId = (orders: ShipmentBatch[], now = new Date()) => {
 };
 
 export const allBoxes = (batch: ShipmentBatch) =>
-  batch.centers.flatMap(c => c.boxes.map(b => ({ center: c.center, ...b })));
+  (batch.centers || []).flatMap(c => (c.boxes || []).map(b => ({ center: c.center, ...b })));
 
 const digitsOnly = (w: string) => String(w || '').replace(/\D/g, '');
 // 이 박스의 송장번호가 롯데 목록에서 우리 주문번호 줄의 번호로 확인된 것인지.
@@ -202,7 +202,11 @@ export const subscribeShipments = (listener: Listener): (() => void) => {
     if (cancelled) return;
     unsubscribe = onSnapshot(
       collection(firestore, COLLECTION),
-      snap => listener(sortBatches(snap.docs.map(d => d.data() as ShipmentBatch))),
+      // 이 기기 사본에 고친 칸만 먼저 들어온 문서(센터 목록 없음)가 잠깐 올 수 있다. 빈 목록으로 채워 화면이 멈추지 않게.
+      snap => listener(sortBatches(snap.docs.map(d => {
+        const b = d.data() as ShipmentBatch;
+        return Array.isArray(b.centers) ? b : { ...b, id: b.id || d.id, centers: [] };
+      }))),
       error => console.error('쉽먼트 동기화 실패:', error)
     );
   })();

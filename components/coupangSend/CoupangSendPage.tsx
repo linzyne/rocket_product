@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import ProductQtySummary from '../coupangOrder/components/ProductQtySummary';
-import { ShipOut, ShipOutLine, subscribeShipOuts, markShipOuts, shipOutBatch, shipOutDone } from '../coupangOrder/data/shipOutStore';
+import { ShipOut, ShipOutLine, subscribeShipOuts, markShipOuts, mergeShipOutInto, shipOutBatch, shipOutDone } from '../coupangOrder/data/shipOutStore';
 import { ShipmentBatch, subscribeShipments, allBoxes, waybillForBox, batchForItem } from '../../data/shipmentStore';
 import ShipmentWaybillModal from '../coupangOrder/components/ShipmentWaybillModal';
 import { useHanjungBadge } from '../coupangOrder/data/useHanjungBadge';
@@ -215,6 +215,9 @@ export default function CoupangSendPage({ onGoShip, view = 'waiting' }: { onGoSh
   };
   const unsend = (item: ShipOut) => {
     if (!confirm(`${item.bundle}(${item.center} · ${item.sentDate} 발송)을 발송대기로 되돌릴까요?`)) return;
+    // 택배박스별로 떼어 보낸 건이면 원래 건(아직 안 보낸 것)에 도로 합친다.
+    const origin = item.splitFrom ? list.find(i => i.id === item.splitFrom && !i.sentDate) : undefined;
+    if (origin && mergeShipOutInto(item.id, origin.id)) return;
     markShipOuts([item.id], { sentDate: undefined });
   };
 

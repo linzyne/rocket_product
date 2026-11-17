@@ -1000,7 +1000,7 @@ const HanjungOrderPage: React.FC = () => {
 
   return (
     // 가로로 길면 눈을 많이 움직여야 해서 화면 폭을 줄인다(왼쪽 정렬).
-    <div className="p-4 sm:p-6 lg:p-8 text-gray-800 max-w-[1080px]">
+    <div className="p-4 sm:p-6 lg:p-8 text-gray-800 max-w-[1120px]">
       {/* 머리: 되돌리기 · 다시실행 (⌘Z / ⌘⇧Z) + 검색 */}
       <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
         <div className="flex items-center gap-2">
@@ -1111,7 +1111,7 @@ const HanjungOrderPage: React.FC = () => {
                     <span className={`${w} flex flex-col ${w === q ? 'items-center' : 'items-end'} flex-shrink-0`}><span className="text-[11px] text-gray-500">{label}</span><span className="font-mono text-sm">{value}</span></span>
                   );
                   const op = (t: string) => <span className="w-3 text-center text-sm leading-5 text-gray-400 flex-shrink-0">{t}</span>;
-                  const bar = <span className="self-stretch mx-2 border-l-2 border-gray-200 flex-shrink-0" />;
+                  const bar = <span className="self-stretch mx-5 border-l-2 border-gray-200 flex-shrink-0" />;
                   return (
                     <div className="self-stretch flex items-center whitespace-nowrap">
                       {bar}

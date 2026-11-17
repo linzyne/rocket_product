@@ -932,7 +932,8 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
                         textDecoration: (editable && now === 0) || isReady ? 'line-through' : 'none',
                       }}
                     >
-                      {isReady && <span style={{ marginRight: 4, color: GREEN, fontWeight: 900 }}>✓</span>}
+                      {/* 준비 안 됐어도 한중발주·장바구니에 배정만 되면 ✓ */}
+                      {(isReady || places.length > 0) && <span style={{ marginRight: 4, color: GREEN, fontWeight: 900 }}>✓</span>}
                       {/* 장바구니(1688 주문하기)에 든 몫: 주황 동그라미 장바구니 */}
                       {waitingQueue && !isReady && (
                         <span title="1688 주문하기(장바구니)에 담겨 있어요" style={{

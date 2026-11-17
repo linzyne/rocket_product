@@ -1168,7 +1168,7 @@ const HanjungOrderPage: React.FC = () => {
                   </div>
 
                   <div className="border-t border-gray-100 pt-1 space-y-0.5">
-                    {edit?.code !== o.code && foldHead(`${o.code}|lines`, `발주서 ${o.lines.length}건 · ${won(linesTotal(o.lines))}`, `${Array.from(new Set(o.lines.map(l => l.물류센터))).slice(0, 4).join(' · ')}${o.lines.some(l => lineAlloc(l) > 0 && lineAmount(l) === undefined) ? ' · 매입가 모르는 줄 있음' : ''}`)}
+                    {edit?.code !== o.code && foldHead(`${o.code}|lines`, `쿠팡 발주서 · ${won(linesTotal(o.lines))}`, `${Array.from(new Set(o.lines.map(l => l.물류센터))).slice(0, 4).join(' · ')}${o.lines.some(l => lineAlloc(l) > 0 && lineAmount(l) === undefined) ? ' · 매입가 모르는 줄 있음' : ''}`)}
                     {edit?.code === o.code ? (
                       <div className="border border-blue-200 bg-blue-50/40 rounded-lg p-2 space-y-1">
                         {/* 번호는 머리줄의 번호(✎)를 눌러 바꾼다. */}
@@ -1240,7 +1240,7 @@ const HanjungOrderPage: React.FC = () => {
                     `총원가 ${won(t.totalCost)}`)}
                   {foldOpen(`${o.code}|receipts`) && <div className="pl-7"><ReceiptHistory order={o} /></div>}
 
-                  {settle.rows.length > 0 && foldHead(`${o.code}|settle`, `물류창고입고 ${settle.rows.length}건`, `정산 ${won(settle.total)}`)}
+                  {settle.rows.length > 0 && foldHead(`${o.code}|settle`, `물류창고입고 · 정산 ${won(settle.total)}`, '')}
                   {settle.rows.length > 0 && foldOpen(`${o.code}|settle`) && (
                     <div className="pl-7 overflow-x-auto">
                       {/* 쿠팡 입고(정산) 줄: 입고일 · 발주번호 · 상품 · 수량 · 정산 금액 · 지급일 */}

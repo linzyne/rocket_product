@@ -1165,7 +1165,7 @@ const HanjungOrderPage: React.FC = () => {
                         {/* 쿠팡 발주 줄: 발주번호 · 센터 · 입고예정일 · 상품 · 배정 수량을 칸 맞춰서. 같은 발주번호끼리 붙여 둔다. */}
                         <table className="w-full text-xs">
                           <thead className="text-gray-400">
-                            <tr><th className="text-left font-medium py-1 w-24">발주번호</th><th className="text-left font-medium w-24">센터</th><th className="text-left font-medium w-20">입고예정</th><th className="text-left font-medium">상품</th><th className="text-right font-medium w-20">배정</th><th className="text-right font-medium w-24" title="쿠팡 발주단가 × 배정 수량">발주금액</th><th className="text-right font-medium w-24" title="물류창고입고에서 이 줄(발주번호·상품)로 들어온 수량 / 배정. 다 들어오면 발주금액과 같아요">쿠팡입고</th></tr>
+                            <tr><th className="text-left font-medium py-1 w-24">발주번호</th><th className="text-left font-medium w-24">센터</th><th className="text-left font-medium w-20">입고예정</th><th className="text-left font-medium">상품</th><th className="text-right font-medium w-20" title="쿠팡이 이 발주서 줄에서 확정한 수량">발주수량</th><th className="text-right font-medium w-20" title="그중 이 1688 주문서 물건으로 보내는 수량. 나머지는 다른 주문서가 맡아요">이 건 배정</th><th className="text-right font-medium w-24" title="쿠팡 발주단가 × 배정 수량">발주금액</th><th className="text-right font-medium w-24" title="물류창고입고에서 이 줄(발주번호·상품)로 들어온 수량 / 배정. 다 들어오면 발주금액과 같아요">쿠팡입고</th></tr>
                           </thead>
                           <tbody>
                             {[...o.lines].sort((a, b) => a.발주번호.localeCompare(b.발주번호)).map(l => (
@@ -1174,7 +1174,8 @@ const HanjungOrderPage: React.FC = () => {
                                 <td className="text-gray-600">{l.물류센터}</td>
                                 <td className="text-gray-500">{ymdText(l.입고예정일)}</td>
                                 <td className="text-gray-700 truncate max-w-[22rem]" title={l.상품이름}>{l.상품이름}</td>
-                                <td className="text-right font-mono"><b>{lineAlloc(l)}</b>{lineAlloc(l) !== l.확정수량 && <span className="text-gray-400">/{l.확정수량}</span>}</td>
+                                <td className="text-right font-mono text-gray-500">{l.확정수량}</td>
+                                <td className="text-right font-mono"><b>{lineAlloc(l)}</b></td>
                                 <td className="text-right font-mono text-gray-500">{amountText(l)}</td>
                                 {(() => {
                                   const got = settle.byLine.get(l.key);
@@ -1185,7 +1186,7 @@ const HanjungOrderPage: React.FC = () => {
                             ))}
                           </tbody>
                           <tfoot>
-                            <tr className="border-t border-gray-100"><td colSpan={5} className="py-1 text-right text-gray-400">합계</td><td className="text-right font-mono font-semibold">{won(linesTotal(o.lines))}</td><td className="text-right font-mono font-semibold" title="이 건이 맡은 수량만큼의 물류창고입고 정산">{won(settle.total)}</td></tr>
+                            <tr className="border-t border-gray-100"><td colSpan={6} className="py-1 text-right text-gray-400">합계</td><td className="text-right font-mono font-semibold">{won(linesTotal(o.lines))}</td><td className="text-right font-mono font-semibold" title="이 건이 맡은 수량만큼의 물류창고입고 정산">{won(settle.total)}</td></tr>
                           </tfoot>
                         </table>
                       </div>

@@ -42,9 +42,16 @@ export const loadPriceBook = async (): Promise<PriceBook> => {
   }
 };
 
-// 이 발주 줄의 매입가(1개). 그 발주서에서 읽은 값이 먼저, 없으면 같은 상품의 최근 매입가.
-export const priceOf = (book: PriceBook, po: string, name: string): number | undefined =>
-  book.byPo[poKey(po, name)] ?? book.byName[String(name).trim()];
+// 이 발주 줄의 발주단가(쿠팡 발주서 파일의 "매입가" 칸, 1개). 그 발주서에서 읽은 값이 먼저, 없으면 같은 상품의 최근 값,
+// 그것도 없으면 같은 상품의 다른 발주서에서 읽은 값(그 발주서 파일을 안 올렸어도 같은 상품이면 단가는 거의 같다).
+export const priceOf = (book: PriceBook, po: string, name: string): number | undefined => {
+  const n = String(name).trim();
+  const direct = book.byPo[poKey(po, name)] ?? book.byName[n];
+  if (direct !== undefined) return direct;
+  const tail = poKey('', name);
+  const k = Object.keys(book.byPo).filter(x => x.endsWith(tail)).sort().pop();
+  return k ? book.byPo[k] : undefined;
+};
 
 // 매입가를 기억한다. 이미 같은 값이면 저장하지 않는다.
 export const rememberPrices = async (items: { po: string; name: string; price: number }[]) => {

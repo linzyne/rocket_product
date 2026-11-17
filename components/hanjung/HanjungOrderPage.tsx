@@ -731,20 +731,21 @@ const HanjungOrderPage: React.FC = () => {
     return { total: Math.round(total), missing, sold, byProduct };
   };
   // 매입: 이 건에 쓴 돈 전부(여유분 포함). 순익 = 받은 돈 − 쓴 돈이라, 안 팔린 여유는 손해로 남고 나중에 배정되면 매출이 늘어 메워진다.
-  //  상품마다 원가 = 도착한 만큼은 도착 기록 원가, 아직 안 온 만큼은 주문 때 적은 단가. 부대비용은 상품 원가 비율로 나눈다.
+  //  상품마다 원가 = 도착한 만큼은 도착 기록 원가, 아직 안 온 만큼은 주문 때 적은 단가. 부대비용은 수량으로 n분의 1(개당 같은 금액).
   //  spareQty·spareCost = 아직 배정 안 된 여유 수량과 그 원가(+부대비용 몫).
   const buyOf = (o: HanjungOrder) => {
     const ps = productSummary(o);
     const full = ps.map(p => p.cost + Math.max(0, p.ordered - p.received) * productUnitCost(o, p.상품이름));
-    const goods = full.reduce((n, v) => n + v, 0);
     const fees = Math.max(0, orderTotals(o).totalCost - ps.reduce((n, p) => n + p.cost, 0)) + FEE_KEYS.reduce((n, k) => n + remainingFee(o, k), 0);
+    const allUnits = ps.reduce((n, p) => n + Math.max(p.ordered, p.received), 0);
+    const feePerUnit = allUnits > 0 ? fees / allUnits : 0;
     let total = 0;
     let spareQty = 0;
     let spareCost = 0;
     ps.forEach((p, i) => {
       const units = Math.max(p.ordered, p.received);
       if (!units) return;
-      const withFee = full[i] + (goods > 0 ? fees * (full[i] / goods) : 0);
+      const withFee = full[i] + feePerUnit * units;
       total += withFee;
       const left = Math.max(0, units - p.allocated);
       spareQty += left;
@@ -1315,11 +1316,12 @@ const HanjungOrderPage: React.FC = () => {
                     const goodsTotal = sum(r => r.buyAmt);
                     // 칸 묶음마다 옅은 배경으로 나눈다
                     const buyBg = 'bg-rose-50/70', saleBg = 'bg-sky-50/80', arrBg = 'bg-amber-50/70', mBg = 'bg-violet-50/70', progBg = 'bg-emerald-50/70';
-                    // 개당 마진 = 개당 매출가 − 개당 매입가(부대비용을 상품 매입가 비율로 나눠 넣음). 판 게 없으면 모름.
+                    // 개당 마진 = 개당 매출가 − 개당 매입가(부대비용은 전체 수량으로 n분의 1). 판 게 없으면 모름.
+                    const feePerUnit = sum(r => r.buyQty) > 0 ? feeTotal / sum(r => r.buyQty) : 0;
                     const unitMargin = (r: typeof rows[number]) => {
                       if (!r.saleQty || !r.buyQty) return null;
                       const sell = r.saleAmt / r.saleQty;
-                      const cost = (r.buyAmt + (goodsTotal > 0 ? feeTotal * (r.buyAmt / goodsTotal) : 0)) / r.buyQty;
+                      const cost = r.buyAmt / r.buyQty + feePerUnit;
                       return { sell: Math.round(sell), cost: Math.round(cost), margin: Math.round(sell - cost) };
                     };
                     const num = 'px-3 text-right font-mono text-sm whitespace-nowrap';
@@ -1350,7 +1352,7 @@ const HanjungOrderPage: React.FC = () => {
                         <th rowSpan={2} className="text-left font-medium py-1 pr-3 align-bottom">상품</th>
                         <th colSpan={2} className={`${buyBg} text-center font-bold px-3 pt-1 rounded-t-lg`} title="1688에서 사 온 것">매입</th>
                         <th colSpan={2} className={`${saleBg} text-center font-bold px-3 pt-1 rounded-t-lg`} title="쿠팡에 판 것(배정 − 회송). 정산된 건 정산금액, 아직이면 발주금액. 부가세 포함">매출</th>
-                        <th rowSpan={2} className={`${mBg} text-right font-bold px-3 align-bottom rounded-t-lg`} title="개당 매출가 − 개당 매입가(부대비용 포함)">개당 마진</th>
+                        <th rowSpan={2} className={`${mBg} text-right font-bold px-3 align-bottom rounded-t-lg`} title="개당 매출가 − 개당 매입가(부대비용은 전체 수량으로 n분의 1, 개당 같은 금액)">개당 마진</th>
                         <th rowSpan={2} className={`${arrBg} text-right font-bold px-3 align-bottom rounded-t-lg`} title="사무실에 도착한 수량">도착</th>
                         <th rowSpan={2} className={`${progBg} text-left font-bold px-3 align-bottom rounded-t-lg`} title="도착한 것 중 쿠팡에 배정한 수량, 그중 발송완료·발송대기, 배정 안 된 재고">진행</th>
                       </tr>
@@ -1373,7 +1375,7 @@ const HanjungOrderPage: React.FC = () => {
                             const m = unitMargin(rows.find(r => r.p === p)!);
                             if (!m) return <span className="text-gray-300">-</span>;
                             return (
-                              <span title={`개당 매출가 ${won(m.sell)} − 개당 매입가 ${won(m.cost)}(부대비용 포함)`}>
+                              <span title={`개당 매출가 ${won(m.sell)} − 개당 매입가 ${won(m.cost)}(부대비용 개당 ${won(feePerUnit)} 포함)`}>
                                 <b className={m.margin >= 0 ? 'text-emerald-600' : 'text-red-500'}>{won(m.margin)}</b>
                                 <span className="block text-[11px] text-gray-400">{m.sell.toLocaleString()} − {m.cost.toLocaleString()}</span>
                               </span>

@@ -1286,6 +1286,8 @@ const HanjungOrderPage: React.FC = () => {
                         .reduce((n, l) => n + Math.max(0, lineAlloc(l) - (l.회송 || 0)), 0);
                       return {
                         p,
+                        // 매입 수량 = 실제로 사 온 수량(주문보다 더 왔으면 온 수량). 매입가도 그 수량 기준이라 맞춘다.
+                        buyQty: Math.max(p.ordered, p.received),
                         buyAmt: Math.round(p.cost + Math.max(0, p.ordered - p.received) * productUnitCost(o, p.상품이름)),
                         saleQty: sale?.qty || 0,
                         saleAmt: Math.round(sale?.total || 0),
@@ -1337,14 +1339,14 @@ const HanjungOrderPage: React.FC = () => {
                       </tr>
                     </thead>
                     <tbody>
-                      {rows.map(({ p, buyAmt, saleQty, saleAmt, sent }) => (
+                      {rows.map(({ p, buyQty, buyAmt, saleQty, saleAmt, sent }) => (
                         <tr key={p.상품이름}>
                           <td className="py-1.5 pr-3 border-t border-gray-200"><span className="inline-flex items-center gap-2 max-w-[13rem]"><ProductThumb url={imageOf(p.상품이름)} size={26} /><span className="truncate" title={p.상품이름}>{p.상품이름.replace(/^주노엘\s*/, '')}</span></span></td>
-                          <td className={`${num} ${buyBg} border-t border-white text-gray-900`}>{p.ordered}</td>
+                          <td className={`${num} ${buyBg} border-t border-white text-gray-900`}>{buyQty}</td>
                           <td className={`${num} ${buyBg} border-t border-white text-gray-700`}>{buyAmt ? won(buyAmt) : <span className="text-gray-300">-</span>}</td>
                           <td className={`${num} ${saleBg} border-t border-white text-gray-900`}>{saleQty}</td>
                           <td className={`${num} ${saleBg} border-t border-white text-gray-700`}>{saleAmt ? won(saleAmt) : <span className="text-gray-300">-</span>}</td>
-                          <td className={`${num} ${arrBg} border-t border-white ${p.received >= p.ordered && p.ordered > 0 ? 'text-emerald-600' : p.received > 0 ? 'text-amber-600' : 'text-gray-400'}`}>{p.received}</td>
+                          <td className={`${num} ${arrBg} border-t border-white ${p.received >= buyQty && buyQty > 0 ? 'text-emerald-600' : p.received > 0 ? 'text-amber-600' : 'text-gray-400'}`}>{p.received}</td>
                           <td className={`${progBg} border-t border-white py-1`}>{progress(p.received, p.allocated, sent)}</td>
                         </tr>
                       ))}
@@ -1352,7 +1354,7 @@ const HanjungOrderPage: React.FC = () => {
                     <tfoot className="text-sm">
                       <tr className="font-bold text-gray-900">
                         <td className="py-1.5 pr-3 border-t-2 border-gray-300">합계</td>
-                        <td className={`${num} ${buyBg} border-t-2 border-gray-300`}>{sum(r => r.p.ordered).toLocaleString()}</td>
+                        <td className={`${num} ${buyBg} border-t-2 border-gray-300`}>{sum(r => r.buyQty).toLocaleString()}</td>
                         <td className={`${num} ${buyBg} border-t-2 border-gray-300`}>{won(goodsTotal)}</td>
                         <td className={`${num} ${saleBg} border-t-2 border-gray-300`}>{sum(r => r.saleQty).toLocaleString()}</td>
                         <td className={`${num} ${saleBg} border-t-2 border-gray-300`}>{won(sum(r => r.saleAmt))}</td>

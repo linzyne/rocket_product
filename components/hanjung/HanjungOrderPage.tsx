@@ -1126,7 +1126,7 @@ const HanjungOrderPage: React.FC = () => {
                 <div className="border-t-2 border-sky-50 px-5 py-4 space-y-3 bg-gradient-to-b from-sky-50/30 to-white">
                   {receiving === o.code && <ReceiptForm order={o} onDone={() => setReceiving(null)} />}
                   {/* 섹션 셋: 손익(매입·매출·차액, 제목 없음) → 진행(사무실 도착·쿠팡 발주서) → 상품별. */}
-                  <section className="bg-white border-2 border-slate-300 rounded-2xl px-4 py-3">
+                  <section className="bg-slate-200/70 rounded-2xl px-4 py-3">
                                       {/* 매입 · 매출 · 차액. 수량은 수량끼리, 금액은 금액끼리 위아래로. */}
                   {(t.received > 0 || rev.sold > 0) && (
                     <table className="text-sm">
@@ -1150,7 +1150,7 @@ const HanjungOrderPage: React.FC = () => {
                     </table>
                   )}
                   </section>
-                  <section className="bg-white border-2 border-slate-300 rounded-2xl px-4 py-3">
+                  <section className="bg-slate-200/70 rounded-2xl px-4 py-3">
                     <h3 className="text-sm font-bold text-sky-700 mb-2">진행</h3>
                   {/* 위에서부터 일의 순서대로: 사무실 도착 → 쿠팡 발주서 → 물류창고입고, 그 아래 상품 표. */}
                   {/* 주문한 개수 중 도착한 개수 */}
@@ -1273,7 +1273,7 @@ const HanjungOrderPage: React.FC = () => {
                   </div>
 
                   </section>
-                  <section className="bg-white border-2 border-slate-300 rounded-2xl px-4 py-3">
+                  <section className="bg-slate-200/70 rounded-2xl px-4 py-3">
                     <h3 className="text-sm font-bold text-sky-700 mb-2">상품별</h3>
                   <div className="overflow-x-auto">
                   {/* 상품마다 일의 단계대로 세 칸: 주문(쿠팡 몫·여유) → 사무실 도착 → 쿠팡 입고(정산). 숫자는 "한 것 / 할 것"과 막대로. */}

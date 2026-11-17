@@ -1099,15 +1099,17 @@ const HanjungOrderPage: React.FC = () => {
                     남은 것 정리
                   </button>
                 )}
-                {/* 순이익 = 총판매가(이 건이 맡은 수량, 정산금액·정산 전은 발주금액) − 총매입가(산 것 전부 + 부대비용). */}
+                {/* 총수익 = 총판매가 − 총매입가(산 것 전부, 통장 기준). 현재 = 총판매가 − 팔린 수량의 매입가(총매입가 − 재고 매입가). */}
                 {(() => {
                   const sale = rev.total;
-                  const net = profit;
+                  const now = sale - (buy - cost.spareCost);
+                  const tone = (n: number) => (n >= 0 ? 'text-emerald-600' : 'text-red-500');
                   return (
-                    <span className="ml-auto text-right whitespace-nowrap leading-tight"
-                      title={'순이익 = 총판매가 − 총매입가\n총판매가: 이 건이 맡은 수량의 쿠팡 정산금액, 정산 전인 수량은 쿠팡 발주금액 (부가세 포함)\n총매입가: 이 건의 1688 매입가 전부(여유분 포함) + 부대비용\n남은 재고가 다른 쿠팡 발주에 배정되면 총판매가가 늘어 메워져요'}>
-                      <span className="block text-sm">순이익 <b className={!sale || !buy ? 'text-gray-400' : net >= 0 ? 'text-emerald-600' : 'text-red-500'}>{sale && buy ? won(net) : '-'}</b></span>
-                      <span className="block text-[11px] text-gray-400">총판매가 {sale ? won(sale) : '-'} − 총매입가 {buy ? won(buy) : '-'}{rev.missing ? ` · 금액 모르는 ${rev.missing}개 빠짐` : ''}</span>
+                    <span className="ml-auto text-sm text-right whitespace-nowrap"
+                      title={`총수익 = 총판매가 ${won(sale)} − 총매입가 ${won(buy)} (쓴 돈 − 받은 돈, 통장 기준)\n현재 = 총판매가 ${won(sale)} − 팔린 것의 매입가 ${won(buy - cost.spareCost)} (팔린 것만 본 이익)\n매입가에는 통관비·작업비 등 부대비용이 녹아 있어요. 총판매가는 부가세 포함${rev.missing ? `\n금액 모르는 ${rev.missing}개 빠짐` : ''}`}>
+                      {sale && buy
+                        ? <>총수익 <b className={tone(profit)}>{won(profit)}</b> <span className="text-gray-300">/</span> 현재 <b className={tone(now)}>{won(now)}</b></>
+                        : <span className="text-gray-400">총수익 -</span>}
                     </span>
                   );
                 })()}

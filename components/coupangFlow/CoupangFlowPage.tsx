@@ -821,6 +821,27 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
       </div>
     );
   };
+  // 사무실 여유 재고: 도착(건물) + 오는 중(비행기)을 버튼 모양 하나로 묶는다. 0이어도 늘 보여준다.
+  // need: 이 줄에 채울 수량. covered면 회색.
+  const officeBadge = (name: string, need: number, covered: boolean) => {
+    const office = officeOf(name);
+    const arrived = office.qty || 0;
+    const incoming = office.incoming || 0;
+    const officeColor = covered ? '#a8a29e' : arrived >= need ? GREEN : arrived + incoming >= need ? '#d97706' : RED;
+    const incomingColor = covered || !incoming ? '#a8a29e' : '#d97706';
+    return (
+      <span
+        title={`사무실 재고(한중 여유) · 도착 ${arrived}개 · 오는 중 ${incoming}개\n${office.names.join('\n')}`}
+        style={{
+          display: 'inline-flex', alignItems: 'center', gap: 5, padding: '0 6px', fontSize: 11, lineHeight: '17px', alignSelf: 'center',
+          borderRadius: 6, border: '1px solid #e7e5e4', background: '#f5f5f4', whiteSpace: 'nowrap',
+        }}
+      >
+        <span><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke={officeColor} strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" style={{ display: 'inline-block', verticalAlign: '-1px', marginRight: 1 }}><path d="M4 21V5a1 1 0 0 1 1-1h9a1 1 0 0 1 1 1v16" /><path d="M15 10h4a1 1 0 0 1 1 1v10" /><path d="M2 21h20M8 8h3M8 12h3M8 16h3" /></svg><b style={{ color: officeColor }}>{arrived}</b></span>
+        <span><svg width="11" height="11" viewBox="0 0 24 24" fill={incomingColor} style={{ display: 'inline-block', verticalAlign: '-1px', marginRight: 1 }}><path d="M21 16v-2l-8-5V3.5a1.5 1.5 0 0 0-3 0V9l-8 5v2l8-2.5V19l-2 1.5V22l3.5-1 3.5 1v-1.5L13 19v-5.5z" /></svg><b style={{ color: incomingColor }}>{incoming}</b></span>
+      </span>
+    );
+  };
   // 상품. 새발주서 단계에서는 확정수량을 바로 고친다(줄이면 사유, 기본 시장 단종). 다른 단계에 가 있는 줄은 어디 있는지 빨갛게.
   // only: 이 줄들만 그린다(박스별 보기에서 한 박스에 든 줄만).
   // boxNo: 박스별 보기의 그 박스. 나눠 담은 줄은 이 박스 몫 수량과 박스 네모를 보인다.
@@ -941,6 +962,8 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
                 })()}
                 {editable ? (
                   <span style={{ flexShrink: 0, display: 'inline-flex', alignItems: 'center', gap: 2 }}>
+                    {/* 새발주서: 확정수량 정할 때 사무실 재고도 같이 본다 */}
+                    <span style={{ marginRight: 3 }}>{officeBadge(l.상품이름, now, now === 0)}</span>
                     <input
                       type="number" min={0} max={full} value={now}
                       onChange={e => {
@@ -963,17 +986,12 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
                     // 일부만 맡겼으면 남은 수량을 빨갛게 알린다(준비됨으로 체크한 줄은 빼고).
                     const left = Math.max(0, (Number(l.확정수량) || 0) - assigned - queued);
                     const showLeft = (assigned > 0 || queued > 0) && left > 0 && !isReadyLine;
-                    const office = officeOf(l.상품이름);
-                    const arrived = office.qty || 0;
-                    const incoming = office.incoming || 0;
                     // 사무실 숫자 색: 이 줄에 아직 채울 게 남았을 때만(이미 다 맡겼거나 준비됨이면 회색).
                     const need = Math.max(0, (Number(l.확정수량) || 0) - assigned - queued);
                     const covered = need === 0 || isReadyLine;
-                    const officeColor = covered ? '#a8a29e' : arrived >= need ? GREEN : arrived + incoming >= need ? '#d97706' : RED;
                     const plane = (color: string) => (
                       <svg width="11" height="11" viewBox="0 0 24 24" fill={color} style={{ display: 'inline-block', verticalAlign: '-1px', marginRight: 1 }}><path d="M21 16v-2l-8-5V3.5a1.5 1.5 0 0 0-3 0V9l-8 5v2l8-2.5V19l-2 1.5V22l3.5-1 3.5 1v-1.5L13 19v-5.5z" /></svg>
                     );
-                    const incomingColor = covered || !incoming ? '#a8a29e' : '#d97706';
                     return (
                       <span style={{ flexShrink: 0, display: 'inline-flex', alignItems: 'baseline', gap: 3, whiteSpace: 'nowrap', letterSpacing: '-0.3px' }}>
                         {(o.stage === 1 || o.stage === 2) && l.stage === o.stage
@@ -1026,17 +1044,7 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
                           <b onClick={() => setAssignFor({ o, l, left })} title={`남은 ${left}개를 배정해 주세요 — 누르면 남은 수량만 배정해요`}
                             style={{ fontSize: 11, color: RED, cursor: 'pointer', textDecoration: 'underline dotted', textUnderlineOffset: 2 }}>미배정 {left}</b>
                         )}
-                        {/* 사무실 여유 재고: 도착(건물) + 오는 중(비행기)을 버튼 모양 하나로 묶는다. 0이어도 늘 보여준다. */}
-                        <span
-                          title={`사무실 재고(한중 여유) · 도착 ${arrived}개 · 오는 중 ${incoming}개\n${office.names.join('\n')}`}
-                          style={{
-                            display: 'inline-flex', alignItems: 'center', gap: 5, padding: '0 6px', fontSize: 11, lineHeight: '17px', alignSelf: 'center',
-                            borderRadius: 6, border: '1px solid #e7e5e4', background: '#f5f5f4', whiteSpace: 'nowrap',
-                          }}
-                        >
-                          <span><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke={officeColor} strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" style={{ display: 'inline-block', verticalAlign: '-1px', marginRight: 1 }}><path d="M4 21V5a1 1 0 0 1 1-1h9a1 1 0 0 1 1 1v16" /><path d="M15 10h4a1 1 0 0 1 1 1v10" /><path d="M2 21h20M8 8h3M8 12h3M8 16h3" /></svg><b style={{ color: officeColor }}>{arrived}</b></span>
-                          <span>{plane(incomingColor)}<b style={{ color: incomingColor }}>{incoming}</b></span>
-                        </span>
+                        {officeBadge(l.상품이름, need, covered)}
                       </span>
                     );
                   })()

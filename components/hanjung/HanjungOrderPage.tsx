@@ -1275,75 +1275,107 @@ const HanjungOrderPage: React.FC = () => {
                   <section className="bg-slate-200/70 rounded-2xl px-4 py-3">
                     <h3 className="text-sm font-bold text-sky-700 mb-2">상품별</h3>
                   <div className="overflow-x-auto">
-                  {/* 상품마다 매입(수량·매입가) → 도착 → 매출(수량·매출가). 맨 아래 합계, 그 아래 부대비용. */}
+                  {/* 상품마다 매입(수량·매입가) | 매출(수량·매출가) | 도착 | 진행(도착분이 어디까지 갔나). 매입가 아래 합계 → 부대비용 → 총합계(= 이 건 총매입가). */}
                   {(() => {
                     // 매입가 = 도착한 만큼은 도착 기록 매입가, 아직 안 온 만큼은 주문 때 단가(buyOf와 같은 기준, 부대비용 뺌)
                     const rows = products.map(p => {
                       const sale = rev.byProduct.find(x => sameName(x.상품이름, p.상품이름));
+                      // 이 상품을 맡은 쿠팡 발주 줄 중 발주서가 발송완료된 수량(회송 뺌)
+                      const sent = o.lines
+                        .filter(l => lineAlloc(l) > 0 && sameName(l.상품이름, p.상품이름) && sentNos.has(String(l.발주번호 || '').trim()))
+                        .reduce((n, l) => n + Math.max(0, lineAlloc(l) - (l.회송 || 0)), 0);
                       return {
                         p,
-                        buyQty: Math.max(p.ordered, p.received),
                         buyAmt: Math.round(p.cost + Math.max(0, p.ordered - p.received) * productUnitCost(o, p.상품이름)),
                         saleQty: sale?.qty || 0,
                         saleAmt: Math.round(sale?.total || 0),
+                        sent,
                       };
                     });
                     const sum = (f: (r: typeof rows[number]) => number) => rows.reduce((n, r) => n + f(r), 0);
-                    const num = 'pl-4 text-right font-mono text-sm whitespace-nowrap';
+                    const fees = FEE_KEYS.map(k => ({ k, v: o.receipts.reduce((n, r) => n + receiptFee(r, k), 0) }));
+                    const feeTotal = fees.reduce((n, f) => n + f.v, 0) + FEE_KEYS.reduce((n, k) => n + remainingFee(o, k), 0);
+                    const goodsTotal = sum(r => r.buyAmt);
+                    // 칸 묶음마다 옅은 배경으로 나눈다
+                    const buyBg = 'bg-rose-50/70', saleBg = 'bg-sky-50/80', arrBg = 'bg-amber-50/70', progBg = 'bg-emerald-50/70';
+                    const num = 'px-3 text-right font-mono text-sm whitespace-nowrap';
+                    const progress = (arrived: number, alloc: number, sent: number) => {
+                      // 도착분 기준: 발송완료 · 발송대기(배정했는데 아직) · 재고(배정 안 됨)
+                      const wait = Math.max(0, alloc - sent);
+                      const stock = Math.max(0, arrived - alloc);
+                      const base = Math.max(arrived, alloc) || 1;
+                      return (
+                        <div className="px-3">
+                          <div className="flex h-1.5 rounded-full overflow-hidden bg-gray-200 w-28">
+                            <div className="bg-emerald-500" style={{ width: `${(sent / base) * 100}%` }} />
+                            <div className="bg-violet-400" style={{ width: `${(wait / base) * 100}%` }} />
+                          </div>
+                          <div className="text-xs mt-0.5 w-36 flex flex-wrap gap-x-2 whitespace-nowrap">
+                            <span className="text-gray-700">배정 <b>{alloc}</b></span>
+                            {sent > 0 && <span className="text-emerald-600 font-semibold">발송완료 {sent}</span>}
+                            {wait > 0 && <span className="text-violet-700 font-semibold">발송대기 {wait}</span>}
+                            {stock > 0 && <span className="text-gray-500">재고 {stock}</span>}
+                          </div>
+                        </div>
+                      );
+                    };
                     return (
-                  <table className="text-[15px]">
-                    <thead className="text-sm text-gray-500">
+                  <table className="text-[15px] border-separate border-spacing-0">
+                    <thead className="text-sm text-gray-600">
                       <tr>
                         <th rowSpan={2} className="text-left font-medium py-1 pr-3 align-bottom">상품</th>
-                        <th colSpan={2} className="text-center font-medium pl-4 border-b border-gray-300" title="1688에서 사 온 것">매입</th>
-                        <th rowSpan={2} className="text-right font-medium pl-4 align-bottom" title="사무실에 도착한 수량">도착</th>
-                        <th colSpan={2} className="text-center font-medium pl-4 border-b border-gray-300" title="쿠팡에 판 것(배정 − 회송). 정산된 건 정산금액, 아직이면 발주금액. 부가세 포함">매출</th>
+                        <th colSpan={2} className={`${buyBg} text-center font-bold px-3 pt-1 rounded-t-lg`} title="1688에서 사 온 것">매입</th>
+                        <th colSpan={2} className={`${saleBg} text-center font-bold px-3 pt-1 rounded-t-lg`} title="쿠팡에 판 것(배정 − 회송). 정산된 건 정산금액, 아직이면 발주금액. 부가세 포함">매출</th>
+                        <th rowSpan={2} className={`${arrBg} text-right font-bold px-3 align-bottom rounded-t-lg`} title="사무실에 도착한 수량">도착</th>
+                        <th rowSpan={2} className={`${progBg} text-left font-bold px-3 align-bottom rounded-t-lg`} title="도착한 것 중 쿠팡에 배정한 수량, 그중 발송완료·발송대기, 배정 안 된 재고">진행</th>
                       </tr>
                       <tr className="text-xs">
-                        <th className="text-right font-normal pl-4 pt-1">수량</th>
-                        <th className="text-right font-normal pl-4 pt-1">매입가</th>
-                        <th className="text-right font-normal pl-4 pt-1">수량</th>
-                        <th className="text-right font-normal pl-4 pt-1">매출가</th>
+                        <th className={`${buyBg} text-right font-normal px-3 pb-1`}>수량</th>
+                        <th className={`${buyBg} text-right font-normal px-3 pb-1`}>매입가</th>
+                        <th className={`${saleBg} text-right font-normal px-3 pb-1`}>수량</th>
+                        <th className={`${saleBg} text-right font-normal px-3 pb-1`}>매출가</th>
                       </tr>
                     </thead>
                     <tbody>
-                      {rows.map(({ p, buyQty, buyAmt, saleQty, saleAmt }) => (
-                        <tr key={p.상품이름} className="border-t border-gray-100">
-                          <td className="py-1.5 pr-3"><span className="inline-flex items-center gap-2 max-w-[22rem]"><ProductThumb url={imageOf(p.상품이름)} size={26} /><span className="truncate" title={p.상품이름}>{p.상품이름.replace(/^주노엘\s*/, '')}</span></span></td>
-                          <td className={`${num} text-gray-900`}>{buyQty}</td>
-                          <td className={`${num} text-gray-700`}>{buyAmt ? won(buyAmt) : <span className="text-gray-300">-</span>}</td>
-                          <td className={`${num} ${p.received >= buyQty && buyQty > 0 ? 'text-emerald-600' : p.received > 0 ? 'text-amber-600' : 'text-gray-400'}`}>{p.received}</td>
-                          <td className={`${num} text-gray-900`}>{saleQty}</td>
-                          <td className={`${num} text-gray-700`}>{saleAmt ? won(saleAmt) : <span className="text-gray-300">-</span>}</td>
+                      {rows.map(({ p, buyAmt, saleQty, saleAmt, sent }) => (
+                        <tr key={p.상품이름}>
+                          <td className="py-1.5 pr-3 border-t border-gray-200"><span className="inline-flex items-center gap-2 max-w-[13rem]"><ProductThumb url={imageOf(p.상품이름)} size={26} /><span className="truncate" title={p.상품이름}>{p.상품이름.replace(/^주노엘\s*/, '')}</span></span></td>
+                          <td className={`${num} ${buyBg} border-t border-white text-gray-900`}>{p.ordered}</td>
+                          <td className={`${num} ${buyBg} border-t border-white text-gray-700`}>{buyAmt ? won(buyAmt) : <span className="text-gray-300">-</span>}</td>
+                          <td className={`${num} ${saleBg} border-t border-white text-gray-900`}>{saleQty}</td>
+                          <td className={`${num} ${saleBg} border-t border-white text-gray-700`}>{saleAmt ? won(saleAmt) : <span className="text-gray-300">-</span>}</td>
+                          <td className={`${num} ${arrBg} border-t border-white ${p.received >= p.ordered && p.ordered > 0 ? 'text-emerald-600' : p.received > 0 ? 'text-amber-600' : 'text-gray-400'}`}>{p.received}</td>
+                          <td className={`${progBg} border-t border-white py-1`}>{progress(p.received, p.allocated, sent)}</td>
                         </tr>
                       ))}
                     </tbody>
-                    <tfoot>
-                      <tr className="border-t-2 border-gray-300 font-bold text-gray-900">
-                        <td className="py-1.5 pr-3 text-sm">합계</td>
-                        <td className={num}>{sum(r => r.buyQty).toLocaleString()}</td>
-                        <td className={num}>{won(sum(r => r.buyAmt))}</td>
-                        <td className={num}>{sum(r => r.p.received).toLocaleString()}</td>
-                        <td className={num}>{sum(r => r.saleQty).toLocaleString()}</td>
-                        <td className={num}>{won(sum(r => r.saleAmt))}</td>
+                    <tfoot className="text-sm">
+                      <tr className="font-bold text-gray-900">
+                        <td className="py-1.5 pr-3 border-t-2 border-gray-300">합계</td>
+                        <td className={`${num} ${buyBg} border-t-2 border-gray-300`}>{sum(r => r.p.ordered).toLocaleString()}</td>
+                        <td className={`${num} ${buyBg} border-t-2 border-gray-300`}>{won(goodsTotal)}</td>
+                        <td className={`${num} ${saleBg} border-t-2 border-gray-300`}>{sum(r => r.saleQty).toLocaleString()}</td>
+                        <td className={`${num} ${saleBg} border-t-2 border-gray-300`}>{won(sum(r => r.saleAmt))}</td>
+                        <td className={`${num} ${arrBg} border-t-2 border-gray-300`}>{sum(r => r.p.received).toLocaleString()}</td>
+                        <td className={`${progBg} border-t-2 border-gray-300`}>{progress(sum(r => r.p.received), sum(r => r.p.allocated), sum(r => r.sent))}</td>
+                      </tr>
+                      <tr className="text-gray-700">
+                        <td className="py-1 pr-3">부대비용
+                          <span className="ml-2 text-xs text-gray-400">{fees.filter(f => f.v).map(f => `${f.k} ${won(f.v)}`).join(' · ') || '없음'}</span>
+                        </td>
+                        <td className={buyBg} />
+                        <td className={`${num} ${buyBg}`}>{won(feeTotal)}</td>
+                      </tr>
+                      <tr className="font-bold text-gray-900">
+                        <td className="py-1.5 pr-3 border-t border-gray-300">총합계</td>
+                        <td className={`${buyBg} border-t border-gray-300 rounded-bl-lg`} />
+                        <td className={`${num} ${buyBg} border-t border-gray-300 text-rose-700 rounded-br-lg`}>{won(goodsTotal + feeTotal)}</td>
                       </tr>
                     </tfoot>
                   </table>
                     );
                   })()}
                   </div>
-
-                    {/* 맨 아래: 부대비용(도착 기록 입력 칸과 같은 순서로) */}
-                    {o.receipts.length > 0 && (
-                      <div className="flex flex-wrap items-center gap-x-5 gap-y-1 pt-2 mt-1 border-t border-gray-300 text-sm">
-                        <span className="font-semibold text-gray-700">부대비용</span>
-                        {FEE_KEYS.map(k => {
-                          const v = o.receipts.reduce((n, r) => n + receiptFee(r, k), 0);
-                          return <span key={k} className={v ? 'text-gray-700' : 'text-gray-400'}>{k} <b className="font-mono">{won(v)}</b></span>;
-                        })}
-                        <span className="ml-auto text-gray-700">합계 <b className="font-mono">{won(FEE_KEYS.reduce((n, k) => n + o.receipts.reduce((m, r) => m + receiptFee(r, k), 0), 0))}</b></span>
-                      </div>
-                    )}
                   </section>
                   {/* 수정 중에는 숨긴다(품목 빼기 ✕와 헷갈려 한중발주 전체를 지우는 일이 없게). */}
                   {edit?.code !== o.code && (

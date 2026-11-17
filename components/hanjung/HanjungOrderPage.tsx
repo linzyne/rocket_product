@@ -564,23 +564,17 @@ const HanjungOrderPage: React.FC = () => {
     if (next.has(k)) next.delete(k); else next.add(k);
     return next;
   });
-  // 접는 줄: 제목 + 숫자 칸들(작은 이름표 위, 숫자 아래). 칸은 제목 옆에 고정 폭으로 늘어서 위아래 줄끼리 비교된다.
-  type FoldStat = { label: string; value: string; tone?: 'green' | 'amber' | 'red' | 'gray' };
-  const STAT_TONE = { green: 'text-emerald-600', amber: 'text-amber-600', red: 'text-red-500', gray: 'text-gray-400' };
-  const foldHead = (k: string, title: string, stats: FoldStat[], note?: string) => (
+  // 접는 줄: 위에 제목, 아래에 한 줄 요약(숫자는 굵게). 누르면 아래 내용이 펼쳐진다.
+  const foldHead = (k: string, title: string, body: React.ReactNode, note?: string) => (
     <button
       onClick={() => toggleFold(k)}
-      className="w-full flex items-center gap-2 text-left py-1 px-2 rounded-xl hover:bg-sky-50"
+      className="w-full flex items-start gap-2 text-left py-1 px-2 rounded-xl hover:bg-white/60"
     >
-      <span className="text-gray-500 w-3 text-sm">{foldOpen(k) ? '▾' : '▸'}</span>
-      <span className="w-28 flex-shrink-0 text-base font-bold text-gray-900">{title}</span>
-      {stats.map(st => (
-        <span key={st.label} className="w-28 flex-shrink-0 leading-tight">
-          <span className="block text-[11px] text-gray-400">{st.label}</span>
-          <b className={`font-mono text-sm ${st.tone ? STAT_TONE[st.tone] : 'text-gray-800'}`}>{st.value}</b>
-        </span>
-      ))}
-      {note && <span className="text-xs text-amber-600">{note}</span>}
+      <span className="text-gray-500 w-3 text-sm pt-0.5">{foldOpen(k) ? '▾' : '▸'}</span>
+      <span>
+        <span className="block text-base font-bold text-gray-900">{title}</span>
+        <span className="block text-sm text-gray-600">{body}{note && <span className="ml-2 text-xs text-amber-600">{note}</span>}</span>
+      </span>
     </button>
   );
   const imageOf = useProductImage();
@@ -1154,19 +1148,15 @@ const HanjungOrderPage: React.FC = () => {
                     <h3 className="text-sm font-bold text-sky-700 mb-2">진행</h3>
                   {/* 위에서부터 일의 순서대로: 사무실 도착 → 쿠팡 발주서 → 물류창고입고, 그 아래 상품 표. */}
                   {/* 주문한 개수 중 도착한 개수 */}
-                  {o.receipts.length > 0 && foldHead(`${o.code}|receipts`, '사무실 도착', [
-                    { label: '주문', value: `${t.ordered.toLocaleString()}개` },
-                    { label: '도착', value: `${t.received.toLocaleString()}개`, tone: t.received >= t.ordered ? 'green' : 'amber' },
-                    ...(() => {
-                      // 총매입가 = 제품비(도착 기록 상품 금액) + 부대비용(통관비·작업비 등)
-                      const goods = o.receipts.reduce((n, r) => n + receiptGoodsCost(r), 0);
-                      return [
-                        { label: '제품비', value: won(goods) },
-                        { label: '부대비용', value: won(t.totalCost - goods) },
-                        { label: '총매입가', value: won(t.totalCost) },
-                      ];
-                    })(),
-                  ])}
+                  {o.receipts.length > 0 && (() => {
+                    // 총매입가 = 제품비(도착 기록 상품 금액) + 부대비용(통관비·작업비 등)
+                    const goods = o.receipts.reduce((n, r) => n + receiptGoodsCost(r), 0);
+                    return foldHead(`${o.code}|receipts`, '사무실 도착', <>
+                      <b>{t.ordered.toLocaleString()}개</b> 주문 → <b className={t.received >= t.ordered ? 'text-emerald-600' : 'text-amber-600'}>{t.received.toLocaleString()}개</b> 도착
+                      <span className="mx-2 text-gray-300">|</span>
+                      총매입가 <b>{won(t.totalCost)}</b> <span className="text-gray-400">(제품비 {won(goods)} · 부대비용 {won(t.totalCost - goods)})</span>
+                    </>);
+                  })()}
                   {foldOpen(`${o.code}|receipts`) && <div className="pl-7"><ReceiptHistory order={o} /></div>}
 
                   <div className="space-y-0.5">
@@ -1175,12 +1165,14 @@ const HanjungOrderPage: React.FC = () => {
                       const returned = o.lines.reduce((n, l) => n + (lineAlloc(l) > 0 ? (lineAmount(l) || 0) / lineAlloc(l) * (l.회송 || 0) : 0), 0);
                       const waiting = Math.max(0, rev.total - settle.total);
                       const note = o.lines.some(l => lineAlloc(l) > 0 && lineAmount(l) === undefined) ? '발주금액 모르는 줄 있음' : '';
-                      return foldHead(`${o.code}|lines`, '쿠팡 발주서', [
-                        { label: '발주금액', value: won(linesTotal(o.lines)) },
-                        ...(returned > 0 ? [{ label: '회송', value: `−${won(returned)}`, tone: 'red' as const }] : []),
-                        { label: '입고완료', value: won(settle.total), tone: 'green' },
-                        { label: '입고대기', value: won(waiting), tone: waiting > 0 ? 'amber' : 'gray' },
-                      ], note);
+                      return foldHead(`${o.code}|lines`, '쿠팡 발주서', <>
+                        발주금액 <b>{won(linesTotal(o.lines))}</b>{' '}
+                        <span className="text-gray-400">(</span>
+                        {returned > 0 && <>회송 <b className="text-red-500">−{won(returned)}</b><span className="text-gray-400">, </span></>}
+                        입고완료 <b className="text-emerald-600">{won(settle.total)}</b><span className="text-gray-400">, </span>
+                        입고대기 <b className={waiting > 0 ? 'text-amber-600' : 'text-gray-400'}>{won(waiting)}</b>
+                        <span className="text-gray-400">)</span>
+                      </>, note);
                     })()}
                     {edit?.code === o.code ? (
                       <div className="border border-blue-200 bg-blue-50/40 rounded-lg p-2 space-y-1">

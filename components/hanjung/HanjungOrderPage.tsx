@@ -1090,10 +1090,23 @@ const HanjungOrderPage: React.FC = () => {
                     .reduce((n, l) => n + Math.max(0, lineAlloc(l) - (l.회송 || 0)), 0);
                   const stock = products.reduce((n, p) => n + Math.max(0, p.received - p.allocated), 0);
                   const f = (n: number) => n.toLocaleString();
+                  // 글씨는 위, 숫자는 아래(오른쪽 차액 식과 같은 모양)
+                  const cell = (label: string, n: number, cls = 'text-gray-900') => (
+                    <span className="flex flex-col items-end"><span className="text-xs text-gray-500">{label}</span><b className={`font-mono text-sm ${cls}`}>{f(n)}</b></span>
+                  );
+                  const op = (t: string) => <span className="text-gray-400 text-sm">{t}</span>;
                   return (
-                    <span className="text-sm text-gray-500 whitespace-nowrap">
-                      매입 <b className="font-mono text-gray-900">{f(buyQty)}</b> − 매출 <b className="font-mono text-gray-900">{f(rev.sold)}</b> = <b className="font-mono text-gray-900">{f(buyQty - rev.sold)}</b>개
-                      <span className="ml-1.5 text-xs">(배정 <b className="text-gray-700">{f(alloc)}</b>, 발송완료 <b className="text-emerald-600">{f(sentQty)}</b>, 재고 <b className="text-gray-700">{f(stock)}</b>)</span>
+                    <span className="inline-flex items-end gap-2 whitespace-nowrap">
+                      {cell('매입', buyQty)}
+                      {op('−')}
+                      {cell('매출', rev.sold)}
+                      {op('=')}
+                      {cell('남은', buyQty - rev.sold)}
+                      <span className="inline-flex items-end gap-2.5 ml-1 px-2.5 py-0.5 rounded-lg bg-gray-50">
+                        {cell('배정', alloc, 'text-gray-700')}
+                        {cell('발송완료', sentQty, 'text-emerald-600')}
+                        {cell('재고', stock, 'text-gray-700')}
+                      </span>
                     </span>
                   );
                 })()}

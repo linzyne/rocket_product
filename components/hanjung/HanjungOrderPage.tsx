@@ -916,16 +916,25 @@ const HanjungOrderPage: React.FC = () => {
     const orderQty = itemsToOrderQty(items.filter(it => itemQty(it) > 0 || it.need > 0));
     const unitCost = itemsToUnitCost(items);
     const fees = feesToNumbers(edit.fees);
+    // 도착 뒤에 금액을 고친 상품은 도착 기록의 단가도 같이 고친다(순이익의 매입은 도착 기록 원가를 쓰므로).
+    const changed = Object.entries(unitCost).filter(([n, c]) => Math.abs(c - productUnitCost(o, n)) > 0.5);
+    const receipts = changed.length ? o.receipts.map(r => ({
+      ...r,
+      items: r.items.map(it => {
+        const hit = changed.find(([n]) => sameName(n, it.상품이름));
+        return hit ? { ...it, unitCost: hit[1] } : it;
+      }),
+    })) : undefined;
 
     // from 번호로 저장된 건을 to 번호·ls 줄로 바꾼다. 그사이 붙은 수입입고 기록은 지금 저장된 것을 쓴다.
-    const put = async (from: string, to: string, ls: HanjungLine[], qty: Record<string, number> | undefined, cost: Record<string, number> | undefined, fee: HanjungOrder['fees'] | undefined) => {
+    const put = async (from: string, to: string, ls: HanjungLine[], qty: Record<string, number> | undefined, cost: Record<string, number> | undefined, fee: HanjungOrder['fees'] | undefined, rc?: HanjungOrder['receipts']) => {
       const cur = ordersRef.current.find(x => x.code === from) || o;
       const { orderQty: _old, unitCost: _oldCost, fees: _oldFees, ...base } = cur;
-      await saveHanjungOrder({ ...base, code: to, lines: ls, ...(qty ? { orderQty: qty } : {}), ...(cost && Object.keys(cost).length ? { unitCost: cost } : {}), ...(fee && Object.keys(fee).length ? { fees: fee } : {}) });
+      await saveHanjungOrder({ ...base, code: to, lines: ls, ...(rc ? { receipts: rc } : {}), ...(qty ? { orderQty: qty } : {}), ...(cost && Object.keys(cost).length ? { unitCost: cost } : {}), ...(fee && Object.keys(fee).length ? { fees: fee } : {}) });
       if (from !== to) await deleteHanjungOrder(from);
     };
     const apply = async () => {
-      await put(o.code, code, lines, orderQty, unitCost, fees);
+      await put(o.code, code, lines, orderQty, unitCost, fees, receipts);
       if (code !== o.code) await setReservationMemo(keptRows, `예약 ${code}`);
       if (removedRows.length) {
         await returnToHanjungQueue(removedRows, queueRef.current);
@@ -943,7 +952,7 @@ const HanjungOrderPage: React.FC = () => {
     record({
       label: `${o.code} 수정`,
       undo: async () => {
-        await put(code, o.code, o.lines, o.orderQty, o.unitCost, o.fees);
+        await put(code, o.code, o.lines, o.orderQty, o.unitCost, o.fees, receipts ? o.receipts : undefined);
         await setReservationMemo([...keptRows, ...removedRows], `예약 ${o.code}`);
         if (removedRows.length) await removeFromHanjungQueue(removedKeys);
         if (queueBefore.length) await addToHanjungQueue(queueBefore.map(queueItemToRow), []);
@@ -1259,15 +1268,13 @@ const HanjungOrderPage: React.FC = () => {
                   {edit?.code !== o.code && (
                     <div className="flex gap-2 justify-end">
                       <button onClick={() => editMemo(o)} className="px-3.5 py-1.5 text-sm border border-gray-200 rounded-full bg-white hover:bg-gray-50">📝 메모</button>
-                      {!o.receipts.length && (
-                        <button
-                          onClick={() => startEdit(o)}
-                          title="주문 수량·금액을 고치거나 상품 줄을 빼요(뺀 줄은 1688 주문하기로 돌아가요)"
-                          className="px-3.5 py-1.5 text-sm border border-sky-200 text-sky-700 rounded-full bg-white hover:bg-sky-50"
-                        >
-                          수정
-                        </button>
-                      )}
+                      <button
+                        onClick={() => startEdit(o)}
+                        title="주문 수량·금액을 고치거나 상품 줄을 빼요(뺀 줄은 1688 주문하기로 돌아가요). 도착 뒤에 금액을 고치면 도착 기록 단가도 같이 고쳐져요"
+                        className="px-3.5 py-1.5 text-sm border border-sky-200 text-sky-700 rounded-full bg-white hover:bg-sky-50"
+                      >
+                        수정
+                      </button>
                       {/* 도착 전이면 "주문 취소"(줄을 발주 대기로 돌림), 도착 기록이 있으면 "삭제". */}
                       {!o.receipts.length ? (
                         <button onClick={() => handleCancel(o)} title="1688 주문을 취소했으면 누르세요. 이 건을 지우고 상품 줄을 다시 1688 주문하기로 돌립니다." className="px-3.5 py-1.5 text-sm border border-red-200 text-red-500 rounded-full bg-white hover:bg-red-50">주문 취소</button>

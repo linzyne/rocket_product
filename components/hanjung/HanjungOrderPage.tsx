@@ -567,11 +567,11 @@ const HanjungOrderPage: React.FC = () => {
   const foldHead = (k: string, title: string, summary: string) => (
     <button
       onClick={() => toggleFold(k)}
-      className="w-full flex items-center gap-2 text-left text-sm py-2 px-3 rounded-2xl hover:bg-sky-50"
+      className="w-full flex items-center gap-2 text-left py-1 px-2 rounded-xl hover:bg-sky-50"
     >
-      <span className="text-gray-400 w-3">{foldOpen(k) ? '▾' : '▸'}</span>
-      <span className="font-semibold text-gray-600">{title}</span>
-      <span className="text-gray-400">{summary}</span>
+      <span className="text-gray-500 w-3 text-sm">{foldOpen(k) ? '▾' : '▸'}</span>
+      <span className="text-base font-bold text-gray-900">{title}</span>
+      <span className="text-sm text-gray-400">{summary}</span>
     </button>
   );
   const imageOf = useProductImage();
@@ -1117,7 +1117,7 @@ const HanjungOrderPage: React.FC = () => {
               </div>
 
               {isOpen && (
-                <div className="border-t-2 border-sky-50 px-5 py-4 space-y-4 bg-gradient-to-b from-sky-50/30 to-white">
+                <div className="border-t-2 border-sky-50 px-5 py-4 space-y-2 bg-gradient-to-b from-sky-50/30 to-white">
                   {receiving === o.code && <ReceiptForm order={o} onDone={() => setReceiving(null)} />}
                   {/* 수량은 수량끼리, 금액은 금액끼리 위아래로 비교: 매입(사무실 도착·총매입가) → 판매(쿠팡 배정·총판매가) → 재고(남은 수량 · 판매 − 매입 차액). */}
                   {(t.received > 0 || rev.sold > 0) && (
@@ -1172,7 +1172,7 @@ const HanjungOrderPage: React.FC = () => {
                     `총매입가 ${won(t.totalCost)}`)}
                   {foldOpen(`${o.code}|receipts`) && <div className="pl-7"><ReceiptHistory order={o} /></div>}
 
-                  <div className="border-t border-gray-100 pt-1 space-y-0.5">
+                  <div className="space-y-0.5">
                     {edit?.code !== o.code && foldHead(`${o.code}|lines`, `쿠팡 발주금액 ${won(linesTotal(o.lines))} / 입고완료 ${won(settle.total)}`, o.lines.some(l => lineAlloc(l) > 0 && lineAmount(l) === undefined) ? '발주금액 모르는 줄 있음' : '')}
                     {edit?.code === o.code ? (
                       <div className="border border-blue-200 bg-blue-50/40 rounded-lg p-2 space-y-1">

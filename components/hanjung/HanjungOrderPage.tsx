@@ -1114,9 +1114,9 @@ const HanjungOrderPage: React.FC = () => {
                     </div>
                   )}
                   {/* 위에서부터 일의 순서대로: 사무실 도착 → 쿠팡 발주서 → 물류창고입고, 그 아래 상품 표. */}
-                  {/* 도착한 상품 종류 수(건)와 개수 */}
+                  {/* 주문한 개수 중 도착한 개수 */}
                   {o.receipts.length > 0 && foldHead(`${o.code}|receipts`,
-                    `사무실 도착 ${new Set(o.receipts.flatMap(r => r.items.filter(it => (Number(it.qty) || 0) > 0).map(it => it.상품이름))).size}건 · ${o.receipts.reduce((n, r) => n + r.items.reduce((m, it) => m + (Number(it.qty) || 0), 0), 0)}개`,
+                    `사무실 도착 · 총 ${t.ordered}개 주문 중 ${o.receipts.reduce((n, r) => n + r.items.reduce((m, it) => m + (Number(it.qty) || 0), 0), 0)}개`,
                     `총원가 ${won(t.totalCost)}`)}
                   {foldOpen(`${o.code}|receipts`) && <div className="pl-7"><ReceiptHistory order={o} /></div>}
 

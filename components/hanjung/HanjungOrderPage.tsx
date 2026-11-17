@@ -709,6 +709,8 @@ const HanjungOrderPage: React.FC = () => {
     let total = 0;
     let missing = 0;
     let sold = 0;
+    // 상품마다 매출 수량·금액(상품별 표에 씀)
+    const byProduct: { 상품이름: string; qty: number; total: number }[] = [];
     for (const l of o.lines) {
       const alloc = lineAlloc(l);
       if (alloc <= 0) continue;
@@ -718,10 +720,15 @@ const HanjungOrderPage: React.FC = () => {
       const got = settle.byLine.get(l.key);
       const take = Math.min(eff, got?.qty || 0);
       const unitPrice = (lineAmount(l) || 0) / alloc;
-      total += (got?.total || 0) + unitPrice * (eff - take);
+      const lineTotal = (got?.total || 0) + unitPrice * (eff - take);
+      total += lineTotal;
       if (!unitPrice && eff > take) missing += eff - take;
+      let e = byProduct.find(x => sameName(x.상품이름, l.상품이름));
+      if (!e) byProduct.push(e = { 상품이름: l.상품이름, qty: 0, total: 0 });
+      e.qty += eff;
+      e.total += lineTotal;
     }
-    return { total: Math.round(total), missing, sold };
+    return { total: Math.round(total), missing, sold, byProduct };
   };
   // 매입: 이 건에 쓴 돈 전부(여유분 포함). 순익 = 받은 돈 − 쓴 돈이라, 안 팔린 여유는 손해로 남고 나중에 배정되면 매출이 늘어 메워진다.
   //  상품마다 원가 = 도착한 만큼은 도착 기록 원가, 아직 안 온 만큼은 주문 때 적은 단가. 부대비용은 상품 원가 비율로 나눈다.
@@ -1268,57 +1275,62 @@ const HanjungOrderPage: React.FC = () => {
                   <section className="bg-slate-200/70 rounded-2xl px-4 py-3">
                     <h3 className="text-sm font-bold text-sky-700 mb-2">상품별</h3>
                   <div className="overflow-x-auto">
-                  {/* 상품마다 일의 단계대로 세 칸: 주문(쿠팡 몫·여유) → 사무실 도착 → 쿠팡 입고(정산). 숫자는 "한 것 / 할 것"과 막대로. */}
+                  {/* 상품마다 매입(수량·매입가) → 도착 → 매출(수량·매출가). 맨 아래 합계, 그 아래 부대비용. */}
+                  {(() => {
+                    // 매입가 = 도착한 만큼은 도착 기록 매입가, 아직 안 온 만큼은 주문 때 단가(buyOf와 같은 기준, 부대비용 뺌)
+                    const rows = products.map(p => {
+                      const sale = rev.byProduct.find(x => sameName(x.상품이름, p.상품이름));
+                      return {
+                        p,
+                        buyQty: Math.max(p.ordered, p.received),
+                        buyAmt: Math.round(p.cost + Math.max(0, p.ordered - p.received) * productUnitCost(o, p.상품이름)),
+                        saleQty: sale?.qty || 0,
+                        saleAmt: Math.round(sale?.total || 0),
+                      };
+                    });
+                    const sum = (f: (r: typeof rows[number]) => number) => rows.reduce((n, r) => n + f(r), 0);
+                    const num = 'pl-4 text-right font-mono text-sm whitespace-nowrap';
+                    return (
                   <table className="text-[15px]">
                     <thead className="text-sm text-gray-500">
                       <tr>
-                        <th className="text-left font-medium py-1 pr-3">상품</th>
-                        <th className="w-28 text-left font-medium pl-3" title="1688에 주문한 수량. 배정 = 쿠팡 발주에 연결한 수량, 여유 = 남는 것(다음 발주에 씀)">주문</th>
-                        <th className="w-28 text-left font-medium pl-3" title="사무실에 도착한 수량 / 주문 수량">사무실 도착<span className="block text-[11px] font-normal text-gray-400">도착 / 주문</span></th>
-                        <th className="w-32 text-left font-medium pl-3" title="이 상품을 맡은 쿠팡 발주 중 발송완료된 수량 / 배정 수량. 남은 건 발송대기">발송<span className="block text-[11px] font-normal text-gray-400">발송완료 / 배정</span></th>
-                        <th className="w-28 text-right font-medium pl-3" title="연결된 쿠팡 발주금액(쿠팡 발주단가 × 배정 수량) 합">쿠팡 발주금액</th>
+                        <th rowSpan={2} className="text-left font-medium py-1 pr-3 align-bottom">상품</th>
+                        <th colSpan={2} className="text-center font-medium pl-4 border-b border-gray-300" title="1688에서 사 온 것">매입</th>
+                        <th rowSpan={2} className="text-right font-medium pl-4 align-bottom" title="사무실에 도착한 수량">도착</th>
+                        <th colSpan={2} className="text-center font-medium pl-4 border-b border-gray-300" title="쿠팡에 판 것(배정 − 회송). 정산된 건 정산금액, 아직이면 발주금액. 부가세 포함">매출</th>
+                      </tr>
+                      <tr className="text-xs">
+                        <th className="text-right font-normal pl-4 pt-1">수량</th>
+                        <th className="text-right font-normal pl-4 pt-1">매입가</th>
+                        <th className="text-right font-normal pl-4 pt-1">수량</th>
+                        <th className="text-right font-normal pl-4 pt-1">매출가</th>
                       </tr>
                     </thead>
                     <tbody>
-                      {products.map(p => {
-                        const bar = (done: number, total: number) => {
-                          const pct = total > 0 ? Math.min(100, Math.round((done / total) * 100)) : 0;
-                          const color = total > 0 && done >= total ? 'bg-emerald-500' : done > 0 ? 'bg-amber-400' : 'bg-gray-200';
-                          return (
-                            <div className="pl-3">
-                              <div className="font-mono text-sm"><b className={total > 0 && done >= total ? 'text-emerald-600' : done > 0 ? 'text-amber-600' : 'text-gray-400'}>{done}</b><span className="text-gray-400"> / {total}</span></div>
-                              <div className="h-1 mt-0.5 rounded-full bg-gray-100 overflow-hidden w-16"><div className={`h-full ${color}`} style={{ width: `${pct}%` }} /></div>
-                            </div>
-                          );
-                        };
-                        return (
-                          <tr key={p.상품이름} className="border-t border-gray-100">
-                            <td className="py-1.5 pr-3"><span className="inline-flex items-center gap-2 max-w-[22rem]"><ProductThumb url={imageOf(p.상품이름)} size={26} /><span className="truncate" title={p.상품이름}>{p.상품이름.replace(/^주노엘\s*/, '')}</span></span></td>
-                            <td className="pl-3">
-                              <div className="font-mono font-bold text-gray-900 text-sm whitespace-nowrap">{p.ordered}{productUnitCost(o, p.상품이름) > 0 && <span className="ml-1.5 text-[11px] font-normal text-gray-400">· {Math.round(productUnitCost(o, p.상품이름) * p.ordered).toLocaleString()}원</span>}</div>
-                              <div className="text-xs text-gray-400 whitespace-nowrap">배정 {p.allocated}{p.spare > 0 && <> · <span className="text-emerald-600 font-semibold">여유 {p.spare}</span></>}</div>
-                            </td>
-                            <td>{bar(p.received, p.ordered)}</td>
-                            <td>{p.allocated > 0 ? (() => {
-                              // 상품마다 발송 상태: 이 상품을 맡은 발주 줄 중 발주서가 발송완료된 수량.
-                              const mine = o.lines.filter(l => lineAlloc(l) > 0 && sameName(l.상품이름, p.상품이름));
-                              const sent = mine.filter(l => sentNos.has(String(l.발주번호 || '').trim())).reduce((n, l) => n + lineAlloc(l), 0);
-                              const wait = Math.max(0, p.allocated - sent);
-                              return (
-                                <div>
-                                  {bar(sent, p.allocated)}
-                                  <div className="pl-3 text-xs whitespace-nowrap">
-                                    {wait > 0 ? <span className="text-violet-700 font-semibold">🏠 발송대기 {wait}</span> : <span className="text-emerald-600 font-semibold">🎉 발송완료</span>}
-                                  </div>
-                                </div>
-                              );
-                            })() : <span className="pl-3 text-xs text-gray-300">배정 없음</span>}</td>
-                            <td className="pl-3 text-right font-mono text-sm text-gray-700 whitespace-nowrap">{(() => { const n = linesTotal(o.lines.filter(l => sameName(l.상품이름, p.상품이름))); return n ? won(n) : <span className="text-gray-300">-</span>; })()}</td>
-                          </tr>
-                        );
-                      })}
+                      {rows.map(({ p, buyQty, buyAmt, saleQty, saleAmt }) => (
+                        <tr key={p.상품이름} className="border-t border-gray-100">
+                          <td className="py-1.5 pr-3"><span className="inline-flex items-center gap-2 max-w-[22rem]"><ProductThumb url={imageOf(p.상품이름)} size={26} /><span className="truncate" title={p.상품이름}>{p.상품이름.replace(/^주노엘\s*/, '')}</span></span></td>
+                          <td className={`${num} text-gray-900`}>{buyQty}</td>
+                          <td className={`${num} text-gray-700`}>{buyAmt ? won(buyAmt) : <span className="text-gray-300">-</span>}</td>
+                          <td className={`${num} ${p.received >= buyQty && buyQty > 0 ? 'text-emerald-600' : p.received > 0 ? 'text-amber-600' : 'text-gray-400'}`}>{p.received}</td>
+                          <td className={`${num} text-gray-900`}>{saleQty}</td>
+                          <td className={`${num} text-gray-700`}>{saleAmt ? won(saleAmt) : <span className="text-gray-300">-</span>}</td>
+                        </tr>
+                      ))}
                     </tbody>
+                    <tfoot>
+                      <tr className="border-t-2 border-gray-300 font-bold text-gray-900">
+                        <td className="py-1.5 pr-3 text-sm">합계</td>
+                        <td className={num}>{sum(r => r.buyQty).toLocaleString()}</td>
+                        <td className={num}>{won(sum(r => r.buyAmt))}</td>
+                        <td className={num}>{sum(r => r.p.received).toLocaleString()}</td>
+                        <td className={num}>{sum(r => r.saleQty).toLocaleString()}</td>
+                        <td className={num}>{won(sum(r => r.saleAmt))}</td>
+                      </tr>
+                    </tfoot>
                   </table>
+                    );
+                  })()}
                   </div>
 
                     {/* 맨 아래: 부대비용(도착 기록 입력 칸과 같은 순서로) */}

@@ -1107,7 +1107,7 @@ const HanjungOrderPage: React.FC = () => {
                   {(t.totalCost > 0 || settle.qty > 0) && (
                     <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm text-gray-600">
                       {t.totalCost > 0 && <span>총원가 <b>{won(t.totalCost)}</b></span>}
-                      {settle.qty > 0 && <span>쿠팡입고 <b>{settle.qty}</b>개 · 정산 <b>{won(settle.total)}</b></span>}
+                      {settle.qty > 0 && <span title="이 건이 맡은 수량만큼, 부가세 포함(쿠팡 발주금액과 같은 기준)">쿠팡입고 <b>{settle.qty}</b>개 · 정산 <b>{won(settle.total)}</b></span>}
                       {payDays.length > 0 && <span title={`정산예정일(입고상세내역의 지급일): ${payDays.join(', ')}`}>정산예정 <b>{payDays.slice(0, 2).map(d => d.slice(5).replace('-', '/')).join(', ')}{payDays.length > 2 ? ' 외' : ''}</b></span>}
                       {rate != null && <span>정산률 <b className={rate >= 100 ? 'text-emerald-600' : 'text-amber-600'}>{rate}%</b></span>}
                       {rev.total > 0 && buy > 0 && <span>순이익 <b className={profit >= 0 ? 'text-emerald-600' : 'text-red-500'} title="이 건이 맡은 수량만큼의 매출(정산 공급가·정산 전은 발주금액) − 이 건에 쓴 돈 전부(원가+부대비용, 여유분 포함), 부가세 제외">{won(profit)}</b></span>}
@@ -1212,7 +1212,7 @@ const HanjungOrderPage: React.FC = () => {
                         {/* 쿠팡 발주 줄: 발주번호 · 센터 · 입고예정일 · 상품 · 배정 수량을 칸 맞춰서. 같은 발주번호끼리 붙여 둔다. */}
                         <table className="w-full text-xs">
                           <thead className="text-gray-400">
-                            <tr><th className="text-left font-medium py-1 w-24">발주번호</th><th className="text-left font-medium w-24">센터</th><th className="text-left font-medium w-20">입고예정</th><th className="text-left font-medium">상품</th><th className="text-right font-medium w-20">배정</th><th className="text-right font-medium w-24" title="매입가 × 배정 수량">발주금액</th></tr>
+                            <tr><th className="text-left font-medium py-1 w-24">발주번호</th><th className="text-left font-medium w-24">센터</th><th className="text-left font-medium w-20">입고예정</th><th className="text-left font-medium">상품</th><th className="text-right font-medium w-20">배정</th><th className="text-right font-medium w-24" title="매입가 × 배정 수량">발주금액</th><th className="text-right font-medium w-24" title="물류창고입고에서 이 줄(발주번호·상품)로 들어온 수량 / 배정. 다 들어오면 발주금액과 같아요">쿠팡입고</th></tr>
                           </thead>
                           <tbody>
                             {[...o.lines].sort((a, b) => a.발주번호.localeCompare(b.발주번호)).map(l => (
@@ -1223,11 +1223,16 @@ const HanjungOrderPage: React.FC = () => {
                                 <td className="text-gray-700 truncate max-w-[22rem]" title={l.상품이름}>{l.상품이름}</td>
                                 <td className="text-right font-mono"><b>{lineAlloc(l)}</b>{lineAlloc(l) !== l.확정수량 && <span className="text-gray-400">/{l.확정수량}</span>}</td>
                                 <td className="text-right font-mono text-gray-500">{amountText(l)}</td>
+                                {(() => {
+                                  const got = settle.byLine.get(l.key);
+                                  const q = got?.qty || 0;
+                                  return <td className={`text-right font-mono ${q >= lineAlloc(l) ? 'text-emerald-600' : q > 0 ? 'text-amber-600' : 'text-red-400'}`} title={got ? `정산 ${won(got.total)}` : '아직 물류창고입고 기록이 없어요'}>{q}/{lineAlloc(l)}</td>;
+                                })()}
                               </tr>
                             ))}
                           </tbody>
                           <tfoot>
-                            <tr className="border-t border-gray-100"><td colSpan={5} className="py-1 text-right text-gray-400">합계</td><td className="text-right font-mono font-semibold">{won(linesTotal(o.lines))}</td></tr>
+                            <tr className="border-t border-gray-100"><td colSpan={5} className="py-1 text-right text-gray-400">합계</td><td className="text-right font-mono font-semibold">{won(linesTotal(o.lines))}</td><td className="text-right font-mono font-semibold" title="이 건이 맡은 수량만큼의 물류창고입고 정산">{won(settle.total)}</td></tr>
                           </tfoot>
                         </table>
                       </div>
@@ -1240,7 +1245,7 @@ const HanjungOrderPage: React.FC = () => {
                     `총원가 ${won(t.totalCost)}`)}
                   {foldOpen(`${o.code}|receipts`) && <div className="pl-7"><ReceiptHistory order={o} /></div>}
 
-                  {settle.rows.length > 0 && foldHead(`${o.code}|settle`, `물류창고입고 · 정산 ${won(settle.total)}`, '')}
+                  {settle.rows.length > 0 && foldHead(`${o.code}|settle`, `물류창고입고 · 정산 ${won(settle.total)}`, '이 건이 맡은 수량만큼')}
                   {settle.rows.length > 0 && foldOpen(`${o.code}|settle`) && (
                     <div className="pl-7 overflow-x-auto">
                       {/* 쿠팡 입고(정산) 줄: 입고일 · 발주번호 · 상품 · 수량 · 정산 금액 · 지급일 */}

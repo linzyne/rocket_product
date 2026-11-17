@@ -6,7 +6,8 @@
 // Firebase 설정이 없으면 이 기기의 localStorage에만 저장한다.
 import { collection, doc, writeBatch, deleteDoc } from 'firebase/firestore';
 import { db, ensureSignedIn, waitAtMost, onSnapshot } from '../utils/firebase';
-import type { HanjungOrder } from './hanjungStore';
+import { lineAlloc } from './hanjungStore';
+import type { HanjungOrder, HanjungLine } from './hanjungStore';
 
 export interface ReceiveRow {
   key: string;
@@ -36,11 +37,13 @@ export const sign = (r: ReceiveRow) => (/반출/.test(r.구분) ? -1 : 1);
 
 export const norm = (s: string) => s.toLowerCase().replace(/[\s,.\-_()[\]/·]+/g, '');
 
-// 한중발주의 쿠팡 발주 줄 중 이 입고 줄과 맞는 것. 발주번호가 같고, 한 발주번호에 상품이 여럿이면 상품명으로 가린다.
+// 한중발주의 쿠팡 발주 줄 중 이 입고 줄과 맞는 것. 발주번호가 같고 상품명도 맞아야 한다.
+// (한 발주서에 다른 상품이 같이 있으면, 이 건이 그 발주서의 한 상품만 맡았어도 다른 상품 입고가 섞이지 않게)
 export const matchLine = (order: HanjungOrder, r: ReceiveRow) => {
   const same = order.lines.filter(l => l.발주번호 === r.발주번호);
-  if (same.length <= 1) return same[0] || null;
+  if (!same.length) return null;
   const n = norm(r.skuName);
+  if (!n) return same.length === 1 ? same[0] : null;
   return same.find(l => norm(l.상품이름) === n) || same.find(l => n.includes(norm(l.상품이름)) || norm(l.상품이름).includes(n)) || null;
 };
 
@@ -51,23 +54,37 @@ export const hanjungCodeOf = (orders: HanjungOrder[], r: ReceiveRow) => {
 };
 
 // 한중발주 하나의 쿠팡 입고·정산 합계와 상품별 입고 수량.
+// 발주 줄 하나를 한중발주 여러 건이 나눠 맡을 수 있어서, 줄마다 이 건이 맡은 수량(배정)까지만 센다(금액은 그 비율만큼).
+// total = 부가세 포함(쿠팡 발주금액과 같은 기준), supply = 부가세 제외. byLine = 발주 줄 key별 이 건 몫의 입고 수량·금액.
 export const settlementOf = (order: HanjungOrder, rows: ReceiveRow[]) => {
-  let qty = 0;
-  let total = 0;
-  let supply = 0;
-  const byProduct = new Map<string, number>();
+  const byLine = new Map<HanjungLine, { qty: number; total: number; supply: number }>();
   const matched: ReceiveRow[] = [];
   for (const r of rows) {
     const line = matchLine(order, r);
     if (!line) continue;
     const k = sign(r);
-    qty += k * r.qty;
-    total += k * r.total;
-    supply += k * r.totalSupply;
-    byProduct.set(line.상품이름, (byProduct.get(line.상품이름) || 0) + k * r.qty);
+    const e = byLine.get(line) || { qty: 0, total: 0, supply: 0 };
+    e.qty += k * r.qty;
+    e.total += k * r.total;
+    e.supply += k * r.totalSupply;
+    byLine.set(line, e);
     matched.push(r);
   }
-  return { qty, total, supply, byProduct, rows: matched };
+  let qty = 0;
+  let total = 0;
+  let supply = 0;
+  const byProduct = new Map<string, number>();
+  const lines = new Map<string, { qty: number; total: number }>();
+  byLine.forEach((e, line) => {
+    const take = Math.max(0, Math.min(lineAlloc(line), e.qty));
+    const ratio = e.qty > 0 ? take / e.qty : 0;
+    qty += take;
+    total += e.total * ratio;
+    supply += e.supply * ratio;
+    byProduct.set(line.상품이름, (byProduct.get(line.상품이름) || 0) + take);
+    lines.set(line.key, { qty: take, total: Math.round(e.total * ratio) });
+  });
+  return { qty, total: Math.round(total), supply: Math.round(supply), byProduct, byLine: lines, rows: matched };
 };
 
 type Listener = (rows: ReceiveRow[]) => void;

@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
-  HanjungOrder, HanjungLine, subscribeHanjung, deleteHanjungOrder, saveHanjungOrder, productSummary, orderTotals, productOrderQty, productUnitCost, lineAlloc, sameName, nameKey, ordersNeedingAliasRename, FEE_KEYS, remainingFee, receiptGoodsCost,
+  HanjungOrder, HanjungLine, subscribeHanjung, deleteHanjungOrder, saveHanjungOrder, productSummary, orderTotals, productOrderQty, productUnitCost, lineAlloc, sameName, nameKey, ordersNeedingAliasRename, FEE_KEYS, remainingFee, receiptGoodsCost, receiptFee,
 } from '../../data/hanjungStore';
 import { ReceiveRow, subscribeReceives, settlementOf } from '../../data/receiveStore';
 import { nextHanjungCode, closeShortOrder, planShortFill, planFill, FillPlan, FillLine } from '../../data/hanjungStore';
@@ -1321,6 +1321,17 @@ const HanjungOrderPage: React.FC = () => {
                   </table>
                   </div>
 
+                    {/* 맨 아래: 부대비용(도착 기록 입력 칸과 같은 순서로) */}
+                    {o.receipts.length > 0 && (
+                      <div className="flex flex-wrap items-center gap-x-5 gap-y-1 pt-2 mt-1 border-t border-gray-300 text-sm">
+                        <span className="font-semibold text-gray-700">부대비용</span>
+                        {FEE_KEYS.map(k => {
+                          const v = o.receipts.reduce((n, r) => n + receiptFee(r, k), 0);
+                          return <span key={k} className={v ? 'text-gray-700' : 'text-gray-400'}>{k} <b className="font-mono">{won(v)}</b></span>;
+                        })}
+                        <span className="ml-auto text-gray-700">합계 <b className="font-mono">{won(FEE_KEYS.reduce((n, k) => n + o.receipts.reduce((m, r) => m + receiptFee(r, k), 0), 0))}</b></span>
+                      </div>
+                    )}
                   </section>
                   {/* 수정 중에는 숨긴다(품목 빼기 ✕와 헷갈려 한중발주 전체를 지우는 일이 없게). */}
                   {edit?.code !== o.code && (

@@ -1000,7 +1000,7 @@ const HanjungOrderPage: React.FC = () => {
 
   return (
     // 가로로 길면 눈을 많이 움직여야 해서 화면 폭을 줄인다(왼쪽 정렬).
-    <div className="p-4 sm:p-6 lg:p-8 text-gray-800 max-w-[1000px]">
+    <div className="p-4 sm:p-6 lg:p-8 text-gray-800 max-w-[1240px]">
       {/* 머리: 되돌리기 · 다시실행 (⌘Z / ⌘⇧Z) + 검색 */}
       <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
         <div className="flex items-center gap-2">
@@ -1063,7 +1063,7 @@ const HanjungOrderPage: React.FC = () => {
           return (
             <div key={o.code} className={`bg-white border-2 rounded-3xl overflow-hidden transition-shadow ${isOpen ? 'border-sky-200 shadow-md' : 'border-gray-100 shadow-sm hover:shadow-md'}`}>
               {/* 머리줄: 왼쪽 번호·날짜·할 일 버튼 | 오른쪽 두 줄(사진 / 수량·금액). 나머지는 펼치면 보인다. */}
-              <div className="flex items-start px-5 py-3.5 cursor-pointer hover:bg-sky-50/40" onClick={() => setOpen(isOpen ? null : o.code)}>
+              <div className="flex items-center px-5 py-3.5 cursor-pointer hover:bg-sky-50/40" onClick={() => setOpen(isOpen ? null : o.code)}>
                 <div className="w-36 flex-shrink-0 pr-3">
                   <button
                     onClick={e => { e.stopPropagation(); renameCode(o); }}
@@ -1098,7 +1098,7 @@ const HanjungOrderPage: React.FC = () => {
                     </div>
                   )}
                 </div>
-                {/* 오른쪽 두 줄: 첫 줄 품목 사진 전부, 둘째 줄 수량 | 금액. 칸 폭을 고정해 카드끼리 세로로 줄이 맞는다. */}
+                {/* 사진 | 수량 | 금액. 칸 폭을 모두 고정해 카드끼리 세로로 줄이 맞는다. 사진이 많으면 사진 칸 안에서 두 줄로. */}
                 {(() => {
                   const buyQty = products.reduce((n, p) => n + Math.max(p.ordered, p.received), 0);
                   const sale = rev.total;
@@ -1106,23 +1106,29 @@ const HanjungOrderPage: React.FC = () => {
                   const has = !!(sale && buy);
                   // 글씨는 위, 숫자는 아래. w = 칸 폭(고정)
                   const cell = (label: string, value: React.ReactNode, w: string) => (
-                    <span className={`${w} flex flex-col items-end flex-shrink-0`}><span className="text-xs text-gray-500">{label}</span><span className="font-mono text-sm">{value}</span></span>
+                    <span className={`${w} flex flex-col items-end flex-shrink-0`}><span className="text-xs text-gray-500">{label}</span><span className="font-mono text-base">{value}</span></span>
                   );
-                  const op = (t: string) => <span className="w-4 text-center text-gray-400 text-sm flex-shrink-0">{t}</span>;
-                  const q = 'w-12', m = 'w-24';
+                  const op = (t: string) => <span className="w-5 text-center text-gray-400 flex-shrink-0">{t}</span>;
+                  const q = 'w-14', m = 'w-28';
+                  const bar = <span className="self-stretch mx-4 border-l-2 border-gray-200 flex-shrink-0" />;
                   return (
-                    <div className="flex-1 min-w-0 pl-4 border-l-2 border-gray-200 space-y-2">
-                      <div className="flex flex-wrap items-center gap-1">
-                        {products.map(p => <ProductThumb key={p.상품이름} url={imageOf(p.상품이름)} size={30} title={`${p.상품이름} · 주문 ${p.ordered}개`} />)}
+                    <div className="self-stretch flex items-center whitespace-nowrap">
+                      {bar}
+                      {/* 사진: 한 줄에 6개, 넘치면 두 줄 */}
+                      <div className="w-[13.5rem] flex-shrink-0 flex flex-wrap items-center gap-1">
+                        {products.map(p => <ProductThumb key={p.상품이름} url={imageOf(p.상품이름)} size={32} title={`${p.상품이름} · 주문 ${p.ordered}개`} />)}
                       </div>
-                      <div className="flex items-end whitespace-nowrap">
+                      {bar}
+                      <div className="flex items-end">
                         {/* 수량: 매입 − 매출 = 남은 */}
                         {cell('매입', <b className="text-gray-900">{buyQty.toLocaleString()}</b>, q)}
                         {op('−')}
                         {cell('매출', <b className="text-gray-900">{rev.sold.toLocaleString()}</b>, q)}
                         {op('=')}
                         {cell('남은', <b className="text-gray-900">{(buyQty - rev.sold).toLocaleString()}</b>, q)}
-                        <span className="self-stretch mx-4 border-l-2 border-gray-200" />
+                      </div>
+                      {bar}
+                      <div className="flex items-end">
                         {/* 금액: 매출가 − 매입가 = 차액. 차액은 재고가 팔릴수록 올라가고, 다 팔리면 마진이 된다. */}
                         <span className="flex items-end"
                           title={`차액 = 매출 ${won(sale)} − 매입 ${won(buy)}\n남은 재고가 팔리면 매출이 늘어 차액이 올라가요. 다 팔리면 차액 = 마진\n참고: 판 것만 보면 마진 ${won(sale - sold)} (판 것의 매입가 ${won(sold)}) · 남은 재고 매입가 ${won(cost.spareCost)}${rev.missing ? `\n금액 모르는 ${rev.missing}개 빠짐` : ''}`}>

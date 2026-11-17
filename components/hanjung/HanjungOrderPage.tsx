@@ -1062,9 +1062,9 @@ const HanjungOrderPage: React.FC = () => {
           const payDays = Array.from(new Set(settle.rows.map(r => String(r.payDate || '').slice(0, 10)).filter(Boolean))).sort();
           return (
             <div key={o.code} className={`bg-white border-2 rounded-3xl overflow-hidden transition-shadow ${isOpen ? 'border-sky-200 shadow-md' : 'border-gray-100 shadow-sm hover:shadow-md'}`}>
-              {/* 머리줄: 번호 · 사진 · 단계(주문 → 도착 → 쿠팡) · 지금 할 일 하나 · 차익. 나머지 버튼과 숫자는 펼치면 보인다. */}
-              <div className="flex flex-wrap items-center gap-3 px-5 py-3.5 cursor-pointer hover:bg-sky-50/40" onClick={() => setOpen(isOpen ? null : o.code)}>
-                <div className="w-28 flex-shrink-0">
+              {/* 머리줄 네 칸(세로줄로 나눔): 번호·날짜·할 일 버튼 | 사진 | 수량(매입 − 매출 = 남은) | 금액(매출가 − 매입가 = 차액). 나머지는 펼치면 보인다. */}
+              <div className="flex items-center px-5 py-3.5 cursor-pointer hover:bg-sky-50/40" onClick={() => setOpen(isOpen ? null : o.code)}>
+                <div className="w-32 flex-shrink-0 pr-4">
                   <button
                     onClick={e => { e.stopPropagation(); renameCode(o); }}
                     title={`${o.code} · 눌러서 번호 바꾸기`}
@@ -1075,9 +1075,31 @@ const HanjungOrderPage: React.FC = () => {
                   <div className="text-[11px] text-gray-400 truncate" title={o.memo || undefined}>
                     {new Date(o.createdAt).toLocaleDateString('ko-KR')}{o.memo && <> · 📝 {o.memo}</>}
                   </div>
+                  {t.status !== 'done' && (
+                    <div className="flex flex-col items-start gap-1 mt-1.5">
+                  {(
+                    <button
+                      onClick={e => { e.stopPropagation(); setOpen(o.code); setReceiving(receiving === o.code ? null : o.code); }}
+                      title="1688 물건이 사무실에 도착했으면 수량·금액·비용을 적어요(나눠서 오면 올 때마다)"
+                      className={`text-xs px-2.5 py-1 rounded-full font-bold border-2 ${receiving === o.code ? 'border-emerald-500 bg-emerald-500 text-white' : 'border-emerald-300 text-emerald-700 bg-white hover:bg-emerald-50'}`}
+                    >
+                      📦 도착 기록
+                    </button>
+                  )}
+                  {t.status === 'partial' && (
+                    <button
+                      onClick={e => { e.stopPropagation(); handleCloseShort(o); }}
+                      title="나머지는 더 오지 않고 다음 한중발주로 새로 주문할 때: 이 건을 도착한 만큼으로 마무리하고, 도착 못 한 쿠팡 배정은 1688 주문하기로 돌려요"
+                      className="text-xs px-2.5 py-1 rounded-full font-semibold border-2 border-gray-200 text-gray-600 bg-white hover:bg-gray-50"
+                    >
+                      남은 것 정리
+                    </button>
+                  )}
+                    </div>
+                  )}
                 </div>
                 {/* 품목 사진(앞에서 5개까지) */}
-                <span className="inline-flex items-center gap-1 w-[176px] flex-shrink-0">
+                <span className="self-stretch inline-flex items-center gap-1 w-[200px] min-w-0 flex-shrink overflow-hidden px-4 border-l-2 border-gray-200">
                   {products.slice(0, 5).map(p => <ProductThumb key={p.상품이름} url={imageOf(p.상품이름)} size={30} title={`${p.상품이름} · 주문 ${p.ordered}개`} />)}
                   {products.length > 5 && <span className="text-xs text-gray-400">+{products.length - 5}</span>}
                 </span>
@@ -1091,7 +1113,7 @@ const HanjungOrderPage: React.FC = () => {
                   );
                   const op = (t: string) => <span className="text-gray-400 text-sm">{t}</span>;
                   return (
-                    <span className="inline-flex items-end gap-2 whitespace-nowrap">
+                    <span className="self-stretch inline-flex items-center gap-2 whitespace-nowrap px-4 border-l-2 border-gray-200">
                       {cell('매입', buyQty)}
                       {op('−')}
                       {cell('매출', rev.sold)}
@@ -1100,30 +1122,12 @@ const HanjungOrderPage: React.FC = () => {
                     </span>
                   );
                 })()}
-                {t.status !== 'done' && (
-                  <button
-                    onClick={e => { e.stopPropagation(); setOpen(o.code); setReceiving(receiving === o.code ? null : o.code); }}
-                    title="1688 물건이 사무실에 도착했으면 수량·금액·비용을 적어요(나눠서 오면 올 때마다)"
-                    className={`text-sm px-3.5 py-1.5 rounded-full font-bold border-2 ${receiving === o.code ? 'border-emerald-500 bg-emerald-500 text-white' : 'border-emerald-300 text-emerald-700 bg-white hover:bg-emerald-50'}`}
-                  >
-                    📦 도착 기록
-                  </button>
-                )}
-                {t.status === 'partial' && (
-                  <button
-                    onClick={e => { e.stopPropagation(); handleCloseShort(o); }}
-                    title="나머지는 더 오지 않고 다음 한중발주로 새로 주문할 때: 이 건을 도착한 만큼으로 마무리하고, 도착 못 한 쿠팡 배정은 1688 주문하기로 돌려요"
-                    className="text-sm px-3.5 py-1.5 rounded-full font-semibold border-2 border-gray-200 text-gray-600 bg-white hover:bg-gray-50"
-                  >
-                    남은 것 정리
-                  </button>
-                )}
                 {/* 차액 = 매출(총판매가) − 매입(총매입가 전부). 재고가 팔릴수록 올라가고, 다 팔리면 마진이 된다. */}
                 {(() => {
                   const sale = rev.total;
                   const sold = buy - cost.spareCost;
                   return (
-                    <span className="ml-auto text-sm text-right whitespace-nowrap"
+                    <span className="self-stretch flex items-center ml-auto pl-4 border-l-2 border-gray-200 text-sm text-right whitespace-nowrap"
                       title={`차액 = 매출 ${won(sale)} − 매입 ${won(buy)}\n남은 재고가 팔리면 매출이 늘어 차액이 올라가요. 다 팔리면 차액 = 마진\n참고: 판 것만 보면 마진 ${won(sale - sold)} (판 것의 매입가 ${won(sold)}) · 남은 재고 매입가 ${won(cost.spareCost)}${rev.missing ? `\n금액 모르는 ${rev.missing}개 빠짐` : ''}`}>
                       {sale && buy
                         ? (() => {
@@ -1146,7 +1150,7 @@ const HanjungOrderPage: React.FC = () => {
                     </span>
                   );
                 })()}
-                <span className="text-gray-300">{isOpen ? '▲' : '▼'}</span>
+                <span className="pl-3 text-gray-300">{isOpen ? '▲' : '▼'}</span>
               </div>
 
               {isOpen && (

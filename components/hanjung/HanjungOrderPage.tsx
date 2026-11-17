@@ -1062,9 +1062,9 @@ const HanjungOrderPage: React.FC = () => {
           const payDays = Array.from(new Set(settle.rows.map(r => String(r.payDate || '').slice(0, 10)).filter(Boolean))).sort();
           return (
             <div key={o.code} className={`bg-white border-2 rounded-3xl overflow-hidden transition-shadow ${isOpen ? 'border-sky-200 shadow-md' : 'border-gray-100 shadow-sm hover:shadow-md'}`}>
-              {/* 머리줄 네 칸(세로줄로 나눔): 번호·날짜·할 일 버튼 | 사진 | 수량(매입 − 매출 = 남은) | 금액(매출가 − 매입가 = 차액). 나머지는 펼치면 보인다. */}
-              <div className="flex items-center px-5 py-3.5 cursor-pointer hover:bg-sky-50/40" onClick={() => setOpen(isOpen ? null : o.code)}>
-                <div className="w-32 flex-shrink-0 pr-4">
+              {/* 머리줄: 왼쪽 번호·날짜·할 일 버튼 | 오른쪽 두 줄(사진 / 수량·금액). 나머지는 펼치면 보인다. */}
+              <div className="flex items-start px-5 py-3.5 cursor-pointer hover:bg-sky-50/40" onClick={() => setOpen(isOpen ? null : o.code)}>
+                <div className="w-32 flex-shrink-0 pr-3">
                   <button
                     onClick={e => { e.stopPropagation(); renameCode(o); }}
                     title={`${o.code} · 눌러서 번호 바꾸기`}
@@ -1098,59 +1098,45 @@ const HanjungOrderPage: React.FC = () => {
                     </div>
                   )}
                 </div>
-                {/* 품목 사진(앞에서 5개까지) */}
-                <span className="self-stretch inline-flex items-center gap-1 w-[200px] min-w-0 flex-shrink overflow-hidden px-4 border-l-2 border-gray-200">
-                  {products.slice(0, 5).map(p => <ProductThumb key={p.상품이름} url={imageOf(p.상품이름)} size={30} title={`${p.상품이름} · 주문 ${p.ordered}개`} />)}
-                  {products.length > 5 && <span className="text-xs text-gray-400">+{products.length - 5}</span>}
-                </span>
-                {/* 매입 수량 − 매출 수량 = 남은 수량 */}
+                {/* 오른쪽 두 줄: 첫 줄 품목 사진 전부, 둘째 줄 수량 | 금액. 칸 폭을 고정해 카드끼리 세로로 줄이 맞는다. */}
                 {(() => {
                   const buyQty = products.reduce((n, p) => n + Math.max(p.ordered, p.received), 0);
-                  const f = (n: number) => n.toLocaleString();
-                  // 글씨는 위, 숫자는 아래(오른쪽 차액 식과 같은 모양)
-                  const cell = (label: string, n: number) => (
-                    <span className="flex flex-col items-end"><span className="text-xs text-gray-500">{label}</span><b className="font-mono text-sm text-gray-900">{f(n)}</b></span>
-                  );
-                  const op = (t: string) => <span className="text-gray-400 text-sm">{t}</span>;
-                  return (
-                    <span className="self-stretch inline-flex items-center gap-2 whitespace-nowrap px-4 border-l-2 border-gray-200">
-                      {cell('매입', buyQty)}
-                      {op('−')}
-                      {cell('매출', rev.sold)}
-                      {op('=')}
-                      {cell('남은', buyQty - rev.sold)}
-                    </span>
-                  );
-                })()}
-                {/* 차액 = 매출(총판매가) − 매입(총매입가 전부). 재고가 팔릴수록 올라가고, 다 팔리면 마진이 된다. */}
-                {(() => {
                   const sale = rev.total;
                   const sold = buy - cost.spareCost;
+                  const has = !!(sale && buy);
+                  // 글씨는 위, 숫자는 아래. w = 칸 폭(고정)
+                  const cell = (label: string, value: React.ReactNode, w: string) => (
+                    <span className={`${w} flex flex-col items-end flex-shrink-0`}><span className="text-xs text-gray-500">{label}</span><span className="font-mono text-sm">{value}</span></span>
+                  );
+                  const op = (t: string) => <span className="w-4 text-center text-gray-400 text-sm flex-shrink-0">{t}</span>;
+                  const q = 'w-12', m = 'w-24';
                   return (
-                    <span className="self-stretch flex items-center ml-auto pl-4 border-l-2 border-gray-200 text-sm text-right whitespace-nowrap"
-                      title={`차액 = 매출 ${won(sale)} − 매입 ${won(buy)}\n남은 재고가 팔리면 매출이 늘어 차액이 올라가요. 다 팔리면 차액 = 마진\n참고: 판 것만 보면 마진 ${won(sale - sold)} (판 것의 매입가 ${won(sold)}) · 남은 재고 매입가 ${won(cost.spareCost)}${rev.missing ? `\n금액 모르는 ${rev.missing}개 빠짐` : ''}`}>
-                      {sale && buy
-                        ? (() => {
-                          // 글씨는 위, 숫자는 아래: 매출가 − 매입가 = 차액
-                          const cell = (label: string, value: React.ReactNode) => (
-                            <span className="flex flex-col items-end"><span className="text-xs text-gray-500">{label}</span><span className="font-mono">{value}</span></span>
-                          );
-                          const op = (t: string) => <span className="text-gray-400 pb-0.5">{t}</span>;
-                          return (
-                            <span className="inline-flex items-end gap-2">
-                              {cell('매출가', <span className="text-gray-700">{won(sale)}</span>)}
-                              {op('−')}
-                              {cell('매입가', <span className="text-gray-700">{won(buy)}</span>)}
-                              {op('=')}
-                              {cell('차액', <b className={profit >= 0 ? 'text-emerald-600' : 'text-red-500'}>{won(profit)}</b>)}
-                            </span>
-                          );
-                        })()
-                        : <span className="text-gray-400">차액 -</span>}
-                    </span>
+                    <div className="flex-1 min-w-0 pl-4 border-l-2 border-gray-200 space-y-2">
+                      <div className="flex flex-wrap items-center gap-1">
+                        {products.map(p => <ProductThumb key={p.상품이름} url={imageOf(p.상품이름)} size={30} title={`${p.상품이름} · 주문 ${p.ordered}개`} />)}
+                      </div>
+                      <div className="flex items-end whitespace-nowrap">
+                        {/* 수량: 매입 − 매출 = 남은 */}
+                        {cell('매입', <b className="text-gray-900">{buyQty.toLocaleString()}</b>, q)}
+                        {op('−')}
+                        {cell('매출', <b className="text-gray-900">{rev.sold.toLocaleString()}</b>, q)}
+                        {op('=')}
+                        {cell('남은', <b className="text-gray-900">{(buyQty - rev.sold).toLocaleString()}</b>, q)}
+                        <span className="self-stretch mx-4 border-l-2 border-gray-200" />
+                        {/* 금액: 매출가 − 매입가 = 차액. 차액은 재고가 팔릴수록 올라가고, 다 팔리면 마진이 된다. */}
+                        <span className="flex items-end"
+                          title={`차액 = 매출 ${won(sale)} − 매입 ${won(buy)}\n남은 재고가 팔리면 매출이 늘어 차액이 올라가요. 다 팔리면 차액 = 마진\n참고: 판 것만 보면 마진 ${won(sale - sold)} (판 것의 매입가 ${won(sold)}) · 남은 재고 매입가 ${won(cost.spareCost)}${rev.missing ? `\n금액 모르는 ${rev.missing}개 빠짐` : ''}`}>
+                          {cell('매출가', <span className="text-gray-700">{sale ? won(sale) : '-'}</span>, m)}
+                          {op('−')}
+                          {cell('매입가', <span className="text-gray-700">{buy ? won(buy) : '-'}</span>, m)}
+                          {op('=')}
+                          {cell('차액', has ? <b className={profit >= 0 ? 'text-emerald-600' : 'text-red-500'}>{won(profit)}</b> : <span className="text-gray-400">-</span>, m)}
+                        </span>
+                      </div>
+                    </div>
                   );
                 })()}
-                <span className="pl-3 text-gray-300">{isOpen ? '▲' : '▼'}</span>
+                <span className="pl-3 self-center text-gray-300">{isOpen ? '▲' : '▼'}</span>
               </div>
 
               {isOpen && (

@@ -600,8 +600,21 @@ const HanjungOrderPage: React.FC = () => {
     fix.forEach(o => saveHanjungOrder(o).catch(err => console.error('같은 상품 이름 맞추기 실패:', err)));
   }, [orders]);
   // 뺀 줄을 대기로 돌릴 때 같은 줄의 나머지가 이미 대기에 있는지 보려고 대기도 지켜본다.
+  // 쿠팡 발주서 표의 "나머지" 칸(이 건이 안 맡은 수량이 대기에 있는지)에도 쓴다.
   const queueRef = React.useRef<HanjungQueueItem[]>([]);
-  useEffect(() => subscribeHanjungQueue(q => { queueRef.current = q; }), []);
+  const [queue, setQueue] = useState<HanjungQueueItem[]>([]);
+  useEffect(() => subscribeHanjungQueue(q => { queueRef.current = q; setQueue(q); }), []);
+  // 쿠팡 발주 줄 하나에서 이 건이 안 맡은 수량이 어디 있는지: 다른 한중발주(번호·수량), 1688 주문하기(대기), 아무 데도 없음.
+  const restOf = (o: HanjungOrder, l: HanjungLine) => {
+    const same = (x: { 발주번호: string; 상품이름: string }) => x.발주번호 === l.발주번호 && sameName(x.상품이름, l.상품이름);
+    const others = orders.filter(x => x.code !== o.code)
+      .map(x => ({ code: x.code, qty: x.lines.filter(same).reduce((n, y) => n + lineAlloc(y), 0) }))
+      .filter(x => x.qty > 0);
+    const waiting = queue.filter(same).reduce((n, q) => n + queueAlloc(q), 0);
+    const rest = Math.max(0, (Number(l.확정수량) || 0) - lineAlloc(l));
+    const none = Math.max(0, rest - others.reduce((n, x) => n + x.qty, 0) - waiting);
+    return { rest, others, waiting, none };
+  };
   const [, setHistTick] = useState(0);
   const record = (act: Act) => {
     history.undo = [...history.undo, act].slice(-30);
@@ -1165,7 +1178,7 @@ const HanjungOrderPage: React.FC = () => {
                         {/* 쿠팡 발주 줄: 발주번호 · 센터 · 입고예정일 · 상품 · 배정 수량을 칸 맞춰서. 같은 발주번호끼리 붙여 둔다. */}
                         <table className="w-full text-xs">
                           <thead className="text-gray-400">
-                            <tr><th className="text-left font-medium py-1 w-24">발주번호</th><th className="text-left font-medium w-24">센터</th><th className="text-left font-medium w-20">입고예정</th><th className="text-left font-medium">상품</th><th className="text-right font-medium w-20" title="쿠팡이 이 발주서 줄에서 확정한 수량">발주수량</th><th className="text-right font-medium w-20" title="그중 이 1688 주문서 물건으로 보내는 수량. 나머지는 다른 주문서가 맡아요">이 건 배정</th><th className="text-right font-medium w-24" title="쿠팡 발주단가 × 배정 수량">발주금액</th><th className="text-right font-medium w-24" title="물류창고입고에서 이 줄(발주번호·상품)로 들어온 수량 / 배정. 다 들어오면 발주금액과 같아요">쿠팡입고</th></tr>
+                            <tr><th className="text-left font-medium py-1 w-24">발주번호</th><th className="text-left font-medium w-24">센터</th><th className="text-left font-medium w-20">입고예정</th><th className="text-left font-medium">상품</th><th className="text-right font-medium w-20" title="쿠팡이 이 발주서 줄에서 확정한 수량">발주수량</th><th className="text-right font-medium w-20" title="그중 이 1688 주문서 물건으로 보내는 수량">이 건 배정</th><th className="text-left font-medium pl-4" title="이 건이 안 맡은 수량이 어디 있는지">나머지</th><th className="text-right font-medium w-24" title="쿠팡 발주단가 × 배정 수량">발주금액</th><th className="text-right font-medium w-24" title="물류창고입고에서 이 줄(발주번호·상품)로 들어온 수량 / 배정. 다 들어오면 발주금액과 같아요">쿠팡입고</th></tr>
                           </thead>
                           <tbody>
                             {[...o.lines].sort((a, b) => a.발주번호.localeCompare(b.발주번호)).map(l => (
@@ -1176,6 +1189,19 @@ const HanjungOrderPage: React.FC = () => {
                                 <td className="text-gray-700 truncate max-w-[22rem]" title={l.상품이름}>{l.상품이름}</td>
                                 <td className="text-right font-mono text-gray-500">{l.확정수량}</td>
                                 <td className="text-right font-mono"><b>{lineAlloc(l)}</b></td>
+                                <td className="pl-4 whitespace-nowrap">{(() => {
+                                  const r = restOf(o, l);
+                                  if (!r.rest) return <span className="text-gray-300">-</span>;
+                                  return (
+                                    <span className="text-gray-600">
+                                      {r.others.map(x => (
+                                        <button key={x.code} onClick={() => setOpen(x.code)} title={`${x.code} 펼치기`} className="mr-2 hover:text-blue-600 hover:underline">{x.code} <b className="font-mono">{x.qty}</b></button>
+                                      ))}
+                                      {r.waiting > 0 && <span className="mr-2 text-violet-700">1688 주문하기 <b className="font-mono">{r.waiting}</b></span>}
+                                      {r.none > 0 && <span className="text-red-500" title="어느 한중발주에도, 1688 주문하기에도 없어요">배정 없음 <b className="font-mono">{r.none}</b></span>}
+                                    </span>
+                                  );
+                                })()}</td>
                                 <td className="text-right font-mono text-gray-500">{amountText(l)}</td>
                                 {(() => {
                                   const got = settle.byLine.get(l.key);
@@ -1186,7 +1212,7 @@ const HanjungOrderPage: React.FC = () => {
                             ))}
                           </tbody>
                           <tfoot>
-                            <tr className="border-t border-gray-100"><td colSpan={6} className="py-1 text-right text-gray-400">합계</td><td className="text-right font-mono font-semibold">{won(linesTotal(o.lines))}</td><td className="text-right font-mono font-semibold" title="이 건이 맡은 수량만큼의 물류창고입고 정산">{won(settle.total)}</td></tr>
+                            <tr className="border-t border-gray-100"><td colSpan={7} className="py-1 text-right text-gray-400">합계</td><td className="text-right font-mono font-semibold">{won(linesTotal(o.lines))}</td><td className="text-right font-mono font-semibold" title="이 건이 맡은 수량만큼의 물류창고입고 정산">{won(settle.total)}</td></tr>
                           </tfoot>
                         </table>
                       </div>

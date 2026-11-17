@@ -1314,7 +1314,14 @@ const HanjungOrderPage: React.FC = () => {
                     const feeTotal = fees.reduce((n, f) => n + f.v, 0) + FEE_KEYS.reduce((n, k) => n + remainingFee(o, k), 0);
                     const goodsTotal = sum(r => r.buyAmt);
                     // 칸 묶음마다 옅은 배경으로 나눈다
-                    const buyBg = 'bg-rose-50/70', saleBg = 'bg-sky-50/80', arrBg = 'bg-amber-50/70', progBg = 'bg-emerald-50/70';
+                    const buyBg = 'bg-rose-50/70', saleBg = 'bg-sky-50/80', arrBg = 'bg-amber-50/70', mBg = 'bg-violet-50/70', progBg = 'bg-emerald-50/70';
+                    // 개당 마진 = 개당 매출가 − 개당 매입가(부대비용을 상품 매입가 비율로 나눠 넣음). 판 게 없으면 모름.
+                    const unitMargin = (r: typeof rows[number]) => {
+                      if (!r.saleQty || !r.buyQty) return null;
+                      const sell = r.saleAmt / r.saleQty;
+                      const cost = (r.buyAmt + (goodsTotal > 0 ? feeTotal * (r.buyAmt / goodsTotal) : 0)) / r.buyQty;
+                      return { sell: Math.round(sell), cost: Math.round(cost), margin: Math.round(sell - cost) };
+                    };
                     const num = 'px-3 text-right font-mono text-sm whitespace-nowrap';
                     const progress = (arrived: number, alloc: number, sent: number) => {
                       // 도착분 기준: 발송완료 · 발송대기(배정했는데 아직) · 재고(배정 안 됨)
@@ -1343,6 +1350,7 @@ const HanjungOrderPage: React.FC = () => {
                         <th rowSpan={2} className="text-left font-medium py-1 pr-3 align-bottom">상품</th>
                         <th colSpan={2} className={`${buyBg} text-center font-bold px-3 pt-1 rounded-t-lg`} title="1688에서 사 온 것">매입</th>
                         <th colSpan={2} className={`${saleBg} text-center font-bold px-3 pt-1 rounded-t-lg`} title="쿠팡에 판 것(배정 − 회송). 정산된 건 정산금액, 아직이면 발주금액. 부가세 포함">매출</th>
+                        <th rowSpan={2} className={`${mBg} text-right font-bold px-3 align-bottom rounded-t-lg`} title="개당 매출가 − 개당 매입가(부대비용 포함)">개당 마진</th>
                         <th rowSpan={2} className={`${arrBg} text-right font-bold px-3 align-bottom rounded-t-lg`} title="사무실에 도착한 수량">도착</th>
                         <th rowSpan={2} className={`${progBg} text-left font-bold px-3 align-bottom rounded-t-lg`} title="도착한 것 중 쿠팡에 배정한 수량, 그중 발송완료·발송대기, 배정 안 된 재고">진행</th>
                       </tr>
@@ -1361,6 +1369,16 @@ const HanjungOrderPage: React.FC = () => {
                           <td className={`${num} ${buyBg} border-t border-white text-gray-700`}>{buyAmt ? won(buyAmt) : <span className="text-gray-300">-</span>}</td>
                           <td className={`${num} ${saleBg} border-t border-white text-gray-900`}>{saleQty}</td>
                           <td className={`${num} ${saleBg} border-t border-white text-gray-700`}>{saleAmt ? won(saleAmt) : <span className="text-gray-300">-</span>}</td>
+                          <td className={`${num} ${mBg} border-t border-white`}>{(() => {
+                            const m = unitMargin(rows.find(r => r.p === p)!);
+                            if (!m) return <span className="text-gray-300">-</span>;
+                            return (
+                              <span title={`개당 매출가 ${won(m.sell)} − 개당 매입가 ${won(m.cost)}(부대비용 포함)`}>
+                                <b className={m.margin >= 0 ? 'text-emerald-600' : 'text-red-500'}>{won(m.margin)}</b>
+                                <span className="block text-[11px] text-gray-400">{m.sell.toLocaleString()} − {m.cost.toLocaleString()}</span>
+                              </span>
+                            );
+                          })()}</td>
                           <td className={`${num} ${arrBg} border-t border-white ${p.received >= buyQty && buyQty > 0 ? 'text-emerald-600' : p.received > 0 ? 'text-amber-600' : 'text-gray-400'}`}>{p.received}</td>
                           <td className={`${progBg} border-t border-white py-1`}>{progress(p.received, p.allocated, sent)}</td>
                         </tr>
@@ -1373,6 +1391,7 @@ const HanjungOrderPage: React.FC = () => {
                         <td className={`${num} ${buyBg} border-t-2 border-gray-300`}>{won(goodsTotal)}</td>
                         <td className={`${num} ${saleBg} border-t-2 border-gray-300`}>{sum(r => r.saleQty).toLocaleString()}</td>
                         <td className={`${num} ${saleBg} border-t-2 border-gray-300`}>{won(sum(r => r.saleAmt))}</td>
+                        <td className={`${mBg} border-t-2 border-gray-300`} />
                         <td className={`${num} ${arrBg} border-t-2 border-gray-300`}>{sum(r => r.p.received).toLocaleString()}</td>
                         <td className={`${progBg} border-t-2 border-gray-300`}>{progress(sum(r => r.p.received), sum(r => r.p.allocated), sum(r => r.sent))}</td>
                       </tr>

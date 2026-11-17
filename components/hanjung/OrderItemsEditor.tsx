@@ -15,7 +15,8 @@ import ProductThumb from './ProductThumb';
 // 주문 수량은 총수량을 적는다(쿠팡에 필요한 수량보다 많이 적으면 남는 만큼이 여유).
 // cost: 그 품목의 1688 구매 총금액(원). 단가로 나누지 않고 총금액을 적는다.
 // 저장할 때 총금액 ÷ 주문 수량으로 단가를 구해 두고(unitCost), 도착 기록 때 그 단가를 기본값으로 쓴다.
-export type OrderItem = { name: string; qty: string; need: number; added: boolean; cost?: string };
+// got: 이미 도착한 수량(수정 때만). 주문보다 더 왔으면 부족·여유를 도착 수량으로 센다.
+export type OrderItem = { name: string; qty: string; need: number; added: boolean; cost?: string; got?: number };
 
 // 이름 고르기 목록: 쿠팡 발주·예약·쉽먼트·한중발주·광고 상품에서 본 상품명을 모은다.
 // 한중 여유는 쿠팡 발주 상품명과 같은 이름으로 맞추므로, 쿠팡 발주에 나온 이름을 먼저 쓴다.
@@ -58,7 +59,7 @@ const OrderItemsEditor: React.FC<{
         {names.map(n => <option key={n.name} value={n.name} label={n.from} />)}
       </datalist>
       {items.map((it, i) => {
-        const q = itemQty(it);
+        const q = Math.max(itemQty(it), it.got || 0);
         const short = q < it.need;
         return (
           <div key={i} className="flex items-center gap-2 text-xs text-gray-700">

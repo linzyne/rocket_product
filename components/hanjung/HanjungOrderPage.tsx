@@ -861,15 +861,18 @@ const HanjungOrderPage: React.FC = () => {
   };
 
   // 수정 중인 품목에 쿠팡 필요 수량(남은 연결 줄의 합)을 채운다. 연결 줄이 있는 품목은 이름을 못 바꾼다.
-  const editItems = (e: { lines: HanjungLine[]; items: OrderItem[] }): OrderItem[] => {
-    const needOf = (n: string) => n.trim() ? e.lines.filter(l => sameName(l.상품이름, n)).reduce((sum, l) => sum + lineAlloc(l), 0) : 0;
+  //  배정은 회송을 뺀 수량(회송분은 사무실로 돌아와 다른 발주에 다시 쓰므로 두 번 세지 않는다).
+  //  got = 실제 도착 수량. 주문보다 더 왔으면 그만큼은 부족이 아니다.
+  const editItems = (e: { lines: HanjungLine[]; items: OrderItem[] }, o: HanjungOrder): OrderItem[] => {
+    const needOf = (n: string) => n.trim() ? e.lines.filter(l => sameName(l.상품이름, n)).reduce((sum, l) => sum + Math.max(0, lineAlloc(l) - (l.회송 || 0)), 0) : 0;
+    const gotOf = (n: string) => productSummary(o).find(p => sameName(p.상품이름, n))?.received || 0;
     const listed = new Set(e.items.map(it => nameKey(it.name)));
     // 연결 줄은 있는데 품목 칸에 없는 상품(옛 데이터)도 보이게 한다.
     const missing = Array.from(new Set(e.lines.map(l => l.상품이름))).filter(n => !listed.has(nameKey(n)))
       .map(n => ({ name: n, qty: String(needOf(n)), need: 0, added: false }));
     return [...e.items, ...missing].map(it => {
       const need = needOf(it.name);
-      return { ...it, need, added: need > 0 ? false : it.added || true };
+      return { ...it, need, got: gotOf(it.name), added: need > 0 ? false : it.added || true };
     });
   };
 
@@ -914,7 +917,7 @@ const HanjungOrderPage: React.FC = () => {
   const saveEdit = async (o: HanjungOrder) => {
     if (!edit || edit.code !== o.code) return;
     // 쿠팡 발주 줄도, 주문 품목도 하나도 안 남으면 그 건을 취소하는 것과 같다(추가 품목만 있는 건은 그대로 저장).
-    if (!edit.lines.length && !editItems(edit).some(it => it.name.trim() && itemQty(it) > 0)) {
+    if (!edit.lines.length && !editItems(edit, o).some(it => it.name.trim() && itemQty(it) > 0)) {
       setEdit(null);
       return handleCancel(o);
     }
@@ -935,8 +938,8 @@ const HanjungOrderPage: React.FC = () => {
     const keptRows = edit.lines.map(toRow);
     // 줄마다 적던 예전 주문수량은 상품별 orderQty로 옮겼으니 뺀다.
     const lines = edit.lines.map(({ 주문수량, ...rest }) => rest);
-    const items = editItems(edit);
-    const short = items.filter(it => itemQty(it) < it.need);
+    const items = editItems(edit, o);
+    const short = items.filter(it => Math.max(itemQty(it), it.got || 0) < it.need);
     if (short.length) return alert(`주문 수량이 연결된 쿠팡 발주 수량보다 적어요:\n${short.map(it => `${it.name} (쿠팡 ${it.need})`).join('\n')}`);
     const orderQty = itemsToOrderQty(items.filter(it => itemQty(it) > 0 || it.need > 0));
     const unitCost = itemsToUnitCost(items);
@@ -1214,7 +1217,7 @@ const HanjungOrderPage: React.FC = () => {
                         {/* 번호는 머리줄의 번호(✎)를 눌러 바꾼다. */}
                         <div className="text-xs font-semibold text-gray-500 pt-1">1688 주문 품목 · 총수량</div>
                         <OrderItemsEditor
-                          items={editItems(edit)}
+                          items={editItems(edit, o)}
                           onChange={next => setEdit(cur => cur && { ...cur, items: next })}
                           names={productNames}
                           imageOf={imageOf}

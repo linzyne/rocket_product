@@ -1115,31 +1115,24 @@ const HanjungOrderPage: React.FC = () => {
               {isOpen && (
                 <div className="border-t-2 border-sky-50 px-5 py-4 space-y-4 bg-gradient-to-b from-sky-50/30 to-white">
                   {receiving === o.code && <ReceiptForm order={o} onDone={() => setReceiving(null)} />}
-                  {/* 수량은 수량끼리, 금액은 금액끼리 위아래로 비교: 매입(사무실 도착) → 판매(쿠팡 배정) → 남은 것(재고·순이익). */}
+                  {/* 수량은 수량끼리, 금액은 금액끼리 위아래로 비교: 매입(사무실 도착·총매입가) → 판매(쿠팡 배정·총판매가) → 재고(남은 수량·그 매입가). 순이익은 머리줄에. */}
                   {(t.received > 0 || rev.sold > 0) && (
                     <table className="text-sm">
-                      <thead className="text-xs text-gray-400">
-                        <tr>
-                          <th />
-                          <th className="text-right font-medium pl-8 pb-1">수량</th>
-                          <th className="text-right font-medium pl-8 pb-1">금액</th>
-                        </tr>
-                      </thead>
                       <tbody className="font-mono">
                         <tr>
                           <td className="text-gray-500 font-sans pr-2">매입</td>
-                          <td className="text-right pl-8" title="1688에서 사무실에 도착한 수량">도착 {t.received.toLocaleString()}개</td>
-                          <td className="text-right pl-8" title="1688 매입가 전부(여유분 포함) + 부대비용">총매입가 <b>{won(buy)}</b></td>
+                          <td className="text-right pl-8" title="1688에서 사무실에 도착한 수량">{t.received.toLocaleString()}개</td>
+                          <td className="text-right pl-8" title="총매입가: 1688 매입가 전부(여유분 포함) + 부대비용">{won(buy)}</td>
                         </tr>
                         <tr className="border-t border-gray-100">
                           <td className="text-gray-500 font-sans pr-2">판매</td>
-                          <td className="text-right pl-8" title="이 건 물건 중 쿠팡 발주서에 배정된 수량(쿠팡이 산 수량)">쿠팡 배정 {rev.sold.toLocaleString()}개</td>
-                          <td className="text-right pl-8" title={`쿠팡 정산금액, 정산 전인 수량은 발주금액 (부가세 포함)${payDays.length ? `\n정산예정일: ${payDays.join(', ')}` : ''}${rev.missing ? `\n금액 모르는 ${rev.missing}개 빠짐` : ''}`}>총판매가 <b>{won(rev.total)}</b></td>
+                          <td className="text-right pl-8" title="이 건 물건 중 쿠팡 발주서에 배정된 수량(회송 뺌)">{rev.sold.toLocaleString()}개</td>
+                          <td className="text-right pl-8" title={`총판매가: 쿠팡 정산금액, 정산 전인 수량은 발주금액 (부가세 포함)${payDays.length ? `\n정산예정일: ${payDays.join(', ')}` : ''}${rev.missing ? `\n금액 모르는 ${rev.missing}개 빠짐` : ''}`}>{won(rev.total)}</td>
                         </tr>
-                        <tr className="border-t border-gray-200">
-                          <td className="text-gray-500 font-sans pr-2">남은 것</td>
-                          <td className="text-right pl-8 text-gray-600" title="아직 어느 쿠팡 발주서에도 배정 안 된 수량">남은 재고 {cost.spareQty.toLocaleString()}개</td>
-                          <td className="text-right pl-8" title="총판매가 − 총매입가">순이익 <b className={profit >= 0 ? 'text-emerald-600' : 'text-red-500'}>{won(profit)}</b></td>
+                        <tr className="border-t border-gray-100">
+                          <td className="text-gray-500 font-sans pr-2">재고</td>
+                          <td className="text-right pl-8" title="아직 어느 쿠팡 발주서에도 배정 안 된 수량">{cost.spareQty.toLocaleString()}개</td>
+                          <td className="text-right pl-8" title="남은 재고의 매입가(+부대비용 몫)">{won(cost.spareCost)}</td>
                         </tr>
                       </tbody>
                     </table>

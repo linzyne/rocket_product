@@ -496,6 +496,12 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
           { item, batch });
       }
     }
+    // 택배박스별로 일부만 발송완료한 발주서: 이미 보낸 줄은 이 카드에서 뺀다(발송완료 메뉴에서 본다).
+    map.forEach(o => {
+      if (o.stage === 5 || !o.lines.some(l => l.stage === 5)) return;
+      o.lines = o.lines.filter(l => l.stage !== 5);
+      o.partial = o.lines.some(l => l.stage !== o.stage);
+    });
     return Array.from(map.values()).sort((a, b) =>
       ymdSortKey(seatOf(a).date) - ymdSortKey(seatOf(b).date)
       || seatOf(a).center.localeCompare(seatOf(b).center, 'ko', { numeric: true })

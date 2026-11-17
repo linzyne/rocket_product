@@ -1081,15 +1081,22 @@ const HanjungOrderPage: React.FC = () => {
                   {products.slice(0, 5).map(p => <ProductThumb key={p.상품이름} url={imageOf(p.상품이름)} size={30} title={`${p.상품이름} · 주문 ${p.ordered}개`} />)}
                   {products.length > 5 && <span className="text-xs text-gray-400">+{products.length - 5}</span>}
                 </span>
-                <span className="flex items-center gap-1 text-xs">
-                  <Step label="도착" done={t.received} total={t.ordered} />
-                  {allocated > 0 && (() => {
-                    // 발송완료: 이 건이 맡은 발주 줄 중 발송완료된 줄 수(탭의 발송대기·발송완료와 같은 기준).
-                    const mine = o.lines.filter(l => lineAlloc(l) > 0);
-                    const sent = mine.filter(l => sentNos.has(String(l.발주번호 || '').trim())).length;
-                    return <><span className="text-gray-300">›</span><Step label="발송완료" done={sent} total={mine.length} /></>;
-                  })()}
-                </span>
+                {/* 매입 수량 − 매출 수량 = 남은 수량 (배정 · 발송완료 · 재고) */}
+                {(() => {
+                  const buyQty = products.reduce((n, p) => n + Math.max(p.ordered, p.received), 0);
+                  const alloc = products.reduce((n, p) => n + p.allocated, 0);
+                  const sentQty = o.lines
+                    .filter(l => lineAlloc(l) > 0 && sentNos.has(String(l.발주번호 || '').trim()))
+                    .reduce((n, l) => n + Math.max(0, lineAlloc(l) - (l.회송 || 0)), 0);
+                  const stock = products.reduce((n, p) => n + Math.max(0, p.received - p.allocated), 0);
+                  const f = (n: number) => n.toLocaleString();
+                  return (
+                    <span className="text-sm text-gray-500 whitespace-nowrap">
+                      매입 <b className="font-mono text-gray-900">{f(buyQty)}</b> − 매출 <b className="font-mono text-gray-900">{f(rev.sold)}</b> = <b className="font-mono text-gray-900">{f(buyQty - rev.sold)}</b>개
+                      <span className="ml-1.5 text-xs">(배정 <b className="text-gray-700">{f(alloc)}</b>, 발송완료 <b className="text-emerald-600">{f(sentQty)}</b>, 재고 <b className="text-gray-700">{f(stock)}</b>)</span>
+                    </span>
+                  );
+                })()}
                 {t.status !== 'done' && (
                   <button
                     onClick={e => { e.stopPropagation(); setOpen(o.code); setReceiving(receiving === o.code ? null : o.code); }}

@@ -1174,31 +1174,37 @@ const HanjungOrderPage: React.FC = () => {
                         </div>
                       </div>
                     ) : foldOpen(`${o.code}|lines`) && (
-                      <div className="pl-7 pb-1 overflow-x-auto">
+                      <div className="pl-7 pb-1">
                         {/* 쿠팡 발주 줄: 발주번호 · 센터 · 입고예정일 · 상품 · 배정 수량을 칸 맞춰서. 같은 발주번호끼리 붙여 둔다. */}
                         <table className="w-full text-xs">
                           <thead className="text-gray-400">
-                            <tr><th className="text-left font-medium py-1 w-24">발주번호</th><th className="text-left font-medium w-24">센터</th><th className="text-left font-medium w-20">입고예정</th><th className="text-left font-medium">상품</th><th className="text-right font-medium w-20" title="쿠팡이 이 발주서 줄에서 확정한 수량">발주수량</th><th className="text-right font-medium w-20" title="그중 이 1688 주문서 물건으로 보내는 수량">이 건 배정</th><th className="text-left font-medium pl-4" title="이 건이 안 맡은 수량이 어디 있는지">나머지</th><th className="text-right font-medium w-24" title="쿠팡 발주단가 × 배정 수량">발주금액</th><th className="text-right font-medium w-24" title="물류창고입고에서 이 줄(발주번호·상품)로 들어온 수량 / 배정. 다 들어오면 발주금액과 같아요">쿠팡입고</th></tr>
+                            <tr><th className="text-left font-medium py-1 w-24">발주번호</th><th className="text-left font-medium w-24 whitespace-nowrap">센터</th><th className="text-left font-medium w-20 whitespace-nowrap">입고예정</th><th className="text-left font-medium">상품</th><th className="text-right font-medium w-20 whitespace-nowrap" title="쿠팡이 이 발주서 줄에서 확정한 수량">발주수량</th><th className="text-right font-medium w-20 whitespace-nowrap" title="그중 이 1688 주문서 물건으로 보내는 수량. 마우스를 올리면 나머지가 어디 배정됐는지 보여요">이 건 배정</th><th className="text-right font-medium w-24" title="쿠팡 발주단가 × 배정 수량">발주금액</th><th className="text-right font-medium w-24" title="물류창고입고에서 이 줄(발주번호·상품)로 들어온 수량 / 배정. 다 들어오면 발주금액과 같아요">쿠팡입고</th></tr>
                           </thead>
                           <tbody>
                             {[...o.lines].sort((a, b) => a.발주번호.localeCompare(b.발주번호)).map(l => (
                               <tr key={l.key} className="border-t border-gray-50">
                                 <td className="py-1 font-mono text-gray-500">{l.발주번호}</td>
-                                <td className="text-gray-600">{l.물류센터}</td>
-                                <td className="text-gray-500">{ymdText(l.입고예정일)}</td>
-                                <td className="text-gray-700 truncate max-w-[22rem]" title={l.상품이름}>{l.상품이름}</td>
+                                <td className="text-gray-600 whitespace-nowrap">{l.물류센터}</td>
+                                <td className="text-gray-500 whitespace-nowrap">{ymdText(l.입고예정일)}</td>
+                                <td className="text-gray-700 truncate max-w-[16rem]" title={l.상품이름}>{l.상품이름}</td>
                                 <td className="text-right font-mono text-gray-500">{l.확정수량}</td>
-                                <td className="text-right font-mono"><b>{lineAlloc(l)}</b></td>
-                                <td className="pl-4 whitespace-nowrap">{(() => {
+                                <td className="text-right font-mono">{(() => {
+                                  // 마우스를 올리면 이 건이 안 맡은 나머지가 어디 배정됐는지 작은 레이어로.
                                   const r = restOf(o, l);
-                                  if (!r.rest) return <span className="text-gray-300">-</span>;
+                                  if (!r.rest) return <b>{lineAlloc(l)}</b>;
                                   return (
-                                    <span className="text-gray-600">
-                                      {r.others.map(x => (
-                                        <button key={x.code} onClick={() => setOpen(x.code)} title={`${x.code} 펼치기`} className="mr-2 hover:text-blue-600 hover:underline">{x.code} <b className="font-mono">{x.qty}</b></button>
-                                      ))}
-                                      {r.waiting > 0 && <span className="mr-2 text-violet-700">1688 주문하기 <b className="font-mono">{r.waiting}</b></span>}
-                                      {r.none > 0 && <span className="text-red-500" title="어느 한중발주에도, 1688 주문하기에도 없어요">배정 없음 <b className="font-mono">{r.none}</b></span>}
+                                    <span className="relative group inline-block cursor-default">
+                                      <b className="underline decoration-dotted decoration-gray-400 underline-offset-2">{lineAlloc(l)}</b>
+                                      <span className="hidden group-hover:block absolute right-0 top-full z-20 pt-1">
+                                        <span className="block bg-white border border-gray-200 rounded-lg shadow-lg px-3 py-2 text-left font-sans whitespace-nowrap space-y-0.5">
+                                          <span className="block text-gray-400">나머지 {r.rest}개</span>
+                                          {r.others.map(x => (
+                                            <button key={x.code} onClick={() => setOpen(x.code)} title={`${x.code} 펼치기`} className="block text-gray-700 hover:text-blue-600 hover:underline">{x.code} <b className="font-mono">{x.qty}</b></button>
+                                          ))}
+                                          {r.waiting > 0 && <span className="block text-violet-700">1688 주문하기 <b className="font-mono">{r.waiting}</b></span>}
+                                          {r.none > 0 && <span className="block text-red-500" title="어느 한중발주에도, 1688 주문하기에도 없어요">배정 없음 <b className="font-mono">{r.none}</b></span>}
+                                        </span>
+                                      </span>
                                     </span>
                                   );
                                 })()}</td>
@@ -1212,7 +1218,7 @@ const HanjungOrderPage: React.FC = () => {
                             ))}
                           </tbody>
                           <tfoot>
-                            <tr className="border-t border-gray-100"><td colSpan={7} className="py-1 text-right text-gray-400">합계</td><td className="text-right font-mono font-semibold">{won(linesTotal(o.lines))}</td><td className="text-right font-mono font-semibold" title="이 건이 맡은 수량만큼의 물류창고입고 정산">{won(settle.total)}</td></tr>
+                            <tr className="border-t border-gray-100"><td colSpan={6} className="py-1 text-right text-gray-400">합계</td><td className="text-right font-mono font-semibold">{won(linesTotal(o.lines))}</td><td className="text-right font-mono font-semibold" title="이 건이 맡은 수량만큼의 물류창고입고 정산">{won(settle.total)}</td></tr>
                           </tfoot>
                         </table>
                       </div>

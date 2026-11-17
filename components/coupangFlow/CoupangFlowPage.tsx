@@ -821,7 +821,7 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
       </div>
     );
   };
-  // 사무실 여유 재고: 도착(건물) + 오는 중(비행기)을 버튼 모양 하나로 묶는다. 0이어도 늘 보여준다.
+  // 사무실 여유 재고: 오는 중(비행기) + 도착(건물)을 버튼 모양 하나로 묶는다(배정 쪽과 같은 순서). 0이어도 늘 보여준다.
   // need: 이 줄에 채울 수량. covered면 회색.
   const officeBadge = (name: string, need: number, covered: boolean) => {
     const office = officeOf(name);
@@ -831,14 +831,14 @@ export default function CoupangFlowPage({ onNavigate, view = 'board' }: { onNavi
     const incomingColor = covered || !incoming ? '#a8a29e' : '#d97706';
     return (
       <span
-        title={`사무실 재고(한중 여유) · 도착 ${arrived}개 · 오는 중 ${incoming}개\n${office.names.join('\n')}`}
+        title={`사무실 재고(한중 여유) · 오는 중 ${incoming}개 · 도착 ${arrived}개\n${office.names.join('\n')}`}
         style={{
           display: 'inline-flex', alignItems: 'center', gap: 5, padding: '0 6px', fontSize: 11, lineHeight: '17px', alignSelf: 'center',
           borderRadius: 6, border: '1px solid #e7e5e4', background: '#f5f5f4', whiteSpace: 'nowrap',
         }}
       >
-        <span><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke={officeColor} strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" style={{ display: 'inline-block', verticalAlign: '-1px', marginRight: 1 }}><path d="M4 21V5a1 1 0 0 1 1-1h9a1 1 0 0 1 1 1v16" /><path d="M15 10h4a1 1 0 0 1 1 1v10" /><path d="M2 21h20M8 8h3M8 12h3M8 16h3" /></svg><b style={{ color: officeColor }}>{arrived}</b></span>
         <span><svg width="11" height="11" viewBox="0 0 24 24" fill={incomingColor} style={{ display: 'inline-block', verticalAlign: '-1px', marginRight: 1 }}><path d="M21 16v-2l-8-5V3.5a1.5 1.5 0 0 0-3 0V9l-8 5v2l8-2.5V19l-2 1.5V22l3.5-1 3.5 1v-1.5L13 19v-5.5z" /></svg><b style={{ color: incomingColor }}>{incoming}</b></span>
+        <span><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke={officeColor} strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" style={{ display: 'inline-block', verticalAlign: '-1px', marginRight: 1 }}><path d="M4 21V5a1 1 0 0 1 1-1h9a1 1 0 0 1 1 1v16" /><path d="M15 10h4a1 1 0 0 1 1 1v10" /><path d="M2 21h20M8 8h3M8 12h3M8 16h3" /></svg><b style={{ color: officeColor }}>{arrived}</b></span>
       </span>
     );
   };

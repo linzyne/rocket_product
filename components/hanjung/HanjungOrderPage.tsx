@@ -1064,11 +1064,11 @@ const HanjungOrderPage: React.FC = () => {
             <div key={o.code} className={`bg-white border-2 rounded-3xl overflow-hidden transition-shadow ${isOpen ? 'border-sky-200 shadow-md' : 'border-gray-100 shadow-sm hover:shadow-md'}`}>
               {/* 머리줄: 왼쪽 번호·날짜·할 일 버튼 | 오른쪽 두 줄(사진 / 수량·금액). 나머지는 펼치면 보인다. */}
               <div className="flex items-start px-5 py-3.5 cursor-pointer hover:bg-sky-50/40" onClick={() => setOpen(isOpen ? null : o.code)}>
-                <div className="w-32 flex-shrink-0 pr-3">
+                <div className="w-36 flex-shrink-0 pr-3">
                   <button
                     onClick={e => { e.stopPropagation(); renameCode(o); }}
                     title={`${o.code} · 눌러서 번호 바꾸기`}
-                    className="group block max-w-full font-mono font-bold text-gray-900 truncate text-left hover:text-blue-600"
+                    className="group block font-mono font-bold text-gray-900 whitespace-nowrap text-left hover:text-blue-600"
                   >
                     {o.code}<span className="ml-1 text-xs text-gray-300 group-hover:text-blue-400">✎</span>
                   </button>

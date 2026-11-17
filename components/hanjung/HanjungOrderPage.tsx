@@ -564,14 +564,23 @@ const HanjungOrderPage: React.FC = () => {
     if (next.has(k)) next.delete(k); else next.add(k);
     return next;
   });
-  const foldHead = (k: string, title: string, summary: string) => (
+  // 접는 줄: 제목 + 숫자 칸들(작은 이름표 위, 숫자 아래). 칸은 제목 옆에 고정 폭으로 늘어서 위아래 줄끼리 비교된다.
+  type FoldStat = { label: string; value: string; tone?: 'green' | 'amber' | 'red' | 'gray' };
+  const STAT_TONE = { green: 'text-emerald-600', amber: 'text-amber-600', red: 'text-red-500', gray: 'text-gray-400' };
+  const foldHead = (k: string, title: string, stats: FoldStat[], note?: string) => (
     <button
       onClick={() => toggleFold(k)}
       className="w-full flex items-center gap-2 text-left py-1 px-2 rounded-xl hover:bg-sky-50"
     >
       <span className="text-gray-500 w-3 text-sm">{foldOpen(k) ? '▾' : '▸'}</span>
-      <span className="text-base font-bold text-gray-900">{title}</span>
-      <span className="text-sm text-gray-400">{summary}</span>
+      <span className="w-28 flex-shrink-0 text-base font-bold text-gray-900">{title}</span>
+      {stats.map(st => (
+        <span key={st.label} className="w-32 flex-shrink-0 leading-tight">
+          <span className="block text-[11px] text-gray-400">{st.label}</span>
+          <b className={`font-mono text-sm ${st.tone ? STAT_TONE[st.tone] : 'text-gray-800'}`}>{st.value}</b>
+        </span>
+      ))}
+      {note && <span className="text-xs text-amber-600">{note}</span>}
     </button>
   );
   const imageOf = useProductImage();
@@ -1167,9 +1176,11 @@ const HanjungOrderPage: React.FC = () => {
                   )}
                   {/* 위에서부터 일의 순서대로: 사무실 도착 → 쿠팡 발주서 → 물류창고입고, 그 아래 상품 표. */}
                   {/* 주문한 개수 중 도착한 개수 */}
-                  {o.receipts.length > 0 && foldHead(`${o.code}|receipts`,
-                    `사무실 도착 · 총 ${t.ordered}개 주문 / 총 ${o.receipts.reduce((n, r) => n + r.items.reduce((m, it) => m + (Number(it.qty) || 0), 0), 0)}개 도착`,
-                    `총매입가 ${won(t.totalCost)}`)}
+                  {o.receipts.length > 0 && foldHead(`${o.code}|receipts`, '사무실 도착', [
+                    { label: '주문', value: `${t.ordered.toLocaleString()}개` },
+                    { label: '도착', value: `${t.received.toLocaleString()}개`, tone: t.received >= t.ordered ? 'green' : 'amber' },
+                    { label: '총매입가', value: won(t.totalCost) },
+                  ])}
                   {foldOpen(`${o.code}|receipts`) && <div className="pl-7"><ReceiptHistory order={o} /></div>}
 
                   <div className="space-y-0.5">
@@ -1178,7 +1189,12 @@ const HanjungOrderPage: React.FC = () => {
                       const returned = o.lines.reduce((n, l) => n + (lineAlloc(l) > 0 ? (lineAmount(l) || 0) / lineAlloc(l) * (l.회송 || 0) : 0), 0);
                       const waiting = Math.max(0, rev.total - settle.total);
                       const note = o.lines.some(l => lineAlloc(l) > 0 && lineAmount(l) === undefined) ? '발주금액 모르는 줄 있음' : '';
-                      return foldHead(`${o.code}|lines`, `쿠팡 발주금액 ${won(linesTotal(o.lines))}${returned > 0 ? ` / 회송 −${won(returned)}` : ''} / 입고완료 ${won(settle.total)} / 입고대기 ${won(waiting)}`, note);
+                      return foldHead(`${o.code}|lines`, '쿠팡 발주서', [
+                        { label: '발주금액', value: won(linesTotal(o.lines)) },
+                        ...(returned > 0 ? [{ label: '회송', value: `−${won(returned)}`, tone: 'red' as const }] : []),
+                        { label: '입고완료', value: won(settle.total), tone: 'green' },
+                        { label: '입고대기', value: won(waiting), tone: waiting > 0 ? 'amber' : 'gray' },
+                      ], note);
                     })()}
                     {edit?.code === o.code ? (
                       <div className="border border-blue-200 bg-blue-50/40 rounded-lg p-2 space-y-1">

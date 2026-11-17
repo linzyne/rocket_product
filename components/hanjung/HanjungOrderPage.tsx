@@ -26,6 +26,7 @@ import { dateKeyYMD, formatDateDisplay, normalizeDateValue } from '../coupangOrd
 import OrderItemsEditor, { OrderItem, useProductNames, itemsToOrderQty, itemQty, itemsToUnitCost, FeeInputs, FeeDraft, feesToNumbers } from './OrderItemsEditor';
 import ProductThumb, { useProductImage } from './ProductThumb';
 import { PriceBook, loadPriceBook, priceOf } from '../../data/coupangPriceStore';
+import { revenueOf, buyOf, lineAmountOf } from '../../data/hanjungMoney';
 import { ReceiptForm, ReceiptHistory, markArrivedLinesReady } from './ReceiptForm';
 import Import1688Modal, { Import1688Result } from './Import1688Modal';
 import { mark1688Used, Order1688Ref } from '../../utils/order1688';
@@ -692,67 +693,12 @@ const HanjungOrderPage: React.FC = () => {
   // 발주단가 장부만 읽는다(발주확정 양식 파일은 크니까 여기서 받지 않는다).
   useEffect(() => { loadPriceBook().then(setPrices); }, []);
   // 이 한중발주에 배정한 만큼만(나머지가 나중에 배정되면 그때 늘어난다).
-  const lineAmount = (l: HanjungLine) => {
-    const p = priceOf(prices, l.발주번호, l.상품이름);
-    return p ? p * lineAlloc(l) : undefined;
-  };
+  const lineAmount = (l: HanjungLine) => lineAmountOf(prices, l);
   const amountText = (l: HanjungLine) => {
     const a = lineAmount(l);
     return a === undefined ? '-' : won(a);
   };
   const linesTotal = (ls: HanjungLine[]) => ls.reduce((n, l) => n + (lineAmount(l) || 0), 0);
-  // 총판매가: 이 한중발주가 맡은(배정, 회송 뺌) 수량을 쿠팡에 판 금액. 부가세 포함(쿠팡 발주금액·정산금액과 같은 기준, 통장에 들어오는 돈). 줄마다:
-  //  · 물류창고입고로 정산된 수량은 정산금액(이 건 몫만)
-  //  · 아직 정산 전인 수량은 쿠팡 발주금액 개당 값으로
-  //  · 둘 다 없으면 0원(빠진 수량으로 따로 센다)
-  const revenueOf = (o: HanjungOrder, settle: ReturnType<typeof settlementOf>) => {
-    let total = 0;
-    let missing = 0;
-    let sold = 0;
-    // 상품마다 매출 수량·금액(상품별 표에 씀)
-    const byProduct: { 상품이름: string; qty: number; total: number }[] = [];
-    for (const l of o.lines) {
-      const alloc = lineAlloc(l);
-      if (alloc <= 0) continue;
-      // 쿠팡에서 회송된 수량은 사무실 재고로 돌아온 것이라 판매에서 뺀다.
-      const eff = Math.max(0, alloc - (l.회송 || 0));
-      sold += eff;
-      const got = settle.byLine.get(l.key);
-      const take = Math.min(eff, got?.qty || 0);
-      const unitPrice = (lineAmount(l) || 0) / alloc;
-      const lineTotal = (got?.total || 0) + unitPrice * (eff - take);
-      total += lineTotal;
-      if (!unitPrice && eff > take) missing += eff - take;
-      let e = byProduct.find(x => sameName(x.상품이름, l.상품이름));
-      if (!e) byProduct.push(e = { 상품이름: l.상품이름, qty: 0, total: 0 });
-      e.qty += eff;
-      e.total += lineTotal;
-    }
-    return { total: Math.round(total), missing, sold, byProduct };
-  };
-  // 매입: 이 건에 쓴 돈 전부(여유분 포함). 순익 = 받은 돈 − 쓴 돈이라, 안 팔린 여유는 손해로 남고 나중에 배정되면 매출이 늘어 메워진다.
-  //  상품마다 원가 = 도착한 만큼은 도착 기록 원가, 아직 안 온 만큼은 주문 때 적은 단가. 부대비용은 수량으로 n분의 1(개당 같은 금액).
-  //  spareQty·spareCost = 아직 배정 안 된 여유 수량과 그 원가(+부대비용 몫).
-  const buyOf = (o: HanjungOrder) => {
-    const ps = productSummary(o);
-    const full = ps.map(p => p.cost + Math.max(0, p.ordered - p.received) * productUnitCost(o, p.상품이름));
-    const fees = Math.max(0, orderTotals(o).totalCost - ps.reduce((n, p) => n + p.cost, 0)) + FEE_KEYS.reduce((n, k) => n + remainingFee(o, k), 0);
-    const allUnits = ps.reduce((n, p) => n + Math.max(p.ordered, p.received), 0);
-    const feePerUnit = allUnits > 0 ? fees / allUnits : 0;
-    let total = 0;
-    let spareQty = 0;
-    let spareCost = 0;
-    ps.forEach((p, i) => {
-      const units = Math.max(p.ordered, p.received);
-      if (!units) return;
-      const withFee = full[i] + feePerUnit * units;
-      total += withFee;
-      const left = Math.max(0, units - p.allocated);
-      spareQty += left;
-      spareCost += withFee * (left / units);
-    });
-    return { total: Math.round(total), spareQty, spareCost: Math.round(spareCost) };
-  };
   const handleCloseShort = async (o: HanjungOrder) => {
     const { order: closed, releases } = closeShortOrder(o);
     if (!releases.length) return;
@@ -1057,7 +1003,7 @@ const HanjungOrderPage: React.FC = () => {
           const isOpen = open === o.code;
           const settle = settlementOf(o, receives);
           const allocated = products.reduce((sum, p) => sum + p.allocated, 0);
-          const rev = revenueOf(o, settle);
+          const rev = revenueOf(o, settle, prices);
           const cost = buyOf(o);
           const buy = cost.total;
           const profit = rev.total - buy;

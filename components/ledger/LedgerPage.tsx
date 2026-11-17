@@ -1,27 +1,21 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
-  LedgerEntry, LedgerKind, OUT_CATEGORIES, IN_CATEGORIES, AD_CATEGORY, UnitCost,
-  subscribeLedger, saveLedgerEntry, deleteLedgerEntry, subscribeUnitCosts, saveUnitCost, subscribeImportVat,
+  LedgerEntry, LedgerKind, OUT_CATEGORIES, IN_CATEGORIES, AD_CATEGORY,
+  subscribeLedger, saveLedgerEntry, deleteLedgerEntry, subscribeImportVat,
 } from '../../data/ledgerStore';
-import { HanjungOrder, subscribeHanjung, orderTotals, receiptTotalCost, inventoryOf, isHoldingOrder } from '../../data/hanjungStore';
-import { ReceiveRow, subscribeReceives, settlementOf, sign } from '../../data/receiveStore';
-import { costOf as costOfRow, ucId, vatOf, halfOf, vatDeadline } from '../../data/ledgerCalc';
+import { HanjungOrder, subscribeHanjung } from '../../data/hanjungStore';
+import { ReceiveRow, subscribeReceives, sign } from '../../data/receiveStore';
+import { vatOf, VatHalf } from '../../data/ledgerCalc';
 import { subscribeShipOuts } from '../coupangOrder/data/shipOutStore';
 import type { ShipOut } from '../coupangOrder/data/shipOutStore';
 import { expandBoxSplit, parseBoxNo } from '../coupangOrder/utils/dataProcessor';
+import { PriceBook, loadPriceBook } from '../../data/coupangPriceStore';
+import { orderMoney, buyCashOf } from '../../data/hanjungMoney';
 
-// 장부. 같은 데이터를 두 날짜로 본다.
-//  · 입고일로 보기(이익): 그 달에 쿠팡에 입고된 줄의 정산(공급가) − 그 수량의 원가 − 직접 적은 비용 = 순익.
-//      원가 = 한중발주 개당 원가(도착 기록의 총원가를 상품별로 나눈 것) × 입고 수량. 한중발주와 짝이 안 맞는 줄은
-//      "원가 모름"으로 모아 보여 주고, SKU마다 개당 원가를 직접 적으면 그 값을 쓴다.
-//  · 지급일로 보기(통장): 지급일이 그 달인 정산금(부가세 포함) − 지난달 쿠팡 광고비 + 기타입금,
-//      나간 돈 = 수입비용(한중발주 도착 기록 날짜) + 직접 적은 출금(쿠팡 광고비는 정산에서 빠지니 제외).
-//      앞으로 받을 돈은 지급일이 오늘 뒤인 줄을 달별로 모은다.
-//  · 한중발주 차익: 그 달에 만든 한중발주마다 정산(공급가) + 남은 재고 금액 − 총원가
-//  · 재고: 한중발주 여유 중 아직 어느 쿠팡 발주에도 배정 안 된 수량 × 원가
-//  · 택배비(자동): 그 달에 발송완료한 출고 건의 박스 수 × BOX_FEE. 직접 적은 택배비에 더해진다.
-
-type View = 'profit' | 'cash';
+// 장부 = 한중발주를 넓힌 것. 두 칸:
+//  ① 전체 손익: 한중발주별 매입가·매출가·차액(한중발주 카드와 같은 숫자) − 판매비용(택배비·광고비 등) − 부가세 = 최종 남은 돈
+//  ② 월별 현금 흐름(통장 기준): 들어온 돈(쿠팡 지급일 정산금 + 기타입금 − 지난달 광고비) − 나간 돈(1688 제품비·부대비용 + 택배비 + 직접 적은 비용)
+//     1688 제품비는 주문한 날, 부대비용은 도착 기록 날짜. 쿠팡 광고비는 다음 달 정산금에서 빠지므로 나간 돈에 따로 넣지 않는다.
 
 // 쿠팡 창고로 보내는 택배 한 박스 값(원).
 const BOX_FEE = 3500;
@@ -34,62 +28,40 @@ const boxCount = (item: ShipOut) => {
 
 const won = (n: number) => `${Math.round(n).toLocaleString()}원`;
 const ymOf = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
-const thisMonth = () => ymOf(new Date());
 const today = () => {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 };
-const ymOfMs = (ms: number) => ymOf(new Date(ms));
-const prevMonth = (ym: string) => {
+const nextMonth = (ym: string) => {
   const [y, mo] = ym.split('-').map(Number);
-  return ymOf(new Date(y, mo - 2, 1));
+  return ymOf(new Date(y, mo, 1));
 };
+const ymLabel = (ym: string) => `${Number(ym.slice(0, 4))}년 ${Number(ym.slice(5, 7))}월`;
+const signed = (n: number) => <span className={n >= 0 ? 'text-emerald-600' : 'text-red-500'}>{n < 0 ? '−' : ''}{Math.abs(Math.round(n)).toLocaleString()}원</span>;
 
-const Card: React.FC<{ title: string; value: string; sub?: string; tone?: 'in' | 'out' | 'net' }> = ({ title, value, sub, tone }) => (
-  <div className="bg-white border border-gray-200 rounded-xl p-4">
-    <div className="text-xs text-gray-500">{title}</div>
-    <div className={`text-xl font-bold mt-1 ${tone === 'in' ? 'text-emerald-600' : tone === 'out' ? 'text-red-500' : 'text-gray-900'}`}>{value}</div>
-    {sub && <div className="text-[11px] text-gray-400 mt-0.5">{sub}</div>}
-  </div>
+const Section: React.FC<{ title: string; note?: string; children: React.ReactNode }> = ({ title, note, children }) => (
+  <section className="bg-slate-200/70 rounded-2xl px-4 py-3">
+    <h3 className="text-sm font-bold text-sky-700 mb-2">{title}{note && <span className="ml-2 text-xs font-normal text-gray-500">{note}</span>}</h3>
+    {children}
+  </section>
 );
-
-const Row: React.FC<{ label: React.ReactNode; note?: string; value: number; tone: 'in' | 'out'; minus?: boolean }> = ({ label, note, value, tone, minus }) => (
-  <tr className="border-b border-gray-100">
-    <td className={`py-1.5 ${tone === 'in' ? 'text-emerald-700' : 'text-red-600'}`}>{label} {note && <span className="text-[11px] text-gray-400">{note}</span>}</td>
-    <td className="text-right font-mono">{minus && value ? '−' : ''}{won(value)}</td>
-  </tr>
-);
-
-// 짝 없는 줄의 개당 원가 칸. 칸을 벗어나면 저장한다.
-const UnitCostInput: React.FC<{ sku: string; name: string; value: number }> = ({ sku, name, value }) => {
-  const [v, setV] = useState(value ? String(value) : '');
-  useEffect(() => setV(value ? String(value) : ''), [value]);
-  const save = () => {
-    const unit = Math.round(Number(v.replace(/[^\d.]/g, '')) || 0);
-    if (unit === value) return;
-    saveUnitCost(sku, name, unit).catch(err => alert(`저장 실패: ${err?.message || err}`));
-  };
-  return (
-    <input value={v} onChange={e => setV(e.target.value)} onBlur={save} onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }}
-      placeholder="개당 원가" className="w-24 px-2 py-0.5 border border-gray-200 rounded text-right font-mono text-xs" />
-  );
-};
 
 const LedgerPage: React.FC = () => {
   const [entries, setEntries] = useState<LedgerEntry[]>([]);
   const [orders, setOrders] = useState<HanjungOrder[]>([]);
   const [receives, setReceives] = useState<ReceiveRow[]>([]);
-  const [unitCosts, setUnitCosts] = useState<Record<string, UnitCost>>({});
-  const [month, setMonth] = useState(thisMonth());
-  const [view, setView] = useState<View>('profit');
+  const [ships, setShips] = useState<ShipOut[]>([]);
+  const [importVat, setImportVat] = useState<Record<string, number>>({});
+  const [prices, setPrices] = useState<PriceBook>({ byPo: {}, byName: {} });
   useEffect(() => subscribeLedger(setEntries), []);
   useEffect(() => subscribeHanjung(setOrders), []);
   useEffect(() => subscribeReceives(setReceives), []);
-  const [ships, setShips] = useState<ShipOut[]>([]);
   useEffect(() => subscribeShipOuts(list => setShips(list.filter(i => i.sentDate))), []);
-  useEffect(() => subscribeUnitCosts(setUnitCosts), []);
-  const [importVat, setImportVat] = useState<Record<string, number>>({});
   useEffect(() => subscribeImportVat(setImportVat), []);
+  useEffect(() => { loadPriceBook().then(setPrices); }, []);
+
+  const [open, setOpen] = useState<Set<string>>(new Set());
+  const toggle = (k: string) => setOpen(s => { const n = new Set(s); n.has(k) ? n.delete(k) : n.add(k); return n; });
 
   // 직접 적는 칸
   const [form, setForm] = useState<{ date: string; kind: LedgerKind; category: string; amount: string; memo: string }>({
@@ -110,315 +82,201 @@ const LedgerPage: React.FC = () => {
     deleteLedgerEntry(e.id).catch(err => alert(`삭제 실패: ${err?.message || err}`));
   };
 
-  const costOf = (r: ReceiveRow) => costOfRow(orders, unitCosts, r);
+  // ① 전체 손익
+  const total = useMemo(() => {
+    const rows = [...orders].sort((a, b) => b.createdAt - a.createdAt).map(o => ({ o, ...orderMoney(o, receives, prices) }));
+    const profitSum = rows.reduce((n, r) => n + (r.profit ?? 0), 0);
+    const boxes = ships.reduce((n, i) => n + boxCount(i), 0);
+    const shipFee = boxes * BOX_FEE;
+    const outByCat = OUT_CATEGORIES.map(c => ({ c, v: entries.filter(e => e.kind === 'out' && e.category === c).reduce((n, e) => n + e.amount, 0) + (c === '택배비' ? shipFee : 0) }));
+    const otherIn = entries.filter(e => e.kind === 'in').reduce((n, e) => n + e.amount, 0);
+    const sellCost = outByCat.reduce((n, x) => n + x.v, 0);
+    // 부가세: 자료가 있는 반기마다 (매출 부가세 − 매입 부가세)를 더한다.
+    const dates = [...receives.map(r => r.date), ...orders.flatMap(o => o.receipts.map(r => r.date)), ...entries.map(e => e.date)].filter(Boolean).map(d => String(d).slice(0, 7));
+    const halves = Array.from(new Set(dates.map(ym => `${ym.slice(0, 4)}-${Number(ym.slice(5, 7)) <= 6 ? 1 : 2}`))).sort();
+    const vatList = halves.map(h => ({ h, due: vatOf(Number(h.slice(0, 4)), Number(h.slice(5)) as VatHalf, receives, orders, entries, importVat).due }));
+    const vat = vatList.reduce((n, x) => n + x.due, 0);
+    return { rows, profitSum, boxes, shipFee, outByCat, otherIn, sellCost, vatList, vat, final: profitSum + otherIn - sellCost - vat };
+  }, [orders, receives, prices, ships, entries, importVat]);
 
-  const m = useMemo(() => {
-    const mine = entries.filter(e => e.date.startsWith(month));
-    const sumBy = (kind: LedgerKind, cat?: string) => mine.filter(e => e.kind === kind && (!cat || e.category === cat)).reduce((s, e) => s + e.amount, 0);
-    const otherIn = sumBy('in');
-    // 택배비(자동): 이 달에 발송완료한 출고 건의 박스 수 × BOX_FEE
-    const shipBoxes = ships.filter(i => String(i.sentDate).startsWith(month)).reduce((n, i) => n + boxCount(i), 0);
-    const shipFee = shipBoxes * BOX_FEE;
-    const outOf = (c: string) => sumBy('out', c) + (c === '택배비' ? shipFee : 0);
-
-    // ---- 입고일로 보기(이익) ----
-    const inRows = receives
-      .filter(r => String(r.date || '').startsWith(month))
-      .map(r => ({ r, ...costOf(r) }))
-      .sort((a, b) => b.r.date.localeCompare(a.r.date));
-    const sales = inRows.reduce((s, x) => s + sign(x.r) * x.r.total, 0);
-    const salesSupply = inRows.reduce((s, x) => s + sign(x.r) * x.r.totalSupply, 0);
-    const cogs = inRows.reduce((s, x) => s + sign(x.r) * x.r.qty * x.unit, 0);
-    const unknownMap = new Map<string, { sku: string; name: string; code: string | null; qty: number; total: number; rows: number }>();
-    for (const x of inRows) {
-      if (x.unit > 0) continue;
-      const u = unknownMap.get(x.r.sku) || { sku: x.r.sku, name: x.r.skuName, code: x.code, qty: 0, total: 0, rows: 0 };
-      u.qty += sign(x.r) * x.r.qty;
-      u.total += sign(x.r) * x.r.total;
-      u.rows += 1;
-      unknownMap.set(x.r.sku, u);
-    }
-    const unknown = [...unknownMap.values()];
-    const manualIn = inRows.filter(x => x.manual).length;
-    const expense = sumBy('out') + shipFee;
-    const profit = salesSupply + otherIn - cogs - expense;
-
-    // ---- 지급일로 보기(통장) ----
-    const paid = receives.filter(r => String(r.payDate || '').startsWith(month));
-    const settleTotal = paid.reduce((s, r) => s + sign(r) * r.total, 0);
-    const prev = prevMonth(month);
-    const adPrev = entries.filter(e => e.kind === 'out' && e.category === AD_CATEGORY && e.date.startsWith(prev)).reduce((s, e) => s + e.amount, 0);
-    // 보유재고(원래 있던 재고를 넣은 것)는 이 달에 산 게 아니라 뺀다.
-    const importRows = orders.filter(o => !isHoldingOrder(o)).flatMap(o => o.receipts.filter(r => r.date.startsWith(month)).map(r => ({ code: o.code, r })));
-    const importCost = importRows.reduce((s, x) => s + receiptTotalCost(x.r), 0);
-    const cashOut = mine.filter(e => e.kind === 'out' && e.category !== AD_CATEGORY).reduce((s, e) => s + e.amount, 0) + shipFee;
-    const cashIn = settleTotal - adPrev + otherIn;
-    const cashOutTotal = importCost + cashOut;
-    // 앞으로 받을 돈: 지급일이 오늘 뒤인 줄을 달별로
-    const t = today();
-    const upcoming = new Map<string, { total: number; rows: number }>();
+  // ② 월별 현금 흐름
+  const months = useMemo(() => {
+    type Item = { date: string; label: string; amount: number };
+    const map = new Map<string, { ins: Item[]; outs: Item[] }>();
+    const at = (ym: string) => { let m = map.get(ym); if (!m) map.set(ym, m = { ins: [], outs: [] }); return m; };
+    // 들어온 돈: 쿠팡 정산금(지급일, 부가세 포함). 같은 날 지급분은 한 줄로.
+    const payByDay = new Map<string, { amount: number; rows: number }>();
     for (const r of receives) {
       const pd = String(r.payDate || '').slice(0, 10);
-      if (!pd || pd <= t) continue;
-      const k = pd.slice(0, 7);
-      const u = upcoming.get(k) || { total: 0, rows: 0 };
-      u.total += sign(r) * r.total;
-      u.rows += 1;
-      upcoming.set(k, u);
+      if (!pd) continue;
+      const x = payByDay.get(pd) || { amount: 0, rows: 0 };
+      x.amount += sign(r) * r.total;
+      x.rows += 1;
+      payByDay.set(pd, x);
     }
-    const upcomingList = [...upcoming.entries()].sort((a, b) => a[0].localeCompare(b[0]));
-    const upcomingTotal = upcomingList.reduce((s, [, u]) => s + u.total, 0);
-
-    // 한중발주 차익: 이 달에 만든 건
-    const hanjung = orders
-      .filter(o => ymOfMs(o.createdAt) === month)
-      .map(o => {
-        const tt = orderTotals(o);
-        const settle = settlementOf(o, receives);
-        const stock = inventoryOf(o).reduce((s, x) => s + x.value, 0);
-        return { o, cost: tt.totalCost, supply: settle.supply, stock, profit: settle.supply + stock - tt.totalCost };
+    for (const [d, x] of payByDay) at(d.slice(0, 7)).ins.push({ date: d, label: `쿠팡 정산 ${x.rows}줄`, amount: x.amount });
+    for (const e of entries) {
+      if (e.kind === 'in') at(e.date.slice(0, 7)).ins.push({ date: e.date, label: `${e.category}${e.memo ? ` · ${e.memo}` : ''}`, amount: e.amount });
+      // 쿠팡 광고비는 다음 달 정산금에서 빠진다
+      else if (e.category === AD_CATEGORY) { const ym = nextMonth(e.date.slice(0, 7)); at(ym).ins.push({ date: `${ym}-01`, label: `지난달 쿠팡 광고비 (${e.date.slice(5)})`, amount: -e.amount }); }
+      else at(e.date.slice(0, 7)).outs.push({ date: e.date, label: `${e.category}${e.memo ? ` · ${e.memo}` : ''}`, amount: e.amount });
+    }
+    // 나간 돈: 1688 제품비·부대비용
+    for (const o of orders) for (const x of buyCashOf(o)) at(x.date.slice(0, 7)).outs.push(x);
+    // 택배비(자동): 발송완료한 달, 박스 수 × BOX_FEE
+    const boxByMonth = new Map<string, number>();
+    for (const i of ships) { const ym = String(i.sentDate).slice(0, 7); boxByMonth.set(ym, (boxByMonth.get(ym) || 0) + boxCount(i)); }
+    for (const [ym, n] of boxByMonth) at(ym).outs.push({ date: `${ym}-31`, label: `택배비 자동 · ${n}박스 × ${BOX_FEE.toLocaleString()}원`, amount: n * BOX_FEE });
+    const t = today().slice(0, 7);
+    return [...map.entries()]
+      .sort((a, b) => b[0].localeCompare(a[0]))
+      .map(([ym, m]) => {
+        const inSum = m.ins.reduce((n, x) => n + x.amount, 0);
+        const outSum = m.outs.reduce((n, x) => n + x.amount, 0);
+        const byDate = (a: Item, b: Item) => a.date.localeCompare(b.date);
+        return { ym, future: ym > t, ins: m.ins.sort(byDate), outs: m.outs.sort(byDate), inSum, outSum, net: inSum - outSum };
       });
-    return {
-      mine, sumBy, outOf, shipBoxes, shipFee, otherIn,
-      inRows, sales, salesSupply, cogs, unknown, manualIn, expense, profit,
-      paid, settleTotal, prev, adPrev, importRows, importCost, cashOut, cashIn, cashOutTotal, upcomingList, upcomingTotal,
-      hanjung,
-    };
-  }, [month, receives, orders, entries, unitCosts, ships]);
-
-  // 재고는 달과 상관없이 지금 남아 있는 것 전부.
-  const stock = useMemo(() => orders.flatMap(inventoryOf), [orders]);
-  const stockValue = stock.reduce((s, x) => s + x.value, 0);
-
-  // 이 달이 속한 부가세 반기
-  const vh = halfOf(month);
-  const vat = useMemo(() => vatOf(vh.year, vh.half, receives, orders, entries, importVat), [vh.year, vh.half, receives, orders, entries, importVat]);
+  }, [receives, entries, orders, ships]);
 
   const cats = form.kind === 'out' ? OUT_CATEGORIES : IN_CATEGORIES;
-  const profitView = view === 'profit';
-
-  // 직접 적기(두 보기 공통)
-  const manualBox = (
-    <div className="mt-4 pt-3 border-t border-gray-100">
-      <div className="text-xs font-semibold text-gray-500 mb-1">직접 적기</div>
-      <div className="text-[11px] text-gray-400 mb-2">쿠팡 광고비는 쓴 날로 적어 주세요. 이익에선 그 달 비용, 통장에선 다음 달 정산금에서 빠져요.</div>
-      <div className="flex flex-wrap items-center gap-2 text-sm">
-        <input type="date" value={form.date} onChange={e => setForm(f => ({ ...f, date: e.target.value }))} className="px-2 py-1 border border-gray-200 rounded" />
-        <select
-          value={form.kind}
-          onChange={e => {
-            const kind = e.target.value as LedgerKind;
-            setForm(f => ({ ...f, kind, category: (kind === 'out' ? OUT_CATEGORIES : IN_CATEGORIES)[0] }));
-          }}
-          className="px-2 py-1 border border-gray-200 rounded"
-        >
-          <option value="out">출금</option>
-          <option value="in">입금</option>
-        </select>
-        <select value={form.category} onChange={e => setForm(f => ({ ...f, category: e.target.value }))} className="px-2 py-1 border border-gray-200 rounded">
-          {cats.map(c => <option key={c} value={c}>{c}</option>)}
-        </select>
-        <input value={form.amount} onChange={e => setForm(f => ({ ...f, amount: e.target.value }))} placeholder="금액(원)" className="w-28 px-2 py-1 border border-gray-200 rounded text-right font-mono" />
-        <input value={form.memo} onChange={e => setForm(f => ({ ...f, memo: e.target.value }))} onKeyDown={e => { if (e.key === 'Enter') add(); }} placeholder="메모" className="flex-1 min-w-[8rem] px-2 py-1 border border-gray-200 rounded" />
-        <button onClick={add} className="px-3 py-1 rounded-lg bg-blue-600 text-white font-semibold hover:bg-blue-700">적기</button>
-      </div>
-      <div className="mt-3 max-h-64 overflow-y-auto">
-        {!m.mine.length && <div className="text-xs text-gray-400 py-3 text-center">이 달에 직접 적은 기록이 없어요.</div>}
-        {m.mine.map(e => (
-          <div key={e.id} className="flex items-center gap-3 border-t border-gray-50 py-1.5 text-sm">
-            <span className="font-mono text-gray-500">{e.date.slice(5)}</span>
-            <span className={e.kind === 'in' ? 'text-emerald-700' : 'text-red-600'}>{e.category}</span>
-            <span className="text-gray-400 truncate flex-1">{e.memo}</span>
-            <b className="font-mono">{e.kind === 'in' ? '+' : '−'}{won(e.amount)}</b>
-            <button onClick={() => remove(e)} title="지우기" className="w-5 h-5 text-red-500 border border-red-200 rounded text-xs hover:bg-red-50">×</button>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
+  const num = 'px-3 text-right font-mono whitespace-nowrap';
 
   return (
-    <div className="p-4 sm:p-6 lg:p-8 text-gray-800 space-y-5">
-      <div className="flex flex-wrap items-end justify-between gap-3">
-        <div>
-          <h1 className="text-xl font-bold text-gray-900">장부</h1>
-          <p className="text-sm text-gray-500">
-            {profitView
-              ? '이 달에 쿠팡에 입고된 것으로 번 돈이에요. 정산금은 부가세 뺀 공급가로 계산해요.'
-              : '이 달 통장에 들어오고 나가는 돈이에요. 정산금은 지급일 기준, 부가세 포함이에요.'}
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
-          <div className="flex rounded-lg border border-gray-200 overflow-hidden text-sm">
-            <button onClick={() => setView('profit')} className={`px-3 py-1.5 ${profitView ? 'bg-blue-600 text-white font-semibold' : 'bg-white text-gray-600 hover:bg-gray-50'}`}>입고일로 보기</button>
-            <button onClick={() => setView('cash')} className={`px-3 py-1.5 border-l border-gray-200 ${!profitView ? 'bg-blue-600 text-white font-semibold' : 'bg-white text-gray-600 hover:bg-gray-50'}`}>지급일로 보기</button>
-          </div>
-          <input type="month" value={month} onChange={e => setMonth(e.target.value || thisMonth())} className="px-3 py-1.5 border border-gray-200 rounded-lg text-sm bg-white" />
-        </div>
+    <div className="p-4 sm:p-6 lg:p-8 text-gray-800 max-w-[900px] space-y-4">
+      <div>
+        <h1 className="text-xl font-bold text-gray-900">장부</h1>
+        <p className="text-sm text-gray-500">한중발주 차액에서 판매비용·부가세를 빼면 최종 남은 돈. 아래는 달마다 통장에 들어오고 나간 돈이에요.</p>
       </div>
 
-      {/* 이 달 요약 */}
-      {profitView ? (
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-          <Card title="쿠팡 입고 정산(공급가)" value={won(m.salesSupply)} sub={`부가세 포함 ${won(m.sales)} · ${m.inRows.length}줄`} tone="in" />
-          <Card title="입고된 수량의 원가" value={won(m.cogs)} sub={m.unknown.length ? `원가 모름 ${m.unknown.length}종 — 아래에서 적어 주세요` : '모든 줄 원가 있음'} tone="out" />
-          <Card title="비용" value={won(m.expense)} sub={m.otherIn ? `기타입금 +${won(m.otherIn)}` : undefined} tone="out" />
-          <Card title="이 달 순익" value={won(m.profit)} sub={m.unknown.length ? '원가 모름 줄이 있어 실제보다 커요' : '정산(공급가) + 기타입금 − 원가 − 비용'} tone="net" />
-        </div>
-      ) : (
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-          <Card title="들어오는 돈" value={won(m.cashIn)} sub={`정산 ${won(m.settleTotal)}${m.adPrev ? ` − 광고비 ${won(m.adPrev)}` : ''}${m.otherIn ? ` + 기타 ${won(m.otherIn)}` : ''}`} tone="in" />
-          <Card title="나가는 돈" value={won(m.cashOutTotal)} sub={`수입비용 ${won(m.importCost)} · 그 밖 ${won(m.cashOut)}`} tone="out" />
-          <Card title="이 달 돈 흐름" value={won(m.cashIn - m.cashOutTotal)} tone="net" />
-          <Card title="앞으로 받을 돈" value={won(m.upcomingTotal)} sub="지급일이 오늘 뒤인 정산금" />
-        </div>
-      )}
-
-      <a href="#/tax" className="flex flex-wrap items-center gap-x-3 gap-y-1 bg-white border border-gray-200 rounded-xl px-4 py-2.5 text-sm hover:bg-gray-50">
-        <span className="text-gray-500">세금</span>
-        <span>부가세 {vh.year}년 {vh.half}기 {vat.due >= 0 ? '낼 돈' : '돌려받을 돈'} <b className="font-mono">{won(Math.abs(vat.due))}</b> <span className="text-[11px] text-gray-400">{vatDeadline(vh.year, vh.half)}까지</span></span>
-        <span className="ml-auto text-blue-600 text-xs">세금 보기 →</span>
-      </a>
-
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 items-start">
-        {profitView ? (
-          <div className="bg-white border border-gray-200 rounded-xl p-4">
-            <div className="font-semibold text-gray-900 mb-2">이 달 이익 <span className="text-xs font-normal text-gray-400">입고일 기준</span></div>
-            <table className="w-full text-sm">
-              <tbody>
-                <Row label="쿠팡 입고 정산" note={`공급가 · ${m.inRows.length}줄`} value={m.salesSupply} tone="in" />
-                <Row label="기타입금" value={m.otherIn} tone="in" />
-                <Row label="원가" note={`입고 수량 × 개당 원가${m.manualIn ? ` · 직접 적은 원가 ${m.manualIn}줄` : ''}`} value={m.cogs} tone="out" minus />
-                {OUT_CATEGORIES.map(c => <Row key={c} label={c} note={c === '택배비' && m.shipBoxes ? `자동 · 발송 ${m.shipBoxes}박스 × ${won(BOX_FEE)}` : undefined} value={m.outOf(c)} tone="out" minus />)}
-                <tr><td className="py-2 font-semibold">순익</td><td className={`text-right font-mono font-bold ${m.profit >= 0 ? 'text-emerald-600' : 'text-red-500'}`}>{won(m.profit)}</td></tr>
-              </tbody>
-            </table>
-
-            {/* 원가 모름 */}
-            {m.unknown.length > 0 && (
-              <div className="mt-4 pt-3 border-t border-gray-100">
-                <div className="text-xs font-semibold text-amber-700 mb-1">원가 모름 {m.unknown.length}종</div>
-                <div className="text-[11px] text-gray-400 mb-2">한중발주와 짝이 안 맞거나(앱 쓰기 전 발주·한중발주 없이 산 것·상품명이 다른 것) 원가가 아직 없는 상품이에요. 개당 원가를 적으면 원가에 들어가요.</div>
-                <table className="w-full text-xs">
-                  <tbody>
-                    {m.unknown.map(u => (
-                      <tr key={u.sku} className="border-t border-gray-50">
-                        <td className="py-1 truncate max-w-[14rem]" title={u.name}>{u.name}</td>
-                        <td className="font-mono text-gray-400">{u.code || '짝 없음'}</td>
-                        <td className="text-right font-mono">{u.qty}개</td>
-                        <td className="text-right font-mono text-gray-400">{won(u.total)}</td>
-                        <td className="text-right pl-2"><UnitCostInput sku={u.sku} name={u.name} value={unitCosts[ucId(u.sku)]?.unit || 0} /></td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+      {/* ① 전체 손익 */}
+      <Section title="전체 손익" note="한중발주 카드와 같은 숫자 · 부가세 포함">
+        <table className="text-sm w-full">
+          <thead className="text-xs text-gray-500">
+            <tr>
+              <th className="text-left font-medium py-1">한중발주</th>
+              <th className="text-right font-medium px-3">매입가</th>
+              <th className="text-right font-medium px-3">매출가</th>
+              <th className="text-right font-medium px-3">차액</th>
+            </tr>
+          </thead>
+          <tbody>
+            {total.rows.map(({ o, rev, buy, profit }) => (
+              <tr key={o.code} className="border-t border-white/80">
+                <td className="py-1.5 font-mono font-semibold text-gray-900">{o.code}</td>
+                <td className={`${num} text-gray-700`}>{buy.total ? won(buy.total) : <span className="text-gray-400">-</span>}</td>
+                <td className={`${num} text-gray-700`}>{rev.total ? won(rev.total) : <span className="text-gray-400">-</span>}</td>
+                <td className={`${num} font-semibold`}>{profit == null ? <span className="text-gray-400" title="매입가나 매출가가 없어 차액을 못 셈">-</span> : signed(profit)}</td>
+              </tr>
+            ))}
+          </tbody>
+          <tfoot>
+            <tr className="border-t-2 border-gray-400 font-bold">
+              <td className="py-1.5">한중발주 차액 합계</td><td /><td />
+              <td className={num}>{signed(total.profitSum)}</td>
+            </tr>
+            {total.otherIn > 0 && (
+              <tr className="text-gray-700">
+                <td className="py-1">기타입금</td><td /><td />
+                <td className={num}>+{won(total.otherIn)}</td>
+              </tr>
             )}
-
-            {/* 입고 줄 */}
-            <div className="mt-4 pt-3 border-t border-gray-100">
-              <div className="text-xs font-semibold text-gray-500 mb-1">이 달 입고 줄 <span className="font-normal text-gray-400">· 정산은 부가세 포함, 지급일에 통장에 들어와요</span></div>
-              <div className="max-h-72 overflow-y-auto">
-                <table className="w-full text-xs">
-                  <thead className="text-gray-400 sticky top-0 bg-white">
-                    <tr><th className="text-left font-medium py-1">입고일</th><th className="text-left font-medium">상품</th><th className="text-right font-medium">수량</th><th className="text-right font-medium">정산</th><th className="text-right font-medium">원가</th><th className="text-right font-medium">지급일</th></tr>
-                  </thead>
-                  <tbody>
-                    {m.inRows.map(x => (
-                      <tr key={x.r.key} className={`border-t border-gray-50 ${sign(x.r) < 0 ? 'text-red-500' : ''}`}>
-                        <td className="py-1 font-mono text-gray-500">{x.r.date.slice(5, 10)}</td>
-                        <td className="truncate max-w-[12rem]" title={`${x.r.skuName}${x.code ? ` · ${x.code}` : ''}`}>{sign(x.r) < 0 && '[반출] '}{x.r.skuName}</td>
-                        <td className="text-right font-mono">{x.r.qty}</td>
-                        <td className="text-right font-mono">{won(x.r.total)}</td>
-                        <td className={`text-right font-mono ${x.unit ? '' : 'text-amber-600'}`}>{x.unit ? won(x.r.qty * x.unit) : '모름'}</td>
-                        <td className="text-right font-mono text-gray-500">{String(x.r.payDate || '').slice(5, 10) || '-'}</td>
-                      </tr>
+            <tr className="text-gray-700 cursor-pointer hover:bg-white/60" onClick={() => toggle('sell')}>
+              <td className="py-1"><span className="text-gray-500 w-3 inline-block">{open.has('sell') ? '▾' : '▸'}</span> 판매비용 <span className="text-xs text-gray-500">택배비 {total.boxes}박스 × {BOX_FEE.toLocaleString()}원 · 광고비 · 직접 적은 비용</span></td><td /><td />
+              <td className={num}>−{won(total.sellCost)}</td>
+            </tr>
+            {open.has('sell') && (
+              <tr><td colSpan={4} className="pb-2">
+                <div className="ml-4 mt-1 bg-white rounded-xl px-3 py-2 space-y-2">
+                  <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs">
+                    {total.outByCat.filter(x => x.v).map(x => <span key={x.c} className="text-gray-600">{x.c} <b className="font-mono">{won(x.v)}</b></span>)}
+                    {!total.outByCat.some(x => x.v) && <span className="text-gray-400">아직 없어요</span>}
+                  </div>
+                  {/* 직접 적기 */}
+                  <div className="flex flex-wrap items-center gap-1.5 text-xs pt-2 border-t border-gray-100">
+                    <input type="date" value={form.date} onChange={e => setForm(f => ({ ...f, date: e.target.value }))} className="px-1.5 py-1 border border-gray-200 rounded" />
+                    <select value={form.kind} onChange={e => { const kind = e.target.value as LedgerKind; setForm(f => ({ ...f, kind, category: (kind === 'out' ? OUT_CATEGORIES : IN_CATEGORIES)[0] })); }} className="px-1.5 py-1 border border-gray-200 rounded">
+                      <option value="out">출금</option>
+                      <option value="in">입금</option>
+                    </select>
+                    <select value={form.category} onChange={e => setForm(f => ({ ...f, category: e.target.value }))} className="px-1.5 py-1 border border-gray-200 rounded">
+                      {cats.map(c => <option key={c} value={c}>{c}</option>)}
+                    </select>
+                    <input value={form.amount} onChange={e => setForm(f => ({ ...f, amount: e.target.value }))} placeholder="금액(원)" className="w-24 px-1.5 py-1 border border-gray-200 rounded text-right font-mono" />
+                    <input value={form.memo} onChange={e => setForm(f => ({ ...f, memo: e.target.value }))} onKeyDown={e => { if (e.key === 'Enter') add(); }} placeholder="메모" className="flex-1 min-w-[6rem] px-1.5 py-1 border border-gray-200 rounded" />
+                    <button onClick={add} className="px-2.5 py-1 rounded-lg bg-blue-600 text-white font-semibold hover:bg-blue-700">적기</button>
+                  </div>
+                  <div className="text-[11px] text-gray-400">쿠팡 광고비는 쓴 날로 적어 주세요. 통장에선 다음 달 정산금에서 빠져요.</div>
+                  <div className="max-h-56 overflow-y-auto">
+                    {[...entries].sort((a, b) => b.date.localeCompare(a.date)).map(e => (
+                      <div key={e.id} className="flex items-center gap-3 border-t border-gray-50 py-1 text-xs">
+                        <span className="font-mono text-gray-500">{e.date}</span>
+                        <span className={e.kind === 'in' ? 'text-emerald-700' : 'text-gray-700'}>{e.category}</span>
+                        <span className="text-gray-400 truncate flex-1">{e.memo}</span>
+                        <b className="font-mono">{e.kind === 'in' ? '+' : '−'}{won(e.amount)}</b>
+                        <button onClick={() => remove(e)} title="지우기" className="w-5 h-5 text-red-500 border border-red-200 rounded hover:bg-red-50">×</button>
+                      </div>
                     ))}
-                    {!m.inRows.length && <tr><td colSpan={6} className="text-gray-400 py-3 text-center">이 달에 입고된 줄이 없어요.</td></tr>}
-                  </tbody>
-                </table>
-              </div>
-            </div>
+                  </div>
+                </div>
+              </td></tr>
+            )}
+            <tr className="text-gray-700">
+              <td className="py-1">부가세 <span className="text-xs text-gray-500" title={total.vatList.map(x => `${x.h.replace('-', '년 ')}기 ${won(x.due)}`).join('\n')}>매출 부가세 − 매입 부가세 · <a href="#/tax" className="text-blue-600 hover:underline">세금 보기</a></span></td><td /><td />
+              <td className={num}>{total.vat >= 0 ? '−' : '+'}{won(Math.abs(total.vat))}</td>
+            </tr>
+            <tr className="border-t-2 border-gray-400 font-bold text-base">
+              <td className="py-2">최종 남은 돈</td><td /><td />
+              <td className={num}>{signed(total.final)}</td>
+            </tr>
+          </tfoot>
+        </table>
+      </Section>
 
-            {manualBox}
-          </div>
-        ) : (
-          <div className="bg-white border border-gray-200 rounded-xl p-4">
-            <div className="font-semibold text-gray-900 mb-2">통장 입금 · 출금 <span className="text-xs font-normal text-gray-400">지급일·실제 날짜 기준</span></div>
-            <table className="w-full text-sm">
-              <tbody>
-                <Row label="쿠팡 정산금" note={`지급일 기준 ${m.paid.length}줄 · 부가세 포함`} value={m.settleTotal} tone="in" />
-                <Row label="쿠팡 광고비 차감" note={`${m.prev.slice(5)}월에 쓴 광고비`} value={m.adPrev} tone="out" minus />
-                <Row label="기타입금" value={m.otherIn} tone="in" />
-                <Row label="수입비용" note={`자동 · 한중발주 도착 기록 ${m.importRows.length}건`} value={m.importCost} tone="out" minus />
-                {OUT_CATEGORIES.filter(c => c !== AD_CATEGORY).map(c => <Row key={c} label={c} note={c === '택배비' && m.shipBoxes ? `자동 · 발송 ${m.shipBoxes}박스 × ${won(BOX_FEE)}` : undefined} value={m.outOf(c)} tone="out" minus />)}
-                <tr><td className="py-2 font-semibold">돈 흐름</td><td className={`text-right font-mono font-bold ${m.cashIn - m.cashOutTotal >= 0 ? 'text-emerald-600' : 'text-red-500'}`}>{won(m.cashIn - m.cashOutTotal)}</td></tr>
-              </tbody>
-            </table>
-
-            {/* 앞으로 받을 돈 */}
-            <div className="mt-4 pt-3 border-t border-gray-100">
-              <div className="text-xs font-semibold text-gray-500 mb-1">앞으로 받을 돈 <span className="font-normal text-gray-400">· 입고됐지만 지급일이 아직 안 온 정산금(부가세 포함)</span></div>
-              <table className="w-full text-sm">
-                <tbody>
-                  {m.upcomingList.map(([ym, u]) => (
-                    <tr key={ym} className="border-t border-gray-50">
-                      <td className="py-1 font-mono">{ym.replace('-', '년 ')}월</td>
-                      <td className="text-xs text-gray-400">{u.rows}줄</td>
-                      <td className="text-right font-mono">{won(u.total)}</td>
-                    </tr>
-                  ))}
-                  {!m.upcomingList.length && <tr><td className="text-xs text-gray-400 py-3 text-center">받을 돈이 없어요.</td></tr>}
-                </tbody>
-              </table>
-            </div>
-
-            {manualBox}
-          </div>
-        )}
-
-        {/* 한중발주 차익 */}
-        <div className="bg-white border border-gray-200 rounded-xl p-4">
-          <div className="font-semibold text-gray-900">한중발주 차익 <span className="text-xs font-normal text-gray-400">이 달에 만든 건 · 공급가 기준</span></div>
-          <div className="text-[11px] text-gray-400 mb-2">한중발주 한 건으로 번 돈이에요. 차익 = 쿠팡 정산(공급가) + 남은 재고(원가로 계산) − 총원가. 남은 재고는 원가로 쳐서 손익 0으로 보니, 결국 입고된 것에서 번 돈이에요. 재고가 다 팔리면 최종 차익이 돼요.</div>
-          <table className="w-full text-sm">
-            <thead className="text-xs text-gray-500">
-              <tr><th className="text-left font-medium py-1">고유번호</th><th className="text-right font-medium">총원가</th><th className="text-right font-medium">정산</th><th className="text-right font-medium">재고</th><th className="text-right font-medium">차익</th></tr>
-            </thead>
-            <tbody>
-              {m.hanjung.map(h => (
-                <tr key={h.o.code} className="border-t border-gray-50">
-                  <td className="py-1.5 font-mono">{h.o.code}</td>
-                  <td className="text-right font-mono">{won(h.cost)}</td>
-                  <td className="text-right font-mono">{won(h.supply)}</td>
-                  <td className="text-right font-mono text-gray-500">{won(h.stock)}</td>
-                  <td className={`text-right font-mono font-bold ${h.profit >= 0 ? 'text-emerald-600' : 'text-red-500'}`}>{won(h.profit)}</td>
+      {/* ② 월별 현금 흐름 */}
+      <Section title="월별 현금 흐름" note="통장 기준 · 누르면 내역">
+        <table className="text-sm w-full">
+          <thead className="text-xs text-gray-500">
+            <tr>
+              <th className="text-left font-medium py-1">월</th>
+              <th className="text-right font-medium px-3">들어온 돈</th>
+              <th className="text-right font-medium px-3">나간 돈</th>
+              <th className="text-right font-medium px-3">남은 돈</th>
+            </tr>
+          </thead>
+          <tbody>
+            {months.map(m => (
+              <React.Fragment key={m.ym}>
+                <tr className="border-t border-white/80 cursor-pointer hover:bg-white/60" onClick={() => toggle(m.ym)}>
+                  <td className="py-1.5 font-semibold text-gray-900"><span className="text-gray-500 w-3 inline-block font-normal">{open.has(m.ym) ? '▾' : '▸'}</span> {ymLabel(m.ym)}{m.future && <span className="ml-1.5 text-xs font-normal text-amber-600">들어올 예정</span>}</td>
+                  <td className={`${num} text-gray-700`}>{m.inSum ? won(m.inSum) : '-'}</td>
+                  <td className={`${num} text-gray-700`}>{m.outSum ? won(m.outSum) : '-'}</td>
+                  <td className={`${num} font-semibold`}>{signed(m.net)}</td>
                 </tr>
-              ))}
-              {!m.hanjung.length && <tr><td colSpan={5} className="text-xs text-gray-400 py-3 text-center">이 달에 만든 한중발주가 없어요.</td></tr>}
-            </tbody>
-          </table>
-
-          {/* 지금 재고 */}
-          <div className="mt-4 pt-3 border-t border-gray-100">
-            <div className="text-xs font-semibold text-gray-500 mb-1">지금 재고(한중 여유) {won(stockValue)} <span className="font-normal text-gray-400">· 비용이 아니라 가진 물건의 값 · 아직 어느 쿠팡 발주에도 배정 안 된 수량 × 개당 원가</span></div>
-            <table className="w-full text-xs">
-              <tbody>
-                {stock.map(x => (
-                  <tr key={`${x.code}|${x.name}`} className="border-t border-gray-50">
-                    <td className="py-1 truncate max-w-[16rem]" title={x.name}>{x.name}</td>
-                    <td className="font-mono text-gray-400">{x.code}</td>
-                    <td className="text-right font-mono">{x.spare}개{x.incoming > 0 && <span className="text-amber-600"> (오는 중 {x.incoming})</span>}</td>
-                    <td className="text-right font-mono text-gray-400">× {won(x.unit)}</td>
-                    <td className="text-right font-mono font-semibold">{won(x.value)}</td>
-                  </tr>
-                ))}
-                {!stock.length && <tr><td className="text-gray-400 py-3 text-center">남은 재고가 없어요.</td></tr>}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      </div>
+                {open.has(m.ym) && (
+                  <tr><td colSpan={4} className="pb-2">
+                    <div className="ml-4 mt-1 bg-white rounded-xl px-3 py-2 grid grid-cols-2 gap-4 text-xs">
+                      {([['들어온 돈', m.ins, 'text-emerald-700'], ['나간 돈', m.outs, 'text-gray-700']] as const).map(([title, list, cls]) => (
+                        <div key={title}>
+                          <div className={`font-semibold mb-1 ${cls}`}>{title}</div>
+                          {!list.length && <div className="text-gray-400">없음</div>}
+                          {list.map((x, i) => (
+                            <div key={i} className="flex gap-2 py-0.5 border-t border-gray-50">
+                              <span className="font-mono text-gray-400">{x.date.slice(5)}</span>
+                              <span className="flex-1 truncate" title={x.label}>{x.label}</span>
+                              <span className="font-mono">{won(x.amount)}</span>
+                            </div>
+                          ))}
+                        </div>
+                      ))}
+                    </div>
+                  </td></tr>
+                )}
+              </React.Fragment>
+            ))}
+            {!months.length && <tr><td colSpan={4} className="py-3 text-center text-xs text-gray-400">아직 기록이 없어요.</td></tr>}
+          </tbody>
+        </table>
+      </Section>
     </div>
   );
 };

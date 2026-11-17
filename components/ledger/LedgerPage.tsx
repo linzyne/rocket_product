@@ -6,6 +6,9 @@ import {
 import { HanjungOrder, subscribeHanjung, orderTotals, receiptTotalCost, inventoryOf, isHoldingOrder } from '../../data/hanjungStore';
 import { ReceiveRow, subscribeReceives, settlementOf, sign } from '../../data/receiveStore';
 import { costOf as costOfRow, ucId, vatOf, halfOf, vatDeadline } from '../../data/ledgerCalc';
+import { subscribeShipOuts } from '../coupangOrder/data/shipOutStore';
+import type { ShipOut } from '../coupangOrder/data/shipOutStore';
+import { expandBoxSplit, parseBoxNo } from '../coupangOrder/utils/dataProcessor';
 
 // 장부. 같은 데이터를 두 날짜로 본다.
 //  · 입고일로 보기(이익): 그 달에 쿠팡에 입고된 줄의 정산(공급가) − 그 수량의 원가 − 직접 적은 비용 = 순익.
@@ -16,8 +19,18 @@ import { costOf as costOfRow, ucId, vatOf, halfOf, vatDeadline } from '../../dat
 //      앞으로 받을 돈은 지급일이 오늘 뒤인 줄을 달별로 모은다.
 //  · 한중발주 차익: 그 달에 만든 한중발주마다 정산(공급가) + 남은 재고 금액 − 총원가
 //  · 재고: 한중발주 여유 중 아직 어느 쿠팡 발주에도 배정 안 된 수량 × 원가
+//  · 택배비(자동): 그 달에 발송완료한 출고 건의 박스 수 × BOX_FEE. 직접 적은 택배비에 더해진다.
 
 type View = 'profit' | 'cash';
+
+// 쿠팡 창고로 보내는 택배 한 박스 값(원).
+const BOX_FEE = 3500;
+// 출고 건 하나의 박스 수: 줄의 박스 번호(나눠 담은 줄은 조각마다) 가짓수. 번호가 없는 줄은 한 박스로 친다.
+const boxCount = (item: ShipOut) => {
+  const nos = new Set<number>();
+  for (const l of item.lines) for (const p of expandBoxSplit({ ...l, 쉼먼트: l.쉼먼트 || '' })) nos.add(parseBoxNo(p.쉼먼트) || 0);
+  return nos.size;
+};
 
 const won = (n: number) => `${Math.round(n).toLocaleString()}원`;
 const ymOf = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
@@ -72,6 +85,8 @@ const LedgerPage: React.FC = () => {
   useEffect(() => subscribeLedger(setEntries), []);
   useEffect(() => subscribeHanjung(setOrders), []);
   useEffect(() => subscribeReceives(setReceives), []);
+  const [ships, setShips] = useState<ShipOut[]>([]);
+  useEffect(() => subscribeShipOuts(list => setShips(list.filter(i => i.sentDate))), []);
   useEffect(() => subscribeUnitCosts(setUnitCosts), []);
   const [importVat, setImportVat] = useState<Record<string, number>>({});
   useEffect(() => subscribeImportVat(setImportVat), []);
@@ -101,6 +116,10 @@ const LedgerPage: React.FC = () => {
     const mine = entries.filter(e => e.date.startsWith(month));
     const sumBy = (kind: LedgerKind, cat?: string) => mine.filter(e => e.kind === kind && (!cat || e.category === cat)).reduce((s, e) => s + e.amount, 0);
     const otherIn = sumBy('in');
+    // 택배비(자동): 이 달에 발송완료한 출고 건의 박스 수 × BOX_FEE
+    const shipBoxes = ships.filter(i => String(i.sentDate).startsWith(month)).reduce((n, i) => n + boxCount(i), 0);
+    const shipFee = shipBoxes * BOX_FEE;
+    const outOf = (c: string) => sumBy('out', c) + (c === '택배비' ? shipFee : 0);
 
     // ---- 입고일로 보기(이익) ----
     const inRows = receives
@@ -121,7 +140,7 @@ const LedgerPage: React.FC = () => {
     }
     const unknown = [...unknownMap.values()];
     const manualIn = inRows.filter(x => x.manual).length;
-    const expense = sumBy('out');
+    const expense = sumBy('out') + shipFee;
     const profit = salesSupply + otherIn - cogs - expense;
 
     // ---- 지급일로 보기(통장) ----
@@ -132,7 +151,7 @@ const LedgerPage: React.FC = () => {
     // 보유재고(원래 있던 재고를 넣은 것)는 이 달에 산 게 아니라 뺀다.
     const importRows = orders.filter(o => !isHoldingOrder(o)).flatMap(o => o.receipts.filter(r => r.date.startsWith(month)).map(r => ({ code: o.code, r })));
     const importCost = importRows.reduce((s, x) => s + receiptTotalCost(x.r), 0);
-    const cashOut = mine.filter(e => e.kind === 'out' && e.category !== AD_CATEGORY).reduce((s, e) => s + e.amount, 0);
+    const cashOut = mine.filter(e => e.kind === 'out' && e.category !== AD_CATEGORY).reduce((s, e) => s + e.amount, 0) + shipFee;
     const cashIn = settleTotal - adPrev + otherIn;
     const cashOutTotal = importCost + cashOut;
     // 앞으로 받을 돈: 지급일이 오늘 뒤인 줄을 달별로
@@ -160,12 +179,12 @@ const LedgerPage: React.FC = () => {
         return { o, cost: tt.totalCost, supply: settle.supply, stock, profit: settle.supply + stock - tt.totalCost };
       });
     return {
-      mine, sumBy, otherIn,
+      mine, sumBy, outOf, shipBoxes, shipFee, otherIn,
       inRows, sales, salesSupply, cogs, unknown, manualIn, expense, profit,
       paid, settleTotal, prev, adPrev, importRows, importCost, cashOut, cashIn, cashOutTotal, upcomingList, upcomingTotal,
       hanjung,
     };
-  }, [month, receives, orders, entries, unitCosts]);
+  }, [month, receives, orders, entries, unitCosts, ships]);
 
   // 재고는 달과 상관없이 지금 남아 있는 것 전부.
   const stock = useMemo(() => orders.flatMap(inventoryOf), [orders]);
@@ -243,7 +262,7 @@ const LedgerPage: React.FC = () => {
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
           <Card title="쿠팡 입고 정산(공급가)" value={won(m.salesSupply)} sub={`부가세 포함 ${won(m.sales)} · ${m.inRows.length}줄`} tone="in" />
           <Card title="입고된 수량의 원가" value={won(m.cogs)} sub={m.unknown.length ? `원가 모름 ${m.unknown.length}종 — 아래에서 적어 주세요` : '모든 줄 원가 있음'} tone="out" />
-          <Card title="비용(직접 적은 것)" value={won(m.expense)} sub={m.otherIn ? `기타입금 +${won(m.otherIn)}` : undefined} tone="out" />
+          <Card title="비용" value={won(m.expense)} sub={m.otherIn ? `기타입금 +${won(m.otherIn)}` : undefined} tone="out" />
           <Card title="이 달 순익" value={won(m.profit)} sub={m.unknown.length ? '원가 모름 줄이 있어 실제보다 커요' : '정산(공급가) + 기타입금 − 원가 − 비용'} tone="net" />
         </div>
       ) : (
@@ -270,7 +289,7 @@ const LedgerPage: React.FC = () => {
                 <Row label="쿠팡 입고 정산" note={`공급가 · ${m.inRows.length}줄`} value={m.salesSupply} tone="in" />
                 <Row label="기타입금" value={m.otherIn} tone="in" />
                 <Row label="원가" note={`입고 수량 × 개당 원가${m.manualIn ? ` · 직접 적은 원가 ${m.manualIn}줄` : ''}`} value={m.cogs} tone="out" minus />
-                {OUT_CATEGORIES.map(c => <Row key={c} label={c} value={m.sumBy('out', c)} tone="out" minus />)}
+                {OUT_CATEGORIES.map(c => <Row key={c} label={c} note={c === '택배비' && m.shipBoxes ? `자동 · 발송 ${m.shipBoxes}박스 × ${won(BOX_FEE)}` : undefined} value={m.outOf(c)} tone="out" minus />)}
                 <tr><td className="py-2 font-semibold">순익</td><td className={`text-right font-mono font-bold ${m.profit >= 0 ? 'text-emerald-600' : 'text-red-500'}`}>{won(m.profit)}</td></tr>
               </tbody>
             </table>
@@ -332,7 +351,7 @@ const LedgerPage: React.FC = () => {
                 <Row label="쿠팡 광고비 차감" note={`${m.prev.slice(5)}월에 쓴 광고비`} value={m.adPrev} tone="out" minus />
                 <Row label="기타입금" value={m.otherIn} tone="in" />
                 <Row label="수입비용" note={`자동 · 한중발주 도착 기록 ${m.importRows.length}건`} value={m.importCost} tone="out" minus />
-                {OUT_CATEGORIES.filter(c => c !== AD_CATEGORY).map(c => <Row key={c} label={c} value={m.sumBy('out', c)} tone="out" minus />)}
+                {OUT_CATEGORIES.filter(c => c !== AD_CATEGORY).map(c => <Row key={c} label={c} note={c === '택배비' && m.shipBoxes ? `자동 · 발송 ${m.shipBoxes}박스 × ${won(BOX_FEE)}` : undefined} value={m.outOf(c)} tone="out" minus />)}
                 <tr><td className="py-2 font-semibold">돈 흐름</td><td className={`text-right font-mono font-bold ${m.cashIn - m.cashOutTotal >= 0 ? 'text-emerald-600' : 'text-red-500'}`}>{won(m.cashIn - m.cashOutTotal)}</td></tr>
               </tbody>
             </table>

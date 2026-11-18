@@ -132,14 +132,17 @@ const boxOrder = (l: FlowLine) => {
   return parseBoxNo(v) || 999;
 };
 
-// 같은 입고예정일·센터끼리 이어진 발주서를 한 덩어리로(목록은 이미 날짜 → 센터 순으로 정렬돼 있다).
+// 같은 입고예정일·센터(쉽먼트 이후는 같은 출고 건)끼리 한 덩어리로. 이어져 있지 않아도 합친다
+// (날짜변경한 발주서는 바꾸기 전 자리에 서 있어서, 같은 출고 건이 다른 카드 사이에 끼어 두 장으로 갈라져 보였다).
+// 덩어리 자리는 그 키가 처음 나온 곳.
 const groupByCenterDate = (list: FlowOrder[], keyOf: (o: FlowOrder) => string = o => `${o.date}|${o.center.trim()}`) => {
   const groups: { key: string; date: string; center: string; list: FlowOrder[] }[] = [];
+  const byKey = new Map<string, (typeof groups)[number]>();
   for (const o of list) {
     const key = keyOf(o);
-    const last = groups[groups.length - 1];
-    if (last && last.key === key) last.list.push(o);
-    else groups.push({ key, date: o.date, center: o.center.trim(), list: [o] });
+    const g = byKey.get(key);
+    if (g) g.list.push(o);
+    else { const ng = { key, date: o.date, center: o.center.trim(), list: [o] }; byKey.set(key, ng); groups.push(ng); }
   }
   return groups;
 };

@@ -1139,14 +1139,14 @@ const HanjungOrderPage: React.FC = () => {
                         </tr>
                         {cost.spareQty > 0 && (
                           <tr className="border-t border-gray-100 text-gray-500">
-                            <td className="font-sans pr-3">앞으로</td>
+                            <td className="font-sans pr-3">재고</td>
                             <td className="text-right pl-6" title="아직 안 팔린 수량">{cost.spareQty.toLocaleString()}개</td>
                             <td className="text-right pl-8" title={`남은 재고를 지금까지 판 값으로 다 팔면 들어올 돈(추정)\n참고: 이 재고를 살 때 든 돈 ${won(cost.spareCost)}`}>{spareValue ? `≈ ${won(spareValue)}` : '-'}</td>
                           </tr>
                         )}
                         <tr className="border-t-2 border-gray-300">
                           <td className="text-gray-900 font-sans font-semibold pr-3 pt-1">차액</td>
-                          <td className="text-right pl-6 pt-1 text-gray-500 font-sans text-xs">{cost.spareQty > 0 && spareValue ? <>다 팔면 <b className={profit + spareValue >= 0 ? 'text-emerald-600' : 'text-red-500'}>{won(profit + spareValue)}</b></> : null}</td>
+                          <td className="text-right pl-6 pt-1 text-gray-500 font-sans text-xs">{cost.spareQty > 0 && spareValue ? <span title="매출 + 재고 금액">전체 예상매출 <b className="text-gray-700">{won(rev.total + spareValue)}</b></span> : null}</td>
                           <td className={`text-right pl-8 pt-1 font-bold ${profit >= 0 ? 'text-emerald-600' : 'text-red-500'}`} title="매출 − 매입. 재고가 팔리면 올라가고, 다 팔리면 마진이 돼요">{won(profit)}</td>
                         </tr>
                       </tbody>

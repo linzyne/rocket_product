@@ -1,6 +1,6 @@
 // 서허 요청 관리(/plan/ticket/issueManagement)에 요청자가 WMS인 새 요청이 올라오면
 // 왼쪽 위 "요청 목록" 버튼에 빨간 숫자를 띄운다.
-//   - 처리중(AWAITING) 목록을 요청자 WMS로만 받아 와서, 아직 안 열어 본 요청 수를 센다.
+//   - 업체 응답 필요(NEED_RESPONSE)·처리중(AWAITING) 목록을 요청자 WMS로만 받아 와서, 아직 안 열어 본 요청 수를 센다.
 //   - 목록에서 그 요청 줄을 누르면(열어 보면) 본 것으로 치고 숫자에서 뺀다. 그 줄 앞엔 빨간 점도 찍는다.
 //   - 몇 초마다 묻지 않는다. 화면을 열 때와 탭으로 돌아올 때만 한 번 받아 온다.
 (() => {
@@ -10,6 +10,7 @@
 
   const SEEN_KEY = 'wmsTicketSeen';
   const LIST_URL = '/plan/v1/ticket/supplier/ticketList?assignToMe=false&locale=ko';
+  const STATUSES = ['NEED_RESPONSE', 'AWAITING']; // 업체 응답 필요, 처리중
   const BADGE_CLASS = 'rocket-wms-badge';
   const DOT_CLASS = 'rocket-wms-dot';
 
@@ -84,16 +85,22 @@
     if (fetching) return;
     fetching = true;
     try {
-      const res = await fetch(LIST_URL, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify({ combineStatus: 'AWAITING', reporterList: ['WMS'], size: 100, page: 1 }),
-      });
-      if (!res.ok) return;
-      const json = await res.json();
-      const rows = (json && json.body && json.body.content) || [];
-      const ids = rows.filter((r) => r.reporter === 'WMS').map((r) => String(r.processId));
+      const ids = [];
+      for (const status of STATUSES) {
+        const res = await fetch(LIST_URL, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify({ combineStatus: status, reporterList: ['WMS'], size: 100, page: 1 }),
+        });
+        if (!res.ok) return; // 하나라도 못 받으면 본 기록을 건드리지 않는다
+        const json = await res.json();
+        const rows = (json && json.body && json.body.content) || [];
+        rows.forEach((r) => {
+          const id = String(r.processId);
+          if (r.reporter === 'WMS' && !ids.includes(id)) ids.push(id);
+        });
+      }
       // 처리 끝나 목록에서 빠진 건 지운다
       const seen = ((await getSeen()) || []).filter((id) => ids.includes(id));
       setSeen(seen);

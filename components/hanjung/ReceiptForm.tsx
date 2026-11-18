@@ -65,11 +65,9 @@ export const ReceiptForm: React.FC<{ order: HanjungOrder; onDone?: () => void }>
   const [qty, setQty] = useState<Record<string, string>>({});
   // 품목별 이번 도착분 총금액(원). 단가로 나누지 않고 총금액을 적는다(저장할 때 ÷ 수량으로 단가를 구한다).
   const [cost, setCost] = useState<Record<string, string>>({});
-  const emptyFees = (): Record<FeeKey, string> => ({ 관세사비: '', 통관비: '', 배송비: '', 작업비: '' });
+  const emptyFees = (): Record<FeeKey, string> => Object.fromEntries(FEE_KEYS.map(k => [k, ''])) as Record<FeeKey, string>;
   const [fees, setFees] = useState<Record<FeeKey, string>>(emptyFees());
   const [memo, setMemo] = useState('');
-  // 통관비 중 세관에 낸 수입 부가세(수입신고필증·관세사 정산서의 부가가치세). 세금 화면의 수입 부가세와 같은 곳에 저장한다.
-  const [vat, setVat] = useState('');
   const [saving, setSaving] = useState(false);
 
   // 다른 한중발주를 고르면 남은 수량과 지난 단가로 다시 채운다.
@@ -89,7 +87,6 @@ export const ReceiptForm: React.FC<{ order: HanjungOrder; onDone?: () => void }>
     const f = emptyFees();
     FEE_KEYS.forEach(k => { const left = remainingFee(order, k); if (left) f[k] = String(left); });
     setFees(f);
-    setVat('');
     setMemo('');
     setDate(today());
   }, [order.code, order.receipts.length]);
@@ -102,7 +99,8 @@ export const ReceiptForm: React.FC<{ order: HanjungOrder; onDone?: () => void }>
     .filter(it => it.qty > 0);
   const draft: HanjungReceipt = {
     id: '', date, items, memo, createdAt: 0,
-    관세사비: num(fees.관세사비), 통관비: num(fees.통관비), 배송비: num(fees.배송비), 작업비: num(fees.작업비),
+    관세사비: 0, 배송비: 0, 작업비: 0,
+    ...Object.fromEntries(FEE_KEYS.map(k => [k, num(fees[k])])),
   };
 
   const save = async () => {
@@ -119,7 +117,8 @@ export const ReceiptForm: React.FC<{ order: HanjungOrder; onDone?: () => void }>
     try {
       const receipt = { ...draft, id: `r${Date.now()}`, createdAt: Date.now() };
       await addReceipt({ ...order, autoReadyAt: Date.now() }, receipt);
-      if (num(vat) > 0) await saveImportVat(importVatKey(order.code, receipt.id), num(vat));
+      // 부가세 칸은 세금 화면의 수입 부가세(낼 부가세에서 빠지는 몫)로도 적는다.
+      if (num(fees.부가세) > 0) await saveImportVat(importVatKey(order.code, receipt.id), num(fees.부가세));
       // 도착한 만큼 배정된 쿠팡 발주 줄을 준비됨으로 체크한다.
       const n = await markArrivedLinesReady({ ...order, receipts: [...order.receipts, receipt] }).catch(() => 0);
       if (n) alert(`도착 기록을 저장했어요. 배정된 쿠팡 발주 ${n}줄을 준비됨으로 체크했어요.`);
@@ -168,18 +167,10 @@ export const ReceiptForm: React.FC<{ order: HanjungOrder; onDone?: () => void }>
       </table>
       <div className="flex flex-wrap items-center gap-3 mb-3 text-sm">
         {FEE_KEYS.map(k => (
-          <React.Fragment key={k}>
-            <label className="flex items-center gap-1.5 text-gray-600">
-              {k}
-              <input value={fees[k]} onChange={e => setFees({ ...fees, [k]: e.target.value })} onFocus={e => e.target.select()} placeholder="0" className={`${input} w-24`} />
-            </label>
-            {k === '통관비' && (
-              <label className="flex items-center gap-1.5 text-gray-500" title="통관비 안에 든 수입 부가세(수입신고필증·관세사 정산서의 부가가치세). 매입가는 그대로고, 낼 부가세에서 이만큼 빠져요">
-                <span className="text-xs">그중 부가세</span>
-                <input value={vat} onChange={e => setVat(e.target.value)} onFocus={e => e.target.select()} placeholder="0" className={`${input} w-24`} />
-              </label>
-            )}
-          </React.Fragment>
+          <label key={k} className="flex items-center gap-1.5 text-gray-600">
+            {k}
+            <input value={fees[k]} onChange={e => setFees({ ...fees, [k]: e.target.value })} onFocus={e => e.target.select()} placeholder="0" className={`${input} w-24`} />
+          </label>
         ))}
         <input value={memo} onChange={e => setMemo(e.target.value)} placeholder="메모" className="flex-1 min-w-[8rem] px-2 py-1 border border-gray-200 rounded text-sm" />
       </div>
@@ -257,9 +248,9 @@ export const ReceiptHistory: React.FC<{ order: HanjungOrder }> = ({ order }) => 
                   <td className="text-right font-mono">{won(receiptFee(r, k))}</td>
                 </tr>
               ))}
-              {/* 부대비용 안에 든 수입 부가세(통관비·관세사비에 들어 있다). 낼 부가세에서 빠진다. */}
-              <tr className="text-gray-400" title="통관비(또는 관세사비) 안에 든 수입 부가세. 매입가는 그대로고, 낼 부가세에서 이만큼 빠져요">
-                <td className="py-0.5 pl-3">└ 그중 수입 부가세</td>
+              {/* 수입 부가세(부가세 칸, 예전 기록은 통관비·관세사비 안에 들어 있다). 낼 부가세에서 빠진다. */}
+              <tr className="text-gray-400" title="세관에 낸 수입 부가세(부가세 칸 값, 예전 기록은 통관비 안에 든 몫). 매입가는 그대로고, 낼 부가세에서 이만큼 빠져요">
+                <td className="py-0.5 pl-3">└ 수입 부가세(세금 계산용)</td>
                 <td />
                 <td className="text-right"><VatInput k={importVatKey(order.code, r.id)} value={importVat[importVatKey(order.code, r.id)] || 0} /></td>
               </tr>

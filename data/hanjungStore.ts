@@ -44,6 +44,10 @@ export interface HanjungReceipt {
   배송비: number;
   작업비: number;
   통관비?: number; // 나중에 더한 칸이라 예전 기록에는 없다.
+  원산지발급비?: number;
+  부가세?: number; // 세관에 낸 수입 부가세. 도착 저장 때 세금 화면의 수입 부가세로도 적는다.
+  선박운임?: number;
+  BL비용?: number;
   memo: string;
   createdAt: number;
 }
@@ -69,7 +73,7 @@ export interface HanjungOrder {
 }
 
 // 한중발주 부대비용 칸들(주문할 때·도착 기록 때 같은 순서로 보여준다).
-export const FEE_KEYS = ['관세사비', '통관비', '배송비', '작업비'] as const;
+export const FEE_KEYS = ['원산지발급비', '부가세', '선박운임', '통관비', 'BL비용', '관세사비', '배송비', '작업비'] as const;
 export type FeeKey = typeof FEE_KEYS[number];
 export const receiptFee = (r: HanjungReceipt, k: FeeKey) => Number((r as unknown as Record<string, number>)[k]) || 0;
 // 이 한중발주에서 그 비용이 아직 도착 기록에 안 쓰인 만큼(주문 때 적은 값 − 지금까지 도착 기록에 적은 합).

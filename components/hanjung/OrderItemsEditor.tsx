@@ -153,7 +153,7 @@ export const itemsToUnitCost = (items: OrderItem[]): Record<string, number> => {
   return out;
 };
 
-// 주문할 때 미리 적는 부대비용(관세사비·통관비·배송비·작업비). 도착 기록 때 기본값으로 채워진다.
+// 주문할 때 미리 적는 부대비용(원산지발급비·부가세·선박운임·통관비·BL비용 등). 도착 기록 때 기본값으로 채워진다.
 export type FeeDraft = Partial<Record<FeeKey, string>>;
 export const feesToNumbers = (f: FeeDraft): Partial<Record<FeeKey, number>> => {
   const out: Partial<Record<FeeKey, number>> = {};

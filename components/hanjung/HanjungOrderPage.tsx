@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
-  HanjungOrder, HanjungLine, subscribeHanjung, deleteHanjungOrder, saveHanjungOrder, productSummary, orderTotals, productOrderQty, productUnitCost, lineAlloc, sameName, nameKey, ordersNeedingAliasRename, FEE_KEYS, remainingFee, receiptGoodsCost, receiptFee,
+  HanjungOrder, HanjungLine, subscribeHanjung, deleteHanjungOrder, saveHanjungOrder, productSummary, orderTotals, productOrderQty, productUnitCost, lineAlloc, sameName, nameKey, ordersNeedingAliasRename, FEE_KEYS, remainingFee, feeTotalOf, receiptGoodsCost, receiptFee,
 } from '../../data/hanjungStore';
 import { ReceiveRow, subscribeReceives, settlementOf } from '../../data/receiveStore';
 import { nextHanjungCode, closeShortOrder, planShortFill, planFill, FillPlan, FillLine } from '../../data/hanjungStore';
@@ -853,7 +853,8 @@ const HanjungOrderPage: React.FC = () => {
     setEdit({
       code: o.code, newCode: o.code, lines: o.lines.map(l => ({ ...l })),
       items: names.map(n => ({ name: n, qty: String(productOrderQty(o, n)), need: 0, added: false, cost: productUnitCost(o, n) ? String(Math.round(productUnitCost(o, n) * productOrderQty(o, n))) : '' })),
-      fees: Object.fromEntries(Object.entries(o.fees || {}).map(([k, v]) => [k, String(v)])) as FeeDraft,
+      // 지금 이 건의 부대비용 = 도착 기록에 적은 합 + 아직 안 쓴 예상 몫.
+      fees: Object.fromEntries(FEE_KEYS.map(k => [k, String(feeTotalOf(o, k) || '')])) as FeeDraft,
     });
   };
 
@@ -892,13 +893,28 @@ const HanjungOrderPage: React.FC = () => {
     const fees = feesToNumbers(edit.fees);
     // 도착 뒤에 금액을 고친 상품은 도착 기록의 단가도 같이 고친다(순이익의 매입은 도착 기록 원가를 쓰므로).
     const changed = Object.entries(unitCost).filter(([n, c]) => Math.abs(c - productUnitCost(o, n)) > 0.5);
-    const receipts = changed.length ? o.receipts.map(r => ({
+    let receipts = changed.length ? o.receipts.map(r => ({
       ...r,
       items: r.items.map(it => {
         const hit = changed.find(([n]) => sameName(n, it.상품이름));
         return hit ? { ...it, unitCost: hit[1] } : it;
       }),
     })) : undefined;
+    // 부대비용을 고쳤고 이미 도착 기록이 있으면, 차이를 도착 기록에 반영한다(늘면 마지막 기록에 더하고, 줄면 마지막부터 뺀다).
+    const feeChanged = FEE_KEYS.filter(k => (fees[k] || 0) !== feeTotalOf(o, k));
+    if (feeChanged.length && o.receipts.length) {
+      const rc = (receipts || o.receipts).map(r => ({ ...r }));
+      for (const k of feeChanged) {
+        let diff = (fees[k] || 0) - rc.reduce((n, r) => n + receiptFee(r, k), 0);
+        for (let i = rc.length - 1; i >= 0 && diff; i--) {
+          const next = Math.max(0, receiptFee(rc[i], k) + diff);
+          diff -= next - receiptFee(rc[i], k);
+          (rc[i] as unknown as Record<string, number>)[k] = next;
+          if (diff > 0) break;
+        }
+      }
+      receipts = rc;
+    }
 
     // from 번호로 저장된 건을 to 번호·ls 줄로 바꾼다. 그사이 붙은 수입입고 기록은 지금 저장된 것을 쓴다.
     const put = async (from: string, to: string, ls: HanjungLine[], qty: Record<string, number> | undefined, cost: Record<string, number> | undefined, fee: HanjungOrder['fees'] | undefined, rc?: HanjungOrder['receipts']) => {
@@ -1169,7 +1185,7 @@ const HanjungOrderPage: React.FC = () => {
                           imageOf={imageOf}
                           listId={`hanjung-edit-names-${o.code}`}
                         />
-                        <div className="text-xs font-semibold text-gray-500 pt-2">부대비용(예상)</div>
+                        <div className="text-xs font-semibold text-gray-500 pt-2">부대비용{o.receipts.length ? <span className="font-normal text-gray-400"> · 도착 기록에 적은 금액, 고치면 도착 기록도 같이 고쳐져요</span> : '(예상)'}</div>
                         <FeeInputs value={edit.fees} onChange={f => setEdit(cur => cur && { ...cur, fees: f })} />
                         <div className="text-xs font-semibold text-gray-500 pt-2">연결된 쿠팡 발주 <span className="font-normal text-gray-400">· 발주금액 {won(linesTotal(edit.lines))}</span></div>
                         {edit.lines.map((l, i) => (

@@ -79,6 +79,9 @@ export const receiptFee = (r: HanjungReceipt, k: FeeKey) => Number((r as unknown
 // 이 한중발주에서 그 비용이 아직 도착 기록에 안 쓰인 만큼(주문 때 적은 값 − 지금까지 도착 기록에 적은 합).
 export const remainingFee = (order: HanjungOrder, k: FeeKey) =>
   Math.max(0, (order.fees?.[k] || 0) - order.receipts.reduce((s, r) => s + receiptFee(r, k), 0));
+// 이 한중발주의 그 비용 지금 합계(도착 기록에 적은 합 + 아직 안 쓴 예상 몫).
+export const feeTotalOf = (order: HanjungOrder, k: FeeKey) =>
+  order.receipts.reduce((s, r) => s + receiptFee(r, k), 0) + remainingFee(order, k);
 
 const COLLECTION = 'hanjungOrders';
 const LOCAL_KEY = 'hanjungOrders';

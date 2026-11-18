@@ -94,7 +94,7 @@ const TaxPage: React.FC = () => {
       {/* 부가세 */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         <Card title="매출세액" value={won(vat.salesTax)} sub="쿠팡 입고 정산의 부가세" tone="in" />
-        <Card title="매입세액" value={won(vat.buyTax)} sub={`수입 ${won(vat.importTax)} · 비용 ${won(vat.expenseTax)}`} tone="out" />
+        <Card title="매입세액" value={won(vat.buyTax)} sub={`수입 ${won(vat.importTax)} · 통관·BL ${won(vat.feeTax)} · 비용 ${won(vat.expenseTax)}`} tone="out" />
         <Card title={vat.due >= 0 ? '낼 부가세' : '돌려받을 부가세'} value={won(Math.abs(vat.due))} sub={`신고·납부 ${vatDeadline(year, half)}까지`} tone="net" />
         <Card title={`${year}년 종합소득세(대략)`} value={won(income.tax + income.local)} sub={`${year + 1}-05-31까지 · 지방소득세 포함`} />
       </div>
@@ -123,7 +123,7 @@ const TaxPage: React.FC = () => {
           </tbody>
         </table>
 
-        <div className="text-xs font-semibold text-gray-500 mb-1">수입 부가세 <span className="font-normal text-gray-400">· 한중발주 도착 기록마다 세관에 낸 부가세(수입신고필증·관세사 정산서의 부가가치세)</span></div>
+        <div className="text-xs font-semibold text-gray-500 mb-1">수입 부가세 <span className="font-normal text-gray-400">· 한중발주 도착 기록마다 세관에 낸 부가세(수입신고필증·관세사 정산서의 부가가치세) + 통관비·BL비용의 1/11</span></div>
         <table className="w-full text-xs mb-4">
           <tbody>
             {vat.receipts.map(x => (
@@ -132,6 +132,7 @@ const TaxPage: React.FC = () => {
                 <td className="font-mono">{x.code}</td>
                 <td className="text-right font-mono text-gray-400">수입비용 {won(receiptTotalCost(x.r))}</td>
                 <td className="text-right pl-2"><VatInput k={importVatKey(x.code, x.r.id)} value={x.vat} /></td>
+                <td className="text-right pl-2 font-mono text-gray-500 whitespace-nowrap" title="통관비·BL비용의 1/11(세금계산서 매입세액)">{x.feeVat ? `+ 통관·BL ${won(x.feeVat)}` : ''}</td>
               </tr>
             ))}
             {!vat.receipts.length && <tr><td className="text-gray-400 py-3 text-center">이 기간에 도착 기록이 없어요.</td></tr>}

@@ -3,7 +3,7 @@
 //  · 달 순익(입고일 기준): 정산 공급가 + 기타입금 − 입고 수량 원가 − 직접 적은 비용
 //  · 부가세(반기): 매출세액(입고일 기준 정산 부가세) − 매입세액(수입 부가세 + 세금계산서·카드 받은 비용의 1/11)
 import type { LedgerEntry, UnitCost } from './ledgerStore';
-import { HanjungOrder, unitLandedCost, isHoldingOrder } from './hanjungStore';
+import { HanjungOrder, HanjungReceipt, unitLandedCost, isHoldingOrder, receiptFee } from './hanjungStore';
 import { ReceiveRow, sign, matchLine } from './receiveStore';
 
 export const ucId = (sku: string) => sku.replace(/\//g, '_');
@@ -58,6 +58,9 @@ export const halfOf = (ym: string): { year: number; half: VatHalf } => {
 export const vatDeadline = (year: number, half: VatHalf) => (half === 1 ? `${year}-07-25` : `${year + 1}-01-25`);
 export const vatOfAmount = (amount: number) => Math.round(amount / 11);
 export const importVatKey = (code: string, receiptId: string) => `${code}|${receiptId}`;
+// 부대비용 중 세금계산서를 받는 칸(관세사 통관수수료·포워더 BL비용). 금액의 1/11을 매입세액으로 뺀다.
+export const VAT_FEE_KEYS = ['통관비', 'BL비용'] as const;
+export const feeVatOf = (r: HanjungReceipt) => VAT_FEE_KEYS.reduce((s, k) => s + vatOfAmount(receiptFee(r, k)), 0);
 
 export const vatOf = (
   year: number,
@@ -72,11 +75,12 @@ export const vatOf = (
   const salesTax = receives.filter(r => inHalf(r.date)).reduce((s, r) => s + sign(r) * r.totalTax, 0);
   const receipts = orders
     .filter(o => !isHoldingOrder(o))
-    .flatMap(o => o.receipts.filter(r => inHalf(r.date)).map(r => ({ code: o.code, r, vat: importVat[importVatKey(o.code, r.id)] || 0 })));
+    .flatMap(o => o.receipts.filter(r => inHalf(r.date)).map(r => ({ code: o.code, r, vat: importVat[importVatKey(o.code, r.id)] || 0, feeVat: feeVatOf(r) })));
   const importTax = receipts.reduce((s, x) => s + x.vat, 0);
+  const feeTax = receipts.reduce((s, x) => s + x.feeVat, 0);
   const expenses = entries.filter(e => e.kind === 'out' && inHalf(e.date));
   const expenseTax = expenses.filter(e => e.vatOk).reduce((s, e) => s + vatOfAmount(e.amount), 0);
-  return { months, salesTax, receipts, importTax, expenses, expenseTax, buyTax: importTax + expenseTax, due: salesTax - importTax - expenseTax };
+  return { months, salesTax, receipts, importTax, feeTax, expenses, expenseTax, buyTax: importTax + feeTax + expenseTax, due: salesTax - importTax - feeTax - expenseTax };
 };
 
 // ---- 종합소득세(대략) ----

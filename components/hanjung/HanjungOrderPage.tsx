@@ -26,7 +26,7 @@ import { dateKeyYMD, formatDateDisplay, normalizeDateValue } from '../coupangOrd
 import OrderItemsEditor, { OrderItem, useProductNames, itemsToOrderQty, itemQty, itemsToUnitCost, FeeInputs, FeeDraft, feesToNumbers } from './OrderItemsEditor';
 import ProductThumb, { useProductImage } from './ProductThumb';
 import { PriceBook, loadPriceBook, priceOf } from '../../data/coupangPriceStore';
-import { revenueOf, buyOf, lineAmountOf } from '../../data/hanjungMoney';
+import { revenueOf, buyOf, lineAmountOf, spareValueOf } from '../../data/hanjungMoney';
 import { ReceiptForm, ReceiptHistory, markArrivedLinesReady } from './ReceiptForm';
 import Import1688Modal, { Import1688Result } from './Import1688Modal';
 import { mark1688Used, Order1688Ref } from '../../utils/order1688';
@@ -1023,6 +1023,8 @@ const HanjungOrderPage: React.FC = () => {
           const cost = buyOf(o);
           const buy = cost.total;
           const profit = rev.total - buy;
+          // 앞으로 팔릴 금액(남은 재고 × 지금까지 판 값). 다 팔면 차액 = profit + spareValue.
+          const spareValue = cost.spareQty > 0 ? spareValueOf(o, rev) : 0;
           // 입고상세내역의 지급일 = 정산예정일.
           const payDays = Array.from(new Set(settle.rows.map(r => String(r.payDate || '').slice(0, 10)).filter(Boolean))).sort();
           return (
@@ -1135,10 +1137,17 @@ const HanjungOrderPage: React.FC = () => {
                           <td className="text-right pl-6" title="쿠팡에 판 수량(배정, 회송 뺌)">{rev.sold.toLocaleString()}개</td>
                           <td className="text-right pl-8" title={`쿠팡 정산금액, 정산 전인 수량은 발주금액 (부가세 포함)${payDays.length ? `\n정산예정일: ${payDays.join(', ')}` : ''}${rev.missing ? `\n금액 모르는 ${rev.missing}개 빠짐` : ''}`}>{won(rev.total)}</td>
                         </tr>
+                        {cost.spareQty > 0 && (
+                          <tr className="border-t border-gray-100 text-gray-500">
+                            <td className="font-sans pr-3">앞으로</td>
+                            <td className="text-right pl-6" title="아직 안 팔린 수량">{cost.spareQty.toLocaleString()}개</td>
+                            <td className="text-right pl-8" title={`남은 재고를 지금까지 판 값으로 다 팔면 들어올 돈(추정)\n참고: 이 재고를 살 때 든 돈 ${won(cost.spareCost)}`}>{spareValue ? `≈ ${won(spareValue)}` : '-'}</td>
+                          </tr>
+                        )}
                         <tr className="border-t-2 border-gray-300">
                           <td className="text-gray-900 font-sans font-semibold pr-3 pt-1">차액</td>
-                          <td className="text-right pl-6 pt-1 text-gray-500" title="아직 안 팔린 수량">남은 재고 {cost.spareQty.toLocaleString()}개</td>
-                          <td className={`text-right pl-8 pt-1 font-bold ${profit >= 0 ? 'text-emerald-600' : 'text-red-500'}`} title="매출 − 매입. 재고가 팔리면 올라가고, 다 팔리면 마진이 돼요">{won(profit)}{cost.spareQty > 0 && <span className="ml-1 text-xs font-normal text-gray-500" title="남은 재고 매입가(부대비용 몫 포함)">({won(cost.spareCost)})</span>}</td>
+                          <td className="text-right pl-6 pt-1 text-gray-500 font-sans text-xs">{cost.spareQty > 0 && spareValue ? <>다 팔면 <b className={profit + spareValue >= 0 ? 'text-emerald-600' : 'text-red-500'}>{won(profit + spareValue)}</b></> : null}</td>
+                          <td className={`text-right pl-8 pt-1 font-bold ${profit >= 0 ? 'text-emerald-600' : 'text-red-500'}`} title="매출 − 매입. 재고가 팔리면 올라가고, 다 팔리면 마진이 돼요">{won(profit)}</td>
                         </tr>
                       </tbody>
                     </table>

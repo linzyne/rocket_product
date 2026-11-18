@@ -67,6 +67,22 @@ export const buyOf = (o: HanjungOrder) => {
   return { total: Math.round(total), goods: Math.round(goods), fees: Math.round(fees), spareQty, spareCost: Math.round(spareCost) };
 };
 
+// 앞으로 팔릴 금액(추정): 아직 안 팔린 수량 × 그 상품을 지금까지 판 개당 값.
+//  그 상품을 아직 하나도 안 팔았으면 이 건 전체 평균 판매가로. 판 게 하나도 없으면 0(모름).
+export const spareValueOf = (o: HanjungOrder, rev: ReturnType<typeof revenueOf>) => {
+  const known = rev.sold - rev.missing;
+  const avg = known > 0 ? rev.total / known : 0;
+  let value = 0;
+  for (const p of productSummary(o)) {
+    const left = Math.max(0, Math.max(p.ordered, p.received) - p.allocated);
+    if (!left) continue;
+    const s = rev.byProduct.find(x => sameName(x.상품이름, p.상품이름));
+    const unit = s && s.qty > 0 && s.total > 0 ? s.total / s.qty : avg;
+    value += unit * left;
+  }
+  return Math.round(value);
+};
+
 // 한 건의 매입·매출·차액 한 번에. 매입이나 매출이 0이면 차액은 모름(null).
 export const orderMoney = (o: HanjungOrder, receives: ReceiveRow[], prices: PriceBook) => {
   const settle = settlementOf(o, receives);

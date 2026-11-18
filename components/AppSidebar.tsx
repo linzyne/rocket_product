@@ -16,6 +16,7 @@ export type AppMenuId =
   | 'coupang-send'
   | 'coupang-sent'
   | 'cn-order'
+  | 'ticket-requests'
   | 'import-in'
   | 'warehouse-in'
   | 'product-keywords'
@@ -66,6 +67,8 @@ export const MENU_GROUPS: { title: string; items: MenuItem[] }[] = [
       { id: 'coupang-send', label: '발송대기', ready: true, icon: icon('M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z') },
       { id: 'coupang-sent', label: '발송완료', ready: true, icon: icon('M5 13l4 4L19 7') },
       { id: 'cn-order', label: '한중발주', ready: true, icon: icon('M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17m0 0a2 2 0 100 4 2 2 0 000-4zm-8 2a2 2 0 11-4 0 2 2 0 014 0z') },
+      // 누르면 서허 요청 관리를 새 탭으로 연다(앱 화면 없음, App.tsx). 배지 = 요청자 WMS 새 요청 수.
+      { id: 'ticket-requests', label: '요청목록', ready: true, icon: icon('M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z') },
     ],
   },
   {
@@ -100,9 +103,9 @@ export const MENU_GROUPS: { title: string; items: MenuItem[] }[] = [
 
 const ALL_ITEMS = MENU_GROUPS.flatMap(g => g.items);
 
-// 발주 메뉴 중 자주 쓰는 것(발주서 검색·발주 진행·발송완료·한중발주)만 발주 칸에 두고, 나머지 발주 메뉴는 맨 아래
+// 발주 메뉴 중 자주 쓰는 것(발주서 검색·발주 진행·발송완료·한중발주·요청목록)만 발주 칸에 두고, 나머지 발주 메뉴는 맨 아래
 // "예전 작업"에 접어 둔다(혹시 몰라 남겨 둔 것).
-const ORDER_MAIN: AppMenuId[] = ['order-search', 'coupang-flow', 'coupang-sent', 'cn-order'];
+const ORDER_MAIN: AppMenuId[] = ['order-search', 'coupang-flow', 'coupang-sent', 'cn-order', 'ticket-requests'];
 // 수집 메뉴도 여기 둔다(로켓 옆 수집 아이콘으로 대신하므로).
 const OLD_ORDER_ITEMS = [
   ...(MENU_GROUPS.find(g => g.title === '매일')?.items || []),
@@ -190,7 +193,7 @@ const SidebarNav: React.FC<AppSidebarProps> = ({ active, onSelect, collapsed, on
         {item.icon}
         {!collapsed && <span className="truncate">{item.label}</span>}
         {!!badges?.[item.id] && (
-          <span title={item.id === 'product-keywords' ? '키워드를 아직 안 정한 상품' : '발송대기 마감이 다가온 발주'} className={`${collapsed ? 'absolute ml-6 -mt-4' : 'ml-auto'} min-w-[18px] h-[18px] px-1 rounded-full bg-red-600 text-white text-[11px] font-bold leading-[18px] text-center`}>
+          <span title={item.id === 'product-keywords' ? '키워드를 아직 안 정한 상품' : item.id === 'ticket-requests' ? '서허 요청 관리에 요청자 WMS 새 요청' : '발송대기 마감이 다가온 발주'} className={`${collapsed ? 'absolute ml-6 -mt-4' : 'ml-auto'} min-w-[18px] h-[18px] px-1 rounded-full bg-red-600 text-white text-[11px] font-bold leading-[18px] text-center`}>
             {badges[item.id]}
           </span>
         )}

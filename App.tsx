@@ -12,6 +12,7 @@ import LedgerPage from './components/ledger/LedgerPage';
 import TaxPage from './components/ledger/TaxPage';
 import OfficeStockPage from './components/OfficeStockPage';
 import { useReturnAlertCount } from './components/coupangSend/useReturnAlertCount';
+import { useWmsTickets, WMS_TICKET_PAGE } from './components/coupangOrder/data/useWmsTickets';
 import WarehouseInPage from './components/hanjung/WarehouseInPage';
 import CoupangOrderPage from './components/coupangOrder/CoupangOrderPage';
 import CoupangShipPage from './components/coupangShip/CoupangShipPage';
@@ -473,6 +474,12 @@ const App: React.FC = () => {
   const unkeyed = useUnkeyedCount();
   // 발송완료 중 입고 안 된 줄(✕) 수. 메뉴 발송완료에 배지로.
   const returnAlerts = useReturnAlertCount();
+  // 서허 요청 관리에 요청자 WMS 새 요청 수. 메뉴 요청목록에 배지로, 누르면 서허를 새 탭으로 연다.
+  const wmsTickets = useWmsTickets();
+  const selectMenu = (id: AppMenuId) => {
+    if (id === 'ticket-requests') { window.open(WMS_TICKET_PAGE + wmsTickets.filter, '_blank'); return; }
+    setActiveMenu(id);
+  };
   // 카톡 연결(서버 /api/kakao/callback)에서 돌아왔을 때 결과를 알려 주고 주소에서 지운다.
   useEffect(() => {
     const kakao = new URLSearchParams(window.location.search).get('kakao');
@@ -3196,10 +3203,10 @@ const App: React.FC = () => {
     <div className="min-h-screen text-slate-200 flex">
       <AppSidebar
         active={activeMenu}
-        onSelect={setActiveMenu}
+        onSelect={selectMenu}
         collapsed={sidebarCollapsed}
         onToggleCollapsed={toggleSidebarCollapsed}
-        badges={{ 'coupang-flow': shipDeadline.length, 'product-keywords': unkeyed, 'coupang-sent': returnAlerts }}
+        badges={{ 'coupang-flow': shipDeadline.length, 'product-keywords': unkeyed, 'coupang-sent': returnAlerts, 'ticket-requests': wmsTickets.count }}
       />
       <div className="flex-1 min-w-0">
       <OrderGuardBanner onGoOrder={() => setActiveMenu('coupang-order')} />

@@ -21,6 +21,8 @@
 //  앱 -> 확장 : { type: 'LOTTE_UPLOAD', file: { name, dataUrl } }  롯데택배 엑셀을 ALPS에 올리기(lotte.js)
 //               { type: 'HUB_AUTO', run, data }  자동 수집 진행/완료/실패. run.status에 지금 하는 일이,
 //               완료면 data에 모은 값이 같이 옵니다(앱은 소식이 올 때마다 기다리는 시간을 다시 셉니다).
+//  앱 -> 확장 : { type: 'WMS_TICKETS_GET' }  서허 요청 관리의 WMS 새 요청 수
+//  확장 -> 앱 : { type: 'WMS_TICKETS', count, filter }  바뀔 때마다 다시 옵니다
 (() => {
   if (window.__rocketHubBridgeInjected) return;
   window.__rocketHubBridgeInjected = true;
@@ -42,11 +44,32 @@
     }
   };
 
+  // 서허 요청 관리의 WMS 새 요청 수(안 열어 본 것). 앱 왼쪽 메뉴 '요청목록'의 빨간 숫자.
+  // filter는 누르면 열 서허 목록(업체 응답 필요에 있으면 그쪽, 아니면 처리중).
+  const sendWmsTickets = () => {
+    try {
+      chrome.storage.local.get(['wmsTickets', 'wmsTicketSeen'], (r) => {
+        const seen = (r && r.wmsTicketSeen) || [];
+        const unseen = ((r && r.wmsTickets && r.wmsTickets.items) || []).filter((x) => !seen.includes(x.id));
+        const filter = unseen.some((x) => x.status === 'NEED_RESPONSE') ? 'NEED_RESPONSE' : 'AWAITING';
+        reply({ type: 'WMS_TICKETS', count: unseen.length, filter });
+      });
+    } catch (err) {}
+  };
+
   window.addEventListener('message', (event) => {
     if (event.source !== window) return;
     const d = event.data;
     if (!d || d.source !== APP_SOURCE) return;
     if (d.type === 'HUB_REQUEST') sendData();
+    // 앱이 열릴 때·탭으로 돌아올 때. 있는 숫자를 먼저 주고, 서허에서 새로 받아 오면 onChanged로 다시 준다.
+    if (d.type === 'WMS_TICKETS_GET') {
+      sendWmsTickets();
+      try {
+        chrome.runtime.sendMessage({ type: 'WMS_TICKETS_REFRESH' }, () => void chrome.runtime.lastError);
+      } catch (err) {}
+      return;
+    }
     // 앱의 "수집 로그 저장". 확장이 마지막 수집에서 적어 둔 자취를 그대로 넘긴다.
     if (d.type === 'HUB_LOG_REQUEST') {
       try {
@@ -261,6 +284,7 @@
     chrome.storage.onChanged.addListener((changes, area) => {
       if (area !== 'local') return;
       if (changes[DATA_KEY]) sendData();
+      if (changes.wmsTickets || changes.wmsTicketSeen) sendWmsTickets();
       if (changes[AUTO_KEY]) sendAuto(changes[AUTO_KEY].newValue);
       if (changes[RECEIVE_KEY]) sendReceiveAuto(changes[RECEIVE_KEY].newValue);
       if (changes.autoCollectRun && changes.autoCollectRun.newValue) {

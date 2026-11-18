@@ -1,6 +1,7 @@
 // 서허 요청 관리(/plan/ticket/issueManagement)에 요청자가 WMS인 새 요청이 올라오면
 // 왼쪽 위 "요청 목록" 버튼에 빨간 숫자를 띄운다.
-//   - 업체 응답 필요(NEED_RESPONSE)·처리중(AWAITING) 목록을 요청자 WMS로만 받아 와서, 아직 안 열어 본 요청 수를 센다.
+//   - 업체 응답 필요·처리중 목록 중 요청자 WMS인 것(background.js가 받아 wmsTickets에 적음)에서 아직 안 열어 본 요청 수를 센다.
+//   - 같은 숫자를 로켓 앱 왼쪽 메뉴 '요청목록'에도 띄운다(app-bridge.js).
 //   - 목록에서 그 요청 줄을 누르면(열어 보면) 본 것으로 치고 숫자에서 뺀다. 그 줄 앞엔 빨간 점도 찍는다.
 //   - 몇 초마다 묻지 않는다. 화면을 열 때와 탭으로 돌아올 때만 한 번 받아 온다.
 (() => {
@@ -9,13 +10,11 @@
   if (window !== window.top) return;
 
   const SEEN_KEY = 'wmsTicketSeen';
-  const LIST_URL = '/plan/v1/ticket/supplier/ticketList?assignToMe=false&locale=ko';
-  const STATUSES = ['NEED_RESPONSE', 'AWAITING']; // 업체 응답 필요, 처리중
+  const TICKETS_KEY = 'wmsTickets';
   const BADGE_CLASS = 'rocket-wms-badge';
   const DOT_CLASS = 'rocket-wms-dot';
 
   let unseen = []; // 안 열어 본 WMS 요청 processId(문자열)
-  let fetching = false;
 
   const getSeen = () =>
     new Promise((resolve) => {
@@ -81,35 +80,17 @@
     });
   };
 
-  const refresh = async () => {
-    if (fetching) return;
-    fetching = true;
+  // 받아 오는 일은 background.js(refreshWmsTickets)가 하고 wmsTickets에 적는다. 여기선 그걸 읽어 그린다.
+  const apply = async (tickets) => {
+    const ids = ((tickets && tickets.items) || []).map((x) => x.id);
+    const seen = (await getSeen()) || [];
+    unseen = ids.filter((id) => !seen.includes(id));
+    paint();
+  };
+  const refresh = () => {
     try {
-      const ids = [];
-      for (const status of STATUSES) {
-        const res = await fetch(LIST_URL, {
-          method: 'POST',
-          headers: { 'content-type': 'application/json' },
-          credentials: 'include',
-          body: JSON.stringify({ combineStatus: status, reporterList: ['WMS'], size: 100, page: 1 }),
-        });
-        if (!res.ok) return; // 하나라도 못 받으면 본 기록을 건드리지 않는다
-        const json = await res.json();
-        const rows = (json && json.body && json.body.content) || [];
-        rows.forEach((r) => {
-          const id = String(r.processId);
-          if (r.reporter === 'WMS' && !ids.includes(id)) ids.push(id);
-        });
-      }
-      // 처리 끝나 목록에서 빠진 건 지운다
-      const seen = ((await getSeen()) || []).filter((id) => ids.includes(id));
-      setSeen(seen);
-      unseen = ids.filter((id) => !seen.includes(id));
-      paint();
-    } catch (err) {
-    } finally {
-      fetching = false;
-    }
+      chrome.runtime.sendMessage({ type: 'WMS_TICKETS_REFRESH' }, () => void chrome.runtime.lastError);
+    } catch (err) {}
   };
 
   const markSeen = async (id) => {
@@ -133,15 +114,12 @@
     true
   );
 
-  // 다른 창에서 본 것으로 바뀌면 같이 반영
+  // 새로 받아 왔거나 다른 창에서 본 것으로 바뀌면 다시 그린다.
   chrome.storage.onChanged.addListener((changes, area) => {
-    if (area !== 'local' || !changes[SEEN_KEY]) return;
-    const seen = changes[SEEN_KEY].newValue || [];
-    const next = unseen.filter((id) => !seen.includes(id));
-    if (next.length !== unseen.length) {
-      unseen = next;
-      paint();
-    }
+    if (area !== 'local' || (!changes[SEEN_KEY] && !changes[TICKETS_KEY])) return;
+    try {
+      chrome.storage.local.get(TICKETS_KEY, (r) => apply(r && r[TICKETS_KEY]));
+    } catch (err) {}
   });
 
   // 화면이 다시 그려져 배지·점이 지워지면 다시 붙인다.
@@ -159,5 +137,8 @@
     if (document.visibilityState === 'visible') refresh();
   });
 
+  try {
+    chrome.storage.local.get(TICKETS_KEY, (r) => apply(r && r[TICKETS_KEY]));
+  } catch (err) {}
   refresh();
 })();

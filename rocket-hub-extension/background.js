@@ -272,8 +272,44 @@ chrome.runtime.onStartup.addListener(() => { ensureAlarm(); checkSchedule().catc
 chrome.runtime.onInstalled.addListener(() => { ensureAlarm(); });
 ensureAlarm();
 
+// 서허 요청 관리에서 요청자가 WMS인 요청(업체 응답 필요·처리중)을 받아 wmsTickets에 적는다.
+// 서허 화면(ticket-alert.js)과 로켓 앱(app-bridge.js)이 화면을 열 때·탭으로 돌아올 때 부른다. 몇 초마다 부르지 않는다.
+const WMS_TICKET_URL = 'https://supplier.coupang.com/plan/v1/ticket/supplier/ticketList?assignToMe=false&locale=ko';
+const WMS_TICKET_STATUSES = ['NEED_RESPONSE', 'AWAITING']; // 업체 응답 필요, 처리중
+const refreshWmsTickets = async () => {
+  const items = [];
+  for (const status of WMS_TICKET_STATUSES) {
+    const res = await fetch(WMS_TICKET_URL, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify({ combineStatus: status, reporterList: ['WMS'], size: 100, page: 1 }),
+    });
+    if (!res.ok) throw new Error('서허 요청 목록 ' + res.status);
+    const json = await res.json();
+    if (!json || !json.successful) throw new Error('서허 요청 목록을 못 받음(로그인 확인)');
+    ((json.body && json.body.content) || []).forEach((r) => {
+      const id = String(r.processId);
+      if (r.reporter === 'WMS' && !items.some((x) => x.id === id)) items.push({ id, status });
+    });
+  }
+  const ids = items.map((x) => x.id);
+  // 처리 끝나 목록에서 빠진 건 본 기록에서도 지운다
+  const r = await chrome.storage.local.get('wmsTicketSeen');
+  const seen = (r.wmsTicketSeen || []).filter((id) => ids.includes(id));
+  await chrome.storage.local.set({ wmsTickets: { items, at: Date.now() }, wmsTicketSeen: seen });
+  return items;
+};
+
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (!message || !message.type) return;
+
+  if (message.type === 'WMS_TICKETS_REFRESH') {
+    refreshWmsTickets()
+      .then((items) => sendResponse({ ok: true, count: items.length }))
+      .catch((err) => sendResponse({ ok: false, error: String((err && err.message) || err) }));
+    return true;
+  }
 
   if (message.type === 'HUB_COLLECT') {
     (async () => {

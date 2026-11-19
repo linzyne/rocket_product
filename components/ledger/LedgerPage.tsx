@@ -84,7 +84,7 @@ const LedgerPage: React.FC = () => {
 
   // ① 전체 손익
   const total = useMemo(() => {
-    const rows = [...orders].sort((a, b) => b.createdAt - a.createdAt).map(o => ({ o, ...orderMoney(o, receives, prices) }));
+    const rows = [...orders].sort((a, b) => b.createdAt - a.createdAt).map(o => ({ o, ...orderMoney(o, receives, prices, orders) }));
     const profitSum = rows.reduce((n, r) => n + (r.profit ?? 0), 0);
     const boxes = ships.reduce((n, i) => n + boxCount(i), 0);
     const shipFee = boxes * BOX_FEE;

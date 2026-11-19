@@ -84,8 +84,8 @@ export const spareValueOf = (o: HanjungOrder, rev: ReturnType<typeof revenueOf>)
 };
 
 // 한 건의 매입·매출·차액 한 번에. 매입이나 매출이 0이면 차액은 모름(null).
-export const orderMoney = (o: HanjungOrder, receives: ReceiveRow[], prices: PriceBook) => {
-  const settle = settlementOf(o, receives);
+export const orderMoney = (o: HanjungOrder, receives: ReceiveRow[], prices: PriceBook, orders: HanjungOrder[] = []) => {
+  const settle = settlementOf(o, receives, orders);
   const rev = revenueOf(o, settle, prices);
   const buy = buyOf(o);
   return { settle, rev, buy, profit: rev.total && buy.total ? rev.total - buy.total : null };

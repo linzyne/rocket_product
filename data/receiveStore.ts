@@ -56,7 +56,7 @@ export const hanjungCodeOf = (orders: HanjungOrder[], r: ReceiveRow) => {
 // 한중발주 하나의 쿠팡 입고·정산 합계와 상품별 입고 수량.
 // 발주 줄 하나를 한중발주 여러 건이 나눠 맡을 수 있어서, 줄마다 이 건이 맡은 수량(배정)까지만 센다(금액은 그 비율만큼).
 // total = 부가세 포함(쿠팡 발주금액과 같은 기준), supply = 부가세 제외. byLine = 발주 줄 key별 이 건 몫의 입고 수량·금액.
-export const settlementOf = (order: HanjungOrder, rows: ReceiveRow[]) => {
+export const settlementOf = (order: HanjungOrder, rows: ReceiveRow[], others: HanjungOrder[] = []) => {
   const byLine = new Map<HanjungLine, { qty: number; total: number; supply: number }>();
   const matched: ReceiveRow[] = [];
   for (const r of rows) {
@@ -75,8 +75,21 @@ export const settlementOf = (order: HanjungOrder, rows: ReceiveRow[]) => {
   let supply = 0;
   const byProduct = new Map<string, number>();
   const lines = new Map<string, { qty: number; total: number }>();
+  // 같은 쿠팡 줄(발주번호·상품)을 다른 한중발주도 나눠 맡았으면, 입고는 먼저 만든 한중발주부터 채운다.
+  // (각자 min(배정, 입고)로 세면 같은 입고가 두 건에 다 잡혀 중복된다)
+  const earlierTake = (line: HanjungLine) => {
+    let sum = 0;
+    for (const o of others) {
+      if (o.code === order.code || o.createdAt >= order.createdAt) continue;
+      for (const l of o.lines) {
+        if (l.발주번호 !== line.발주번호 || norm(l.상품이름) !== norm(line.상품이름)) continue;
+        sum += lineAlloc(l);
+      }
+    }
+    return sum;
+  };
   byLine.forEach((e, line) => {
-    const take = Math.max(0, Math.min(lineAlloc(line), e.qty));
+    const take = Math.max(0, Math.min(lineAlloc(line), e.qty - earlierTake(line)));
     const ratio = e.qty > 0 ? take / e.qty : 0;
     qty += take;
     total += e.total * ratio;

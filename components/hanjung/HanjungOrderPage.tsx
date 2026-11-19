@@ -1017,7 +1017,7 @@ const HanjungOrderPage: React.FC = () => {
           const t = orderTotals(o);
           const products = productSummary(o);
           const isOpen = open === o.code;
-          const settle = settlementOf(o, receives);
+          const settle = settlementOf(o, receives, orders);
           const allocated = products.reduce((sum, p) => sum + p.allocated, 0);
           const rev = revenueOf(o, settle, prices);
           const cost = buyOf(o);

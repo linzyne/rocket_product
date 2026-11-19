@@ -1020,11 +1020,11 @@ const HanjungOrderPage: React.FC = () => {
           <ul className="mt-2 space-y-1 text-gray-700">
             {receiveIssues.map((x, i) => (
               <li key={i}>
-                <b className={x.kind === 'double' || x.kind === 'missing' ? 'text-red-600' : 'text-amber-700'}>
-                  {{ double: '중복으로 셈', missing: '덜 셈', over: '배정보다 더 들어옴', orphan: '짝 없는 입고' }[x.kind]}
+                <b className={x.kind !== 'over' ? 'text-red-600' : 'text-amber-700'}>
+                  {{ double: '중복으로 셈', missing: '덜 셈', over: '배정보다 더 들어옴', orphan: '짝 없는 입고', overAlloc: '확정수량보다 많이 배정', soldMore: '산 것보다 많이 배정' }[x.kind]}
                 </b>{' '}
                 {x.발주번호} {x.skuName}
-                <span className="block text-xs text-gray-500">쿠팡 입고 {x.received} · 한중발주들이 센 합 {x.counted} · 배정 합 {x.cap}{x.codes.length ? ` · ${x.codes.join(', ')}` : ''}</span>
+                <span className="block text-xs text-gray-500">{x.kind === 'overAlloc' ? `확정 ${x.received} · 배정 합 ${x.counted} · ${x.codes.join(', ')}` : x.kind === 'soldMore' ? `산 수량 ${x.received} · 배정 ${x.counted} · ${x.codes.join(', ')}` : <>쿠팡 입고 {x.received} · 한중발주들이 센 합 {x.counted} · 배정 합 {x.cap}{x.codes.length ? ` · ${x.codes.join(', ')}` : ''}</>}</span>
               </li>
             ))}
           </ul>

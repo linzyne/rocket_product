@@ -6,7 +6,7 @@
 // Firebase 설정이 없으면 이 기기의 localStorage에만 저장한다.
 import { collection, doc, writeBatch, deleteDoc } from 'firebase/firestore';
 import { db, ensureSignedIn, waitAtMost, onSnapshot } from '../utils/firebase';
-import { lineAlloc } from './hanjungStore';
+import { lineAlloc, productSummary } from './hanjungStore';
 import type { HanjungOrder, HanjungLine } from './hanjungStore';
 
 export interface ReceiveRow {
@@ -110,7 +110,7 @@ const isEarlier = (a: HanjungOrder, b: HanjungOrder) => a.createdAt < b.createdA
 //  missing = 맡은 건들이 받을 자리가 있는데 덜 셈(계산 잘못)
 //  over    = 쿠팡에 배정 합보다 더 들어옴(어느 건에도 안 잡힌 입고 — 배정 확인 필요)
 //  orphan  = 어느 한중발주에도 짝이 없는 입고
-export type ReceiveIssue = { kind: 'double' | 'missing' | 'over' | 'orphan'; 발주번호: string; skuName: string; received: number; counted: number; cap: number; codes: string[] };
+export type ReceiveIssue = { kind: 'double' | 'missing' | 'over' | 'orphan' | 'overAlloc' | 'soldMore'; 발주번호: string; skuName: string; received: number; counted: number; cap: number; codes: string[] };
 export const checkReceives = (orders: HanjungOrder[], rows: ReceiveRow[]): ReceiveIssue[] => {
   const groups = new Map<string, ReceiveRow[]>();
   for (const r of rows) {
@@ -139,6 +139,21 @@ export const checkReceives = (orders: HanjungOrder[], rows: ReceiveRow[]): Recei
     else if (counted < Math.min(received, cap)) issues.push({ kind: 'missing', ...base });
     if (received > cap) issues.push({ kind: 'over', ...base });
   });
+  // 쿠팡 줄 하나를 여러 건이 확정수량보다 많이 배정 → 매출이 두 번 잡힌다.
+  const alloc = new Map<string, ReceiveIssue>();
+  for (const o of orders) for (const l of o.lines) {
+    const k = `${l.발주번호}|${norm(l.상품이름)}`;
+    const e = alloc.get(k) || { kind: 'overAlloc' as const, 발주번호: l.발주번호, skuName: l.상품이름, received: l.확정수량, counted: 0, cap: 0, codes: [] };
+    e.counted += lineAlloc(l);
+    e.codes.push(o.code);
+    alloc.set(k, e);
+  }
+  alloc.forEach(e => { if (e.counted > e.received) issues.push(e); });
+  // 한 건에서 판(배정) 수량이 산 수량보다 많음 → 매입 없이 매출만 잡힌다.
+  for (const o of orders) for (const p of productSummary(o)) {
+    const have = Math.max(p.ordered, p.received);
+    if (p.allocated > have) issues.push({ kind: 'soldMore', 발주번호: '', skuName: p.상품이름, received: have, counted: p.allocated, cap: have, codes: [o.code] });
+  }
   return issues;
 };
 

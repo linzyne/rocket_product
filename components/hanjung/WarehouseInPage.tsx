@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { HanjungOrder, subscribeHanjung } from '../../data/hanjungStore';
-import { ReceiveRow, subscribeReceives, saveReceives, deleteReceive, deleteReceives, hanjungCodeOf, sign } from '../../data/receiveStore';
+import { ReceiveRow, subscribeReceives, saveReceives, deleteReceive, deleteReceives, receiveSplitOf, sign } from '../../data/receiveStore';
 import { won } from './HanjungOrderPage';
 import CollectReceives, { HubReceiveBucket } from '../CollectReceives';
 
@@ -64,21 +64,26 @@ const WarehouseInPage: React.FC = () => {
     if (!month && months.length) setMonth(months[0]);
   }, [months, month]);
 
+  // 입고 줄마다 한중발주 몫(여러 건이 나눠 배정한 줄은 배정대로 나눔 — 한중발주 화면 계산과 같은 답).
+  const splitOf = useMemo(() => receiveSplitOf(orders, rows), [orders, rows]);
+
   const list = useMemo(() => {
     const k = search.trim().toLowerCase();
     return rows
       .filter(r => !month || monthOf(r.date) === month)
       .filter(r => !k || r.발주번호.includes(k) || r.skuName.toLowerCase().includes(k) || r.sku.includes(k))
-      .map(r => ({ r, code: hanjungCodeOf(orders, r) }));
-  }, [rows, orders, month, search]);
+      .map(r => ({ r, parts: splitOf(r) }));
+  }, [rows, month, search, splitOf]);
 
   const sum = list.reduce(
-    (s, { r, code }) => {
+    (s, { r, parts }) => {
       const k = sign(r);
       s.qty += k * r.qty;
       s.total += k * r.total;
       s.supply += k * r.totalSupply;
-      if (code) s.matched += k * r.total;
+      // 한중발주에 짝지어진 금액: 배정 없음 몫은 뺀다(반출은 맡은 건이 있으면 통째로).
+      if (k < 0) { if (parts.some(p => p.code)) s.matched += k * r.total; }
+      else if (r.qty > 0) s.matched += r.total * parts.filter(p => p.code).reduce((n, p) => n + p.qty, 0) / r.qty;
       return s;
     },
     { qty: 0, total: 0, supply: 0, matched: 0 }
@@ -171,7 +176,7 @@ const WarehouseInPage: React.FC = () => {
             </tr>
           </thead>
           <tbody>
-            {list.map(({ r, code }) => (
+            {list.map(({ r, parts }) => (
               <tr key={r.key} className={`border-t border-gray-100 ${picked.has(r.key) ? 'bg-red-50' : ''}`}>
                 <td className="px-2 py-2">
                   <input type="checkbox" checked={picked.has(r.key)} onChange={() => toggle(r.key)} />
@@ -183,7 +188,14 @@ const WarehouseInPage: React.FC = () => {
                 <td className="px-3 py-2 text-gray-500">{r.center}</td>
                 <td className="px-3 py-2 text-right font-mono">{sign(r) * r.qty}</td>
                 <td className="px-3 py-2 text-right font-mono" title={`공급가 ${won(r.totalSupply)} + 세액 ${won(r.totalTax)}`}>{won(sign(r) * r.total)}</td>
-                <td className="px-3 py-2">{code ? <span className="font-mono text-blue-600">{code}</span> : <span className="text-xs text-gray-300">없음</span>}</td>
+                <td className="px-3 py-2">{parts.some(p => p.code)
+                  ? parts.map((p, i) => (
+                    <span key={i} className={`block whitespace-nowrap ${p.code ? 'font-mono text-blue-600' : 'text-xs text-gray-400'}`}
+                      title={p.code ? `${r.qty}개 중 ${p.qty || ''}${p.qty ? '개' : ''} 한중발주 ${p.code} 몫` : '어느 한중발주 배정에도 안 들어가는 수량'}>
+                      {p.code || '배정 없음'}{(parts.length > 1 || p.qty !== r.qty) && p.qty ? ` ×${p.qty}` : ''}
+                    </span>
+                  ))
+                  : <span className="text-xs text-gray-300">없음</span>}</td>
                 <td className="px-2">
                   <button onClick={() => handleDelete(r)} title="삭제" className="w-6 h-6 text-red-500 border border-red-200 rounded hover:bg-red-50">×</button>
                 </td>

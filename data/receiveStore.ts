@@ -48,11 +48,6 @@ export const matchLine = (order: HanjungOrder, r: ReceiveRow) => {
   return same.find(l => norm(l.상품이름) === n) || same.find(l => n.includes(norm(l.상품이름)) || norm(l.상품이름).includes(n)) || null;
 };
 
-// 입고 줄 → 그 줄이 속한 한중발주 고유번호.
-export const hanjungCodeOf = (orders: HanjungOrder[], r: ReceiveRow) => {
-  for (const o of orders) if (matchLine(o, r)) return o.code;
-  return null;
-};
 
 // 한중발주 하나의 쿠팡 입고·정산 합계와 상품별 입고 수량.
 // 발주 줄 하나를 한중발주 여러 건이 나눠 맡을 수 있어서, 줄마다 이 건이 맡은 수량(배정)까지만 센다(금액은 그 비율만큼).
@@ -158,6 +153,43 @@ export const settlementOf = (order: HanjungOrder, rows: ReceiveRow[], others: Ha
     }
   }
   return { qty, total: Math.round(total), supply: Math.round(supply), byProduct, byLine: lines, rows: matched, lost, shipped };
+};
+
+// 물류창고입고 화면: 입고 줄마다 그 수량이 어느 한중발주 몫인지. 한중발주 계산(settlementOf)과 같은 답이 나오게,
+//  건마다 settlementOf로 센 입고 수량을 쿠팡 줄 안에서 입고 날짜 순으로 먼저 만든 건부터 채운다. 남으면 code 없이(배정 없음).
+//  반출 줄은 그 줄을 맡은 건들을 수량 없이 적는다.
+export const receiveSplitOf = (orders: HanjungOrder[], rows: ReceiveRow[]) => {
+  const out = new Map<string, { code: string; qty: number }[]>();
+  const sorted = [...orders].sort((a, b) => (isEarlier(a, b) ? -1 : isEarlier(b, a) ? 1 : 0));
+  const takes = new Map(sorted.map(o => [o.code, settlementOf(o, rows, orders).byLine]));
+  const groups = new Map<string, ReceiveRow[]>();
+  for (const r of rows) {
+    const owners = sorted.filter(o => matchLine(o, r));
+    if (!owners.length) continue;
+    const k = `${r.발주번호}|${owners.map(o => matchLine(o, r)!.key).join('^')}`;
+    const g = groups.get(k);
+    if (g) g.push(r); else groups.set(k, [r]);
+  }
+  groups.forEach(g => {
+    const owners = sorted.map(o => ({ o, l: matchLine(o, g[0]) })).filter((x): x is { o: HanjungOrder; l: HanjungLine } => !!x.l);
+    const pool = owners.map(x => ({ code: x.o.code, left: takes.get(x.o.code)?.get(x.l.key)?.qty || 0 }));
+    [...g].sort((a, b) => a.date.localeCompare(b.date) || a.key.localeCompare(b.key)).forEach(r => {
+      if (sign(r) < 0) { out.set(r.key, owners.map(x => ({ code: x.o.code, qty: 0 }))); return; }
+      let need = r.qty;
+      const parts: { code: string; qty: number }[] = [];
+      for (const p of pool) {
+        if (need <= 0) break;
+        const t = Math.min(p.left, need);
+        if (t <= 0) continue;
+        p.left -= t;
+        need -= t;
+        parts.push({ code: p.code, qty: t });
+      }
+      if (need > 0) parts.push({ code: '', qty: need });
+      out.set(r.key, parts);
+    });
+  });
+  return (r: ReceiveRow) => out.get(r.key) || [];
 };
 
 // 먼저 만든 건(같은 시각이면 고유번호 순)이 입고를 먼저 받는다.

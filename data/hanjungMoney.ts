@@ -18,10 +18,9 @@ export const lineAmountOf = (prices: PriceBook, l: HanjungLine) => {
 //  · 쿠팡발송에서 분실·미입고로 처리한 수량은 뺀다(lost·lostAmt, 재고로는 안 돌아옴)
 //  · 물류창고입고로 정산된 수량은 정산금액(이 건 몫만, settled)
 //  · 나머지(아직 입고 전, pending)는 쿠팡 발주금액 개당 값으로. 발주단가를 모르면 0원(missing으로 센다)
-//  sold = 배정 − 회송. sentNos(발송완료한 발주번호)를 주면 그중 아직 안 보낸 수량(unsent)을 따로 센다 → 재고 = 매입 − 출고.
-//   쿠팡 입고나 분실·미입고 기록이 있는 줄은 출고 기록이 없어도 보낸 것으로 본다(출고 기록 전 예전 건).
+//  sold = 배정 − 회송. settle에 출고 수량(shipped)이 있으면 그중 아직 안 보낸 수량(unsent)을 따로 센다 → 재고 = 매입 − 출고.
 //  byProduct: 상품마다 매출 수량·금액(qty·total), 그중 입고된 수량·정산금(recvQty·recvTotal), 출고 수량(shipped)
-export const revenueOf = (o: HanjungOrder, settle: ReturnType<typeof settlementOf>, prices: PriceBook, sentNos?: Set<string>) => {
+export const revenueOf = (o: HanjungOrder, settle: ReturnType<typeof settlementOf>, prices: PriceBook) => {
   let total = 0;
   let qty = 0;
   let settled = 0;
@@ -56,7 +55,9 @@ export const revenueOf = (o: HanjungOrder, settle: ReturnType<typeof settlementO
     lost += gone;
     lostAmt += unitPrice * gone;
     if (!unitPrice && wait > 0) missing += wait;
-    const notSent = sentNos && wait > 0 && take <= 0 && gone <= 0 && !sentNos.has(String(l.발주번호 || '').trim()) ? wait : 0;
+    // 안 보낸 수량 = 배정(회송 뺌) − 보낸 수량. 입고·분실·미입고된 건 보낸 것이라 입고대기(wait) 안에서만 센다.
+    const shippedQty = settle.shipped ? Math.max(settle.shipped.get(l.key) || 0, take + gone) : eff;
+    const notSent = Math.min(wait, Math.max(0, eff - shippedQty));
     unsent += notSent;
     unsentAmt += unitPrice * notSent;
     let e = byProduct.find(x => sameName(x.상품이름, l.상품이름));

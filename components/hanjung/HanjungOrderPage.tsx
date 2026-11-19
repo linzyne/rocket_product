@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import {
   HanjungOrder, HanjungLine, subscribeHanjung, deleteHanjungOrder, saveHanjungOrder, productSummary, orderTotals, productOrderQty, productUnitCost, lineAlloc, sameName, nameKey, ordersNeedingAliasRename, FEE_KEYS, remainingFee, feeTotalOf, receiptGoodsCost, receiptFee,
 } from '../../data/hanjungStore';
-import { ReceiveRow, subscribeReceives, settlementOf, checkReceives } from '../../data/receiveStore';
+import { ReceiveRow, SentLine, subscribeReceives, settlementOf, checkReceives } from '../../data/receiveStore';
 import { ReturnMark, subscribeReturns } from '../../data/returnStore';
 import { nextHanjungCode, closeShortOrder, planShortFill, planFill, FillPlan, FillLine } from '../../data/hanjungStore';
 import { useReady } from '../coupangOrder/data/readyStore';
@@ -659,9 +659,12 @@ const HanjungOrderPage: React.FC = () => {
   const receiveIssues = useMemo(() => (orders.length && receives.length ? checkReceives(orders, receives).filter(x => x.kind !== 'orphan') : []), [orders, receives]);
   // 짝 없는 입고(한중발주 없이 원래 재고에서 보낸 것)는 오류가 아니라 경고에서 뺀다.
 
-  // 발송완료된 발주서 번호(출고 건에 보낸 날이 적힌 것).
-  const [sentNos, setSentNos] = useState<Set<string>>(new Set());
-  useEffect(() => subscribeShipOuts(list => setSentNos(new Set(list.filter(i => i.sentDate).flatMap(i => i.lines.map(l => String(l.발주번호 || '').trim())).filter(Boolean)))), []);
+  // 발송완료한 출고 줄(발주번호·상품·그 출고 건 수량). 출고·재고를 수량으로 센다.
+  const [sentLines, setSentLines] = useState<SentLine[]>([]);
+  useEffect(() => subscribeShipOuts(list => {
+    const sent = list.filter(i => i.sentDate);
+    setSentLines(sent.flatMap(i => i.lines.map(l => ({ 발주번호: String(l.발주번호 || '').trim(), 상품이름: l.상품이름, qty: Number(l.확정수량) || 0 }))));
+  }), []);
   // 한 화면에 전부 보여 준다(건 통째로 단계를 나누면 일부만 보낸 건이 엉뚱한 칸에 갔다). 발송 상태는 상품마다 표에서 본다.
   const list = useMemo(() => {
     const k = search.trim().toLowerCase();
@@ -1039,9 +1042,9 @@ const HanjungOrderPage: React.FC = () => {
           const t = orderTotals(o);
           const products = productSummary(o);
           const isOpen = open === o.code;
-          const settle = settlementOf(o, receives, orders, returnMarks);
+          const settle = settlementOf(o, receives, orders, returnMarks, sentLines);
           const allocated = products.reduce((sum, p) => sum + p.allocated, 0);
-          const rev = revenueOf(o, settle, prices, sentNos);
+          const rev = revenueOf(o, settle, prices);
           const cost = buyOf(o);
           const realized = realizedMarginOf(rev, cost);
           // 나감 = 쿠팡으로 실제 보낸 수량(회송 뺌). 사무실 재고 = 배정 안 된 여유 + 배정했지만 아직 안 보낸 것.

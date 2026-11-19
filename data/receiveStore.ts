@@ -61,7 +61,9 @@ export const hanjungCodeOf = (orders: HanjungOrder[], r: ReceiveRow) => {
 const lineCap = (l: HanjungLine) => Math.max(0, lineAlloc(l) - (l.회송 || 0));
 
 // marks = 쿠팡발송에서 처리한 회송·분실·미입고 기록. 분실·미입고는 lost로 돌려준다(매출에서 뺄 수량, 재고는 그대로).
-export const settlementOf = (order: HanjungOrder, rows: ReceiveRow[], others: HanjungOrder[] = [], marks: ReturnMark[] = []) => {
+// sent = 발송완료한 출고 줄(발주번호·상품·그 출고 건에 넣은 수량). 주면 shipped로 이 건 줄마다 쿠팡으로 실제 보낸 수량(회송 뺌)을 돌려준다.
+export type SentLine = { 발주번호: string; 상품이름: string; qty: number };
+export const settlementOf = (order: HanjungOrder, rows: ReceiveRow[], others: HanjungOrder[] = [], marks: ReturnMark[] = [], sent?: SentLine[]) => {
   const byLine = new Map<HanjungLine, { qty: number; total: number; supply: number; row: ReceiveRow }>();
   const matched: ReceiveRow[] = [];
   for (const r of rows) {
@@ -131,7 +133,31 @@ export const settlementOf = (order: HanjungOrder, rows: ReceiveRow[], others: Ha
       if (g.o === order) { if (mine > 0) lost.set(line.key, mine); break; }
     }
   });
-  return { qty, total: Math.round(total), supply: Math.round(supply), byProduct, byLine: lines, rows: matched, lost };
+  // 출고: 쿠팡 줄마다 보낸 수량 = 출고 기록 수량 합 − 회송. 출고 기록 전 예전 건은 쿠팡 입고·분실·미입고 수량만큼은 보낸 것으로 본다.
+  //  그 줄을 여러 건이 나눠 맡았으면 먼저 만든 건부터 채운다(입고·분실과 같은 순서).
+  let shipped: Map<string, number> | undefined;
+  if (sent) {
+    shipped = new Map();
+    for (const line of order.lines) {
+      if (lineAlloc(line) <= 0) continue;
+      const ref = { 발주번호: line.발주번호, skuName: line.상품이름 } as ReceiveRow;
+      const group = [order, ...others.filter(o => o.code !== order.code)]
+        .map(o => ({ o, l: o === order ? line : matchLine(o, ref) }))
+        .filter((x): x is { o: HanjungOrder; l: HanjungLine } => !!x.l)
+        .sort((a, b) => (isEarlier(a.o, b.o) ? -1 : isEarlier(b.o, a.o) ? 1 : 0));
+      const shipQty = sent.filter(x => matchLine(order, { 발주번호: x.발주번호, skuName: x.상품이름 } as ReceiveRow) === line).reduce((n, x) => n + x.qty, 0);
+      const returned = group.reduce((n, g) => n + (g.l.회송 || 0), 0);
+      const received = Math.max(0, byLine.get(line)?.qty || 0);
+      const lostN = lostSum.get(line)?.n || 0;
+      let left = Math.max(shipQty - returned, received + lostN, 0);
+      for (const g of group) {
+        const take = Math.max(0, Math.min(lineCap(g.l), left));
+        left -= take;
+        if (g.o === order) { shipped.set(line.key, take); break; }
+      }
+    }
+  }
+  return { qty, total: Math.round(total), supply: Math.round(supply), byProduct, byLine: lines, rows: matched, lost, shipped };
 };
 
 // 먼저 만든 건(같은 시각이면 고유번호 순)이 입고를 먼저 받는다.

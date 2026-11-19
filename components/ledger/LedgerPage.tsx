@@ -5,6 +5,7 @@ import {
 } from '../../data/ledgerStore';
 import { HanjungOrder, subscribeHanjung } from '../../data/hanjungStore';
 import { ReceiveRow, subscribeReceives, sign } from '../../data/receiveStore';
+import { ReturnMark, subscribeReturns } from '../../data/returnStore';
 import { vatOf, VatHalf } from '../../data/ledgerCalc';
 import { subscribeShipOuts } from '../coupangOrder/data/shipOutStore';
 import type { ShipOut } from '../coupangOrder/data/shipOutStore';
@@ -56,6 +57,8 @@ const LedgerPage: React.FC = () => {
   useEffect(() => subscribeLedger(setEntries), []);
   useEffect(() => subscribeHanjung(setOrders), []);
   useEffect(() => subscribeReceives(setReceives), []);
+  const [marks, setMarks] = useState<ReturnMark[]>([]);
+  useEffect(() => subscribeReturns(m => setMarks(Object.values(m).flat())), []);
   useEffect(() => subscribeShipOuts(list => setShips(list.filter(i => i.sentDate))), []);
   useEffect(() => subscribeImportVat(setImportVat), []);
   useEffect(() => { loadPriceBook().then(setPrices); }, []);
@@ -84,7 +87,7 @@ const LedgerPage: React.FC = () => {
 
   // ① 전체 손익
   const total = useMemo(() => {
-    const rows = [...orders].sort((a, b) => b.createdAt - a.createdAt).map(o => ({ o, ...orderMoney(o, receives, prices, orders) }));
+    const rows = [...orders].sort((a, b) => b.createdAt - a.createdAt).map(o => ({ o, ...orderMoney(o, receives, prices, orders, marks) }));
     const profitSum = rows.reduce((n, r) => n + (r.profit ?? 0), 0);
     const boxes = ships.reduce((n, i) => n + boxCount(i), 0);
     const shipFee = boxes * BOX_FEE;
@@ -97,7 +100,7 @@ const LedgerPage: React.FC = () => {
     const vatList = halves.map(h => ({ h, due: vatOf(Number(h.slice(0, 4)), Number(h.slice(5)) as VatHalf, receives, orders, entries, importVat).due }));
     const vat = vatList.reduce((n, x) => n + x.due, 0);
     return { rows, profitSum, boxes, shipFee, outByCat, otherIn, sellCost, vatList, vat, final: profitSum + otherIn - sellCost - vat };
-  }, [orders, receives, prices, ships, entries, importVat]);
+  }, [orders, receives, prices, ships, entries, importVat, marks]);
 
   // ② 월별 현금 흐름
   const months = useMemo(() => {

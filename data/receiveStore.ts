@@ -8,6 +8,7 @@ import { collection, doc, writeBatch, deleteDoc } from 'firebase/firestore';
 import { db, ensureSignedIn, waitAtMost, onSnapshot } from '../utils/firebase';
 import { lineAlloc, productSummary } from './hanjungStore';
 import type { HanjungOrder, HanjungLine } from './hanjungStore';
+import type { ReturnMark } from './returnStore';
 
 export interface ReceiveRow {
   key: string;
@@ -59,7 +60,8 @@ export const hanjungCodeOf = (orders: HanjungOrder[], r: ReceiveRow) => {
 // 이 한중발주 줄이 쿠팡에 실제로 넣을 수 있는 수량(배정 − 회송).
 const lineCap = (l: HanjungLine) => Math.max(0, lineAlloc(l) - (l.회송 || 0));
 
-export const settlementOf = (order: HanjungOrder, rows: ReceiveRow[], others: HanjungOrder[] = []) => {
+// marks = 쿠팡발송에서 처리한 회송·분실·미입고 기록. 분실·미입고는 lost로 돌려준다(매출에서 뺄 수량, 재고는 그대로).
+export const settlementOf = (order: HanjungOrder, rows: ReceiveRow[], others: HanjungOrder[] = [], marks: ReturnMark[] = []) => {
   const byLine = new Map<HanjungLine, { qty: number; total: number; supply: number; row: ReceiveRow }>();
   const matched: ReceiveRow[] = [];
   for (const r of rows) {
@@ -99,7 +101,37 @@ export const settlementOf = (order: HanjungOrder, rows: ReceiveRow[], others: Ha
     byProduct.set(line.상품이름, (byProduct.get(line.상품이름) || 0) + take);
     lines.set(line.key, { qty: take, total: Math.round(e.total * ratio) });
   });
-  return { qty, total: Math.round(total), supply: Math.round(supply), byProduct, byLine: lines, rows: matched };
+  // 분실·미입고: 쿠팡 줄(발주번호·상품)마다 처리한 수량을, 그 줄을 맡은 한중발주들의 "아직 입고 안 된 자리"에
+  // 먼저 만든 건부터 나눠 넣는다(입고를 먼저 만든 건부터 채우는 것과 같은 순서).
+  const lost = new Map<string, number>();
+  const lostSum = new Map<HanjungLine, { n: number; row: ReceiveRow }>();
+  for (const m of marks) {
+    if (m.kind === 'returned' || !(m.qty > 0)) continue;
+    const row = { 발주번호: m.발주번호, skuName: m.상품이름 } as ReceiveRow;
+    const line = matchLine(order, row);
+    if (!line) continue;
+    const e = lostSum.get(line) || { n: 0, row };
+    e.n += m.qty;
+    lostSum.set(line, e);
+  }
+  lostSum.forEach(({ n, row }, line) => {
+    const received = byLine.get(line)?.qty || 0;
+    const group = [order, ...others.filter(o => o.code !== order.code)]
+      .map(o => ({ o, l: o === order ? line : matchLine(o, row) }))
+      .filter((x): x is { o: HanjungOrder; l: HanjungLine } => !!x.l)
+      .sort((a, b) => (isEarlier(a.o, b.o) ? -1 : isEarlier(b.o, a.o) ? 1 : 0));
+    let recLeft = received;
+    let lostLeft = n;
+    for (const g of group) {
+      const cap = lineCap(g.l);
+      const take = Math.max(0, Math.min(cap, recLeft));
+      recLeft -= take;
+      const mine = Math.max(0, Math.min(cap - take, lostLeft));
+      lostLeft -= mine;
+      if (g.o === order) { if (mine > 0) lost.set(line.key, mine); break; }
+    }
+  });
+  return { qty, total: Math.round(total), supply: Math.round(supply), byProduct, byLine: lines, rows: matched, lost };
 };
 
 // 먼저 만든 건(같은 시각이면 고유번호 순)이 입고를 먼저 받는다.

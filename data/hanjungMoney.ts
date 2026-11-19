@@ -1,9 +1,10 @@
 // 한중발주 한 건의 돈 계산. 한중발주 화면과 장부가 같이 쓴다(두 화면 숫자가 늘 같게).
-//  매출(revenueOf) = 쿠팡에 판 금액, 부가세 포함(통장에 들어오는 돈 기준)
+//  매출(revenueOf) = 쿠팡에 입고(정산)된 금액만, 부가세 포함(통장에 들어오는 돈 기준). 입고 전은 입고대기로 따로
 //  매입(buyOf)     = 이 건에 쓴 돈 전부(제품비 + 부대비용, 여유분 포함)
 //  차액 = 매출 − 매입
 import { HanjungOrder, HanjungLine, productSummary, productUnitCost, orderTotals, lineAlloc, sameName, FEE_KEYS, remainingFee, receiptFee, isHoldingOrder } from './hanjungStore';
 import { ReceiveRow, settlementOf } from './receiveStore';
+import type { ReturnMark } from './returnStore';
 import { PriceBook, priceOf } from './coupangPriceStore';
 
 // 쿠팡 발주금액(발주단가 × 이 건에 배정한 수량). 발주단가를 모르면 undefined.
@@ -12,34 +13,57 @@ export const lineAmountOf = (prices: PriceBook, l: HanjungLine) => {
   return p ? p * lineAlloc(l) : undefined;
 };
 
-// 매출: 이 한중발주가 맡은(배정, 회송 뺌) 수량을 쿠팡에 판 금액. 부가세 포함. 줄마다:
-//  · 물류창고입고로 정산된 수량은 정산금액(이 건 몫만)
-//  · 아직 정산 전인 수량은 쿠팡 발주금액 개당 값으로
-//  · 둘 다 없으면 0원(빠진 수량으로 따로 센다)
-export const revenueOf = (o: HanjungOrder, settle: ReturnType<typeof settlementOf>, prices: PriceBook) => {
+// 매출: 쿠팡에 실제로 입고(물류창고입고로 정산)된 금액만. 부가세 포함. 줄마다 이 건 몫의 정산금액.
+//  · 아직 입고 전인 수량은 매출이 아니다 → pending(수량)·pendingAmt(쿠팡 발주금액 개당 값)으로 따로 센다
+//  · 쿠팡발송에서 분실·미입고로 처리한 수량은 돈이 안 들어온다 → lost·lostAmt (입고대기에서도 빠진다)
+//  · sold = 배정 − 회송. 그중 unsent(아직 안 보낸 것)는 사무실 재고, 나머지는 나간 것(입고·입고대기·분실·미입고)
+//  · missing = 입고 전인데 발주단가를 몰라 입고대기 금액에 못 넣은 수량
+//  byProduct: 상품마다 입고된 수량·금액(매출), est = 입고 + 입고대기(발주단가)로 본 수량·금액(개당 값 추정용)
+//  sentNos(발송완료한 발주번호)를 주면: 배정만 하고 아직 안 보낸 수량(unsent)은 사무실에 있는 재고로 따로 센다.
+//   쿠팡 입고나 분실·미입고 기록이 있는 줄은 출고 기록이 없어도 보낸 것으로 본다(출고 기록 전 예전 건).
+export const revenueOf = (o: HanjungOrder, settle: ReturnType<typeof settlementOf>, prices: PriceBook, sentNos?: Set<string>) => {
   let total = 0;
+  let qty = 0;
   let missing = 0;
   let sold = 0;
-  // 상품마다 매출 수량·금액(상품별 표에 씀)
-  const byProduct: { 상품이름: string; qty: number; total: number }[] = [];
+  let pending = 0;
+  let pendingAmt = 0;
+  let lost = 0;
+  let lostAmt = 0;
+  let unsent = 0;
+  let unsentAmt = 0;
+  const byProduct: { 상품이름: string; qty: number; total: number; estQty: number; estTotal: number }[] = [];
   for (const l of o.lines) {
     const alloc = lineAlloc(l);
     if (alloc <= 0) continue;
-    // 쿠팡에서 회송된 수량은 사무실 재고로 돌아온 것이라 판매에서 뺀다.
+    // 쿠팡에서 회송된 수량은 사무실 재고로 돌아온 것이라 나간 것에서 뺀다.
     const eff = Math.max(0, alloc - (l.회송 || 0));
     sold += eff;
     const got = settle.byLine.get(l.key);
     const take = Math.min(eff, got?.qty || 0);
+    const gotTotal = got?.total || 0;
+    const gone = Math.min(eff - take, settle.lost?.get(l.key) || 0);
+    const wait = eff - take - gone;
     const unitPrice = (lineAmountOf(prices, l) || 0) / alloc;
-    const lineTotal = (got?.total || 0) + unitPrice * (eff - take);
-    total += lineTotal;
-    if (!unitPrice && eff > take) missing += eff - take;
+    total += gotTotal;
+    qty += take;
+    pending += wait;
+    pendingAmt += unitPrice * wait;
+    lost += gone;
+    lostAmt += unitPrice * gone;
+    if (!unitPrice && wait > 0) missing += wait;
+    if (sentNos && wait > 0 && take <= 0 && gone <= 0 && !sentNos.has(String(l.발주번호 || '').trim())) {
+      unsent += wait;
+      unsentAmt += unitPrice * wait;
+    }
     let e = byProduct.find(x => sameName(x.상품이름, l.상품이름));
-    if (!e) byProduct.push(e = { 상품이름: l.상품이름, qty: 0, total: 0 });
-    e.qty += eff;
-    e.total += lineTotal;
+    if (!e) byProduct.push(e = { 상품이름: l.상품이름, qty: 0, total: 0, estQty: 0, estTotal: 0 });
+    e.qty += take;
+    e.total += gotTotal;
+    if (take > 0 && gotTotal > 0) { e.estQty += take; e.estTotal += gotTotal; }
+    if (unitPrice && wait > 0) { e.estQty += wait; e.estTotal += unitPrice * wait; }
   }
-  return { total: Math.round(total), missing, sold, byProduct };
+  return { total: Math.round(total), qty, missing, sold, byProduct, pending, pendingAmt: Math.round(pendingAmt), lost, lostAmt: Math.round(lostAmt), unsent, unsentAmt: Math.round(unsentAmt) };
 };
 
 // 매입: 이 건에 쓴 돈 전부(여유분 포함). 차액 = 매출 − 매입이라, 안 팔린 여유는 손해로 남고 나중에 배정되면 매출이 늘어 메워진다.
@@ -70,22 +94,22 @@ export const buyOf = (o: HanjungOrder) => {
 // 앞으로 팔릴 금액(추정): 아직 안 팔린 수량 × 그 상품을 지금까지 판 개당 값.
 //  그 상품을 아직 하나도 안 팔았으면 이 건 전체 평균 판매가로. 판 게 하나도 없으면 0(모름).
 export const spareValueOf = (o: HanjungOrder, rev: ReturnType<typeof revenueOf>) => {
-  const known = rev.sold - rev.missing;
-  const avg = known > 0 ? rev.total / known : 0;
+  const estQ = rev.byProduct.reduce((n, x) => n + x.estQty, 0);
+  const avg = estQ > 0 ? rev.byProduct.reduce((n, x) => n + x.estTotal, 0) / estQ : 0;
   let value = 0;
   for (const p of productSummary(o)) {
     const left = Math.max(0, Math.max(p.ordered, p.received) - p.allocated);
     if (!left) continue;
     const s = rev.byProduct.find(x => sameName(x.상품이름, p.상품이름));
-    const unit = s && s.qty > 0 && s.total > 0 ? s.total / s.qty : avg;
+    const unit = s && s.estQty > 0 && s.estTotal > 0 ? s.estTotal / s.estQty : avg;
     value += unit * left;
   }
   return Math.round(value);
 };
 
 // 한 건의 매입·매출·차액 한 번에. 매입이나 매출이 0이면 차액은 모름(null).
-export const orderMoney = (o: HanjungOrder, receives: ReceiveRow[], prices: PriceBook, orders: HanjungOrder[] = []) => {
-  const settle = settlementOf(o, receives, orders);
+export const orderMoney = (o: HanjungOrder, receives: ReceiveRow[], prices: PriceBook, orders: HanjungOrder[] = [], marks: ReturnMark[] = []) => {
+  const settle = settlementOf(o, receives, orders, marks);
   const rev = revenueOf(o, settle, prices);
   const buy = buyOf(o);
   return { settle, rev, buy, profit: rev.total && buy.total ? rev.total - buy.total : null };

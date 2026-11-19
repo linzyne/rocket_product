@@ -32,7 +32,7 @@ export const revenueOf = (o: HanjungOrder, settle: ReturnType<typeof settlementO
   let lostAmt = 0;
   let unsent = 0;
   let unsentAmt = 0;
-  const byProduct: { 상품이름: string; qty: number; total: number; estQty: number; estTotal: number }[] = [];
+  const byProduct: { 상품이름: string; qty: number; total: number; estQty: number; estTotal: number; shipped: number }[] = [];
   for (const l of o.lines) {
     const alloc = lineAlloc(l);
     if (alloc <= 0) continue;
@@ -52,12 +52,12 @@ export const revenueOf = (o: HanjungOrder, settle: ReturnType<typeof settlementO
     lost += gone;
     lostAmt += unitPrice * gone;
     if (!unitPrice && wait > 0) missing += wait;
-    if (sentNos && wait > 0 && take <= 0 && gone <= 0 && !sentNos.has(String(l.발주번호 || '').trim())) {
-      unsent += wait;
-      unsentAmt += unitPrice * wait;
-    }
+    const notSent = sentNos && wait > 0 && take <= 0 && gone <= 0 && !sentNos.has(String(l.발주번호 || '').trim()) ? wait : 0;
+    unsent += notSent;
+    unsentAmt += unitPrice * notSent;
     let e = byProduct.find(x => sameName(x.상품이름, l.상품이름));
-    if (!e) byProduct.push(e = { 상품이름: l.상품이름, qty: 0, total: 0, estQty: 0, estTotal: 0 });
+    if (!e) byProduct.push(e = { 상품이름: l.상품이름, qty: 0, total: 0, estQty: 0, estTotal: 0, shipped: 0 });
+    e.shipped += eff - notSent;
     e.qty += take;
     e.total += gotTotal;
     if (take > 0 && gotTotal > 0) { e.estQty += take; e.estTotal += gotTotal; }
@@ -79,16 +79,19 @@ export const buyOf = (o: HanjungOrder) => {
   let total = 0;
   let spareQty = 0;
   let spareCost = 0;
+  // 상품마다 개당 매입가(제품비 + 부대비용 n분의 1)
+  const unitCost: { 상품이름: string; unit: number }[] = [];
   ps.forEach((p, i) => {
     const units = Math.max(p.ordered, p.received);
     if (!units) return;
     const withFee = full[i] + feePerUnit * units;
+    unitCost.push({ 상품이름: p.상품이름, unit: withFee / units });
     total += withFee;
     const left = Math.max(0, units - p.allocated);
     spareQty += left;
     spareCost += withFee * (left / units);
   });
-  return { total: Math.round(total), goods: Math.round(goods), fees: Math.round(fees), spareQty, spareCost: Math.round(spareCost) };
+  return { total: Math.round(total), goods: Math.round(goods), fees: Math.round(fees), spareQty, spareCost: Math.round(spareCost), unitCost };
 };
 
 // 앞으로 팔릴 금액(추정): 아직 안 팔린 수량 × 그 상품을 지금까지 판 개당 값.
@@ -130,4 +133,17 @@ export const buyCashOf = (o: HanjungOrder): { date: string; label: string; amoun
   const rest = b.fees - receiptFeeSum;
   if (Math.round(rest)) out.push({ date: made, label: `${o.code} 부대비용`, amount: rest });
   return out.filter(x => Math.round(x.amount));
+};
+
+// 입고분 마진: 쿠팡에 입고된 수량만큼의 정산금 − 그 수량 × 개당 매입가(부대비용 포함). 상품마다 계산해서 더한다.
+export const realizedMarginOf = (rev: ReturnType<typeof revenueOf>, buy: ReturnType<typeof buyOf>) => {
+  let sale = 0;
+  let cost = 0;
+  for (const x of rev.byProduct) {
+    if (!x.qty) continue;
+    const u = buy.unitCost.find(c => sameName(c.상품이름, x.상품이름))?.unit || 0;
+    sale += x.total;
+    cost += u * x.qty;
+  }
+  return { sale: Math.round(sale), cost: Math.round(cost), margin: Math.round(sale - cost) };
 };

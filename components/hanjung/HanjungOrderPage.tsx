@@ -27,7 +27,7 @@ import { dateKeyYMD, formatDateDisplay, normalizeDateValue } from '../coupangOrd
 import OrderItemsEditor, { OrderItem, useProductNames, itemsToOrderQty, itemQty, itemsToUnitCost, FeeInputs, FeeDraft, feesToNumbers } from './OrderItemsEditor';
 import ProductThumb, { useProductImage } from './ProductThumb';
 import { PriceBook, loadPriceBook, priceOf } from '../../data/coupangPriceStore';
-import { revenueOf, buyOf, lineAmountOf, spareValueOf } from '../../data/hanjungMoney';
+import { revenueOf, buyOf, lineAmountOf, spareValueOf, realizedMarginOf } from '../../data/hanjungMoney';
 import { ReceiptForm, ReceiptHistory, markArrivedLinesReady } from './ReceiptForm';
 import Import1688Modal, { Import1688Result } from './Import1688Modal';
 import { mark1688Used, Order1688Ref } from '../../utils/order1688';
@@ -1043,6 +1043,7 @@ const HanjungOrderPage: React.FC = () => {
           const allocated = products.reduce((sum, p) => sum + p.allocated, 0);
           const rev = revenueOf(o, settle, prices, sentNos);
           const cost = buyOf(o);
+          const realized = realizedMarginOf(rev, cost);
           // 나감 = 쿠팡으로 실제 보낸 수량(회송 뺌). 사무실 재고 = 배정 안 된 여유 + 배정했지만 아직 안 보낸 것.
           const outQty = rev.sold - rev.unsent;
           const stockQty = cost.spareQty + rev.unsent;
@@ -1096,7 +1097,6 @@ const HanjungOrderPage: React.FC = () => {
                 {(() => {
                   const buyQty = products.reduce((n, p) => n + Math.max(p.ordered, p.received), 0);
                   const sale = rev.total;
-                  const sold = buy - cost.spareCost;
                   const has = !!(sale && buy);
                   // 글씨는 위, 숫자는 아래. w = 칸 폭(고정)
                   const q = 'w-10', m = 'w-[6.5rem]';
@@ -1120,18 +1120,18 @@ const HanjungOrderPage: React.FC = () => {
                       </div>
                       {bar}
                       <div className="flex items-end">
-                        {/* 수량: 매입 − 나감 = 남은. 나감 = 쿠팡으로 보낸(배정, 회송 뺌) 수량 — 입고 전인 것도 사무실엔 없으니 뺀다 */}
+                        {/* 수량: 매입 − 출고 = 재고. 출고 = 쿠팡으로 보낸(배정, 회송 뺌) 수량 — 입고 전인 것도 사무실엔 없으니 뺀다 */}
                         {cell('매입', <span className="text-gray-700">{buyQty.toLocaleString()}</span>, q)}
                         {op('−')}
-                        {cell('나감', <span className="text-gray-700" title={`쿠팡으로 보낸 수량(회송 뺌)\n그중 입고 ${rev.qty} · 입고대기 ${shippedWait}${rev.lost ? ` · 분실·미입고 ${rev.lost}` : ''}${rev.unsent ? `\n배정했지만 아직 안 보낸 ${rev.unsent}개는 남은 재고에 있어요` : ''}`}>{outQty.toLocaleString()}</span>, q)}
+                        {cell('출고', <span className="text-gray-700" title={`쿠팡으로 보낸 수량(회송 뺌)\n그중 입고 ${rev.qty} · 입고대기 ${shippedWait}${rev.lost ? ` · 분실·미입고 ${rev.lost}` : ''}${rev.unsent ? `\n배정했지만 아직 안 보낸 ${rev.unsent}개는 재고에 있어요` : ''}`}>{outQty.toLocaleString()}</span>, q)}
                         {op('=')}
-                        {cell('남은', <span className="text-gray-700" title="사무실 재고(배정 안 된 여유 + 배정했지만 아직 안 보낸 것)">{(buyQty - outQty).toLocaleString()}</span>, q)}
+                        {cell('재고', <span className="text-gray-700" title="사무실 재고(배정 안 된 여유 + 배정했지만 아직 안 보낸 것)">{(buyQty - outQty).toLocaleString()}</span>, q)}
                       </div>
                       {bar}
                       <div className="flex items-end">
                         {/* 금액: 매출가 − 매입가 = 차액. 차액은 재고가 팔릴수록 올라가고, 다 팔리면 마진이 된다. */}
                         <span className="flex items-end"
-                          title={`차액 = 매출 ${won(sale)} − 매입 ${won(buy)}\n남은 재고가 팔리면 매출이 늘어 차액이 올라가요. 다 팔리면 차액 = 마진\n참고: 판 것만 보면 마진 ${won(sale - sold)} (판 것의 매입가 ${won(sold)}) · 남은 재고 매입가 ${won(cost.spareCost)}${rev.missing ? `\n금액 모르는 ${rev.missing}개 빠짐` : ''}`}>
+                          title={`차액 = 매출 ${won(sale)} − 매입 ${won(buy)}\n남은 재고가 팔리면 매출이 늘어 차액이 올라가요. 다 팔리면 차액 = 마진\n입고분 마진 ${won(realized.margin)} (입고 정산금 ${won(realized.sale)} − 입고 수량만큼의 매입가 ${won(realized.cost)})${rev.missing ? `\n금액 모르는 ${rev.missing}개 빠짐` : ''}`}>
                           {cell('매출가', <span className="text-gray-700">{sale ? won(sale) : '-'}</span>, m)}
                           {op('−')}
                           {cell('매입가', <span className="text-gray-700">{buy ? won(buy) : '-'}</span>, m)}
@@ -1176,6 +1176,13 @@ const HanjungOrderPage: React.FC = () => {
                             <td className="font-sans pr-3">재고</td>
                             <td className="text-right pl-6" title={`사무실에 있는 수량\n배정 안 된 여유 ${cost.spareQty} · 배정했지만 아직 안 보낸 것 ${rev.unsent}`}>{stockQty.toLocaleString()}개</td>
                             <td className="text-right pl-8" title={`여유는 지금까지 판 값으로, 배정한 건 쿠팡 발주금액으로 다 팔면 들어올 돈(추정)\n참고: 여유 재고를 살 때 든 돈 ${won(cost.spareCost)}`}>{spareValue + rev.unsentAmt ? `≈ ${won(spareValue + rev.unsentAmt)}` : '-'}</td>
+                          </tr>
+                        )}
+                        {rev.qty > 0 && (
+                          <tr className="border-t border-gray-100">
+                            <td className="text-gray-500 font-sans pr-3">입고분 마진</td>
+                            <td className="text-right pl-6 text-gray-500 font-sans text-xs" title="입고된 수량만큼 산 값(상품마다 개당 매입가 × 입고 수량, 부대비용 포함)">매입가 {won(realized.cost)}</td>
+                            <td className={`text-right pl-8 font-bold ${realized.margin >= 0 ? 'text-emerald-600' : 'text-red-500'}`} title={`입고 정산금 ${won(realized.sale)} − 입고 수량만큼의 매입가 ${won(realized.cost)}`}>{won(realized.margin)}</td>
                           </tr>
                         )}
                         <tr className="border-t-2 border-gray-300">
@@ -1325,10 +1332,8 @@ const HanjungOrderPage: React.FC = () => {
                     // 매입가 = 도착한 만큼은 도착 기록 매입가, 아직 안 온 만큼은 주문 때 단가(buyOf와 같은 기준, 부대비용 뺌)
                     const rows = products.map(p => {
                       const sale = rev.byProduct.find(x => sameName(x.상품이름, p.상품이름));
-                      // 이 상품을 맡은 쿠팡 발주 줄 중 발주서가 발송완료된 수량(회송 뺌)
-                      const sent = o.lines
-                        .filter(l => lineAlloc(l) > 0 && sameName(l.상품이름, p.상품이름) && sentNos.has(String(l.발주번호 || '').trim()))
-                        .reduce((n, l) => n + Math.max(0, lineAlloc(l) - (l.회송 || 0)), 0);
+                      // 출고 = 쿠팡으로 실제 보낸 수량(회송 뺌). 출고 기록이 없어도 쿠팡 입고·분실·미입고 기록이 있으면 보낸 것(머리줄 '출고'와 같은 기준)
+                      const sent = sale?.shipped || 0;
                       return {
                         p,
                         // 매입 수량 = 실제로 사 온 수량(주문보다 더 왔으면 온 수량). 매입가도 그 수량 기준이라 맞춘다.
@@ -1355,9 +1360,9 @@ const HanjungOrderPage: React.FC = () => {
                     };
                     const num = 'px-3 text-right font-mono text-sm whitespace-nowrap';
                     const progress = (arrived: number, alloc: number, sent: number) => {
-                      // 도착분 기준: 발송완료 · 발송대기(배정했는데 아직) · 재고(배정 안 됨)
+                      // 도착분 기준: 출고(발송완료) · 발송대기(배정했는데 아직 안 보냄) · 재고 = 도착 − 출고(사무실에 있는 것, 발송대기 포함)
                       const wait = Math.max(0, alloc - sent);
-                      const stock = Math.max(0, arrived - alloc);
+                      const stock = Math.max(0, arrived - sent);
                       const base = Math.max(arrived, alloc) || 1;
                       return (
                         <div className="px-3">
@@ -1369,7 +1374,7 @@ const HanjungOrderPage: React.FC = () => {
                             <span className="text-gray-700">배정 <b>{alloc}</b></span>
                             {sent > 0 && <span className="text-emerald-600 font-semibold">발송완료 {sent}</span>}
                             {wait > 0 && <span className="text-violet-700 font-semibold">발송대기 {wait}</span>}
-                            {stock > 0 && <span className="text-gray-500">재고 {stock}</span>}
+                            {stock > 0 && <span className="text-gray-500" title={`재고 = 도착 ${arrived} − 출고 ${sent}${wait > 0 ? `\n그중 ${wait}개는 배정됐고 아직 안 보냄` : ''}`}>재고 {stock}</span>}
                           </div>
                         </div>
                       );
@@ -1380,10 +1385,10 @@ const HanjungOrderPage: React.FC = () => {
                       <tr>
                         <th rowSpan={2} className="text-left font-medium py-1 pr-3 align-bottom">상품</th>
                         <th colSpan={2} className={`${buyBg} text-center font-bold px-3 pt-1 rounded-t-lg`} title="1688에서 사 온 것">매입</th>
-                        <th colSpan={2} className={`${saleBg} text-center font-bold px-3 pt-1 rounded-t-lg`} title="쿠팡에 판 것(배정 − 회송). 정산된 건 정산금액, 아직이면 발주금액. 부가세 포함">매출</th>
+                        <th colSpan={2} className={`${saleBg} text-center font-bold px-3 pt-1 rounded-t-lg`} title="쿠팡에 입고(정산)된 수량·정산금액만. 부가세 포함">매출</th>
                         <th rowSpan={2} className={`${mBg} text-right font-bold px-3 align-bottom rounded-t-lg`} title="개당 매출가 − 개당 매입가(부대비용은 전체 수량으로 n분의 1, 개당 같은 금액)">개당 마진</th>
                         <th rowSpan={2} className={`${arrBg} text-right font-bold px-3 align-bottom rounded-t-lg`} title="사무실에 도착한 수량">도착</th>
-                        <th rowSpan={2} className={`${progBg} text-left font-bold px-3 align-bottom rounded-t-lg`} title="도착한 것 중 쿠팡에 배정한 수량, 그중 발송완료·발송대기, 배정 안 된 재고">진행</th>
+                        <th rowSpan={2} className={`${progBg} text-left font-bold px-3 align-bottom rounded-t-lg`} title="쿠팡에 배정한 수량, 그중 발송완료(출고)·발송대기. 재고 = 도착 − 출고">진행</th>
                       </tr>
                       <tr className="text-xs">
                         <th className={`${buyBg} text-right font-normal px-3 pb-1`}>수량</th>

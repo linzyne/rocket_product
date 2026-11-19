@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import {
   HanjungOrder, HanjungLine, subscribeHanjung, deleteHanjungOrder, saveHanjungOrder, productSummary, orderTotals, productOrderQty, productUnitCost, lineAlloc, sameName, nameKey, ordersNeedingAliasRename, FEE_KEYS, remainingFee, feeTotalOf, receiptGoodsCost, receiptFee,
 } from '../../data/hanjungStore';
-import { ReceiveRow, subscribeReceives, settlementOf } from '../../data/receiveStore';
+import { ReceiveRow, subscribeReceives, settlementOf, checkReceives } from '../../data/receiveStore';
 import { nextHanjungCode, closeShortOrder, planShortFill, planFill, FillPlan, FillLine } from '../../data/hanjungStore';
 import { useReady } from '../coupangOrder/data/readyStore';
 import { isLinesReady, startLines } from '../coupangOrder/data/lineStore';
@@ -653,6 +653,8 @@ const HanjungOrderPage: React.FC = () => {
     return () => window.removeEventListener('keydown', onKey);
   });
   useEffect(() => subscribeReceives(setReceives), []);
+  const receiveIssues = useMemo(() => (orders.length && receives.length ? checkReceives(orders, receives).filter(x => x.kind !== 'orphan') : []), [orders, receives]);
+  // 짝 없는 입고(한중발주 없이 원래 재고에서 보낸 것)는 오류가 아니라 경고에서 뺀다.
 
   // 발송완료된 발주서 번호(출고 건에 보낸 날이 적힌 것).
   const [sentNos, setSentNos] = useState<Set<string>>(new Set());
@@ -1010,6 +1012,23 @@ const HanjungOrderPage: React.FC = () => {
           <div className="text-5xl mb-3">{search.trim() ? '🔍' : '🐼'}</div>
           {search.trim() ? '검색 결과가 없어요.' : orders.length ? '이 단계의 한중발주가 없어요.' : '아직 오는 게 없어요. 위 🛒 장바구니에서 골라 주문완료하면 여기에 생겨요.'}
         </div>
+      )}
+
+      {receiveIssues.length > 0 && (
+        <details className="mb-3 max-w-xl rounded-xl border border-red-200 bg-red-50 px-4 py-2 text-sm" data-testid="receive-check">
+          <summary className="cursor-pointer font-semibold text-red-700">쿠팡입고 검산: 안 맞는 줄 {receiveIssues.length}개</summary>
+          <ul className="mt-2 space-y-1 text-gray-700">
+            {receiveIssues.map((x, i) => (
+              <li key={i}>
+                <b className={x.kind === 'double' || x.kind === 'missing' ? 'text-red-600' : 'text-amber-700'}>
+                  {{ double: '중복으로 셈', missing: '덜 셈', over: '배정보다 더 들어옴', orphan: '짝 없는 입고' }[x.kind]}
+                </b>{' '}
+                {x.발주번호} {x.skuName}
+                <span className="block text-xs text-gray-500">쿠팡 입고 {x.received} · 한중발주들이 센 합 {x.counted} · 배정 합 {x.cap}{x.codes.length ? ` · ${x.codes.join(', ')}` : ''}</span>
+              </li>
+            ))}
+          </ul>
+        </details>
       )}
 
       <div className="space-y-3">

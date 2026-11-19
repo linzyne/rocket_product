@@ -160,41 +160,6 @@ export const settlementOf = (order: HanjungOrder, rows: ReceiveRow[], others: Ha
   return { qty, total: Math.round(total), supply: Math.round(supply), byProduct, byLine: lines, rows: matched, lost, shipped };
 };
 
-// 발송완료한 출고 줄마다 그 수량이 어느 한중발주 배정분인지(발송완료 카드 표시용).
-//  쿠팡 줄(발주번호·상품)마다 먼저 보낸 출고 건이 먼저 만든 한중발주 배정부터 채운다(한중발주 출고 계산과 같은 순서).
-//  배정을 다 쓰고 남은 수량은 code 없이(어느 한중발주에도 배정 안 된 것 = 원래 재고 등).
-export type SentSplitLine = { id: string; sentDate: string; 발주번호: string; 상품이름: string; qty: number };
-export const sentSplitOf = (orders: HanjungOrder[], sent: SentSplitLine[]) => {
-  const out = new Map<string, { code: string; qty: number }[]>();
-  const keyOf = (x: SentSplitLine) => `${x.id}|${x.발주번호}|${x.상품이름}`;
-  const groups = new Map<string, SentSplitLine[]>();
-  for (const x of sent) {
-    const k = `${x.발주번호}|${norm(x.상품이름)}`;
-    const g = groups.get(k);
-    if (g) g.push(x); else groups.set(k, [x]);
-  }
-  const sorted = [...orders].sort((a, b) => (isEarlier(a, b) ? -1 : isEarlier(b, a) ? 1 : 0));
-  groups.forEach(g => {
-    const ref = { 발주번호: g[0].발주번호, skuName: g[0].상품이름 } as ReceiveRow;
-    const pool = sorted.map(o => ({ code: o.code, left: lineAlloc(matchLine(o, ref) || ({ 확정수량: 0, 배정: 0 } as HanjungLine)) })).filter(p => p.left > 0);
-    [...g].sort((a, b) => a.sentDate.localeCompare(b.sentDate) || a.id.localeCompare(b.id, 'ko', { numeric: true })).forEach(x => {
-      let need = x.qty;
-      const parts: { code: string; qty: number }[] = [];
-      for (const p of pool) {
-        if (need <= 0) break;
-        const take = Math.min(p.left, need);
-        if (take <= 0) continue;
-        p.left -= take;
-        need -= take;
-        parts.push({ code: p.code, qty: take });
-      }
-      if (need > 0) parts.push({ code: '', qty: need });
-      out.set(keyOf(x), parts);
-    });
-  });
-  return (x: SentSplitLine) => out.get(keyOf(x)) || [];
-};
-
 // 먼저 만든 건(같은 시각이면 고유번호 순)이 입고를 먼저 받는다.
 const isEarlier = (a: HanjungOrder, b: HanjungOrder) => a.createdAt < b.createdAt || (a.createdAt === b.createdAt && a.code < b.code);
 

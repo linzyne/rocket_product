@@ -3,11 +3,11 @@ import ProductQtySummary from '../coupangOrder/components/ProductQtySummary';
 import { ShipOut, ShipOutLine, subscribeShipOuts, markShipOuts, mergeShipOutInto, shipOutBatch, shipOutDone } from '../coupangOrder/data/shipOutStore';
 import { ShipmentBatch, subscribeShipments, allBoxes, waybillForBox, batchForItem } from '../../data/shipmentStore';
 import ShipmentWaybillModal from '../coupangOrder/components/ShipmentWaybillModal';
-import { useHanjungBadge, badge } from '../coupangOrder/data/useHanjungBadge';
+import { useHanjungBadge } from '../coupangOrder/data/useHanjungBadge';
 import { useShipmentNoSync } from '../coupangOrder/data/useShipmentNoSync';
 import { useReady } from '../coupangOrder/data/readyStore';
 import { HanjungOrder, subscribeHanjung, makeHanjungOfficeLookup } from '../../data/hanjungStore';
-import { ReceiveRow, subscribeReceives, sentSplitOf } from '../../data/receiveStore';
+import { ReceiveRow, subscribeReceives } from '../../data/receiveStore';
 import { OVERDUE_DAYS, ReturnCandidate, ReturnMark, markIgnored, markReturned, receiveStatusOf, returnId, subscribeReturns } from '../../data/returnStore';
 import { expandBoxSplit, parseBoxNo } from '../coupangOrder/utils/dataProcessor';
 import { ymdSortKey } from '../coupangOrder/utils/dateUtils';
@@ -89,29 +89,19 @@ export default function CoupangSendPage({ onGoShip, view = 'waiting' }: { onGoSh
     () => list.filter(i => !!i.sentDate).sort((a, b) => (b.sentDate || '').localeCompare(a.sentDate || '') || b.createdAt - a.createdAt),
     [list],
   );
-  // 발송완료 줄마다 그 박스 수량이 어느 한중발주 배정분인지(먼저 보낸 출고 건이 먼저 만든 한중발주 배정부터 — 한중발주 출고 계산과 같은 기준).
-  const splitOf = useMemo(
-    () => sentSplitOf(hanjungOrders, sent.flatMap(i => i.lines.map(l => ({ id: i.id, sentDate: i.sentDate || '', 발주번호: String(l.발주번호 || '').trim(), 상품이름: l.상품이름, qty: Number(l.확정수량) || 0 })))),
-    [hanjungOrders, sent],
-  );
-  const hjColorOf = useMemo(() => {
-    const COLORS = ['#2563eb', '#7c3aed', '#db2777', '#0891b2', '#4f46e5', '#9333ea', '#0d9488', '#be185d', '#1d4ed8', '#6d28d9'];
-    const m = new Map<string, string>();
-    [...hanjungOrders].sort((a, b) => a.createdAt - b.createdAt).forEach((o, i) => m.set(o.code, COLORS[i % COLORS.length]));
-    return (code: string) => m.get(code) || COLORS[0];
-  }, [hanjungOrders]);
-  const sentHanjung = (item: ShipOut, l: ShipOutLine) => {
-    const parts = splitOf({ id: item.id, sentDate: item.sentDate || '', 발주번호: String(l.발주번호 || '').trim(), 상품이름: l.상품이름, qty: Number(l.확정수량) || 0 });
-    // 한중발주 배정이 하나도 없는 줄(원래 재고로 보낸 것)은 발송대기처럼 아무것도 안 붙인다.
-    if (!parts.some(p => p.code)) return null;
-    const split = parts.length > 1;
-    return parts.map((p, i) => (
-      <span key={`${p.code}-${i}`} style={{ ...badge(p.code ? hjColorOf(p.code) : '#9ca3af', false), marginLeft: i ? 4 : 0 }}
-        title={p.code ? `이 박스 ${l.확정수량}개 중 ${p.qty}개는 한중발주 ${p.code} 배정분` : `${p.qty}개는 어느 한중발주에도 배정 안 된 것(원래 재고 등)`}>
-        {p.code ? `한중 ${p.code}` : '배정 없음'}{split || p.qty !== Number(l.확정수량) ? ` ×${p.qty}` : ''}
-      </span>
-    ));
-  };
+  // 발송완료 줄의 한중 배정: 발송대기와 똑같이 저장된 배정을 그대로 보여 준다(가공 안 함).
+  //  택배박스별로 나눠 보낸 줄은 나누기 전 수량으로 찾는다(발주 진행 카드의 keyQty와 같은 방식).
+  const keyQtyOf = useMemo(() => {
+    const split = new Map<string, number[]>();
+    for (const item of list) for (const l of item.lines) {
+      const k = `${String(l.발주번호 || '').trim()}│${l.상품이름}`;
+      split.set(k, [...(split.get(k) || []), Number(l.확정수량) || 0]);
+    }
+    return (l: ShipOutLine) => {
+      const qs = split.get(`${String(l.발주번호 || '').trim()}│${l.상품이름}`) || [];
+      return qs.length > 1 ? qs.reduce((x, y) => x + y, 0) : l.확정수량;
+    };
+  }, [list]);
   // 발송완료는 달별로 본다. 달 단추(최근 달이 앞)를 누르면 그 달 기록만. 기본은 가장 최근 달.
   const months = useMemo(() => {
     const m = new Map<string, number>();
@@ -500,7 +490,7 @@ export default function CoupangSendPage({ onGoShip, view = 'waiting' }: { onGoSh
                                 <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: '#333' }} title={l.상품이름}>{l.상품이름}</span>
                                 <b style={{ whiteSpace: 'nowrap' }}>{l.확정수량}개</b>
                               </div>
-                              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, alignItems: 'center' }}>{sentHanjung(item, l)}{receiveBadge(l)}</div>
+                              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, alignItems: 'center' }}>{hanjungBadge({ 발주번호: l.발주번호, 상품이름: l.상품이름, 확정수량: keyQtyOf(l) })}{receiveBadge(l)}</div>
                             </div>
                           ))}
                         </div>

@@ -171,6 +171,7 @@ const WarehouseInPage: React.FC = () => {
               <th className="px-3 py-2 text-left font-medium">센터</th>
               <th className="px-3 py-2 text-right font-medium">수량</th>
               <th className="px-3 py-2 text-right font-medium">정산금액</th>
+              <th className="px-3 py-2 text-left font-medium">정산일</th>
               <th className="px-3 py-2 text-left font-medium">한중발주</th>
               <th className="w-10"></th>
             </tr>
@@ -188,6 +189,7 @@ const WarehouseInPage: React.FC = () => {
                 <td className="px-3 py-2 text-gray-500">{r.center}</td>
                 <td className="px-3 py-2 text-right font-mono">{sign(r) * r.qty}</td>
                 <td className="px-3 py-2 text-right font-mono" title={`공급가 ${won(r.totalSupply)} + 세액 ${won(r.totalTax)}`}>{won(sign(r) * r.total)}</td>
+                <td className="px-3 py-2 font-mono text-xs text-gray-500 whitespace-nowrap" title="쿠팡 지급일(입고상세내역)">{String(r.payDate || '').slice(0, 10) || <span className="text-gray-300">-</span>}</td>
                 <td className="px-3 py-2">{parts.some(p => p.code)
                   ? parts.map((p, i) => (
                     <span key={i} className={`block whitespace-nowrap ${p.code ? 'font-mono text-blue-600' : 'text-xs text-gray-400'}`}
@@ -202,7 +204,7 @@ const WarehouseInPage: React.FC = () => {
               </tr>
             ))}
             {!list.length && (
-              <tr><td colSpan={10} className="px-3 py-12 text-center text-gray-400">
+              <tr><td colSpan={11} className="px-3 py-12 text-center text-gray-400">
                 {rows.length ? '검색 결과가 없어요.' : '아직 입고 내역이 없어요. 서허 입고상세내역에서 기간을 검색한 뒤 "확장에서 가져오기"를 눌러주세요.'}
               </td></tr>
             )}

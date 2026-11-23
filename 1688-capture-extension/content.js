@@ -1261,6 +1261,8 @@
         sellingPriceOverride: typeof r.sellingPriceOverride === 'number' ? r.sellingPriceOverride : null,
         pristine: false,
         collapsed: true,
+        // 대표이미지 지정이 행 id로 걸려 있어서, 되살릴 때도 같은 id를 쓴다.
+        ...(r.id ? { id: r.id } : {}),
       }));
     } else {
       rows = initial.colorRaw ? [makeRow(initial.colorRaw, true)] : [];
@@ -1296,8 +1298,8 @@
     // 삭제, "적용" 버튼 등 상태가 바뀌는 모든 지점에서 호출한다.
     function persistWork() {
       saveWorkDraft({
-        rows: rows.map(({ label, width, height, depth, price, checked, supplyPriceOverride, sellingPriceOverride }) =>
-          ({ label, width, height, depth, price, checked, supplyPriceOverride, sellingPriceOverride })),
+        rows: rows.map(({ id, label, width, height, depth, price, checked, supplyPriceOverride, sellingPriceOverride }) =>
+          ({ id, label, width, height, depth, price, checked, supplyPriceOverride, sellingPriceOverride })),
         previewCny: cnyPreviewInput.value,
         previewWidth: widthPreviewInput.value,
         previewHeight: heightPreviewInput.value,
@@ -1869,7 +1871,19 @@
 
     // 대표이미지를 옵션별로 고를 수 있게, 지금 체크된 옵션들의 이름을 순서대로 돌려준다.
     // (이름이 비어 있는 행은 "옵션 1"처럼 순번으로 부른다.)
-    const optionLabels = () => rows.filter((row) => row.checked).map((row, i) => row.label.trim() || `옵션 ${i + 1}`);
+    // 대표 지정(item.mainFor)은 옵션 이름이 아니라 행 id로 기억한다. 이름으로 기억하면 ★ 뒤에
+    // 옵션명을 고치거나 두 옵션 이름이 같을 때 2번 옵션 지정이 사라졌다.
+    const optionList = () => rows.filter((row) => row.checked).map((row, i) => ({ id: row.id, label: row.label.trim() || `옵션 ${i + 1}` }));
+    const optionLabels = () => optionList().map((option) => option.label);
+    // 지금 체크된 옵션에 걸린 지정만 유효하다(옵션을 빼거나 지우면 그 지정은 없는 셈).
+    const mainOption = (item) => (item.mainFor ? optionList().find((option) => option.id === item.mainFor) || null : null);
+    // 옛 작업 내역은 옵션 이름으로 저장돼 있다. id가 안 맞으면 이름으로 찾아 id로 바꾼다.
+    const toRowId = (value) => {
+      if (!value) return null;
+      const list = optionList();
+      const hit = list.find((option) => option.id === value) || list.find((option) => option.label === value);
+      return hit ? hit.id : null;
+    };
 
     // 끌어다 놓아 순서를 바꾸는 중인 사진의 자리.
     let dragIndex = null;
@@ -1901,8 +1915,9 @@
         const kind = document.createElement('span');
         kind.className = 'rc-image-kind';
         // 대표로 지정한 사진은 어느 옵션의 대표인지 보여준다.
-        kind.textContent = item.mainFor
-          ? `★ ${item.mainFor || '대표'}`
+        const assigned = mainOption(item);
+        kind.textContent = assigned
+          ? `★ ${assigned.label}`
           : item.kind === 'detail' ? '상세' : item.kind === 'etc' ? '기타' : '대표';
         tile.appendChild(kind);
 
@@ -1910,17 +1925,17 @@
         // 돌아가며 지정된다(마지막 옵션 다음은 지정 해제). 작은 칸에 목록을 띄우면 가려져서
         // 누르기 어려우므로 돌려가며 고르는 방식으로 둔다.
         const star = document.createElement('span');
-        star.className = `rc-image-star${item.mainFor ? ' on' : ''}`;
+        star.className = `rc-image-star${assigned ? ' on' : ''}`;
         star.textContent = '★';
         star.title = optionLabels().length > 1 ? '누를 때마다 옵션이 바뀝니다 (대표이미지 지정)' : '대표이미지로 지정';
         star.addEventListener('click', (event) => {
           event.stopPropagation();
-          const labels = optionLabels();
+          const labels = optionList().map((option) => option.id);
           if (labels.length === 0) return;
           const current = labels.indexOf(item.mainFor);
           // 처음 누를 땐 아직 대표가 없는 옵션부터 채운다(항상 1번으로 가면 두 번째 사진이
           // 첫 사진의 1번 지정을 뺏어가 2번 옵션은 영영 안 채워졌다). 다 찼으면 1번부터.
-          const taken = new Set(imageItems.filter((other) => other !== item && other.mainFor).map((other) => other.mainFor));
+          const taken = new Set(imageItems.filter((other) => other !== item && mainOption(other)).map((other) => other.mainFor));
           const firstFree = labels.find((label) => !taken.has(label));
           const nextLabel = current === -1
             ? (firstFree || labels[0])
@@ -1973,7 +1988,7 @@
 
         imageGrid.appendChild(tile);
       });
-      const mainCount = imageItems.filter((item) => item.mainFor).length;
+      const mainCount = imageItems.filter((item) => mainOption(item)).length;
       imageCountEl.textContent = `${pickedImageUrls().length}장 선택${mainCount > 0 ? ` · 대표 ${mainCount}장` : ''}`;
       persistWork();
     };
@@ -2042,11 +2057,11 @@
         }
         // 어느 사진이 어느 옵션의 대표인지 앱에 알려준다. 앱은 옵션 순서대로 상품 행을 만들므로
         // 체크된 옵션 중 몇 번째인지(mainForIndex)로 넘긴다.
-        const labels = optionLabels();
+        const options = optionList();
         images = images.map(({ name, dataUrl, url }) => {
           const item = imageItems.find((candidate) => candidate.url === url);
-          const index = item && item.mainFor ? labels.indexOf(item.mainFor) : -1;
-          return { name, dataUrl, ...(index >= 0 ? { mainForIndex: index, mainForLabel: item.mainFor } : {}) };
+          const index = item && item.mainFor ? options.findIndex((option) => option.id === item.mainFor) : -1;
+          return { name, dataUrl, ...(index >= 0 ? { mainForIndex: index, mainForLabel: options[index].label } : {}) };
         });
         imageStatusEl.textContent = `사진 ${images.length}장을 담아 보냅니다.`;
         if (images.length < urls.length) {
@@ -2287,7 +2302,7 @@
         url: item.url,
         kind: item.kind || 'main',
         checked: !!item.checked,
-        mainFor: item.mainFor || null,
+        mainFor: toRowId(item.mainFor),
       }));
       imageArea.hidden = false;
       renderImageGrid();

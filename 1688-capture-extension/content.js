@@ -1918,7 +1918,13 @@
           const labels = optionLabels();
           if (labels.length === 0) return;
           const current = labels.indexOf(item.mainFor);
-          const nextLabel = current + 1 >= labels.length ? null : labels[current + 1];
+          // 처음 누를 땐 아직 대표가 없는 옵션부터 채운다(항상 1번으로 가면 두 번째 사진이
+          // 첫 사진의 1번 지정을 뺏어가 2번 옵션은 영영 안 채워졌다). 다 찼으면 1번부터.
+          const taken = new Set(imageItems.filter((other) => other !== item && other.mainFor).map((other) => other.mainFor));
+          const firstFree = labels.find((label) => !taken.has(label));
+          const nextLabel = current === -1
+            ? (firstFree || labels[0])
+            : current + 1 >= labels.length ? null : labels[current + 1];
           // 한 옵션에 두 장이 대표일 수는 없다. 다른 사진에 걸려 있던 지정은 푼다.
           if (nextLabel) imageItems.forEach((other) => { if (other.mainFor === nextLabel) other.mainFor = null; });
           item.mainFor = nextLabel;

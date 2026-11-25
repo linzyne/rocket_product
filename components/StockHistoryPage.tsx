@@ -4,6 +4,7 @@ import CollectFromExtension from './CollectFromExtension';
 import { useRowOrder, DragHandle } from './useRowOrder';
 import { ReceiveRow, subscribeReceives, sign } from '../data/receiveStore';
 import { SkuLinks, loadLocalSkuLinks, subscribeSkuLinks } from '../data/skuLinkStore';
+import { SalesGroup, groupItems, receiptsByItem, salesOf } from '../data/salesCalc';
 
 // 로켓 > 로켓재고·판매량. 둘 다 같은 표(상품 × 날짜)를 모드만 바꿔 쓴다. 확장이 날마다 가져온
 // 로켓센터 재고를 월 단위로 보여주고, 수집한 날만 값이 있다.
@@ -11,7 +12,7 @@ export type StockMode = 'rocket' | 'sales';
 
 const TITLES: Record<StockMode, { title: string; desc: string }> = {
   rocket: { title: '로켓재고', desc: '확장에서 가져온 로켓센터 재고가 날짜별로 쌓여요.' },
-  sales: { title: '판매량', desc: '직전 수집 재고 + 그 사이 입고 − 이 날 재고로 봐요. 입고가 짝지어지지 않은 상품은 입고된 날 음수로 나올 수 있어요.' },
+  sales: { title: '판매량', desc: '직전 수집 재고 + 그 사이 입고 − 이 날 재고로 봐요. 묶음 옵션(2개·3개…)은 1개짜리와 합쳐 낱개로 세요. 입고가 짝지어지지 않은 상품은 입고된 날 음수로 나올 수 있어요.' },
 };
 
 const monthKey = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
@@ -42,49 +43,26 @@ const StockHistoryPage: React.FC<{ mode: StockMode }> = ({ mode }) => {
     setMonth(monthKey(new Date(y, m - 1 + delta, 1)));
   };
 
-  // 상품(adsId)별 · 날짜별 입고 수량. 짝지어 둔 SKU의 입고만 센다(반출은 빼서 더한다).
-  const inByItem = useMemo(() => {
-    const map = new Map<string, Map<string, number>>();
-    if (mode !== 'sales') return map;
-    for (const r of receives) {
-      const adsId = links[r.sku];
-      if (!adsId) continue;
-      const day = String(r.date || '').slice(0, 10);
-      if (!day) continue;
-      const byDay = map.get(adsId) || new Map<string, number>();
-      byDay.set(day, (byDay.get(day) || 0) + sign(r) * r.qty);
-      map.set(adsId, byDay);
-    }
-    return map;
-  }, [receives, links, mode]);
+  // 상품(adsId)별 입고(시각 포함). 짝지어 둔 SKU의 입고만 센다.
+  const byItem = useMemo(
+    () => (mode === 'sales' ? receiptsByItem(receives, links, sign) : new Map()),
+    [receives, links, mode]
+  );
 
-  // 두 날짜 사이(앞날 다음날 ~ 이 날)에 들어온 입고 합.
-  const inBetween = (adsId: string, prevDay: string, day: string) => {
-    const byDay = inByItem.get(adsId);
-    if (!byDay) return 0;
-    let sum = 0;
-    for (const [d, qty] of byDay) if (d > prevDay && d <= day) sum += qty;
-    return sum;
-  };
+  // 판매량은 묶음 옵션을 1개짜리와 합친 줄, 로켓재고는 상품 하나가 한 줄.
+  const groups = useMemo<SalesGroup[]>(
+    () => (mode === 'sales'
+      ? groupItems(items)
+      : items.map(it => ({ key: it.adsId, base: it, members: [{ it, n: 1 }], units: it.stockHistory || {}, at: it.stockAt || {} }))),
+    [items, mode]
+  );
 
-  // 한 상품의 이 달 칸 값과 정렬 기준을 한 번에 구한다.
-  // 판매량은 '직전 기록일 재고 − 이 날 재고'다. 수집을 건너뛴 날이 있으면 그 사이 며칠치가
-  // 한 칸에 몰리므로, 몇 밤치인지 칸에 얹어 둔다(값 자체는 합계가 맞게 유지된다).
-  const rowOf = (it: InventoryItem) => {
-    const h = it.stockHistory || {};
-    const recorded = Object.keys(h).sort();
-    const cells = days.map(day => {
-      if (day > today) return { day, v: null as number | null, span: 0 };
-      const cur = h[day];
-      if (cur == null) return { day, v: null as number | null, span: 0 };
-      if (mode === 'rocket') return { day, v: cur, span: 0 };
-      const i = recorded.indexOf(day);
-      const prev = i > 0 ? recorded[i - 1] : null;
-      if (prev == null) return { day, v: null as number | null, span: 0 };
-      const span = Math.round((new Date(day).getTime() - new Date(prev).getTime()) / 86400000);
-      // 판매량 = 직전 수집 재고 + 그 사이 입고 − 이 날 재고.
-      return { day, v: h[prev] + inBetween(it.adsId, prev, day) - cur, span };
-    });
+  // 한 줄의 이 달 칸 값과 정렬 기준. 수집을 건너뛴 날이 있으면 그 사이 며칠치가 한 칸에 몰리므로
+  // 몇 밤치인지 칸에 얹어 둔다(값 자체는 합계가 맞게 유지된다).
+  const rowOf = (g: SalesGroup) => {
+    const cells = mode === 'sales'
+      ? salesOf(g, byItem, days, today)
+      : days.map(day => ({ day, v: day > today ? null : (g.units[day] ?? null), span: 0 }));
     // 로켓재고는 이 달 마지막으로 모은 재고, 판매량은 이 달에 판 수량을 다 더한 값이 기준이다.
     let key: number | null = null;
     if (mode === 'rocket') {
@@ -92,19 +70,19 @@ const StockHistoryPage: React.FC<{ mode: StockMode }> = ({ mode }) => {
     } else {
       for (const c of cells) if (c.v != null) key = (key ?? 0) + c.v;
     }
-    return { it, cells, key };
+    return { it: g.base, packs: g.members.length, cells, key };
   };
 
   // 이 달에 숫자가 있는 상품만, 큰 값부터 보여준다.
   const rows = useMemo(() => {
     const k = search.trim().toLowerCase();
-    return items
-      .filter(it => it.inLatest !== false || days.some(d => it.stockHistory?.[d] != null))
-      .filter(it => !k || it.productName.toLowerCase().includes(k))
+    return groups
+      .filter(g => g.members.some(m => m.it.inLatest !== false) || days.some(d => g.units[d] != null))
+      .filter(g => !k || g.members.some(m => m.it.productName.toLowerCase().includes(k)))
       .map(rowOf)
       .filter(r => r.key != null)
       .sort((a, b) => b.key! - a.key! || a.it.productName.localeCompare(b.it.productName, 'ko'));
-  }, [items, search, days, mode, today, inByItem]);
+  }, [groups, search, days, mode, today, byItem]);
 
   type Row = (typeof rows)[number];
   const sortedRows = order.sort<Row>(rows, (r: Row) => r.it.adsId);
@@ -153,7 +131,7 @@ const StockHistoryPage: React.FC<{ mode: StockMode }> = ({ mode }) => {
             </tr>
           </thead>
           <tbody>
-            {sortedRows.map(({ it, cells }) => {
+            {sortedRows.map(({ it, packs, cells }) => {
               const { base, option } = splitProductName(it.productName);
               return (
                 <tr
@@ -170,6 +148,7 @@ const StockHistoryPage: React.FC<{ mode: StockMode }> = ({ mode }) => {
                       <div className="min-w-0">
                         <div className="truncate text-gray-900" title={it.productName}>{base}</div>
                         {option && <div className="truncate text-gray-400">{option}</div>}
+                        {packs > 1 && <div className="truncate text-[11px] text-blue-500">묶음 {packs}종 낱개 합산</div>}
                       </div>
                     </div>
                   </td>

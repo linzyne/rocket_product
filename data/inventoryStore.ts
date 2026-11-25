@@ -25,6 +25,8 @@ export interface InventoryItem {
   // stockHistory는 그날 마지막으로 모은 로켓센터 재고, officeHistory는 그날 마지막으로 고친 사무실 재고
   // (고치지 않은 날은 앞날 값이 이어진다).
   stockHistory?: Record<string, number>;
+  // 그날 마지막으로 모은 시각(ms). 판매량에서 입고가 수집 전인지 뒤인지 가르는 데 쓴다.
+  stockAt?: Record<string, number>;
   officeHistory?: Record<string, number | null>;
 }
 
@@ -98,6 +100,7 @@ const mergeLocal = (prev: InventoryItem | undefined, u: Partial<InventoryItem>):
   ...(prev || {}),
   ...u,
   stockHistory: { ...(prev?.stockHistory || {}), ...(u.stockHistory || {}) },
+  stockAt: { ...(prev?.stockAt || {}), ...(u.stockAt || {}) },
   officeHistory: { ...(prev?.officeHistory || {}), ...(u.officeHistory || {}) },
 } as InventoryItem);
 
@@ -132,7 +135,10 @@ export const importHubData = async (hub: HubData, existing: InventoryItem[]) => 
     ...(it.imageUrl ? { imageUrl: it.imageUrl } : {}),
     collectedAt: it.seenAt || now,
     inLatest: true,
-    ...(it.stock == null ? {} : { stockHistory: { [dateKey(it.seenAt || now)]: it.stock } }),
+    ...(it.stock == null ? {} : {
+      stockHistory: { [dateKey(it.seenAt || now)]: it.stock },
+      stockAt: { [dateKey(it.seenAt || now)]: it.seenAt || now },
+    }),
   }]);
   const fresh = new Set(incoming.map(it => it.adsId));
   existing.filter(e => !fresh.has(e.adsId) && e.inLatest !== false).forEach(e => writes.push([e.adsId, { inLatest: false }]));

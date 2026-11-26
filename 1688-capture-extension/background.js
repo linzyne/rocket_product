@@ -263,7 +263,9 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 // 안 돼서, 여러 개 받으면 무엇이 무엇인지 알 수 없습니다).
 chrome.downloads.onDeterminingFilename.addListener((item, suggest) => {
   const url = item.finalUrl || item.url || '';
-  if (!job || !job.keyword || !/supplier\.coupang\.com/.test(url)) return;
+  // 쿠팡 견적서가 아니면 이름을 정하지 않는다. suggest()를 안 부르고 그냥 나가면 크롬이 이 확장이 이름을 ''로
+  // 정한 것으로 봐서, 다른 확장(윙·어드민 확장 로그 등)이 정한 파일 이름이 '다운로드 (N).json'으로 바뀌었다.
+  if (!job || !job.keyword || !/supplier\.coupang\.com/.test(url)) { suggest(); return; }
   const ext = (/\.([a-z0-9]+)$/i.exec(item.filename || '') || [, 'xlsx'])[1];
   suggest({ filename: `${job.keyword}_견적서.${ext}` });
 });
